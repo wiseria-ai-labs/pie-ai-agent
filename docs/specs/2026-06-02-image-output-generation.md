@@ -62,45 +62,47 @@ core 在某张生成图字节完整拼好后 emit 一次（Gemini inlineData 可
 
 ### 5.3 Provider core 改动
 
-| Core | 请求侧（image turn） | 响应侧解析 | assistant 历史回送 |
-|---|---|---|---|
-| `gemini.ts`（native，主力） | 加 `generationConfig.responseModalities:["TEXT","IMAGE"]` | 解析 `parts[].inlineData{mimeType,data}` → emit `image-output` | assistant `ImageBlock` → model-role inlineData part（**编辑全链路原生支持**） |
-| `openai-compat-core.ts`（含 OpenRouter） | 加 `modalities:["image","text"]` | 解析 `delta/message.images[].image_url.url` → emit `image-output` | OpenAI schema 不支持 assistant-role 图片 → **v1 编辑回送仅 best-effort**（标注限制，主力保证在 Gemini） |
+> **架构修订（planning 期发现）**：多轮上下文不靠 SW in-loop history 传递，而靠 panel 每轮把会话重发成 `chat-start` 的 `ChatMessage[]`（`useSession/index.ts:629`），且只有**最后一个 user turn** 带图片字节、assistant turn 一律纯文本重发。纯文本回复路径（无 tool call）也不 push history（`loop.ts:1636`）。因此**生成图归 panel 所有**，SW 对生成图无状态；多轮编辑由「编辑这张」按钮把目标生成图作为**新 user turn 的输入图**重发（见 §7），复用现有输入图管线。assistant 历史回送保持纯文本不变。
+
+| Core | 请求侧（image turn） | 响应侧解析 |
+|---|---|---|
+| `gemini.ts`（native，主力） | 加 `generationConfig.responseModalities:["TEXT","IMAGE"]` | 解析 `parts[].inlineData{mimeType,data}` → emit `image-output` |
+| `openai-compat-core.ts`（含 OpenRouter） | 加 `modalities:["image","text"]` | 解析 `delta/message.images[].image_url.url` → emit `image-output` |
+
+编辑回送走 **user-role 输入图**（不是 assistant-role），Gemini 与 OpenRouter **都原生支持**——故编辑在两家均成立，无 best-effort 妥协。
 
 ### 5.4 SW loop 处理 `image-output`
 
-`src/lib/agent/loop.ts` 收到事件时：
-1. 写字节进 image-cache（session + assistant turn id）；
-2. 通过 port 推 `generated-image` 消息给 panel 立即显示；
-3. 在 assistant `AgentMessage` 记一个 `ImageBlock`（供历史/回送）；
-4. 持久化走「placeholder + IndexedDB durable 字节」（见 §6）。
+`src/lib/agent/loop.ts` 收到事件时**仅一步**：通过 port 推 `generated-image` 消息给 panel。不写 image-cache、不改 history（生成图走纯文本路径，无 tool call）。SW 对生成图保持无状态。
 
 ### 5.5 新增 port → panel 消息
 
 ```ts
-| { type: "generated-image"; sessionId: string; turnId: string; id: string; mediaType: string; data: string; width?: number; height?: number }
+| { type: "generated-image"; sessionId: string; id: string; mediaType: string; data: string; width?: number; height?: number }
 ```
 
-## 6. 持久化（核心难点）
+## 6. 持久化（panel 拥有生成图）
 
 `chrome.storage.local` 默认 ~10MB，装不下多张 PNG。方案：
 - 新增 manifest `unlimitedStorage` 权限。
-- 新增 IndexedDB blob store（`generated-image-store`，仿 skill-store），按 image id 存生成图字节——**durable 显示源 + SW 重启后的编辑上下文源**。
-- session 持久层（`chrome.storage.local` writeAtomic）assistant 消息只存 **placeholder + id**（剥字节），保持 session 文档小。
-- SW 内存 `image-cache` 仍是编辑上下文快路径；扩展为接受 assistant turn 的 `ImageRef`，LRU 上限可上调。
+- 新增 IndexedDB blob store（`generated-image-store.ts`，仿 `skill-store.ts`），按 image id 存生成图字节——**durable 显示源 + 编辑上下文源**。
+- panel 会话持久层（`persistMessages` → `chrome.storage.local`）assistant 消息只存生成图的 **元数据 + id**（不存字节），字节进 IndexedDB。
+- 刷新后：panel 从 chrome.storage 读回会话（含 id），按需从 IndexedDB 水合字节做显示 / 编辑重发。**SW 不参与生成图存储**。
 
-## 7. 多轮编辑链路（hydration 延伸到 assistant turn）
+## 7. 多轮编辑链路（panel-owned，"编辑这张"按钮）
 
-- `hydrateAttachments` 当前只走 `m.role === "user"` → 扩展为也处理 assistant turn 的生成图 placeholder。
-- 注水顺序：image-cache 命中 → 用内存字节；miss → 回 IndexedDB 读；都没有 → 留 placeholder（Gemini 收到无图 model turn 仍能工作，仅丢该图视觉上下文）。
-- 跨刷新：cache 空 → 从 IndexedDB 重新注水 → 编辑仍成立；IndexedDB 也淘汰 → 气泡显示「该图已不可继续编辑」，按新生成处理。
+- 每张生成图在气泡里有「编辑这张」按钮。点击 → 把该图作为 **composer 输入附件**（`ImageAttachment`，字节取自 panel state / IndexedDB）暂存，并自动开启「生图」开关。
+- 发送时：该附件走现有「最后一个 user turn 带 attachments」路径（`useSession/index.ts:636/644`）→ `chatMessagesToAgent` → user-role `ImageBlock` → 各 core 现成的输入图编码。模型收到「这张图 + 指令」→ 编辑。
+- 不暂存 → 不带任何历史生成图 → 纯新生成。
+- **跨刷新成立**：panel 从 IndexedDB 重新水合字节后重发，不依赖任何 SW 缓存温热。
+- 可选任意历史生成图编辑（每张都有按钮，非仅最近一张）。
 
 ## 8. UI 渲染（`src/sidepanel/components/Chat.tsx`）
 
-- `DisplayMessage` assistant 变体加 `generatedImages?: {id,mediaType,width,height,data?}[]`（`data` 显示时从 IndexedDB 注水）。
-- 生成中：占位骨架/「生成图片中…」；收到 `generated-image` port 消息 → 渲染图。
-- 每张图 hover 出 **下载 / 复制** 按钮（复用 `downloads` 权限 / clipboard）。点击放大留后续。
-- 输入区「生图」开关：仅当 active model `imageOutput` 时显示，挨着 attach 按钮。
+- `DisplayMessage` assistant 变体加 `generatedImages?: {id,mediaType,width,height,data?}[]`（`data` 显示时从 IndexedDB 水合）。
+- 生成中：占位骨架/「生成图片中…」；收到 `generated-image` port 消息 → panel 累积进正在构建的 assistant 消息（仿 `streamingThinking`）。
+- 每张图：**下载 / 复制 / 「编辑这张」** 三个动作（下载复用 `downloads` 权限；复制走 clipboard；编辑见 §7）。点击放大留后续。
+- 输入区「生图」开关：仅当 active model `imageOutput` 时显示，挨着 attach 按钮；点「编辑这张」会自动打开它。
 
 ## 9. 测试策略
 
@@ -109,9 +111,10 @@ core 在某张生成图字节完整拼好后 emit 一次（Gemini inlineData 可
   - image turn 时请求注入 `responseModalities`/`modalities`；
   - 生图模型 tools 被抑制；
   - gemini core 解析 `inlineData` → `image-output`；openai-compat 解析 `message.images` → `image-output`；
-  - hydration 覆盖 assistant turn；LRU 淘汰。
-- **跨层**：端到端 image turn → port 消息 + placeholder 持久化 + IndexedDB blob；Gemini 多轮编辑回送上一张图。
-- **UI**：气泡渲染生成图 + 下载/复制；开关随 `imageOutput` 显隐。
+  - IndexedDB generated-image store put/get/delete；
+  - port-handlers 把 `generated-image` 累积进 assistant `DisplayMessage`。
+- **跨层**：端到端 image turn → `generated-image` port 消息 → assistant 消息带 `generatedImages`；「编辑这张」→ composer 附件 → chat-start 把生成图作 user 输入图重发。
+- **UI**：气泡渲染生成图 + 下载/复制/编辑这张；「生图」开关随 `imageOutput` 显隐。
 
 ## 10. 边界与错误
 
@@ -125,5 +128,5 @@ core 在某张生成图字节完整拼好后 emit 一次（Gemini inlineData 可
 - 视频生成（Veo/Sora/Kling，异步 job→轮询范式）。
 - agent 任务流程中生成图片并用于后续浏览器操作。
 - 独立生图 endpoint（OpenAI gpt-image、智谱 CogView、MiniMax）—— 非 chat 流的另一套调用路径。
-- OpenRouter 多轮编辑的完整回送（v1 仅 best-effort）。
 - 生成图点击放大 / lightbox。
+- 不靠「编辑这张」的隐式上下文延续（模型自动记得它生成过的图）。
