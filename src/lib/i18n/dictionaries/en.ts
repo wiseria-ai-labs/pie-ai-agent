@@ -280,24 +280,13 @@ export const enDict = {
     section: {
       yours: {
         title: "YOURS",
-        subtitleEditable: "{count} · editable",
+        subtitleEditable: "{count}",
       },
     },
     capacity: "CAPACITY",
-    newSkill: "+ New skill",
-    noSkills: 'No skills yet — click "+ New skill" to add one.',
-    form: {
-      editSkill: "EDIT SKILL",
-      newSkill: "NEW SKILL",
-      name: "Name",
-      namePlaceholder: "Extract product info",
-      description: "Description",
-      descPlaceholder: "What does this skill do, and when should the agent use it?",
-      instructions: "Instructions",
-      instructionsPlaceholder: "Step-by-step instructions the agent follows when this skill runs. Plain text or markdown.",
-      saveChanges: "Save changes",
-      createSkill: "Create skill",
-    },
+    createHint:
+      "To create a skill, just describe what you want in chat, or record your actions — Pie will build it for you.",
+    noSkills: "No skills of your own yet.",
     authorTag: { builtIn: "BUILT-IN", agent: "AGENT", user: "USER" },
     toggleAria: { enable: "Enable {name}", disable: "Disable {name}" },
   },

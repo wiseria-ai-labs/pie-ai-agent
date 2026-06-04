@@ -4,95 +4,19 @@ import {
   getAllSkillPackages,
   getEnabledSkillIds,
   setSkillEnabled,
-  putPackage,
-  resolveSkillPackage,
   deletePackage,
-  generateUserSkillId,
-  parseSkillMarkdown,
 } from "@/lib/skills";
-import { buildSkillMd, isSingleLineSafe } from "@/lib/skills/skill-md";
 import { useT } from "@/lib/i18n";
 
 interface SkillsListProps {
   onRunSkill: (skillId: string, skillName: string) => void;
 }
 
-const INSTRUCTIONS_MAX = 8 * 1024;
 const STORAGE_QUOTA_BYTES = 1 * 1024 * 1024;
-
-interface SkillFormState {
-  editingId?: string;
-  editingCreatedAt?: number;
-  name: string;
-  description: string;
-  instructions: string;
-}
-
-function emptyForm(): SkillFormState {
-  return {
-    name: "",
-    description: "",
-    instructions: "",
-  };
-}
-
-/** Extract the SKILL.md body (instructions) from a package, tolerating
- *  malformed frontmatter by falling back to the raw file. */
-function instructionsOf(pkg: SkillPackage): string {
-  const md = pkg.files["SKILL.md"] ?? "";
-  try {
-    return parseSkillMarkdown(md).body;
-  } catch {
-    return md;
-  }
-}
-
-function formFromSkill(skill: SkillPackage): SkillFormState {
-  return {
-    editingId: skill.id,
-    editingCreatedAt: skill.createdAt ?? 0,
-    name: skill.frontmatter.name,
-    description: skill.frontmatter.description,
-    instructions: instructionsOf(skill),
-  };
-}
 
 /** Approximate IndexedDB bytes a package consumes (matches skill-meta.ts). */
 function estimatePackageBytes(pkg: SkillPackage): number {
   return JSON.stringify(pkg).length + pkg.id.length;
-}
-
-interface BuiltSkillFields {
-  name: string;
-  description: string;
-  instructions: string;
-}
-
-function validateAndBuild(
-  form: SkillFormState,
-): { ok: true; built: BuiltSkillFields } | { ok: false; error: string } {
-  if (!form.name.trim()) return { ok: false, error: "Name is required" };
-  if (!form.description.trim()) return { ok: false, error: "Description is required" };
-  if (!form.instructions.trim()) return { ok: false, error: "Instructions are required" };
-  if (form.instructions.length > INSTRUCTIONS_MAX) {
-    return {
-      ok: false,
-      error: `Instructions too long (${form.instructions.length}/${INSTRUCTIONS_MAX} bytes)`,
-    };
-  }
-  // Frontmatter-injection guard (shared with skill-meta.ts via skill-md.ts).
-  if (!isSingleLineSafe(form.name) || !isSingleLineSafe(form.description)) {
-    return { ok: false, error: "Name/description must be single-line (no newlines or '---')" };
-  }
-
-  return {
-    ok: true,
-    built: {
-      name: form.name.trim(),
-      description: form.description.trim(),
-      instructions: form.instructions,
-    },
-  };
 }
 
 function formatBytes(n: number): string {
@@ -114,9 +38,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [explicitDisabledIds, setExplicitDisabledIds] = useState<Set<string>>(new Set());
   const [storageBytes, setStorageBytes] = useState<number>(0);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<SkillFormState>(emptyForm());
-  const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -159,90 +80,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     await loadSkills();
   }
 
-  function openCreateForm() {
-    setForm(emptyForm());
-    setFormError(null);
-    setShowForm(true);
-  }
-
-  function openEditForm(skill: SkillPackage) {
-    setForm(formFromSkill(skill));
-    setFormError(null);
-    setShowForm(true);
-  }
-
-  function closeForm() {
-    setShowForm(false);
-    setFormError(null);
-  }
-
-  async function handleSubmit() {
-    setFormError(null);
-    const v = validateAndBuild(form);
-    if (!v.ok) {
-      setFormError(v.error);
-      return;
-    }
-
-    const isEdit = !!form.editingId;
-
-    let pkg: SkillPackage;
-    if (isEdit) {
-      // resolveSkillPackage (merged set) so editing a builtin id resolves to the
-      // builtin and is correctly blocked — store-only getPackage returned null
-      // for un-overridden builtins, silently bypassing this guard.
-      const existing = await resolveSkillPackage(form.editingId!);
-      if (existing && existing.builtIn) {
-        setFormError("Built-in skills cannot be edited.");
-        return;
-      }
-      const md = buildSkillMd(v.built.name, v.built.description, "1.0.0", "user", v.built.instructions);
-      pkg = {
-        id: form.editingId!,
-        frontmatter: { ...(existing?.frontmatter ?? {}), name: v.built.name, description: v.built.description, version: "1.0.0", author: "user" },
-        files: { ...(existing?.files ?? {}), "SKILL.md": md },
-        builtIn: false,
-        createdAt: existing?.createdAt ?? form.editingCreatedAt ?? Date.now(),
-      };
-    } else {
-      const md = buildSkillMd(v.built.name, v.built.description, "1.0.0", "user", v.built.instructions);
-      pkg = {
-        id: generateUserSkillId(),
-        frontmatter: { name: v.built.name, description: v.built.description, version: "1.0.0", author: "user" },
-        files: { "SKILL.md": md },
-        builtIn: false,
-        createdAt: Date.now(),
-      };
-    }
-
-    const newBytes = estimatePackageBytes(pkg);
-    const oldBytes = isEdit
-      ? (() => {
-          const existing = skills.find((s) => s.id === form.editingId);
-          return existing && !existing.builtIn ? estimatePackageBytes(existing) : 0;
-        })()
-      : 0;
-    if (storageBytes - oldBytes + newBytes > STORAGE_QUOTA_BYTES) {
-      setFormError(
-        `Skill storage quota would be exceeded (${formatBytes(storageBytes - oldBytes + newBytes)}/${formatBytes(STORAGE_QUOTA_BYTES)}). Delete an existing skill first.`,
-      );
-      return;
-    }
-
-    try {
-      await putPackage(pkg);
-      // New user packages need an explicit enabled marker — getEnabledSkillPackages
-      // only defaults BUILT-IN packages on, so without this a freshly created
-      // skill would be excluded from the agent loop + slash popover. Only on
-      // create: editing must not resurrect a skill the user had explicitly disabled.
-      if (!isEdit) await setSkillEnabled(pkg.id, true);
-      await loadSkills();
-      setShowForm(false);
-    } catch (e) {
-      setFormError(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
   async function handleDelete(skill: SkillPackage) {
     if (skill.builtIn) return;
     try {
@@ -256,16 +93,16 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   }
 
   const quotaPct = Math.min(100, (storageBytes / STORAGE_QUOTA_BYTES) * 100);
+  // Capacity / count surface only user-created skills — built-ins ship with the
+  // extension and shouldn't inflate the user's skill count or storage figure.
   const custom = skills.filter((s) => !s.builtIn);
 
   return (
     <div className="flex flex-col gap-7">
       <CapacitySection
-        skillCount={skills.length}
+        skillCount={custom.length}
         storageBytes={storageBytes}
         quotaPct={quotaPct}
-        showFormButton={!showForm}
-        onNew={openCreateForm}
       />
 
       {/* Concept hint — Skill 与底层 tool 的区别。Phase 3+ 用户经常误以为
@@ -284,18 +121,26 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
         {t("skills.empty.cta")}
       </div>
 
-      {showForm && (
-        <SkillForm
-          form={form}
-          formError={formError}
-          onChange={setForm}
-          onCancel={closeForm}
-          onSubmit={handleSubmit}
-        />
-      )}
+      {/* 创建技能引导 — 不再提供表单式新建/编辑，改为引导用户用聊天或录制让 Pie 代建。 */}
+      <div
+        style={{
+          padding: "10px 12px",
+          fontSize: 12,
+          color: "var(--c-fg-1, #333)",
+          background: "var(--c-bg-2, transparent)",
+          border: "1px solid var(--c-line, #ccc)",
+          borderRadius: 8,
+          lineHeight: 1.6,
+        }}
+      >
+        {t("skills.createHint")}
+      </div>
 
-      {custom.length > 0 && (
-        <SkillsSection title={t("skills.section.yours.title")} subtitle={t("skills.section.yours.subtitleEditable", { count: custom.length })}>
+      {custom.length > 0 ? (
+        <SkillsSection
+          title={t("skills.section.yours.title")}
+          subtitle={t("skills.section.yours.subtitleEditable", { count: custom.length })}
+        >
           {custom.map((skill) => (
             <SkillRow
               key={skill.id}
@@ -303,7 +148,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
               enabled={isEffectivelyEnabled(skill)}
               onToggle={() => handleToggle(skill)}
               onRun={() => onRunSkill(skill.id, skill.frontmatter.name)}
-              onEdit={() => openEditForm(skill)}
               confirmDelete={confirmDeleteId === skill.id}
               onAskDelete={() => setConfirmDeleteId(skill.id)}
               onCancelDelete={() => setConfirmDeleteId(null)}
@@ -311,9 +155,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
             />
           ))}
         </SkillsSection>
-      )}
-
-      {skills.length === 0 && !showForm && (
+      ) : (
         <p className="text-[12px] text-fg-3">{t("skills.noSkills")}</p>
       )}
     </div>
@@ -324,14 +166,10 @@ function CapacitySection({
   skillCount,
   storageBytes,
   quotaPct,
-  showFormButton,
-  onNew,
 }: {
   skillCount: number;
   storageBytes: number;
   quotaPct: number;
-  showFormButton: boolean;
-  onNew: () => void;
 }) {
   const t = useT();
   const overFill = quotaPct >= 80;
@@ -347,14 +185,6 @@ function CapacitySection({
             </span>
           </span>
         </div>
-        {showFormButton && (
-          <button
-            onClick={onNew}
-            className="rounded-md bg-fg-1 px-3.5 py-1.5 text-[12px] font-medium text-canvas hover:opacity-90"
-          >
-            {t("skills.newSkill")}
-          </button>
-        )}
       </div>
       <div className="h-1 w-full overflow-hidden rounded-sm border border-line bg-surface">
         <div
@@ -393,7 +223,6 @@ function SkillRow({
   enabled,
   onToggle,
   onRun,
-  onEdit,
   confirmDelete,
   onAskDelete,
   onCancelDelete,
@@ -403,7 +232,6 @@ function SkillRow({
   enabled: boolean;
   onToggle: () => void;
   onRun: () => void;
-  onEdit: () => void;
   confirmDelete: boolean;
   onAskDelete: () => void;
   onCancelDelete: () => void;
@@ -459,12 +287,6 @@ function SkillRow({
         </button>
         {!skill.builtIn && (
           <>
-            <button
-              onClick={onEdit}
-              className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
-            >
-              {t("common.edit")}
-            </button>
             {confirmDelete ? (
               <>
                 <button
@@ -492,112 +314,5 @@ function SkillRow({
         )}
       </div>
     </div>
-  );
-}
-
-function SkillForm({
-  form,
-  formError,
-  onChange,
-  onCancel,
-  onSubmit,
-}: {
-  form: SkillFormState;
-  formError: string | null;
-  onChange: React.Dispatch<React.SetStateAction<SkillFormState>>;
-  onCancel: () => void;
-  onSubmit: () => void;
-}) {
-  const t = useT();
-  return (
-    <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3.5">
-      <div className="flex items-baseline justify-between">
-        <span className="caps text-fg-3">
-          {form.editingId ? t("skills.form.editSkill") : t("skills.form.newSkill")}
-        </span>
-        <button
-          onClick={onCancel}
-          className="text-[11px] text-fg-2 hover:text-fg-1"
-        >
-          {t("common.cancel")}
-        </button>
-      </div>
-
-      {formError && (
-        <div className="rounded border border-warning-line bg-warning-tint px-2.5 py-1.5 text-[12px] text-warning">
-          {formError}
-        </div>
-      )}
-
-      <FormField label={t("skills.form.name")}>
-        <input
-          value={form.name}
-          onChange={(e) => onChange((p) => ({ ...p, name: e.target.value }))}
-          className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder={t("skills.form.namePlaceholder")}
-        />
-      </FormField>
-
-      <FormField label={t("skills.form.description")}>
-        <input
-          value={form.description}
-          onChange={(e) => onChange((p) => ({ ...p, description: e.target.value }))}
-          className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder={t("skills.form.descPlaceholder")}
-        />
-      </FormField>
-
-      <FormField
-        label={t("skills.form.instructions")}
-        hint={`${form.instructions.length}/${INSTRUCTIONS_MAX} chars`}
-      >
-        <textarea
-          value={form.instructions}
-          onChange={(e) => onChange((p) => ({ ...p, instructions: e.target.value }))}
-          rows={8}
-          className="w-full rounded border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
-          placeholder={t("skills.form.instructionsPlaceholder")}
-        />
-      </FormField>
-
-      <div className="flex justify-end gap-2 pt-1">
-        <button
-          onClick={onCancel}
-          className="rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:text-fg-1"
-        >
-          {t("common.cancel")}
-        </button>
-        <button
-          onClick={onSubmit}
-          className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas hover:opacity-90"
-        >
-          {form.editingId ? t("skills.form.saveChanges") : t("skills.form.createSkill")}
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function FormField({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">
-          {label}
-        </span>
-        {hint && (
-          <span className="font-mono text-[10px] text-fg-3">{hint}</span>
-        )}
-      </div>
-      {children}
-    </label>
   );
 }
