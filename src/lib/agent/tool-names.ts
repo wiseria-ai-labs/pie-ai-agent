@@ -95,9 +95,11 @@ export const LOCAL_FILE_TOOL_NAMES = [
 ] as const;
 
 // Recipe tools.
-//   save_recipe — write (creates a new Recipe in IndexedDB persistent storage).
-//   run_recipe  — write (navigates / injects into a live tab + writes Downloads files).
+//   detect_recipe_structure — read (injects detection into current tab, no mutation).
+//   save_recipe             — write (creates a new Recipe in IndexedDB persistent storage).
+//   run_recipe              — write (navigates / injects into a live tab + writes Downloads files).
 export const RECIPE_TOOL_NAMES = [
+  "detect_recipe_structure",
   "save_recipe",
   "run_recipe",
 ] as const;
@@ -213,8 +215,10 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   read_editor: "read",
   set_editor_value: "write",
   // Recipe tools
-  //   save_recipe — write (mutates IndexedDB; creates persistent recipe).
-  //   run_recipe  — write (navigates tab + injects + writes Downloads files).
+  //   detect_recipe_structure — read (page-only inspection; no mutation).
+  //   save_recipe             — write (mutates IndexedDB; creates persistent recipe).
+  //   run_recipe              — write (navigates tab + injects + writes Downloads files).
+  detect_recipe_structure: "read",
   save_recipe: "write",
   run_recipe: "write",
 };

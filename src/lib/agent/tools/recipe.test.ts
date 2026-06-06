@@ -4,6 +4,7 @@ import { buildRecipeTools, type RecipeToolDeps } from "./recipe";
 import type { Recipe } from "../../recipes/recipe-types";
 import type { ExecuteRecipeDeps } from "../../recipes/execute-recipe";
 import type { ToolHandlerContext } from "../types";
+import type { InjectedDetectOutput } from "../../recipes/injected-detect";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ const ctx42 = { tabId: 42 } as ToolHandlerContext;
 
 function makeDeps(overrides: Partial<RecipeToolDeps> = {}): RecipeToolDeps {
   return {
+    detectStructure: vi.fn().mockResolvedValue({ ok: false }),
     putRecipe: vi.fn().mockResolvedValue(undefined),
     executeRecipe: vi.fn().mockResolvedValue({ rows: [{ title: "A" }], files: ["a.csv", "a.json"] }),
     buildExecDeps: vi.fn().mockReturnValue({} as ExecuteRecipeDeps),
@@ -301,9 +303,72 @@ describe("save_recipe — actionPrelude and parameters (V1b/V1c)", () => {
 // ── tool list shape ───────────────────────────────────────────────────────────
 
 describe("buildRecipeTools", () => {
-  it("returns exactly 2 tools: save_recipe and run_recipe", () => {
+  it("returns exactly 3 tools: detect_recipe_structure, save_recipe, run_recipe", () => {
     const tools = buildRecipeTools(makeDeps());
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(["run_recipe", "save_recipe"]);
+    expect(names).toEqual(["detect_recipe_structure", "run_recipe", "save_recipe"]);
+  });
+});
+
+// ── detect_recipe_structure tests ─────────────────────────────────────────────
+
+describe("detect_recipe_structure", () => {
+  let deps: RecipeToolDeps;
+  let detectTool: ReturnType<typeof buildRecipeTools>[number];
+
+  beforeEach(() => {
+    deps = makeDeps();
+    const tools = buildRecipeTools(deps);
+    detectTool = tools.find((t) => t.name === "detect_recipe_structure")!;
+  });
+
+  it("returns ok=false observation when detection fails", async () => {
+    deps.detectStructure = vi.fn().mockResolvedValue({ ok: false });
+    const tools = buildRecipeTools(deps);
+    const tool = tools.find((t) => t.name === "detect_recipe_structure")!;
+    const r = await tool.handler({}, ctx42);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain("ok=false");
+    expect(r.observation).toMatch(/no repeating structure detected/i);
+  });
+
+  it("calls detectStructure with ctx.tabId", async () => {
+    await detectTool.handler({}, ctx42);
+    expect(deps.detectStructure).toHaveBeenCalledWith(42);
+  });
+
+  it("returns ok=true observation with extraction and sampleRows when detection succeeds", async () => {
+    const mockResult = {
+      ok: true as const,
+      profile: "classic" as const,
+      isTable: false,
+      rowCount: 3,
+      extraction: {
+        container: { signals: [{ kind: "class", value: "ul.items", stable: true }] },
+        rowLocator: { signals: [{ kind: "class", value: "li.item", stable: true }] },
+        fields: [{ name: "field_1", locator: { signals: [{ kind: "nth", value: "span:nth-of-type(1)", stable: false }] } }],
+        pagination: {} as Record<string, never>,
+        stopCondition: { maxPages: 1 as const },
+      },
+      sampleRows: [{ field_1: "Alpha" }, { field_1: "Beta" }],
+    };
+    deps.detectStructure = vi.fn().mockResolvedValue(mockResult);
+    const tools = buildRecipeTools(deps);
+    const tool = tools.find((t) => t.name === "detect_recipe_structure")!;
+    const r = await tool.handler({}, ctx42);
+    expect(r.success).toBe(true);
+    expect(r.observation).toContain("ok=true");
+    expect(r.observation).toContain("rowCount: 3");
+    expect(r.observation).toContain("field_1");
+    expect(r.observation).toContain("Alpha");
+  });
+
+  it("forwards detection error as failure", async () => {
+    deps.detectStructure = vi.fn().mockRejectedValue(new Error("scripting error"));
+    const tools = buildRecipeTools(deps);
+    const tool = tools.find((t) => t.name === "detect_recipe_structure")!;
+    const r = await tool.handler({}, ctx42);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("scripting error");
   });
 });

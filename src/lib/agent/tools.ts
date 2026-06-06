@@ -19,6 +19,7 @@ import { buildRecipeTools } from "./tools/recipe";
 import { putRecipe, getRecipe } from "../recipes/recipe-store";
 import { executeRecipe, buildChromeDownloader, buildRealRunDeps } from "../recipes/execute-recipe";
 import { runExtractOnTab } from "../recipes/injected-extract";
+import { detectStructureOnTab } from "../recipes/injected-detect";
 
 export {
   KEYBOARD_TOOL_NAMES,
@@ -107,6 +108,7 @@ async function execInTab<T extends unknown[]>(
 // extension context. The unit tests cover the orchestration logic via mocks.
 
 const RECIPE_TOOLS: Tool[] = buildRecipeTools({
+  detectStructure: detectStructureOnTab,
   putRecipe,
   executeRecipe: async (recipeId, tabId, params, deps) =>
     executeRecipe(recipeId, tabId, params, deps),

@@ -1,10 +1,13 @@
 // src/lib/agent/tools/recipe.ts
 //
 // LLM-facing recipe tools:
-//   save_recipe — persists a new Recipe to IndexedDB (write-class)
-//   run_recipe  — runs an existing recipe on the current active tab (write-class)
+//   detect_recipe_structure — deterministic structure detection (read-class)
+//   save_recipe             — persists a new Recipe to IndexedDB (write-class)
+//   run_recipe              — runs an existing recipe on the current active tab (write-class)
 //
-// Both are WRITE-CLASS tools (see tool-names.ts classification rationale):
+// detect_recipe_structure is READ-CLASS: it only injects a read-only function
+//   into the page and returns observations; no DOM/tab mutation.
+// save_recipe and run_recipe are WRITE-CLASS (see tool-names.ts):
 //   - save_recipe mutates IndexedDB (creates a new persistent Recipe)
 //   - run_recipe  navigates / injects into a live tab and writes files to Downloads
 //
@@ -18,10 +21,16 @@ import type { ActionResult } from "../../dom-actions/types";
 import type { ExtractionSpec } from "../../recipes/types";
 import type { Recipe, ActionStep, RecipeParam } from "../../recipes/recipe-types";
 import type { ExecuteRecipeDeps } from "../../recipes/execute-recipe";
+import type { InjectedDetectOutput } from "../../recipes/injected-detect";
 
 // ── Dep injection types for testability ───────────────────────────────────────
 
 export interface RecipeToolDeps {
+  /**
+   * Run deterministic structure detection in the given tab.
+   * Defaults to detectStructureOnTab in production.
+   */
+  detectStructure: (tabId: number) => Promise<InjectedDetectOutput>;
   /** Persist a recipe. Defaults to recipe-store putRecipe in production. */
   putRecipe: (recipe: Recipe) => Promise<void>;
   /**
@@ -67,6 +76,63 @@ interface RunRecipeArgs {
 // ── Tool factory (dep-injected, used in tests and for production singleton) ───
 
 export function buildRecipeTools(deps: RecipeToolDeps): Tool[] {
+  const detectRecipeStructureTool: Tool = {
+    name: "detect_recipe_structure",
+    description:
+      "Deterministically detect the repeating data structure on the current page " +
+      "and return a ready-to-use ExtractionSpec (container, rowLocator, fields) " +
+      "together with up to 5 sample rows. " +
+      "Always call this BEFORE save_recipe — do NOT hand-write locators. " +
+      "If ok=false the page has no detectable structure; ask the user to navigate " +
+      "to a page with a list or table.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: [],
+      properties: {},
+    },
+    handler: async (_args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+      let result: InjectedDetectOutput;
+      try {
+        result = await deps.detectStructure(ctx.tabId);
+      } catch (e) {
+        return {
+          success: false,
+          error: `detect_recipe_structure failed: ${e instanceof Error ? e.message : String(e)}`,
+        };
+      }
+
+      if (!result.ok) {
+        return {
+          success: true,
+          observation:
+            "ok=false — no repeating structure detected on this page. " +
+            "Navigate to a page with a list or table and call detect_recipe_structure again. " +
+            "Do NOT call save_recipe with hand-written locators.",
+        };
+      }
+
+      const { profile, isTable, rowCount, extraction, sampleRows } = result;
+      const fieldNames = extraction.fields.map((f) => f.name).join(", ");
+      const sampleSummary =
+        sampleRows.length > 0
+          ? `\nSample rows (first ${sampleRows.length}):\n${JSON.stringify(sampleRows, null, 2)}`
+          : "\nNo sample rows extracted (rowCount may be 0).";
+
+      return {
+        success: true,
+        observation:
+          `ok=true\n` +
+          `profile: ${profile}\n` +
+          `isTable: ${isTable}\n` +
+          `rowCount: ${rowCount}\n` +
+          `fields: [${fieldNames}]\n` +
+          `extraction: ${JSON.stringify(extraction, null, 2)}` +
+          sampleSummary,
+      };
+    },
+  };
+
   const saveRecipeTool: Tool = {
     name: "save_recipe",
     description:
@@ -283,6 +349,6 @@ export function buildRecipeTools(deps: RecipeToolDeps): Tool[] {
     },
   };
 
-  return [saveRecipeTool, runRecipeTool];
+  return [detectRecipeStructureTool, saveRecipeTool, runRecipeTool];
 }
 // Note: canonical tool name lists live in tool-names.ts — do not re-export them here.
