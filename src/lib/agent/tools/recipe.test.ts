@@ -213,6 +213,91 @@ describe("run_recipe", () => {
   });
 });
 
+// ── save_recipe: actionPrelude + parameters (V1b/V1c) ────────────────────────
+
+describe("save_recipe — actionPrelude and parameters (V1b/V1c)", () => {
+  let deps: RecipeToolDeps;
+  let saveRecipe: ReturnType<typeof buildRecipeTools>[0];
+
+  beforeEach(() => {
+    deps = makeDeps();
+    const tools = buildRecipeTools(deps);
+    saveRecipe = tools.find((t) => t.name === "save_recipe")!;
+  });
+
+  it("stores actionPrelude when provided", async () => {
+    const prelude = [
+      { type: "navigate", url: "https://example.com/login" },
+      { type: "type", locator: { signals: [{ kind: "id", value: "email", stable: true }] }, value: "user@example.com" },
+    ];
+    await saveRecipe.handler(
+      { name: "Prelude Recipe", targetUrlPattern: "example.com", extraction: minimalExtractionJson, actionPrelude: prelude },
+      ctx42,
+    );
+    const saved = (deps.putRecipe as ReturnType<typeof vi.fn>).mock.calls[0][0] as Recipe;
+    expect(saved.actionPrelude).toHaveLength(2);
+    expect(saved.actionPrelude![0]).toMatchObject({ type: "navigate", url: "https://example.com/login" });
+    expect(saved.actionPrelude![1]).toMatchObject({ type: "type" });
+  });
+
+  it("stores parameters when provided", async () => {
+    const parameters = [
+      { name: "query", type: "string", default: "default-q" },
+      { name: "region", type: "string" },
+    ];
+    await saveRecipe.handler(
+      { name: "Param Recipe", targetUrlPattern: "example.com", extraction: minimalExtractionJson, parameters },
+      ctx42,
+    );
+    const saved = (deps.putRecipe as ReturnType<typeof vi.fn>).mock.calls[0][0] as Recipe;
+    expect(saved.parameters).toHaveLength(2);
+    expect(saved.parameters![0]).toMatchObject({ name: "query", default: "default-q" });
+    expect(saved.parameters![1]).toMatchObject({ name: "region" });
+  });
+
+  it("stores both actionPrelude and parameters together", async () => {
+    const prelude = [{ type: "navigate", url: "https://example.com/search?q={{query}}" }];
+    const parameters = [{ name: "query", type: "string", default: "test" }];
+    await saveRecipe.handler(
+      {
+        name: "Full Recipe", targetUrlPattern: "example.com",
+        extraction: minimalExtractionJson, actionPrelude: prelude, parameters,
+      },
+      ctx42,
+    );
+    const saved = (deps.putRecipe as ReturnType<typeof vi.fn>).mock.calls[0][0] as Recipe;
+    expect(saved.actionPrelude).toHaveLength(1);
+    expect(saved.parameters).toHaveLength(1);
+  });
+
+  it("omits actionPrelude when not provided (backward-compat)", async () => {
+    await saveRecipe.handler(
+      { name: "No Prelude", targetUrlPattern: "example.com", extraction: minimalExtractionJson },
+      ctx42,
+    );
+    const saved = (deps.putRecipe as ReturnType<typeof vi.fn>).mock.calls[0][0] as Recipe;
+    expect(saved.actionPrelude).toBeUndefined();
+  });
+
+  it("omits parameters when not provided (backward-compat)", async () => {
+    await saveRecipe.handler(
+      { name: "No Params", targetUrlPattern: "example.com", extraction: minimalExtractionJson },
+      ctx42,
+    );
+    const saved = (deps.putRecipe as ReturnType<typeof vi.fn>).mock.calls[0][0] as Recipe;
+    expect(saved.parameters).toBeUndefined();
+  });
+
+  it("omits actionPrelude when provided as empty array", async () => {
+    await saveRecipe.handler(
+      { name: "Empty Prelude", targetUrlPattern: "example.com", extraction: minimalExtractionJson, actionPrelude: [] },
+      ctx42,
+    );
+    const saved = (deps.putRecipe as ReturnType<typeof vi.fn>).mock.calls[0][0] as Recipe;
+    expect(saved.actionPrelude).toBeUndefined();
+  });
+});
+
 // ── tool list shape ───────────────────────────────────────────────────────────
 
 describe("buildRecipeTools", () => {

@@ -16,7 +16,7 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
 import type { ExtractionSpec } from "../../recipes/types";
-import type { Recipe } from "../../recipes/recipe-types";
+import type { Recipe, ActionStep, RecipeParam } from "../../recipes/recipe-types";
 import type { ExecuteRecipeDeps } from "../../recipes/execute-recipe";
 
 // ── Dep injection types for testability ───────────────────────────────────────
@@ -51,6 +51,10 @@ interface SaveRecipeArgs {
   targetUrlPattern?: unknown;
   extraction?: unknown;
   outputSchema?: unknown;
+  /** V1b: ordered pre-extraction action steps (click/type/navigate/select/submit). */
+  actionPrelude?: unknown;
+  /** V1c: named parameter definitions for actionPrelude placeholder substitution. */
+  parameters?: unknown;
 }
 
 // ── run_recipe args ───────────────────────────────────────────────────────────
@@ -107,6 +111,43 @@ export function buildRecipeTools(deps: RecipeToolDeps): Tool[] {
             additionalProperties: false,
           },
         },
+        actionPrelude: {
+          type: "array",
+          description:
+            "V1b: ordered deterministic pre-extraction action sequence. " +
+            "Each step is executed in the tab before extraction begins. " +
+            "Supports: navigate (url field), click, type (value field), " +
+            "select (value field), submit. Locator signals resolve the target element. " +
+            "Values may contain {{paramName}} placeholders (see parameters).",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", description: "click | type | select | navigate | submit" },
+              locator: { type: "object", description: "MultiSignalLocator for click/type/select/submit." },
+              value: { type: "string", description: "Value for type/select steps; may use {{param}}." },
+              url: { type: "string", description: "Navigate target URL; may use {{param}}." },
+            },
+            required: ["type"],
+            additionalProperties: false,
+          },
+        },
+        parameters: {
+          type: "array",
+          description:
+            "V1c: named parameter definitions for {{placeholder}} substitution in actionPrelude. " +
+            "Each parameter has a name, type (always 'string'), and optional default value. " +
+            "The user fills these in the parameter form before running.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Parameter name (matches {{name}} in steps)." },
+              type: { type: "string", description: "Always 'string'." },
+              default: { type: "string", description: "Optional default value shown in the form." },
+            },
+            required: ["name", "type"],
+            additionalProperties: false,
+          },
+        },
       },
     },
     handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
@@ -139,6 +180,19 @@ export function buildRecipeTools(deps: RecipeToolDeps): Tool[] {
             type: "string",
           }));
 
+      // V1b: accept optional actionPrelude (array of ActionStep).
+      // Guard: only store if it's a non-empty array of objects.
+      const actionPrelude: ActionStep[] | undefined =
+        Array.isArray(a.actionPrelude) && a.actionPrelude.length > 0
+          ? (a.actionPrelude as ActionStep[])
+          : undefined;
+
+      // V1c: accept optional parameters (array of RecipeParam).
+      const parameters: RecipeParam[] | undefined =
+        Array.isArray(a.parameters) && a.parameters.length > 0
+          ? (a.parameters as RecipeParam[])
+          : undefined;
+
       const recipe: Recipe = {
         id: generateRecipeId(),
         name: a.name.trim(),
@@ -147,6 +201,8 @@ export function buildRecipeTools(deps: RecipeToolDeps): Tool[] {
         targetUrlPattern: a.targetUrlPattern.trim(),
         extraction,
         outputSchema,
+        ...(actionPrelude ? { actionPrelude } : {}),
+        ...(parameters ? { parameters } : {}),
       };
 
       try {

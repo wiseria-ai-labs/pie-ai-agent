@@ -10,7 +10,7 @@
 //
 // For unit tests, inject mock deps via the optional `deps` / `store` parameters.
 
-import type { Recipe } from "./recipe-types";
+import type { Recipe, ActionStep } from "./recipe-types";
 import type { RunDeps, ExtractPageResult } from "./run-recipe";
 import type { ExtractionSpec, RecordRow, RunResult } from "./types";
 import { runRecipe } from "./run-recipe";
@@ -197,6 +197,133 @@ function buildPace(): RunDeps["pace"] {
 }
 
 /**
+ * Build a runAction dep: executes a single ActionStep in the given tab.
+ * Supports: navigate, click, type, select, submit.
+ *
+ * Inline locator resolution logic (self-contained, no outer-scope imports)
+ * mirrors the pattern used by clickNextInPage and injected-extract.ts.
+ *
+ * // 需真机验证: executeScript injection + locator resolution inside page context.
+ */
+function buildRunAction(): NonNullable<RunDeps["runAction"]> {
+  return async (tabId: number, step: ActionStep, _params: Record<string, string>): Promise<void> => {
+    // navigate: reuse buildNavigate's implementation
+    if (step.type === "navigate") {
+      if (step.url) {
+        await buildNavigate()(tabId, step.url);
+      }
+      return;
+    }
+
+    // All other step types require a locator and execute via executeScript.
+    if (!step.locator) return;
+
+    // Self-contained injected function — no imports, no outer-scope closures.
+    // 需真机验证: executeScript serialization; locator resolution must match live DOM.
+    function runActionInPage(
+      serializedStep: string,
+    ): { ok: boolean; error?: string } {
+      type SignalKind = "testid" | "id" | "name" | "aria-label" | "role+name" | "text" | "class" | "column" | "nth";
+      interface LocatorSignal { kind: SignalKind; value: string; stable: boolean }
+      interface MultiSignalLocator { signals: LocatorSignal[] }
+      interface StepPayload {
+        type: "click" | "type" | "select" | "submit";
+        locator: MultiSignalLocator;
+        value?: string;
+      }
+
+      function normText(s: string | null | undefined): string {
+        return (s ?? "").replace(/\s+/g, " ").trim();
+      }
+      function matchByText(root: ParentNode, text: string): Element[] {
+        const want = normText(text).toLowerCase();
+        if (!want) return [];
+        return [...root.querySelectorAll("a,button,[role='button'],[role='link']")].filter(
+          (el) => normText(el.textContent).toLowerCase().includes(want),
+        );
+      }
+      function matchByRoleName(root: ParentNode, value: string): Element | null {
+        const [role, name] = value.split("|");
+        const want = normText(name).toLowerCase();
+        const cands = [...root.querySelectorAll(`[role="${role}"], ${role}`)];
+        return (
+          cands.find((el) => {
+            const label = normText(el.getAttribute("aria-label") || el.textContent).toLowerCase();
+            return want ? label.includes(want) : true;
+          }) ?? null
+        );
+      }
+      function resolveOne(root: ParentNode, loc: MultiSignalLocator): Element | null {
+        for (const sig of loc.signals) {
+          switch (sig.kind) {
+            case "id": { const el = root.querySelector(`[id="${sig.value}"]`); if (el) return el; break; }
+            case "testid": { const sel = sig.value.startsWith("[") ? sig.value : `[data-testid="${sig.value}"]`; const el = root.querySelector(sel); if (el) return el; break; }
+            case "name": { const el = root.querySelector(`[name="${sig.value}"]`); if (el) return el; break; }
+            case "aria-label": { const el = root.querySelector(`[aria-label="${sig.value}"]`); if (el) return el; break; }
+            case "class": { const el = root.querySelector(sig.value); if (el) return el; break; }
+            case "nth": { const el = root.querySelector(sig.value); if (el) return el; break; }
+            case "text": { const el = matchByText(root, sig.value)[0]; if (el) return el; break; }
+            case "role+name": { const el = matchByRoleName(root, sig.value); if (el) return el; break; }
+          }
+        }
+        return null;
+      }
+
+      const payload = JSON.parse(serializedStep) as StepPayload;
+      const el = resolveOne(document, payload.locator);
+      if (!el) return { ok: false, error: `locator not found for step type=${payload.type}` };
+
+      switch (payload.type) {
+        case "click": {
+          (el as HTMLElement).click();
+          return { ok: true };
+        }
+        case "type": {
+          const input = el as HTMLInputElement;
+          input.focus();
+          input.value = payload.value ?? "";
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          return { ok: true };
+        }
+        case "select": {
+          const sel = el as HTMLSelectElement;
+          sel.value = payload.value ?? "";
+          sel.dispatchEvent(new Event("change", { bubbles: true }));
+          return { ok: true };
+        }
+        case "submit": {
+          const form =
+            el.tagName === "FORM"
+              ? (el as HTMLFormElement)
+              : (el as HTMLElement).closest("form");
+          if (form) {
+            form.submit();
+          } else {
+            (el as HTMLElement).click();
+          }
+          return { ok: true };
+        }
+        default:
+          return { ok: false, error: `unsupported step type` };
+      }
+    }
+
+    const payload = { type: step.type, locator: step.locator, value: step.value };
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: runActionInPage,
+        args: [JSON.stringify(payload)],
+      });
+    } catch {
+      // Silently swallow script injection errors — the caller (runRecipe) has
+      // already paced between steps; a failed step is preferable to an abort.
+    }
+  };
+}
+
+/**
  * Construct real chrome RunDeps for production use.
  * The extractOnTab function is passed in to avoid circular import issues.
  *
@@ -212,6 +339,7 @@ export function buildRealRunDeps(
     scrollContainer: buildScrollContainer(),
     pace: buildPace(),
     now: () => Date.now(),
+    runAction: buildRunAction(),
   };
 }
 

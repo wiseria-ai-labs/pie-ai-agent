@@ -10,7 +10,7 @@
 
 import { useState, useEffect } from "react";
 import { listRecipes, deleteRecipe } from "@/lib/recipes/recipe-store";
-import type { Recipe } from "@/lib/recipes/recipe-types";
+import type { Recipe, RecipeParam } from "@/lib/recipes/recipe-types";
 
 // ── Types for SW response ─────────────────────────────────────────────────────
 
@@ -73,10 +73,21 @@ export default function RecipesList() {
   }
 
   function handleRunClick(recipe: Recipe) {
-    const hasParams = Array.isArray((recipe as { parameters?: unknown[] }).parameters) &&
-      ((recipe as { parameters?: unknown[] }).parameters?.length ?? 0) > 0;
+    const recipeParams = recipe.parameters as RecipeParam[] | undefined;
+    const hasParams = Array.isArray(recipeParams) && recipeParams.length > 0;
 
     if (hasParams && showParamFor !== recipe.id) {
+      // Pre-populate defaults if not already set
+      setParamForms((prev) => {
+        if (prev[recipe.id]) return prev; // already populated
+        const defaults: Record<string, string> = {};
+        for (const p of recipeParams!) {
+          if (p.default !== undefined) {
+            defaults[p.name] = p.default;
+          }
+        }
+        return { ...prev, [recipe.id]: defaults };
+      });
       // Show param form first
       setShowParamFor(recipe.id);
       return;
@@ -227,9 +238,9 @@ function RecipeRow({
   onCancelDelete: () => void;
   onDelete: () => void;
 }) {
-  const hasParams = Array.isArray((recipe as { parameters?: unknown[] }).parameters) &&
-    ((recipe as { parameters?: unknown[] }).parameters?.length ?? 0) > 0;
-  const params = (recipe as { parameters?: { name: string; description?: string }[] }).parameters ?? [];
+  const recipeParams = recipe.parameters as RecipeParam[] | undefined;
+  const hasParams = Array.isArray(recipeParams) && recipeParams.length > 0;
+  const params = recipeParams ?? [];
 
   return (
     <div className="flex flex-col gap-2 bg-surface px-3.5 py-3.5">
@@ -255,9 +266,9 @@ function RecipeRow({
               <span className="font-mono text-[10px] text-fg-3">{p.name}</span>
               <input
                 aria-label={p.name}
-                value={paramValues[p.name] ?? ""}
+                value={paramValues[p.name] ?? p.default ?? ""}
                 onChange={(e) => onParamChange(p.name, e.target.value)}
-                placeholder={p.description ?? p.name}
+                placeholder={p.default ?? p.name}
                 className="w-full rounded border border-line bg-canvas px-2 py-1 text-[12px] text-fg-1 placeholder:text-fg-3"
               />
             </label>
@@ -290,7 +301,7 @@ function RecipeRow({
           onClick={onRun}
           disabled={running}
           className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label={running ? "Running…" : "Run recipe"}
+          aria-label={running ? "Running…" : hasParams && showParamForm ? "Confirm Run" : "Run recipe"}
         >
           {running ? "Running…" : hasParams && showParamForm ? "Confirm Run" : "Run"}
         </button>

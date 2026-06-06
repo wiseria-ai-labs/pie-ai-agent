@@ -188,9 +188,9 @@ describe("RecipesList — parameter form", () => {
   it("shows parameter form before running when recipe has parameters", async () => {
     const recipe = {
       ...makeRecipe({ id: "r1", name: "Parameterised" }),
-      parameters: [{ name: "maxPages", description: "Max pages to scrape" }],
-    } as Recipe & { parameters: { name: string; description?: string }[] };
-    mockListRecipes.mockResolvedValue([recipe as Recipe]);
+      parameters: [{ name: "maxPages", type: "string" as const }],
+    } as Recipe;
+    mockListRecipes.mockResolvedValue([recipe]);
 
     render(<RecipesList />);
     await waitFor(() => screen.getByText("Parameterised"));
@@ -200,6 +200,80 @@ describe("RecipesList — parameter form", () => {
     // Param form should appear; sendMessage NOT yet called
     expect(screen.getByLabelText("maxPages")).toBeTruthy();
     expect(chromeMock.runtime.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("pre-fills parameter inputs with their default values", async () => {
+    const recipe = {
+      ...makeRecipe({ id: "r1", name: "WithDefaults" }),
+      parameters: [
+        { name: "region", type: "string" as const, default: "us" },
+        { name: "maxPages", type: "string" as const, default: "5" },
+      ],
+    } as Recipe;
+    mockListRecipes.mockResolvedValue([recipe]);
+
+    render(<RecipesList />);
+    await waitFor(() => screen.getByText("WithDefaults"));
+
+    fireEvent.click(screen.getByRole("button", { name: /run recipe/i }));
+
+    // Default values should be pre-filled
+    await waitFor(() => {
+      const regionInput = screen.getByLabelText("region") as HTMLInputElement;
+      expect(regionInput.value).toBe("us");
+      const maxPagesInput = screen.getByLabelText("maxPages") as HTMLInputElement;
+      expect(maxPagesInput.value).toBe("5");
+    });
+  });
+
+  it("sends updated param values when Confirm Run is clicked", async () => {
+    const recipe = {
+      ...makeRecipe({ id: "r1", name: "ParamRun" }),
+      parameters: [{ name: "query", type: "string" as const, default: "default-q" }],
+    } as Recipe;
+    mockListRecipes.mockResolvedValue([recipe]);
+    chromeMock.runtime.sendMessage.mockResolvedValue({ ok: true, rows: [], files: [] });
+
+    render(<RecipesList />);
+    await waitFor(() => screen.getByText("ParamRun"));
+
+    // First click: show param form
+    fireEvent.click(screen.getByRole("button", { name: /run recipe/i }));
+
+    // Change the input value
+    await waitFor(() => screen.getByLabelText("query"));
+    fireEvent.change(screen.getByLabelText("query"), { target: { value: "hello world" } });
+
+    // Second click (Confirm Run): dispatch with updated params
+    fireEvent.click(screen.getByRole("button", { name: /confirm run/i }));
+
+    await waitFor(() => {
+      expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+        type: "run-recipe",
+        recipeId: "r1",
+        params: { query: "hello world" },
+      });
+    });
+  });
+
+  it("runs directly without showing param form when recipe has no parameters", async () => {
+    const recipe = makeRecipe({ id: "r1", name: "NoParams" });
+    mockListRecipes.mockResolvedValue([recipe]);
+    chromeMock.runtime.sendMessage.mockResolvedValue({ ok: true, rows: [], files: [] });
+
+    render(<RecipesList />);
+    await waitFor(() => screen.getByText("NoParams"));
+
+    fireEvent.click(screen.getByRole("button", { name: /run recipe/i }));
+
+    // sendMessage should be called immediately (no param form gate)
+    await waitFor(() => {
+      expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+        type: "run-recipe",
+        recipeId: "r1",
+        params: {},
+      });
+    });
   });
 });
 

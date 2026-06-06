@@ -196,6 +196,42 @@ describe("executeRecipe — orchestration", () => {
   });
 });
 
+// ── actionPrelude forwarding via runDeps.runAction ────────────────────────────
+
+describe("executeRecipe — actionPrelude forwarding", () => {
+  it("invokes runDeps.runAction for each prelude step before extraction", async () => {
+    const runAction = vi.fn().mockResolvedValue(undefined);
+    const recipeWithPrelude: Recipe = {
+      ...testRecipe,
+      actionPrelude: [
+        { type: "navigate", url: "https://example.com/login" },
+        { type: "click", locator: { signals: [{ kind: "id", value: "submit", stable: true }] } },
+      ],
+    };
+    const store = makeStore(recipeWithPrelude);
+    const runDeps = { ...makeRunDeps(), runAction };
+    const deps = makeDeps({ store, runDeps });
+
+    await executeRecipe("r-test-1", 42, {}, deps);
+
+    expect(runAction).toHaveBeenCalledTimes(2);
+    expect(runAction.mock.calls[0][1]).toMatchObject({ type: "navigate" });
+    expect(runAction.mock.calls[1][1]).toMatchObject({ type: "click" });
+  });
+
+  it("runs successfully without prelude when actionPrelude is absent", async () => {
+    const runAction = vi.fn().mockResolvedValue(undefined);
+    const store = makeStore(testRecipe); // no actionPrelude
+    const runDeps = { ...makeRunDeps(), runAction };
+    const deps = makeDeps({ store, runDeps });
+
+    const result = await executeRecipe("r-test-1", 42, {}, deps);
+
+    expect(runAction).not.toHaveBeenCalled();
+    expect(result.rows.length).toBeGreaterThanOrEqual(0);
+  });
+});
+
 // Helper for the file name test
 function result_filenames(dl: ReturnType<typeof makeDownloader>): string[] {
   return dl.calls.map((c) => c.filename);
