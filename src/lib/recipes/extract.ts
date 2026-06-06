@@ -1,7 +1,7 @@
 // src/lib/recipes/extract.ts
 import type { ExtractionSpec, FieldSpec, RecordRow, RowValidity } from "./types";
 import { resolveOne, resolveAll, selectorFor, normText } from "./locator";
-import { mapColumns } from "./columns";
+import { mapColumns, normalizeHeader } from "./columns";
 
 /**
  * Structural pre-check only: validates `minCells` (cell count) on a candidate
@@ -37,25 +37,22 @@ export function isAriaGrid(container: ParentNode): boolean {
 export function ariaGridColMap(container: ParentNode, wanted: string[]): Record<string, number> {
   // Find all columnheader elements (may be nested in a row)
   const headers = [...container.querySelectorAll('[role="columnheader"]')];
-  const headerTexts: string[] = headers.map((h, i) => {
-    // aria-colindex is 1-based; fall back to DOM order (0-based)
-    return h.textContent ?? "";
-  });
   const headerIndices: number[] = headers.map((h, i) => {
+    // aria-colindex is 1-based; fall back to DOM order (0-based)
     const col = h.getAttribute("aria-colindex");
     return col != null ? parseInt(col, 10) - 1 : i;
   });
 
-  // Build a lookup: normalised text → 0-based index
+  // Build a lookup: normalised text → 0-based index (uses normalizeHeader for [ref] stripping)
   const normMap: Record<string, number> = {};
   headers.forEach((h, i) => {
-    const t = (h.textContent ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+    const t = normalizeHeader(h.textContent);
     if (t) normMap[t] = headerIndices[i];
   });
 
   const out: Record<string, number> = {};
   for (const w of wanted) {
-    const nw = w.replace(/\s+/g, " ").trim().toLowerCase();
+    const nw = normalizeHeader(w);
     let idx = normMap[nw] ?? -1;
     if (idx < 0) {
       // fuzzy: find first header text that contains the wanted string

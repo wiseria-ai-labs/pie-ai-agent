@@ -319,3 +319,111 @@ describe("runRecipe — url-param navigation", () => {
     expect(urls).toContain("https://example.com/page/2");
   });
 });
+
+// ── I3: missing next locator guard ───────────────────────────────────────────
+
+describe("runRecipe — I3: missing next locator guard", () => {
+  it("warns when next-button mode has no next locator", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps();
+    const recipe = makeRecipe({
+      // next-button but deliberately no `next` locator
+      pagination: { mode: "next-button" },
+      stopCondition: { maxPages: 1 },
+    });
+    await runRecipe(recipe, 1, {}, deps);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("next-button/load-more pagination without a next locator"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("warns when load-more mode has no next locator", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps();
+    const recipe = makeRecipe({
+      pagination: { mode: "load-more" },
+      stopCondition: { maxPages: 1 },
+    });
+    await runRecipe(recipe, 1, {}, deps);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("next-button/load-more pagination without a next locator"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("does NOT warn when next-button mode has a next locator defined", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps();
+    const recipe = makeRecipe({
+      pagination: {
+        mode: "next-button",
+        next: { signals: [{ kind: "class", value: "button.next", stable: true }] },
+      },
+      stopCondition: { maxPages: 1 },
+    });
+    await runRecipe(recipe, 1, {}, deps);
+    const relevantWarns = warnSpy.mock.calls.filter(([msg]) =>
+      typeof msg === "string" && msg.includes("next locator"),
+    );
+    expect(relevantWarns).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
+  it("extracts only the first page and does not loop infinitely when next locator missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let callCount = 0;
+    const extractOnTab = vi.fn().mockImplementation(async () => {
+      callCount++;
+      return { records: [{ title: `item${callCount}` }], hasNext: true };
+    });
+    const clickNext = vi.fn().mockResolvedValue(false); // button not found
+    const deps = makeDeps({ extractOnTab, clickNext });
+    const recipe = makeRecipe({
+      pagination: { mode: "next-button" }, // no `next` locator
+      stopCondition: { maxPages: 100 }, // high cap — we expect early stop
+    });
+    const result = await runRecipe(recipe, 1, {}, deps);
+    // clickNext returns false → loop exits after first page
+    expect(result.pageCount).toBe(1);
+    warnSpy.mockRestore();
+  });
+});
+
+// ── I2: incremental accumulation perf correctness ────────────────────────────
+
+describe("runRecipe — I2: incremental accumulation", () => {
+  it("deduplicates correctly across many pages (matches bulk accumulate semantics)", async () => {
+    // Build pages where row sets overlap — incremental and bulk must agree
+    const pages: RecordRow[][] = [
+      [{ id: "1" }, { id: "2" }],
+      [{ id: "2" }, { id: "3" }],   // id:2 is duplicate
+      [{ id: "3" }, { id: "4" }],   // id:3 is duplicate
+      [{ id: "5" }],
+    ];
+    const deps = makeDeps({ extractOnTab: makePages(pages) });
+    const recipe = makeRecipe({ stopCondition: { maxPages: 4 } });
+    const result = await runRecipe(recipe, 1, {}, deps);
+    // unique rows: 1,2,3,4,5
+    expect(result.records).toHaveLength(5);
+    const ids = result.records.map((r) => r.id).sort();
+    expect(ids).toEqual(["1", "2", "3", "4", "5"]);
+    expect(result.pageCount).toBe(4);
+  });
+
+  it("stops on untilNoNewRows with incremental dedup (same behaviour as before)", async () => {
+    const rows = [{ title: "A" }, { title: "B" }];
+    const pages: RecordRow[][] = [
+      rows,
+      rows, // no new rows → stop
+    ];
+    const deps = makeDeps({ extractOnTab: makePages(pages) });
+    const recipe = makeRecipe({
+      pagination: { mode: "next-button" },
+      stopCondition: { untilNoNewRows: true },
+    });
+    const result = await runRecipe(recipe, 1, {}, deps);
+    expect(result.pageCount).toBe(2);
+    expect(result.records).toHaveLength(2);
+  });
+});

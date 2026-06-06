@@ -1,7 +1,6 @@
 // src/lib/recipes/run-recipe.ts
 import type { ExtractionSpec, RecordRow, RunResult } from "./types";
 import type { Recipe } from "./recipe-types";
-import { accumulate } from "./engine";
 import { shouldContinue, nextUrl } from "./paginate";
 
 export interface ExtractPageResult {
@@ -44,12 +43,28 @@ export async function runRecipe(
   const { extraction } = recipe;
   const { pagination, stopCondition } = extraction;
 
+  // I3 — Guard: warn when next-button/load-more mode is configured without a
+  // next locator. Without it, clickNext will never advance the page.
+  if (
+    (pagination.mode === "next-button" || pagination.mode === "load-more") &&
+    !pagination.next
+  ) {
+    console.warn(
+      "[recipe] next-button/load-more pagination without a next locator; pagination will not advance",
+    );
+  }
+
   const runAt = deps.now();
   const sourceUrl = pagination.urlTemplate
     ? nextUrl(pagination.urlTemplate, 1)
     : "";
 
-  const perPageRows: RecordRow[][] = [];
+  // I2 — Incremental dedup: maintain a seen-set and result array across pages
+  // so each page is processed in O(page size) rather than O(total rows so far).
+  // Dedup key matches the engine.ts accumulate() function: JSON.stringify(row).
+  const seen = new Set<string>();
+  const allRows: RecordRow[] = [];
+
   let pageCount = 0;
   let hasNext = true;
 
@@ -62,13 +77,18 @@ export async function runRecipe(
   while (true) {
     // Extract current page
     const { records: pageRecords, hasNext: pageHasNext } = await deps.extractOnTab(tabId, extraction);
-    perPageRows.push(pageRecords);
     pageCount++;
     hasNext = pageHasNext;
 
-    // Check stop condition using V1a-1 accumulate + shouldContinue
-    const { newCountPerPage } = accumulate(perPageRows);
-    const lastPageNewRows = newCountPerPage[newCountPerPage.length - 1] ?? 0;
+    // Incrementally merge new rows (same dedup logic as engine.ts accumulate)
+    let lastPageNewRows = 0;
+    for (const row of pageRecords) {
+      const key = JSON.stringify(row);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      allRows.push(row);
+      lastPageNewRows++;
+    }
 
     const continueState = {
       pageCount,
@@ -100,9 +120,6 @@ export async function runRecipe(
     }
   }
 
-  // Merge all pages, deduplicate
-  const { rows } = accumulate(perPageRows);
-
   return {
     recipeId: recipe.id,
     runAt,
@@ -110,6 +127,6 @@ export async function runRecipe(
     sourceUrl,
     pageCount,
     schema: recipe.outputSchema,
-    records: rows,
+    records: allRows,
   };
 }

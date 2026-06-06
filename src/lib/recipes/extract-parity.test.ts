@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { extractInPage } from "./injected-extract";
+import { extractPage } from "./extract";
 import { normText } from "./locator";
 import { normalizeHeader } from "./columns";
 
@@ -122,6 +123,120 @@ describe("extractInPage parity: extract.ts", () => {
     // extractPage ARIA path filters rows that contain columnheader.
     // esbuild compiles template literals → escaped quotes in toString(), so match the substring.
     expect(fnBody).toContain("columnheader");
+  });
+});
+
+// ── M2: Snippet assertions ────────────────────────────────────────────────────
+
+describe("extractInPage snippet assertions", () => {
+  it("injected fnBody contains normalizeHeader ref-strip regex fragment", () => {
+    // The regex /\[[^\]]*\]/g strips [ref] citations — must be present in the inline copy
+    expect(fnBody).toContain("\\]]*");
+  });
+
+  it("injected fnBody contains ARIA grid role determination key string", () => {
+    // The isAriaGrid function checks role="grid" and role="row" + role="gridcell".
+    // esbuild compiles template literals with double-quote attributes to escaped form,
+    // so we match the string fragment that survives in both compiled and raw toString().
+    expect(fnBody).toContain('"grid"');
+    // The querySelector call for [role="row"] appears in the fnBody (escaped or not)
+    expect(fnBody).toContain("role");
+    expect(fnBody).toContain("row");
+    expect(fnBody).toContain("gridcell");
+  });
+});
+
+// ── M2: Behavioral equivalence test ──────────────────────────────────────────
+
+describe("extractInPage === extractPage (behavioral equivalence)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  /** Run both extractPage (module) and extractInPage (injected) on the current document
+   * and assert they produce identical records. */
+  function assertParity(ex: import("./types").ExtractionSpec) {
+    const moduleResult = extractPage(document, ex);
+    const injectedResult = extractInPage(JSON.stringify(ex));
+    expect(injectedResult.records).toEqual(moduleResult);
+  }
+
+  it("classic column-semantic table: both produce identical records", () => {
+    document.body.innerHTML = `
+      <table class="data">
+        <thead>
+          <tr><th>Product [1]</th><th>Price</th><th>Stock</th></tr>
+        </thead>
+        <tbody>
+          <tr class="row"><td>Widget A</td><td>£9.99</td><td>50</td></tr>
+          <tr class="row"><td>Widget B</td><td>£14.99</td><td>12</td></tr>
+          <tr class="row"><td>Widget C</td><td>£4.50</td><td>200</td></tr>
+        </tbody>
+      </table>
+    `;
+    const ex: import("./types").ExtractionSpec = {
+      container: { signals: [{ kind: "class", value: "table.data", stable: true }] },
+      rowLocator: { signals: [{ kind: "class", value: "tr.row", stable: true }] },
+      fields: [
+        { name: "product", locator: { signals: [{ kind: "column", value: "Product [1]", stable: true }] } },
+        { name: "price",   locator: { signals: [{ kind: "column", value: "Price",       stable: true }] } },
+        { name: "stock",   locator: { signals: [{ kind: "column", value: "Stock",       stable: true }] } },
+      ],
+      pagination: { mode: "url-param" },
+      stopCondition: { maxPages: 1 },
+    };
+    assertParity(ex);
+  });
+
+  it("ARIA-grid: both produce identical records", () => {
+    document.body.innerHTML = `
+      <div role="grid">
+        <div role="row">
+          <div role="columnheader" aria-colindex="1">Name</div>
+          <div role="columnheader" aria-colindex="2">Score [ref]</div>
+        </div>
+        <div role="row">
+          <div role="gridcell" aria-colindex="1">Alice</div>
+          <div role="gridcell" aria-colindex="2">95</div>
+        </div>
+        <div role="row">
+          <div role="gridcell" aria-colindex="1">Bob</div>
+          <div role="gridcell" aria-colindex="2">82</div>
+        </div>
+      </div>
+    `;
+    const ex: import("./types").ExtractionSpec = {
+      container: { signals: [{ kind: "role+name", value: "grid|", stable: false }] },
+      rowLocator: { signals: [{ kind: "role+name", value: "row|",  stable: false }] },
+      fields: [
+        { name: "name",  locator: { signals: [{ kind: "column", value: "Name",        stable: true }] } },
+        { name: "score", locator: { signals: [{ kind: "column", value: "Score [ref]", stable: true }] } },
+      ],
+      pagination: { mode: "url-param" },
+      stopCondition: { maxPages: 1 },
+    };
+    assertParity(ex);
+  });
+
+  it("plain list (class selectors): both produce identical records", () => {
+    document.body.innerHTML = `
+      <ul class="items">
+        <li class="item"><span class="name">Alpha</span><span class="value">10</span></li>
+        <li class="item"><span class="name">Beta</span><span class="value">20</span></li>
+        <li class="item"><span class="name">Gamma</span><span class="value">30</span></li>
+      </ul>
+    `;
+    const ex: import("./types").ExtractionSpec = {
+      container: { signals: [{ kind: "class", value: "ul.items", stable: true }] },
+      rowLocator: { signals: [{ kind: "class", value: "li.item", stable: true }] },
+      fields: [
+        { name: "name",  locator: { signals: [{ kind: "class", value: "span.name",  stable: true }] } },
+        { name: "value", locator: { signals: [{ kind: "class", value: "span.value", stable: true }] } },
+      ],
+      pagination: { mode: "url-param" },
+      stopCondition: { maxPages: 1 },
+    };
+    assertParity(ex);
   });
 });
 

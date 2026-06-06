@@ -1,6 +1,25 @@
 /**
  * injected-extract.ts
  *
+ * ⚠️  SERIALIZATION CONSTRAINT — READ BEFORE EDITING ⚠️
+ *
+ * This file is executed via chrome.scripting.executeScript which SERIALIZES
+ * the function body as a string and reinjects it into the page context.
+ * Therefore:
+ *
+ *   • NO runtime imports are allowed — any `import` other than `import type`
+ *     will be SILENTLY DROPPED (type imports are erased at compile time and
+ *     are the ONLY allowed form).
+ *
+ *   • ALL helpers (normalizeHeader, mapColumns, resolveAll, …) MUST be
+ *     inlined inside `extractInPage`. Closures over module-level variables
+ *     are invisible to the injected script.
+ *
+ *   • When you add or modify extraction logic here, you MUST also update the
+ *     canonical module source (extract.ts / locator.ts / columns.ts) AND add
+ *     a matching assertion in extract-parity.test.ts so drift is caught
+ *     automatically.
+ *
  * Self-contained injected function for in-page extraction. The function body
  * is serialized by chrome.scripting.executeScript, so it MUST NOT reference
  * any imports or outer-scope closures. All helpers are inlined.
@@ -160,14 +179,15 @@ export function extractInPage(serializedExtraction: string): InjectedExtractResu
       const col = h.getAttribute("aria-colindex");
       return col != null ? parseInt(col, 10) - 1 : i;
     });
+    // Use normalizeHeader (defined above) for [ref] stripping — same as classic table path
     const normMap: Record<string, number> = {};
     headers.forEach((h, i) => {
-      const t = (h.textContent ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+      const t = normalizeHeader(h.textContent);
       if (t) normMap[t] = headerIndices[i];
     });
     const out: Record<string, number> = {};
     for (const w of wanted) {
-      const nw = w.replace(/\s+/g, " ").trim().toLowerCase();
+      const nw = normalizeHeader(w);
       let idx = normMap[nw] ?? -1;
       if (idx < 0) {
         const match = Object.entries(normMap).find(([k]) => k.includes(nw));

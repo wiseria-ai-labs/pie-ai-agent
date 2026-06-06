@@ -26,7 +26,9 @@ function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T
         const t = db.transaction(STORE, mode);
         const req = fn(t.objectStore(STORE));
         req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        // Close the connection on any error path to avoid connection leaks
+        req.onerror = () => { db.close(); reject(req.error); };
+        t.onerror = () => { db.close(); };
         t.oncomplete = () => db.close();
       }),
   );
