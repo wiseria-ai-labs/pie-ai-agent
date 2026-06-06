@@ -45,6 +45,7 @@ describe("generateLocator", () => {
 
 import { detectStructure } from "./generate";
 import { resolveAll } from "./locator";
+import { extractPage } from "./extract";
 
 describe("detectStructure", () => {
   it("detects repeating list rows + fields", () => {
@@ -70,5 +71,47 @@ describe("detectStructure", () => {
 
   it("returns null when no repeating structure", () => {
     expect(detectStructure(root(`<div><p>hi</p></div>`))).toBeNull();
+  });
+
+  // ── ARIA-grid detectStructure tests ────────────────────────────────────────
+
+  it("detects ARIA-grid: produces column-semantic fields from columnheaders", () => {
+    const r = root(`<div role="grid">
+      <div role="row"><div role="columnheader" aria-colindex="1">Name</div><div role="columnheader" aria-colindex="2">Wins</div></div>
+      <div role="row"><div role="gridcell" aria-colindex="1">Alpha</div><div role="gridcell" aria-colindex="2">40</div></div>
+      <div role="row"><div role="gridcell" aria-colindex="1">Beta</div><div role="gridcell" aria-colindex="2">33</div></div>
+    </div>`);
+    const s = detectStructure(r)!;
+    expect(s).not.toBeNull();
+    // Should have column-signal fields derived from the two column headers
+    expect(s.fields.some((f) => f.locator.signals.some((sg) => sg.kind === "column"))).toBe(true);
+    expect(s.fields.length).toBe(2);
+    // Field names normalised from header text
+    expect(s.fields.map((f) => f.name)).toContain("name");
+    expect(s.fields.map((f) => f.name)).toContain("wins");
+  });
+
+  it("detectStructure ARIA-grid: extractPage on detected spec yields 2 data rows", () => {
+    const r = root(`<div role="grid">
+      <div role="row"><div role="columnheader" aria-colindex="1">Name</div><div role="columnheader" aria-colindex="2">Wins</div></div>
+      <div role="row"><div role="gridcell" aria-colindex="1">Alpha</div><div role="gridcell" aria-colindex="2">40</div></div>
+      <div role="row"><div role="gridcell" aria-colindex="1">Beta</div><div role="gridcell" aria-colindex="2">33</div></div>
+    </div>`);
+    const s = detectStructure(r)!;
+    expect(s).not.toBeNull();
+
+    // Build a minimal ExtractionSpec from the detected structure and run extractPage
+    const spec = {
+      container: s.container,
+      rowLocator: s.rowLocator,
+      fields: s.fields,
+      pagination: { mode: "url-param" as const, urlTemplate: "x?p={n}" },
+      stopCondition: { maxPages: 1 },
+    };
+    const rows = extractPage(r, spec);
+    // Should produce exactly 2 data rows (header row excluded)
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ name: "Alpha", wins: "40" });
+    expect(rows[1]).toMatchObject({ name: "Beta", wins: "33" });
   });
 });

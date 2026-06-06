@@ -144,14 +144,63 @@ export function extractInPage(serializedExtraction: string): InjectedExtractResu
     return out;
   }
 
+  // ── Inline: isAriaGrid (from extract.ts) ──
+  function isAriaGrid(container: ParentNode): boolean {
+    const el = container as Element;
+    if (el.getAttribute && el.getAttribute("role") === "grid") return true;
+    const firstRow = container.querySelector('[role="row"]');
+    if (firstRow && firstRow.querySelector('[role="gridcell"]')) return true;
+    return false;
+  }
+
+  // ── Inline: ariaGridColMap (from extract.ts) ──
+  function ariaGridColMap(container: ParentNode, wanted: string[]): Record<string, number> {
+    const headers = [...container.querySelectorAll('[role="columnheader"]')];
+    const headerIndices: number[] = headers.map((h, i) => {
+      const col = h.getAttribute("aria-colindex");
+      return col != null ? parseInt(col, 10) - 1 : i;
+    });
+    const normMap: Record<string, number> = {};
+    headers.forEach((h, i) => {
+      const t = (h.textContent ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (t) normMap[t] = headerIndices[i];
+    });
+    const out: Record<string, number> = {};
+    for (const w of wanted) {
+      const nw = w.replace(/\s+/g, " ").trim().toLowerCase();
+      let idx = normMap[nw] ?? -1;
+      if (idx < 0) {
+        const match = Object.entries(normMap).find(([k]) => k.includes(nw));
+        idx = match ? match[1] : -1;
+      }
+      out[w] = idx;
+    }
+    return out;
+  }
+
+  // ── Inline: extractAriaCell (from extract.ts) ──
+  function extractAriaCell(row: Element, colIdx: number): string {
+    if (colIdx < 0) return "";
+    const byColIndex = row.querySelector(`[role="gridcell"][aria-colindex="${colIdx + 1}"]`);
+    if (byColIndex) return (byColIndex.textContent ?? "").replace(/\s+/g, " ").trim();
+    const cells = [...row.querySelectorAll('[role="gridcell"]')];
+    if (cells[colIdx]) return (cells[colIdx].textContent ?? "").replace(/\s+/g, " ").trim();
+    return "";
+  }
+
   // ── Inline: extractField (from extract.ts) ──
-  function extractField(row: Element, f: FieldSpec, colMap: Record<string, number>): string {
+  function extractField(row: Element, f: FieldSpec, colMap: Record<string, number>, useAriaGrid = false): string {
     for (const sig of f.locator.signals) {
       if (sig.kind === "column") {
         const idx = colMap[sig.value];
         if (idx != null && idx >= 0) {
-          const v = normText(row.children[idx]?.textContent);
-          if (v) return v;
+          if (useAriaGrid) {
+            const v = extractAriaCell(row, idx);
+            if (v) return v;
+          } else {
+            const v = normText(row.children[idx]?.textContent);
+            if (v) return v;
+          }
         }
         continue;
       }
@@ -179,13 +228,31 @@ export function extractInPage(serializedExtraction: string): InjectedExtractResu
   const root: ParentNode = document;
 
   const container: ParentNode = resolveOne(root, ex.container) ?? root;
-  const rows = resolveAll(container, ex.rowLocator).filter((r) => isValidRow(r, ex.rowValidity));
+
+  const ariaGrid = isAriaGrid(container);
+
+  let rows: Element[];
+  if (ariaGrid) {
+    // ARIA-grid: data rows = [role=row] that contain gridcells (skip header rows)
+    rows = [...container.querySelectorAll('[role="row"]')].filter(
+      (r) =>
+        r.querySelector('[role="gridcell"]') !== null &&
+        !r.querySelector('[role="columnheader"]'),
+    );
+    rows = rows.filter((r) => isValidRow(r, ex.rowValidity));
+  } else {
+    rows = resolveAll(container, ex.rowLocator).filter((r) => isValidRow(r, ex.rowValidity));
+  }
 
   let colMap: Record<string, number> = {};
   const wanted = ex.fields.flatMap((f) => f.locator.signals.filter((s) => s.kind === "column").map((s) => s.value));
   if (wanted.length) {
-    const headers = [...container.querySelectorAll("th")].map((th) => th.textContent ?? "");
-    colMap = mapColumns(headers, wanted);
+    if (ariaGrid) {
+      colMap = ariaGridColMap(container, wanted);
+    } else {
+      const headers = [...container.querySelectorAll("th")].map((th) => th.textContent ?? "");
+      colMap = mapColumns(headers, wanted);
+    }
   }
 
   const req = ex.rowValidity?.requireFields;
@@ -194,7 +261,7 @@ export function extractInPage(serializedExtraction: string): InjectedExtractResu
     const rec: Record<string, string> = {};
     let any = false;
     for (const f of ex.fields) {
-      rec[f.name] = extractField(row, f, colMap);
+      rec[f.name] = extractField(row, f, colMap, ariaGrid);
       if (rec[f.name]) any = true;
     }
     if (req && !req.every((n) => rec[n])) continue;

@@ -156,7 +156,7 @@ describe("runRecipe — stop conditions", () => {
     expect(result.records).toHaveLength(2); // deduplicated
   });
 
-  it("stops after one page for infinite-scroll mode", async () => {
+  it("stops after one page for infinite-scroll mode when no scrollContainer dep", async () => {
     let callCount = 0;
     const extractOnTab = vi.fn().mockImplementation(async () => {
       callCount++;
@@ -168,9 +168,82 @@ describe("runRecipe — stop conditions", () => {
       stopCondition: { maxPages: 5 },
     });
     const result = await runRecipe(recipe, 1, {}, deps);
-    // infinite-scroll not fully implemented → stops after 1 page
+    // No scrollContainer dep → treated as "cannot scroll" → stops after 1 page
     expect(result.pageCount).toBe(1);
   });
+});
+
+// ── G2: infinite-scroll basic virtual-scroll tests ───────────────────────────
+
+describe("runRecipe — infinite-scroll (V1a)", () => {
+  it("scrolls N times and accumulates rows, stopping when untilNoNewRows", async () => {
+    // Simulate: 3 scrolls produce new rows, 4th scroll produces no new rows
+    const pageBatches: RecordRow[][] = [
+      [{ title: "A" }, { title: "B" }],   // initial
+      [{ title: "A" }, { title: "B" }, { title: "C" }], // after scroll 1 → 1 new
+      [{ title: "A" }, { title: "B" }, { title: "C" }, { title: "D" }], // after scroll 2 → 1 new
+      [{ title: "A" }, { title: "B" }, { title: "C" }, { title: "D" }], // after scroll 3 → 0 new → stop
+    ];
+    let extractCall = 0;
+    const extractOnTab = vi.fn().mockImplementation(async () => {
+      const records = pageBatches[extractCall] ?? pageBatches[pageBatches.length - 1];
+      extractCall++;
+      return { records, hasNext: true };
+    });
+    let scrollCall = 0;
+    const scrollContainer = vi.fn().mockImplementation(async () => {
+      scrollCall++;
+      return true; // always say "scrolled"
+    });
+    const pace = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({ extractOnTab, scrollContainer, pace });
+    const recipe = makeRecipe({
+      pagination: { mode: "infinite-scroll" },
+      stopCondition: { untilNoNewRows: true },
+    });
+    const result = await runRecipe(recipe, 1, {}, deps);
+    // 4 extract calls (initial + 3 scrolls), deduplicated to 4 unique rows
+    expect(result.records).toHaveLength(4);
+    expect(result.records.map((r) => r.title)).toContain("D");
+    expect(scrollContainer).toHaveBeenCalled();
+  });
+
+  it("stops immediately if scrollContainer returns false (at bottom)", async () => {
+    const extractOnTab = vi.fn().mockResolvedValue({ records: [{ title: "A" }], hasNext: true });
+    const scrollContainer = vi.fn().mockResolvedValue(false); // already at bottom
+    const deps = makeDeps({ extractOnTab, scrollContainer });
+    const recipe = makeRecipe({
+      pagination: { mode: "infinite-scroll" },
+      stopCondition: { maxPages: 10 },
+    });
+    const result = await runRecipe(recipe, 1, {}, deps);
+    // Stops after 1 extract because scroll returned false
+    expect(result.pageCount).toBe(1);
+  });
+
+  it("deduplicates rows across scroll batches", async () => {
+    const pageBatches: RecordRow[][] = [
+      [{ title: "A" }],
+      [{ title: "A" }, { title: "B" }],
+      [{ title: "A" }, { title: "B" }], // no new → stop
+    ];
+    let call = 0;
+    const extractOnTab = vi.fn().mockImplementation(async () => {
+      const records = pageBatches[call] ?? pageBatches[pageBatches.length - 1];
+      call++;
+      return { records, hasNext: true };
+    });
+    const scrollContainer = vi.fn().mockResolvedValue(true);
+    const deps = makeDeps({ extractOnTab, scrollContainer });
+    const recipe = makeRecipe({
+      pagination: { mode: "infinite-scroll" },
+      stopCondition: { untilNoNewRows: true },
+    });
+    const result = await runRecipe(recipe, 1, {}, deps);
+    // Only 2 unique rows
+    expect(result.records).toHaveLength(2);
+  });
+
 });
 
 describe("runRecipe — pace is called between pages", () => {

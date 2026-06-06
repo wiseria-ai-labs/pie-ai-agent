@@ -96,6 +96,33 @@ describe("extractInPage parity: extract.ts", () => {
     expect(fnBody).toContain("requireFields");
     expect(fnBody).toContain("every");
   });
+
+  // ── ARIA-grid parity assertions ──────────────────────────────────────────
+  it("inlines ARIA-grid detection (isAriaGrid)", () => {
+    // isAriaGrid checks for role=grid and role=row + role=gridcell
+    expect(fnBody).toContain("role");
+    expect(fnBody).toContain('"grid"');
+    expect(fnBody).toContain('"gridcell"');
+  });
+
+  it("inlines aria-colindex support (ariaGridColMap)", () => {
+    // ariaGridColMap reads aria-colindex attributes (1-based → 0-based)
+    expect(fnBody).toContain("aria-colindex");
+    expect(fnBody).toContain("columnheader");
+  });
+
+  it("inlines extractAriaCell with aria-colindex match and positional fallback", () => {
+    // extractAriaCell queries gridcells by colindex then by position
+    expect(fnBody).toContain('[role="gridcell"]');
+    // The formula colIdx + 1 maps 0-based index to 1-based aria-colindex
+    expect(fnBody).toContain("colIdx + 1");
+  });
+
+  it("inlines ARIA-grid data-row filter (skips header rows)", () => {
+    // extractPage ARIA path filters rows that contain columnheader.
+    // esbuild compiles template literals → escaped quotes in toString(), so match the substring.
+    expect(fnBody).toContain("columnheader");
+  });
 });
 
 describe("extractInPage functional (happy-dom)", () => {
@@ -198,5 +225,39 @@ describe("extractInPage functional (happy-dom)", () => {
     const result = extractInPage(ex);
     expect(result.records).toHaveLength(2);
     expect(result.records[0]).toMatchObject({ name: "Alice", score: "95" });
+  });
+
+  it("extracts ARIA-grid rows using column signals (skips header row)", () => {
+    document.body.innerHTML = `
+      <div role="grid">
+        <div role="row">
+          <div role="columnheader" aria-colindex="1">Name</div>
+          <div role="columnheader" aria-colindex="2">Wins</div>
+        </div>
+        <div role="row">
+          <div role="gridcell" aria-colindex="1">Alpha</div>
+          <div role="gridcell" aria-colindex="2">40</div>
+        </div>
+        <div role="row">
+          <div role="gridcell" aria-colindex="1">Beta</div>
+          <div role="gridcell" aria-colindex="2">33</div>
+        </div>
+      </div>
+    `;
+    const ex = JSON.stringify({
+      container: { signals: [{ kind: "role+name", value: "grid|", stable: false }] },
+      rowLocator: { signals: [{ kind: "role+name", value: "row|", stable: false }] },
+      fields: [
+        { name: "name", locator: { signals: [{ kind: "column", value: "Name", stable: true }] } },
+        { name: "wins", locator: { signals: [{ kind: "column", value: "Wins", stable: true }] } },
+      ],
+      pagination: { mode: "url-param" },
+      stopCondition: { maxPages: 1 },
+    });
+    const result = extractInPage(ex);
+    // Header row excluded — only 2 data rows
+    expect(result.records).toHaveLength(2);
+    expect(result.records[0]).toMatchObject({ name: "Alpha", wins: "40" });
+    expect(result.records[1]).toMatchObject({ name: "Beta", wins: "33" });
   });
 });

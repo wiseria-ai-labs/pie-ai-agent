@@ -114,8 +114,77 @@ function rowLocatorForGroup(rows: Element[], root: ParentNode, profile: PageProf
   return { signals };
 }
 
+// ── ARIA-grid detection ───────────────────────────────────────────────────────
+
+/**
+ * Returns the nearest [role=grid] ancestor/self, or null if none exists.
+ * Used by detectStructure to find ARIA-grid containers.
+ */
+function findAriaGridContainer(root: ParentNode): Element | null {
+  // Direct role=grid element
+  const direct = (root as Element).getAttribute?.("role") === "grid" ? (root as Element) : null;
+  if (direct) return direct;
+  return (root as ParentNode).querySelector('[role="grid"]') ?? null;
+}
+
 export function detectStructure(root: ParentNode): DetectedStructure | null {
   const profile = detectPageProfile(root);
+
+  // ── ARIA-grid fast path ──────────────────────────────────────────────────
+  const ariaGridEl = findAriaGridContainer(root);
+  if (ariaGridEl) {
+    const containerEl = ariaGridEl;
+
+    // Header row: [role=row] that contains [role=columnheader]
+    const headerRow = containerEl.querySelector('[role="row"]:has([role="columnheader"])') ??
+      [...containerEl.querySelectorAll('[role="row"]')].find(
+        (r) => r.querySelector('[role="columnheader"]') !== null,
+      );
+
+    const headers = headerRow
+      ? [...headerRow.querySelectorAll('[role="columnheader"]')]
+      : [];
+
+    // Data rows: [role=row] containing gridcells (not header rows)
+    const dataRows = [...containerEl.querySelectorAll('[role="row"]')].filter(
+      (r) => r.querySelector('[role="gridcell"]') !== null,
+    );
+
+    if (!dataRows.length) return null;
+
+    // Build fields from column headers (aria-colindex → column signal)
+    const fields: FieldSpec[] = headers.map((h, i) => {
+      const headerText = norm(h.textContent);
+      const colSignalValue = headerText || `col_${i + 1}`;
+      return {
+        name: normalizeHeader(headerText) || `col_${i + 1}`,
+        locator: { signals: [{ kind: "column", value: colSignalValue, stable: true }] },
+      };
+    });
+
+    // If no headers detected, fall back to gridcell count in first data row
+    if (!fields.length) {
+      const sampleRow = dataRows[0];
+      const cells = [...sampleRow.querySelectorAll('[role="gridcell"]')];
+      cells.forEach((_, i) => {
+        fields.push({
+          name: `col_${i + 1}`,
+          locator: { signals: [{ kind: "column", value: `col_${i + 1}`, stable: true }] },
+        });
+      });
+    }
+
+    return {
+      container: generateLocator(containerEl, root, profile),
+      rowLocator: {
+        signals: [{ kind: "role+name", value: "row|", stable: false }],
+      },
+      fields,
+      isTable: false,
+    };
+  }
+
+  // ── Classic repeating-group path ─────────────────────────────────────────
   const groups = repeatingGroups(root);
   if (!groups.length) return null;
   // 取「行数 × 行内文本量」最大的组

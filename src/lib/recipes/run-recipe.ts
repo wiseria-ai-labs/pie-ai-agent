@@ -24,6 +24,15 @@ export interface RunDeps {
   pace: () => Promise<void>;
   /** Returns the current timestamp (ms). Default: Date.now. */
   now: () => number;
+  /**
+   * [V1a] Scrolls the scroll container of the given tab to trigger more content
+   * to load. Returns true if the scroll happened, false if at bottom / unsupported.
+   *
+   * V1a known limitations: does not compute row height, does not detect true
+   * "scrolled-to-bottom" via scrollHeight/clientHeight — callers should use
+   * untilNoNewRows stop condition to halt when no new rows appear.
+   */
+  scrollContainer?: (tabId: number) => Promise<boolean>;
 }
 
 export async function runRecipe(
@@ -79,8 +88,14 @@ export async function runRecipe(
     } else if (pagination.mode === "next-button" || pagination.mode === "load-more") {
       const clicked = await deps.clickNext(tabId, extraction);
       if (!clicked) break; // no next button found, stop
+    } else if (pagination.mode === "infinite-scroll") {
+      // V1a: basic virtual-scroll — scroll then re-extract; stop when no new rows.
+      // Known limitation: does not compute row height or detect true scroll-to-bottom
+      // via scrollHeight/clientHeight. Use untilNoNewRows to halt gracefully.
+      const scrolled = deps.scrollContainer ? await deps.scrollContainer(tabId) : false;
+      if (!scrolled) break; // no scroll dep injected or already at bottom
     } else {
-      // infinite-scroll or unsupported: stop after first page
+      // unsupported mode: stop after first page
       break;
     }
   }
