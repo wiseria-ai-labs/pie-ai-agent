@@ -26,6 +26,12 @@ function matchByText(root: ParentNode, text: string): Element[] {
   );
 }
 
+/**
+ * Matches by ARIA role + accessible name. `value` is "role|name".
+ * When `value` has no `|` separator or the name part is empty, this degrades
+ * to matching by role ALONE (no name filtering) — the first element with the
+ * given role is returned.
+ */
 function matchByRoleName(root: ParentNode, value: string): Element | null {
   const [role, name] = value.split("|");
   const want = normText(name).toLowerCase();
@@ -49,6 +55,10 @@ export function resolveAll(root: ParentNode, loc: MultiSignalLocator): Element[]
     if (sig.kind === "text") {
       const els = matchByText(root, sig.value);
       if (els.length) return els;
+    }
+    if (sig.kind === "role+name") {
+      const el = matchByRoleName(root, sig.value);
+      if (el) return [el];
     }
   }
   return [];

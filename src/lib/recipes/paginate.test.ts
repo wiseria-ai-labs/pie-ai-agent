@@ -20,11 +20,18 @@ describe("shouldContinue", () => {
   it("stops when no next", () => {
     expect(shouldContinue({ pageCount: 1, lastPageNewRows: 5, hasNext: false }, { untilNoNext: true })).toBe(false);
   });
+  it("hard-caps an empty StopCondition to prevent infinite loops", () => {
+    expect(shouldContinue({ pageCount: 1000, lastPageNewRows: 5, hasNext: true }, {})).toBe(false);
+    expect(shouldContinue({ pageCount: 5, lastPageNewRows: 5, hasNext: true }, {})).toBe(true);
+  });
 });
 
 describe("nextUrl", () => {
   it("substitutes {n}", () => {
     expect(nextUrl("https://x/?p={n}", 4)).toBe("https://x/?p=4");
+  });
+  it("substitutes every {n} occurrence", () => {
+    expect(nextUrl("a/{n}?p={n}", 5)).toBe("a/5?p=5");
   });
 });
 

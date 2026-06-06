@@ -33,6 +33,14 @@ describe("resolveAll", () => {
     };
     expect(resolveAll(r, loc).length).toBe(1);
   });
+
+  it("resolves via role+name signal", () => {
+    const r = root(`<div role="button" aria-label="Submit">x</div>`);
+    const loc: MultiSignalLocator = { signals: [{ kind: "role+name", value: "button|submit", stable: false }] };
+    const els = resolveAll(r, loc);
+    expect(els.length).toBe(1);
+    expect(els[0].getAttribute("aria-label")).toBe("Submit");
+  });
 });
 
 describe("resolveOne", () => {

@@ -66,4 +66,19 @@ describe("extractPage", () => {
       { team: "Beta", wins: "33" },
     ]);
   });
+
+  it("drops rows missing a requireFields value but keeps the rest", () => {
+    const r = root(`
+      <table>
+        <tr><th>Team Name</th><th>Year</th><th>Wins</th></tr>
+        <tr class="team"><td class="name">Alpha</td><td>1990</td><td>40</td></tr>
+        <tr class="team"><td class="name"></td><td>1991</td><td>33</td></tr>
+        <tr class="team"><td class="name">Gamma</td><td>1992</td><td>27</td></tr>
+      </table>`);
+    const out = extractPage(r, spec());
+    expect(out).toEqual([
+      { team: "Alpha", wins: "40" },
+      { team: "Gamma", wins: "27" },
+    ]);
+  });
 });

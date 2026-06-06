@@ -2,6 +2,9 @@
 import type { PaginationSpec, StopCondition } from "./types";
 import { resolveOne } from "./locator";
 
+/** Absolute safety cap: prevents an empty StopCondition from looping forever. */
+const HARD_MAX_PAGES = 1000;
+
 export interface PaginationState {
   pageCount: number;
   lastPageNewRows: number;
@@ -9,6 +12,7 @@ export interface PaginationState {
 }
 
 export function shouldContinue(state: PaginationState, stop: StopCondition): boolean {
+  if (state.pageCount >= HARD_MAX_PAGES) return false;
   if (stop.maxPages != null && state.pageCount >= stop.maxPages) return false;
   if (stop.untilNoNewRows && state.lastPageNewRows === 0) return false;
   if (stop.untilNoNext && !state.hasNext) return false;
@@ -16,7 +20,7 @@ export function shouldContinue(state: PaginationState, stop: StopCondition): boo
 }
 
 export function nextUrl(urlTemplate: string, n: number): string {
-  return urlTemplate.replace("{n}", String(n));
+  return urlTemplate.replace(/\{n\}/g, String(n));
 }
 
 export function resolveNext(root: ParentNode, p: PaginationSpec): Element | null {

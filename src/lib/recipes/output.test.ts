@@ -14,6 +14,10 @@ describe("toCSV", () => {
     const csv = toCSV([{ team: 'A,"x"', wins: "1\n2" }], schema);
     expect(csv).toBe('team,wins\n"A,""x""","1\n2"');
   });
+  it("escapes carriage returns", () => {
+    const csv = toCSV([{ team: "a\rb", wins: "1" }], schema);
+    expect(csv).toBe('team,wins\n"a\rb",1');
+  });
   it("fills missing fields with empty", () => {
     const csv = toCSV([{ team: "Alpha" }], schema);
     expect(csv).toBe("team,wins\nAlpha,");

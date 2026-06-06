@@ -21,6 +21,12 @@ describe("mapColumns", () => {
     expect(m.Source).toBe(0);
   });
 
+  it("contains match is one-directional (header contains wanted, not vice-versa)", () => {
+    // wanted "wins": header "w" must NOT match via reverse-contains; "wins_total" should.
+    const m = mapColumns(["w", "wins_total"], ["wins"]);
+    expect(m.wins).toBe(1);
+  });
+
   it("returns -1 when no column matches", () => {
     expect(mapColumns(["A", "B"], ["Z"]).Z).toBe(-1);
   });

@@ -30,4 +30,8 @@ describe("accumulate", () => {
     expect(merged.rows).toEqual([{ v: "a" }, { v: "b" }, { v: "c" }]);
     expect(merged.newCountPerPage).toEqual([2, 1]);
   });
+
+  it("handles empty input", () => {
+    expect(accumulate([])).toEqual({ rows: [], newCountPerPage: [] });
+  });
 });

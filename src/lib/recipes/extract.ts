@@ -3,6 +3,12 @@ import type { ExtractionSpec, FieldSpec, RecordRow, RowValidity } from "./types"
 import { resolveOne, resolveAll, selectorFor, normText } from "./locator";
 import { mapColumns } from "./columns";
 
+/**
+ * Structural pre-check only: validates `minCells` (cell count) on a candidate
+ * row. It does NOT enforce `requireFields` — that is a post-extraction filter
+ * applied in `extractPage` after fields have been read (a row can have enough
+ * cells yet still lack a required field's value).
+ */
 export function isValidRow(row: Element, validity?: RowValidity): boolean {
   if (!validity) return true;
   if (validity.minCells != null && row.children.length < validity.minCells) return false;
@@ -32,14 +38,13 @@ export function extractField(row: Element, f: FieldSpec, colMap: Record<string, 
 }
 
 export function extractPage(root: ParentNode, ex: ExtractionSpec): RecordRow[] {
-  const container = resolveOne(root, ex.container) ?? (root as Element);
-  const scope: ParentNode = container ?? root;
-  const rows = resolveAll(scope, ex.rowLocator).filter((r) => isValidRow(r, ex.rowValidity));
+  const container: ParentNode = resolveOne(root, ex.container) ?? root;
+  const rows = resolveAll(container, ex.rowLocator).filter((r) => isValidRow(r, ex.rowValidity));
 
   let colMap: Record<string, number> = {};
   const wanted = ex.fields.flatMap((f) => f.locator.signals.filter((s) => s.kind === "column").map((s) => s.value));
   if (wanted.length) {
-    const headers = [...scope.querySelectorAll("th")].map((th) => th.textContent ?? "");
+    const headers = [...container.querySelectorAll("th")].map((th) => th.textContent ?? "");
     colMap = mapColumns(headers, wanted);
   }
 

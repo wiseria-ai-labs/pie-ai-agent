@@ -2,7 +2,7 @@
 import type { RecordRow, RunResult } from "./types";
 
 function escapeCSV(v: string): string {
-  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
 export function toCSV(records: RecordRow[], schema: { name: string }[]): string {
