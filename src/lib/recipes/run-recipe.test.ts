@@ -427,3 +427,70 @@ describe("runRecipe — I2: incremental accumulation", () => {
     expect(result.records).toHaveLength(2);
   });
 });
+
+// ── Guard: missing pagination / stopCondition ─────────────────────────────────
+// LLM may omit pagination (or stopCondition) for single-page recipes.
+// runRecipe must not throw TypeError and must return after the first page.
+
+/** Build a recipe where pagination is missing at the JS level (simulates LLM omission). */
+function makeRecipeNoPagination(): Recipe {
+  const ex = { ...baseExtraction } as Record<string, unknown>;
+  delete ex["pagination"];
+  return {
+    id: "recipe-np",
+    name: "No Pagination Recipe",
+    createdAt: 1_000_000,
+    author: "llm",
+    targetUrlPattern: "https://example.com",
+    extraction: ex as unknown as ExtractionSpec,
+    outputSchema: [{ name: "title", type: "string" }],
+  };
+}
+
+/** Build a recipe where stopCondition is missing at the JS level. */
+function makeRecipeNoStopCondition(): Recipe {
+  const ex = { ...baseExtraction } as Record<string, unknown>;
+  delete ex["stopCondition"];
+  return {
+    id: "recipe-nsc",
+    name: "No StopCondition Recipe",
+    createdAt: 1_000_000,
+    author: "llm",
+    targetUrlPattern: "https://example.com",
+    extraction: ex as unknown as ExtractionSpec,
+    outputSchema: [{ name: "title", type: "string" }],
+  };
+}
+
+describe("runRecipe — guard: missing pagination", () => {
+  it("does not throw when pagination is absent (treats as single-page)", async () => {
+    const extractOnTab = vi.fn().mockResolvedValue({ records: [{ title: "X" }], hasNext: false });
+    const deps = makeDeps({ extractOnTab });
+    const recipe = makeRecipeNoPagination();
+    // Must not throw
+    const result = await runRecipe(recipe, 1, {}, deps);
+    // Falls through to else-break (unknown mode) → stops after first page
+    expect(result.pageCount).toBe(1);
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].title).toBe("X");
+  });
+
+  it("sourceUrl is empty when pagination.urlTemplate is absent", async () => {
+    const deps = makeDeps();
+    const recipe = makeRecipeNoPagination();
+    const result = await runRecipe(recipe, 1, {}, deps);
+    expect(result.sourceUrl).toBe("");
+  });
+});
+
+describe("runRecipe — guard: missing stopCondition", () => {
+  it("does not throw when stopCondition is absent (HARD_MAX_PAGES acts as cap)", async () => {
+    const extractOnTab = vi.fn().mockResolvedValue({ records: [{ title: "Y" }], hasNext: false });
+    const deps = makeDeps({ extractOnTab });
+    const recipe = makeRecipeNoStopCondition();
+    // Must not throw — shouldContinue returns false after HARD_MAX_PAGES or hasNext=false
+    const result = await runRecipe(recipe, 1, {}, deps);
+    expect(result.pageCount).toBeGreaterThanOrEqual(1);
+    expect(result.records).toHaveLength(1);
+  });
+});

@@ -345,7 +345,7 @@ function SegmentedTabs({
   const tabs: { id: Tab; label: string }[] = [
     { id: "configs", label: t("settings.tabs.configs") },
     { id: "skills", label: t("settings.tabs.skills") },
-    { id: "recipes", label: "Recipes" },
+    { id: "recipes", label: t("settings.tabs.recipes") },
     { id: "search", label: t("settings.tabs.search") },
   ];
   return (

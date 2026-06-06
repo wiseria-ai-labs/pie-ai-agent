@@ -61,7 +61,7 @@ export const enDict = {
     backToAgent: "Back to agent",
     title: "Settings",
     forgetConfirm: "Forget this config?",
-    tabs: { configs: "Configs", skills: "Skills", search: "Search" },
+    tabs: { configs: "Configs", skills: "Skills", recipes: "Recipes", search: "Search" },
     active: "ACTIVE",
     noActiveConfig: "No active config — pick one below.",
     experimental: "EXPERIMENTAL",

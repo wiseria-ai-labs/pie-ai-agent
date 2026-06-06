@@ -288,9 +288,11 @@ export function extractInPage(serializedExtraction: string): InjectedExtractResu
     if (any) records.push(rec);
   }
 
-  // Detect hasNext: check if the pagination next element exists
+  // Detect hasNext: check if the pagination next element exists.
+  // Guard: pagination may be absent (LLM omitted it for single-page recipes);
+  // optional chaining ensures hasNext=false rather than a TypeError.
   const hasNext =
-    ex.pagination.mode !== "url-param" && ex.pagination.next
+    ex.pagination?.mode !== "url-param" && ex.pagination?.next
       ? resolveOne(root, ex.pagination.next) !== null
       : false;
 

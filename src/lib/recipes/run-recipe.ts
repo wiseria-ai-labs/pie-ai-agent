@@ -1,5 +1,5 @@
 // src/lib/recipes/run-recipe.ts
-import type { ExtractionSpec, RecordRow, RunResult } from "./types";
+import type { ExtractionSpec, RecordRow, RunResult, PaginationSpec, StopCondition } from "./types";
 import type { Recipe } from "./recipe-types";
 import { shouldContinue, nextUrl } from "./paginate";
 
@@ -41,7 +41,13 @@ export async function runRecipe(
   deps: RunDeps,
 ): Promise<RunResult> {
   const { extraction } = recipe;
-  const { pagination, stopCondition } = extraction;
+  // Guard: LLM may omit pagination/stopCondition for single-page recipes.
+  // Fall back to empty objects so that downstream accesses don't throw.
+  // An absent pagination.mode falls through to the else-break path (single page).
+  // An absent stopCondition lets HARD_MAX_PAGES in shouldContinue() act as the cap.
+  // Cast through Partial<> to keep TypeScript happy while guarding runtime crashes.
+  const pagination = (extraction.pagination ?? {}) as Partial<PaginationSpec>;
+  const stopCondition = (extraction.stopCondition ?? {}) as StopCondition;
 
   // I3 — Guard: warn when next-button/load-more mode is configured without a
   // next locator. Without it, clickNext will never advance the page.

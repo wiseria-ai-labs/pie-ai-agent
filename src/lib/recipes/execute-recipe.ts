@@ -45,9 +45,14 @@ export interface ExecuteRecipeResult {
 // ⚠️  NEEDS REAL-DEVICE VERIFICATION — executeScript injection, tab navigation,
 //      and chrome.downloads all require a privileged extension context.
 
+/** Timeout (ms) for a single tab navigation to reach "complete" status. */
+const NAVIGATE_TIMEOUT_MS = 30_000;
+
 /**
  * Build a navigate dep: updates the tab URL and waits for the load to complete.
  * Uses chrome.tabs.update + a chrome.tabs.onUpdated listener.
+ * Rejects with "navigate timeout" if the tab does not reach status="complete"
+ * within 30 seconds; always cleans up the onUpdated listener on both paths.
  *
  * // 需真机验证: tab navigation + event-listener teardown under real extension runtime.
  */
@@ -58,12 +63,21 @@ function buildNavigate(): RunDeps["navigate"] {
       function onUpdated(id: number, info: chrome.tabs.OnUpdatedInfo) {
         if (id !== tabId) return;
         if (info.status === "complete") {
+          clearTimeout(timer);
           chrome.tabs.onUpdated.removeListener(onUpdated);
           resolve();
         }
       }
+
+      // Safety cap: reject and clean up if navigation stalls.
+      const timer = setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        reject(new Error("navigate timeout"));
+      }, NAVIGATE_TIMEOUT_MS);
+
       chrome.tabs.onUpdated.addListener(onUpdated);
       chrome.tabs.update(tabId, { url }).catch((err) => {
+        clearTimeout(timer);
         chrome.tabs.onUpdated.removeListener(onUpdated);
         reject(err);
       });

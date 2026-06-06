@@ -122,7 +122,14 @@ export function buildRecipeTools(deps: RecipeToolDeps): Tool[] {
         return { success: false, error: "extraction is required (object)" };
       }
 
-      const extraction = a.extraction as ExtractionSpec;
+      // Guard: LLM may omit pagination/stopCondition for single-page recipes.
+      // Normalise them to empty objects here so malformed data never enters the store.
+      const rawExtraction = a.extraction as Record<string, unknown>;
+      const extraction: ExtractionSpec = {
+        ...(rawExtraction as unknown as ExtractionSpec),
+        pagination: (rawExtraction.pagination ?? {}) as ExtractionSpec["pagination"],
+        stopCondition: (rawExtraction.stopCondition ?? {}) as ExtractionSpec["stopCondition"],
+      };
 
       // Derive output schema from fields if not explicitly provided
       const outputSchema: { name: string; type: string }[] = Array.isArray(a.outputSchema)
@@ -222,6 +229,4 @@ export function buildRecipeTools(deps: RecipeToolDeps): Tool[] {
 
   return [saveRecipeTool, runRecipeTool];
 }
-
-export const RECIPE_TOOL_NAMES_EXPORT = ["save_recipe", "run_recipe"] as const;
-export type RecipeToolName = (typeof RECIPE_TOOL_NAMES_EXPORT)[number];
+// Note: canonical tool name lists live in tool-names.ts — do not re-export them here.

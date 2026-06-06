@@ -180,11 +180,14 @@ ExtractionSpec guide:
 - container: MultiSignalLocator — target the wrapper (e.g. table, .product-list, [role="grid"]).
 - rowLocator: MultiSignalLocator — target one row (e.g. tr, .product-card, [role="row"]).
 - fields: [{name, locator: MultiSignalLocator, attr?}] — one per column/field.
-- pagination.mode: "next-button" | "infinite-scroll" | "url-param" | (omit if single page).
+- pagination (REQUIRED — always include, even for single-page): use {} or {mode:…} — never omit the key.
+  Single-page: set pagination to {} (empty object). Multi-page: set mode to one of
+  "next-button" | "infinite-scroll" | "url-param".
 - pagination.next: locator for the "Next page" button (next-button/load-more modes).
 - pagination.urlTemplate: URL with {n} placeholder for page number (url-param mode).
-- stopCondition: {maxPages?: N, untilNoNext?: true, untilNoNewRows?: true}.
-  Default to maxPages:10 if unsure.
+- stopCondition (REQUIRED — always include, even for single-page): use {maxPages:1} for single-page.
+  Never omit the key. Omitting either pagination or stopCondition will crash the runner.
+  Default to {maxPages:10} if the page count is unknown.
 - rowValidity: {minCells?: N} — optional guard to skip header or empty rows.
 
 MultiSignalLocator signals (try in priority order):
