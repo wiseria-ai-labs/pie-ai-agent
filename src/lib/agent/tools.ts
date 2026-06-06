@@ -15,6 +15,10 @@ import { readPageTool } from "./tools/read-page";
 import { searchPageTool } from "./tools/search-page";
 import { PDF_TOOLS } from "./tools/pdf";
 import { LOCAL_FILE_TOOLS } from "./tools/files";
+import { buildRecipeTools } from "./tools/recipe";
+import { putRecipe, getRecipe } from "../recipes/recipe-store";
+import { executeRecipe, buildChromeDownloader, buildRealRunDeps } from "../recipes/execute-recipe";
+import { runExtractOnTab } from "../recipes/injected-extract";
 
 export {
   KEYBOARD_TOOL_NAMES,
@@ -92,6 +96,26 @@ async function execInTab<T extends unknown[]>(
     throw err;
   }
 }
+
+// ── Production recipe tools singleton ────────────────────────────────────────
+//
+// Wired to real chrome/IndexedDB deps. The dep-injected factory (buildRecipeTools)
+// is used directly in unit tests with mocks. For production we construct one
+// instance here and spread it into BUILT_IN_TOOLS below.
+//
+// 需真机验证: navigate/clickNext/scrollContainer/downloader all require a real
+// extension context. The unit tests cover the orchestration logic via mocks.
+
+const RECIPE_TOOLS: Tool[] = buildRecipeTools({
+  putRecipe,
+  executeRecipe: async (recipeId, tabId, params, deps) =>
+    executeRecipe(recipeId, tabId, params, deps),
+  buildExecDeps: () => ({
+    store: { getRecipe },
+    runDeps: buildRealRunDeps(runExtractOnTab),
+    downloader: buildChromeDownloader(),
+  }),
+});
 
 // ── Built-in tools ────────────────────────────────────────────────────────────
 
@@ -307,6 +331,7 @@ export const BUILT_IN_TOOLS: Tool[] = [
   searchPageTool,
   ...PDF_TOOLS,
   ...LOCAL_FILE_TOOLS,
+  ...RECIPE_TOOLS,
 ];
 
 // iframe spec R-iframe-1 — build-time assertion: writes target a specific

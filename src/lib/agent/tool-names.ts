@@ -94,6 +94,14 @@ export const LOCAL_FILE_TOOL_NAMES = [
   "request_local_file",
 ] as const;
 
+// Recipe tools.
+//   save_recipe — write (creates a new Recipe in IndexedDB persistent storage).
+//   run_recipe  — write (navigates / injects into a live tab + writes Downloads files).
+export const RECIPE_TOOL_NAMES = [
+  "save_recipe",
+  "run_recipe",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -104,6 +112,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PAGE_SNAPSHOT_TOOL_NAMES,
   ...PDF_TOOL_NAMES,
   ...LOCAL_FILE_TOOL_NAMES,
+  ...RECIPE_TOOL_NAMES,
 ] as const;
 
 export const KNOWN_KEYBOARD_TOOL_NAMES = [
@@ -203,6 +212,11 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // Editor tools — CDP main-context getValue/setValue
   read_editor: "read",
   set_editor_value: "write",
+  // Recipe tools
+  //   save_recipe — write (mutates IndexedDB; creates persistent recipe).
+  //   run_recipe  — write (navigates tab + injects + writes Downloads files).
+  save_recipe: "write",
+  run_recipe: "write",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class

@@ -19,4 +19,16 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
     expect(ids).toContain("auto_group_tabs");
     expect(ids).toContain("close_duplicate_tabs");
   });
+
+  it("包含 create_recipe 内置技能", () => {
+    const ids = BUILT_IN_SKILL_PACKAGES.map((p) => p.id);
+    expect(ids).toContain("create_recipe");
+  });
+
+  it("create_recipe 技能列出 read_page + save_recipe capabilities", () => {
+    const cr = BUILT_IN_SKILL_PACKAGES.find((p) => p.id === "create_recipe");
+    expect(cr).toBeTruthy();
+    expect(cr!.frontmatter.capabilities?.tools).toContain("read_page");
+    expect(cr!.frontmatter.capabilities?.tools).toContain("save_recipe");
+  });
 });
