@@ -112,6 +112,13 @@ import { broadcastInstructionState } from "./instruction-broadcast";
 import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
+import {
+  executeRecipe,
+  buildRealRunDeps,
+  buildChromeDownloader,
+} from "@/lib/recipes/execute-recipe";
+import { getRecipe } from "@/lib/recipes/recipe-store";
+import { runExtractOnTab } from "@/lib/recipes/injected-extract";
 
 // Run V1→V2 migration once on SW load (idempotent via schema_version sentinel),
 // then the V2-internal instance/model decouple migration (merges same-provider
@@ -532,6 +539,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "extract-page") {
     handleExtractPage().then(sendResponse);
+    return true; // async response
+  }
+
+  // Recipe run — panel sends {type:"run-recipe", recipeId, params}; SW gets
+  // the current active tab id, builds real deps, executes the recipe, and
+  // returns {ok, rows, files} or {ok:false, error}.
+  if (message.type === "run-recipe") {
+    const { recipeId, params } = message as { type: string; recipeId: string; params: Record<string, string> };
+    (async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) {
+          sendResponse({ ok: false, error: "No active tab found" });
+          return;
+        }
+        const tabId = tab.id;
+        const deps = {
+          store: { getRecipe },
+          runDeps: buildRealRunDeps(runExtractOnTab),
+          downloader: buildChromeDownloader(),
+        };
+        const result = await executeRecipe(recipeId, tabId, params ?? {}, deps);
+        sendResponse({ ok: true, rows: result.rows, files: result.files });
+      } catch (e) {
+        sendResponse({
+          ok: false,
+          error: e instanceof Error ? e.message : "Recipe run failed",
+        });
+      }
+    })();
     return true; // async response
   }
 

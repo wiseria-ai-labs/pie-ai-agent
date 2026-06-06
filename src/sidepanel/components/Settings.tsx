@@ -25,6 +25,7 @@ import {
   CUSTOM_PREFIX, providerRefToId,
 } from "@/lib/custom-providers";
 import SkillsList from "./SkillsList";
+import RecipesList from "./RecipesList";
 import SearchProviderSection from "./SearchProviderSection";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import InstancesList from "./InstancesList";
@@ -37,7 +38,7 @@ interface Props {
   onRunSkill?: (skillId: string, skillName: string) => void;
 }
 
-type Tab = "configs" | "skills" | "search";
+type Tab = "configs" | "skills" | "recipes" | "search";
 
 export default function Settings({ onBack, onRunSkill }: Props) {
   const t = useT();
@@ -323,6 +324,8 @@ export default function Settings({ onBack, onRunSkill }: Props) {
           </div>
         ) : tab === "skills" ? (
           <SkillsList onRunSkill={onRunSkill ?? (() => {})} />
+        ) : tab === "recipes" ? (
+          <RecipesList />
         ) : (
           <SearchProviderSection />
         )}
@@ -342,6 +345,7 @@ function SegmentedTabs({
   const tabs: { id: Tab; label: string }[] = [
     { id: "configs", label: t("settings.tabs.configs") },
     { id: "skills", label: t("settings.tabs.skills") },
+    { id: "recipes", label: "Recipes" },
     { id: "search", label: t("settings.tabs.search") },
   ];
   return (
