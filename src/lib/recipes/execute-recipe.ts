@@ -282,7 +282,8 @@ function buildRunAction(): NonNullable<RunDeps["runAction"]> {
           const input = el as HTMLInputElement;
           input.focus();
           input.value = payload.value ?? "";
-          input.dispatchEvent(new Event("input", { bubbles: true }));
+          // Use InputEvent so React 18 controlled inputs detect the synthetic change.
+          input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: payload.value ?? "" }));
           input.dispatchEvent(new Event("change", { bubbles: true }));
           return { ok: true };
         }
@@ -298,7 +299,11 @@ function buildRunAction(): NonNullable<RunDeps["runAction"]> {
               ? (el as HTMLFormElement)
               : (el as HTMLElement).closest("form");
           if (form) {
-            form.submit();
+            // Dispatch a cancellable SubmitEvent so SPA submit listeners run first.
+            // Only fall back to native form.submit() if the event is not prevented.
+            const ev = new SubmitEvent("submit", { bubbles: true, cancelable: true });
+            const notPrevented = form.dispatchEvent(ev);
+            if (notPrevented) form.submit();
           } else {
             (el as HTMLElement).click();
           }

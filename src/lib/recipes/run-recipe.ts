@@ -37,6 +37,9 @@ export interface RunDeps {
    * [V1b] Executes a single ActionStep in the given tab (click, type, navigate,
    * select, submit). Real implementation in execute-recipe.ts (V1b-2); inject a
    * mock in tests.
+   *
+   * params 是已经过 applyParams 替换后的值（替换在 run-recipe 调用点完成）；
+   * 真实 dep 不需再替换，参数留存供测试断言。
    */
   runAction?: (tabId: number, step: ActionStep, params: Record<string, string>) => Promise<void>;
 }

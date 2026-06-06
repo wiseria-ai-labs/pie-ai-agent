@@ -277,6 +277,33 @@ describe("RecipesList — parameter form", () => {
   });
 });
 
+describe("RecipesList — param form cancel", () => {
+  it("hides param form and sends no run message when Cancel is clicked", async () => {
+    const recipe = {
+      ...makeRecipe({ id: "r1", name: "CancelTest" }),
+      parameters: [{ name: "query", type: "string" as const, default: "q" }],
+    } as Recipe;
+    mockListRecipes.mockResolvedValue([recipe]);
+
+    render(<RecipesList />);
+    await waitFor(() => screen.getByText("CancelTest"));
+
+    // Open param form
+    fireEvent.click(screen.getByRole("button", { name: /run recipe/i }));
+    await waitFor(() => screen.getByLabelText("query"));
+
+    // Click Cancel
+    fireEvent.click(screen.getByRole("button", { name: /cancel params/i }));
+
+    // Param form should disappear
+    await waitFor(() => {
+      expect(screen.queryByLabelText("query")).toBeNull();
+    });
+    // No run message dispatched
+    expect(chromeMock.runtime.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe("RecipesList — delete flow", () => {
   it("calls deleteRecipe when user confirms delete", async () => {
     const recipe = makeRecipe({ id: "r1", name: "Old Recipe" });

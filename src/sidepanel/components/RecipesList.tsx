@@ -66,6 +66,7 @@ export default function RecipesList() {
     try {
       await deleteRecipe(id);
       setConfirmDeleteId(null);
+      setShowParamFor(null);
       await load();
     } catch (e) {
       console.error("[RecipesList] deleteRecipe failed:", e);
@@ -197,6 +198,7 @@ export default function RecipesList() {
                     [recipe.id]: { ...(prev[recipe.id] ?? {}), [name]: value },
                   }));
                 }}
+                onCancelParams={() => setShowParamFor(null)}
                 onAskDelete={() => setConfirmDeleteId(recipe.id)}
                 onCancelDelete={() => setConfirmDeleteId(null)}
                 onDelete={() => handleDelete(recipe.id)}
@@ -221,6 +223,7 @@ function RecipeRow({
   confirmDelete,
   onRun,
   onParamChange,
+  onCancelParams,
   onAskDelete,
   onCancelDelete,
   onDelete,
@@ -234,6 +237,7 @@ function RecipeRow({
   confirmDelete: boolean;
   onRun: () => void;
   onParamChange: (name: string, value: string) => void;
+  onCancelParams: () => void;
   onAskDelete: () => void;
   onCancelDelete: () => void;
   onDelete: () => void;
@@ -305,6 +309,16 @@ function RecipeRow({
         >
           {running ? "Running…" : hasParams && showParamForm ? "Confirm Run" : "Run"}
         </button>
+
+        {showParamForm && !running && (
+          <button
+            onClick={onCancelParams}
+            className="rounded border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-3 hover:text-fg-1"
+            aria-label="Cancel params"
+          >
+            Cancel
+          </button>
+        )}
 
         {confirmDelete ? (
           <>
