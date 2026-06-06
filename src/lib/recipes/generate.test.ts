@@ -42,3 +42,33 @@ describe("generateLocator", () => {
     expect(loc.signals.some((s) => s.kind === "text" && /next/i.test(s.value))).toBe(true);
   });
 });
+
+import { detectStructure } from "./generate";
+import { resolveAll } from "./locator";
+
+describe("detectStructure", () => {
+  it("detects repeating list rows + fields", () => {
+    const r = root(`<ul><li class="item"><span class="t">A</span><span class="p">1</span></li>
+      <li class="item"><span class="t">B</span><span class="p">2</span></li>
+      <li class="item"><span class="t">C</span><span class="p">3</span></li></ul>`);
+    const s = detectStructure(r)!;
+    expect(s).not.toBeNull();
+    // rowLocator 解析得到 3 行
+    expect(resolveAll(r, s.rowLocator).length).toBe(3);
+    expect(s.fields.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("detects table with column-semantic fields", () => {
+    const r = root(`<table><tr><th>Name</th><th>Wins</th></tr>
+      <tr class="team"><td>Alpha</td><td>40</td></tr>
+      <tr class="team"><td>Beta</td><td>33</td></tr>
+      <tr class="team"><td>Gamma</td><td>27</td></tr></table>`);
+    const s = detectStructure(r)!;
+    expect(s.isTable).toBe(true);
+    expect(s.fields.some((f) => f.locator.signals.some((sg) => sg.kind === "column"))).toBe(true);
+  });
+
+  it("returns null when no repeating structure", () => {
+    expect(detectStructure(root(`<div><p>hi</p></div>`))).toBeNull();
+  });
+});
