@@ -16,7 +16,7 @@ export function applyParams(text: string, params: Record<string, string>): strin
  * keys in given pass through unchanged.
  */
 export function resolveParams(
-  defs: { name: string; default?: string }[] | undefined,
+  defs: { name: string; type?: string; default?: string }[] | undefined,
   given: Record<string, string>,
 ): Record<string, string> {
   const out: Record<string, string> = {};

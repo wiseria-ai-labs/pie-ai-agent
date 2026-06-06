@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runRecipe, type RunDeps, type ExtractPageResult } from "./run-recipe";
 import type { Recipe } from "./recipe-types";
+import type { ActionStep } from "./recipe-types";
 import type { ExtractionSpec, RecordRow } from "./types";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -492,5 +493,153 @@ describe("runRecipe — guard: missing stopCondition", () => {
     const result = await runRecipe(recipe, 1, {}, deps);
     expect(result.pageCount).toBeGreaterThanOrEqual(1);
     expect(result.records).toHaveLength(1);
+  });
+});
+
+// ── V1b: actionPrelude replay ─────────────────────────────────────────────────
+
+describe("runRecipe — actionPrelude replay (V1b)", () => {
+  const preludeSteps: ActionStep[] = [
+    {
+      type: "navigate",
+      url: "https://example.com/login",
+    },
+    {
+      type: "type",
+      locator: { signals: [{ kind: "class", value: "[name=email]", stable: true }] },
+      value: "user@example.com",
+    },
+  ];
+
+  it("calls runAction once per prelude step in order", async () => {
+    const runAction = vi.fn().mockResolvedValue(undefined);
+    const pace = vi.fn().mockResolvedValue(undefined);
+    const recipe: Recipe = {
+      ...makeRecipe(),
+      actionPrelude: preludeSteps,
+    };
+    const deps = makeDeps({ runAction, pace });
+    await runRecipe(recipe, 7, {}, deps);
+    expect(runAction).toHaveBeenCalledTimes(2);
+    // First call: navigate step
+    expect(runAction.mock.calls[0][1].type).toBe("navigate");
+    // Second call: type step
+    expect(runAction.mock.calls[1][1].type).toBe("type");
+    // All calls use the correct tabId
+    expect(runAction.mock.calls[0][0]).toBe(7);
+    expect(runAction.mock.calls[1][0]).toBe(7);
+  });
+
+  it("pace is called after each prelude step", async () => {
+    const runAction = vi.fn().mockResolvedValue(undefined);
+    const pace = vi.fn().mockResolvedValue(undefined);
+    const recipe: Recipe = {
+      ...makeRecipe({ stopCondition: { maxPages: 1 } }),
+      actionPrelude: preludeSteps,
+    };
+    const deps = makeDeps({ runAction, pace });
+    await runRecipe(recipe, 1, {}, deps);
+    // pace called: once per prelude step (2) + 0 inter-page (only 1 page)
+    // Total pace calls = 2 prelude steps
+    const preludePaceCalls = pace.mock.calls.length;
+    expect(preludePaceCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("applies parameter substitution in prelude step values and urls", async () => {
+    const runAction = vi.fn().mockResolvedValue(undefined);
+    const stepsWithParams: ActionStep[] = [
+      { type: "navigate", url: "https://example.com/search?q={{query}}" },
+      {
+        type: "type",
+        locator: { signals: [{ kind: "class", value: "[name=q]", stable: true }] },
+        value: "{{query}}",
+      },
+    ];
+    const recipe: Recipe = {
+      ...makeRecipe({ stopCondition: { maxPages: 1 } }),
+      actionPrelude: stepsWithParams,
+      parameters: [{ name: "query", type: "string", default: "default-q" }],
+    };
+    const deps = makeDeps({ runAction });
+    await runRecipe(recipe, 1, { query: "hello" }, deps);
+
+    // First call: navigate with substituted url
+    const navigateStep = runAction.mock.calls[0][1] as ActionStep;
+    expect(navigateStep.url).toBe("https://example.com/search?q=hello");
+    // Second call: type with substituted value
+    const typeStep = runAction.mock.calls[1][1] as ActionStep;
+    expect(typeStep.value).toBe("hello");
+  });
+
+  it("uses parameter defaults when no given values", async () => {
+    const runAction = vi.fn().mockResolvedValue(undefined);
+    const stepsWithParams: ActionStep[] = [
+      { type: "navigate", url: "https://example.com/search?q={{query}}" },
+    ];
+    const recipe: Recipe = {
+      ...makeRecipe({ stopCondition: { maxPages: 1 } }),
+      actionPrelude: stepsWithParams,
+      parameters: [{ name: "query", type: "string", default: "default-val" }],
+    };
+    const deps = makeDeps({ runAction });
+    // Pass empty params — should use default
+    await runRecipe(recipe, 1, {}, deps);
+    const navigateStep = runAction.mock.calls[0][1] as ActionStep;
+    expect(navigateStep.url).toBe("https://example.com/search?q=default-val");
+  });
+
+  it("prelude steps are replayed BEFORE the first extract call", async () => {
+    const callOrder: string[] = [];
+    const runAction = vi.fn().mockImplementation(async () => {
+      callOrder.push("runAction");
+    });
+    const extractOnTab = vi.fn().mockImplementation(async () => {
+      callOrder.push("extract");
+      return { records: [{ title: "A" }], hasNext: false };
+    });
+    const recipe: Recipe = {
+      ...makeRecipe({ stopCondition: { maxPages: 1 } }),
+      actionPrelude: [{ type: "click", locator: { signals: [{ kind: "class", value: ".btn", stable: true }] } }],
+    };
+    const deps = makeDeps({ runAction, extractOnTab });
+    await runRecipe(recipe, 1, {}, deps);
+    const runIdx = callOrder.indexOf("runAction");
+    const extractIdx = callOrder.indexOf("extract");
+    expect(runIdx).toBeLessThan(extractIdx);
+  });
+
+  it("no prelude: runAction is never called and behaviour is unchanged", async () => {
+    const runAction = vi.fn().mockResolvedValue(undefined);
+    const recipe = makeRecipe({ stopCondition: { maxPages: 1 } });
+    // no actionPrelude field
+    const deps = makeDeps({ runAction });
+    const result = await runRecipe(recipe, 1, {}, deps);
+    expect(runAction).not.toHaveBeenCalled();
+    expect(result.pageCount).toBe(1);
+    expect(result.records).toHaveLength(1);
+  });
+
+  it("empty actionPrelude: runAction is never called", async () => {
+    const runAction = vi.fn().mockResolvedValue(undefined);
+    const recipe: Recipe = {
+      ...makeRecipe({ stopCondition: { maxPages: 1 } }),
+      actionPrelude: [],
+    };
+    const deps = makeDeps({ runAction });
+    const result = await runRecipe(recipe, 1, {}, deps);
+    expect(runAction).not.toHaveBeenCalled();
+    expect(result.pageCount).toBe(1);
+  });
+
+  it("without runAction dep, prelude is silently skipped (no crash)", async () => {
+    const recipe: Recipe = {
+      ...makeRecipe({ stopCondition: { maxPages: 1 } }),
+      actionPrelude: preludeSteps,
+    };
+    // No runAction dep
+    const deps = makeDeps();
+    // Must not throw
+    const result = await runRecipe(recipe, 1, {}, deps);
+    expect(result.pageCount).toBe(1);
   });
 });

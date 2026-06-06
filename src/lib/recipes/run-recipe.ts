@@ -1,7 +1,8 @@
 // src/lib/recipes/run-recipe.ts
 import type { ExtractionSpec, RecordRow, RunResult, PaginationSpec, StopCondition } from "./types";
-import type { Recipe } from "./recipe-types";
+import type { Recipe, ActionStep } from "./recipe-types";
 import { shouldContinue, nextUrl } from "./paginate";
+import { applyParams, resolveParams } from "./params";
 
 export interface ExtractPageResult {
   records: RecordRow[];
@@ -32,6 +33,12 @@ export interface RunDeps {
    * untilNoNewRows stop condition to halt when no new rows appear.
    */
   scrollContainer?: (tabId: number) => Promise<boolean>;
+  /**
+   * [V1b] Executes a single ActionStep in the given tab (click, type, navigate,
+   * select, submit). Real implementation in execute-recipe.ts (V1b-2); inject a
+   * mock in tests.
+   */
+  runAction?: (tabId: number, step: ActionStep, params: Record<string, string>) => Promise<void>;
 }
 
 export async function runRecipe(
@@ -64,6 +71,25 @@ export async function runRecipe(
   const sourceUrl = pagination.urlTemplate
     ? nextUrl(pagination.urlTemplate, 1)
     : "";
+
+  // V1b — Replay actionPrelude before extraction.
+  // Resolve params once (merge defs+defaults with caller-supplied values) then
+  // substitute {{placeholder}} in each step's value / url before dispatching.
+  if (recipe.actionPrelude && recipe.actionPrelude.length > 0 && deps.runAction) {
+    const resolvedParams = resolveParams(recipe.parameters, params);
+    for (const step of recipe.actionPrelude) {
+      // Clone and substitute placeholders in mutable string fields
+      const resolved: ActionStep = { ...step };
+      if (step.value != null) {
+        resolved.value = applyParams(step.value, resolvedParams);
+      }
+      if (step.url != null) {
+        resolved.url = applyParams(step.url, resolvedParams);
+      }
+      await deps.runAction(tabId, resolved, resolvedParams);
+      await deps.pace();
+    }
+  }
 
   // I2 — Incremental dedup: maintain a seen-set and result array across pages
   // so each page is processed in O(page size) rather than O(total rows so far).
