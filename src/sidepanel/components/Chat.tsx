@@ -1382,6 +1382,15 @@ After the skill completes, briefly summarize what was created (the user will see
               </div>
             )}
 
+            {/* #244 — review/star nudge, appended after the last message in the
+                chat stream (scrolls with content; never overlaps the composer). */}
+            {engagementPrompt.visible && (
+              <EngagementReviewPopup
+                onRate={engagementPrompt.onRate}
+                onStar={engagementPrompt.onStar}
+                onDismiss={engagementPrompt.onDismiss}
+              />
+            )}
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -1594,15 +1603,6 @@ After the skill completes, briefly summarize what was created (the user will see
       )}
       {showFileAccess && (
         <FileAccessCard onDismiss={dismissFileAccess} />
-      )}
-
-      {/* #244 — review/star nudge, floating just above the composer. */}
-      {engagementPrompt.visible && (
-        <EngagementReviewPopup
-          onRate={engagementPrompt.onRate}
-          onStar={engagementPrompt.onStar}
-          onDismiss={engagementPrompt.onDismiss}
-        />
       )}
 
       <Composer

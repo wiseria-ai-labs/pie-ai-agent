@@ -28,9 +28,9 @@ export default function EngagementReviewPopup({
 }: EngagementReviewPopupProps) {
   const t = useT();
   return (
-    // Bottom nudge: mounted inside a position:relative parent, floating just
-    // above the composer.
-    <div className="absolute inset-x-3 bottom-[84px] z-20">
+    // Appended to the end of the chat message stream (issue #244): a plain
+    // in-flow card after the last message, so it never overlaps the composer.
+    <div>
       <div className="flex flex-col gap-3 rounded-2xl border border-line bg-field p-3.5 shadow-lg">
         {/* Header: star + title + close (× = snooze) */}
         <div className="flex items-center gap-2.5">

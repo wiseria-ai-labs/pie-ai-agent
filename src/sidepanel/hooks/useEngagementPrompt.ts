@@ -82,7 +82,6 @@ export function useEngagementPrompt(
 
   const complete = useCallback(
     (url: string) => {
-      setVisibleState(false);
       openTab(url);
       void (async () => {
         const e = engagementRef.current ?? (await getEngagement());

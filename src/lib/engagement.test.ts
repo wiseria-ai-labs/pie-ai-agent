@@ -96,6 +96,11 @@ describe("dismiss / snooze state-machine", () => {
     expect(second.timesSnoozed).toBe(2);
     expect(shouldShow(second, second.snoozeUntil + SNOOZE_MS)).toBe(false);
   });
+
+  it("dismissing an already-done prompt is a no-op (CTA already acted)", () => {
+    const done = markDone(atThreshold({ promptState: "pending" }));
+    expect(applyDismiss(done, T0 + SNOOZE_MS + 1)).toEqual(done);
+  });
 });
 
 describe("markDone", () => {

@@ -99,6 +99,7 @@ export function markDone(e: Engagement): Engagement {
 /** User clicked × ("maybe later"). First time → snooze 30 days; the second
  *  dismissal flips to done, so a user is nudged at most ~2 times. */
 export function applyDismiss(e: Engagement, now: number): Engagement {
+  if (e.promptState === "done") return e; // acted via CTA — x just closes
   const timesSnoozed = e.timesSnoozed + 1;
   if (timesSnoozed >= 2) {
     return { ...e, timesSnoozed, promptState: "done" };
