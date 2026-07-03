@@ -30,7 +30,8 @@ export default function EngagementReviewPopup({
   return (
     // Appended to the end of the chat message stream (issue #244): a plain
     // in-flow card after the last message, so it never overlaps the composer.
-    <div>
+    // bubble-in = fade + slide-up entrance, matching the chat message rows.
+    <div className="bubble-in">
       <div className="flex flex-col gap-3 rounded-2xl border border-line bg-field p-3.5 shadow-lg">
         {/* Header: star + title + close (× = snooze) */}
         <div className="flex items-center gap-2.5">

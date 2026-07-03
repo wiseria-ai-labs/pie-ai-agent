@@ -60,6 +60,12 @@ export function useEngagementPrompt(
   useEffect(() => {
     const was = prevStreamingRef.current;
     prevStreamingRef.current = streaming;
+    // Stream start (idle to streaming): user sent a new message, dismiss the nudge
+    // instead of leaving it pinned at the end of the stream.
+    if (!was && streaming) {
+      setVisibleState(false);
+      return;
+    }
     if (!(was && !streaming)) return;
     let cancelled = false;
     void (async () => {
