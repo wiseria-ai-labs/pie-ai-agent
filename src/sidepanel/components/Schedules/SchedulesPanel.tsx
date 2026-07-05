@@ -27,6 +27,7 @@ import type { ScheduleRecord } from "@/lib/schedules/types";
 import { useI18n } from "@/lib/i18n";
 import ScheduleForm from "./ScheduleForm";
 import ScheduleRunHistory from "./ScheduleRunHistory";
+import VailieMark from "@/sidepanel/components/VailieMark";
 
 interface Props {
   /** Open a session by id (wired in App → session.setActive + switch to chat). */
@@ -46,7 +47,7 @@ type T = ReturnType<typeof useI18n>["t"];
 const STATUS_STYLE: Record<ScheduleRecord["status"], string> = {
   active: "border-transparent bg-accent text-canvas",
   paused: "border-transparent bg-warning text-canvas",
-  completed: "border-line bg-field text-fg-2",
+  completed: "border-transparent bg-field text-fg-2",
 };
 
 /**
@@ -62,7 +63,7 @@ function badgeFor(rec: ScheduleRecord, t: T): { label: string; className: string
   if (!rec.enabled) {
     return {
       label: t("schedules.statusDisabled"),
-      className: "border-dashed border-line bg-transparent text-fg-3",
+      className: "border-transparent bg-transparent text-fg-3",
     };
   }
   const label = {
@@ -186,7 +187,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
         {!showCreate && !editingId && (
           <button
             onClick={() => setShowChoice((v) => !v)}
-            className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-transparent px-3 text-[12px] text-accent hover:bg-field"
+            className="flex h-8 items-center gap-2 rounded-[10px] bg-transparent px-3 text-[12px] text-accent hover:bg-field"
           >
             {t("schedules.newButton")}
           </button>
@@ -198,7 +199,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
           {showChoice && !showCreate && !editingId && (
             <div
               data-testid="new-schedule-choice"
-              className="scale-in relative flex flex-col gap-2 rounded-[14px] border border-line bg-surface p-3"
+              className="scale-in relative flex flex-col gap-2 rounded-card bg-surface p-3 shadow-[0_8px_28px_rgba(21,25,31,0.14)]"
             >
               <button
                 data-testid="new-choice-close"
@@ -219,7 +220,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
                   setShowChoice(false);
                   setShowCreate(true);
                 }}
-                className="flex flex-col gap-0.5 rounded-[10px] border border-line bg-transparent px-3 py-2.5 text-left hover:border-fg-3 hover:bg-field"
+                className="flex flex-col gap-0.5 rounded-[10px] bg-transparent px-3 py-2.5 text-left hover:bg-field"
               >
                 <span className="text-[13px] font-medium text-fg-1">{t("schedules.newChoiceManualLabel")}</span>
                 <span className="text-[11px] leading-[15px] text-fg-3">{t("schedules.newChoiceManualHint")}</span>
@@ -230,7 +231,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
                   setShowChoice(false);
                   onCreateViaChat?.(t("schedules.chatTemplate"));
                 }}
-                className="flex flex-col gap-0.5 rounded-[10px] border border-line bg-transparent px-3 py-2.5 text-left hover:border-fg-3 hover:bg-field"
+                className="flex flex-col gap-0.5 rounded-[10px] bg-transparent px-3 py-2.5 text-left hover:bg-field"
               >
                 <span className="text-[13px] font-medium text-fg-1">{t("schedules.newChoiceChatLabel")}</span>
                 <span className="text-[11px] leading-[15px] text-fg-3">{t("schedules.newChoiceChatHint")}</span>
@@ -260,7 +261,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
           )}
 
           {!loading && schedules.length === 0 && !showCreate && !showChoice && (
-            <div className="rounded-[10px] border border-line bg-surface px-3 py-4 text-[12px] leading-[18px] text-fg-2">
+            <div className="rounded-[10px] bg-surface px-3 py-4 text-[12px] leading-[18px] text-fg-2 shadow-[0_4px_16px_rgba(21,25,31,0.05)]">
               {t("schedules.emptyState")}
             </div>
           )}
@@ -326,7 +327,7 @@ function ScheduleCard({
   const { t } = useI18n();
   const badge = badgeFor(rec, t);
   return (
-    <section className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
+    <section className="flex flex-col overflow-hidden rounded-card bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)]">
       <div className="flex flex-col gap-2 px-3.5 py-3">
         {/* Title + status badge on the left; the enable toggle on the right. */}
         <div className="flex items-center gap-2">
@@ -334,6 +335,9 @@ function ScheduleCard({
             <span className="min-w-0 truncate text-[13px] font-medium text-fg-1" title={rec.title}>
               {rec.title}
             </span>
+            {rec.enabled && rec.status === "active" && (
+              <VailieMark size={14} state="idle" animate={false} />
+            )}
             <span
               className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-[0.02em] ${badge.className}`}
             >
@@ -350,8 +354,8 @@ function ScheduleCard({
                 ? t("schedules.disableAria", { title: rec.title })
                 : t("schedules.enableAria", { title: rec.title })
             }
-            className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full border transition-colors ${
-              rec.enabled ? "border-accent-line bg-accent-tint" : "border-line bg-field"
+            className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${
+              rec.enabled ? "bg-accent-tint" : "bg-field"
             }`}
           >
             <span
@@ -374,19 +378,19 @@ function ScheduleCard({
           <button
             data-testid={`runnow-${rec.id}`}
             onClick={onRunNow}
-            className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+            className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
           >
             {t("schedules.runNow")}
           </button>
           <button
             onClick={onEdit}
-            className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+            className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
           >
             {t("schedules.edit")}
           </button>
           <button
             onClick={onToggleExpand}
-            className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+            className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
           >
             {expanded ? t("schedules.hideRuns") : t("schedules.showRuns")}
           </button>
@@ -402,7 +406,7 @@ function ScheduleCard({
               </button>
               <button
                 onClick={onCancelDelete}
-                className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
+                className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
               >
                 {t("schedules.cancel")}
               </button>
@@ -411,7 +415,7 @@ function ScheduleCard({
             <button
               data-testid={`delete-${rec.id}`}
               onClick={onAskDelete}
-              className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-3 hover:border-warning-line hover:text-warning"
+              className="rounded-[10px] border border-transparent bg-transparent px-2.5 py-1 text-[11px] text-fg-3 hover:border-warning-line hover:text-warning"
             >
               {t("schedules.delete")}
             </button>
@@ -420,7 +424,7 @@ function ScheduleCard({
       </div>
 
       {expanded && (
-        <div className="border-t border-line bg-canvas/40">
+        <div className="bg-canvas/40">
           <ScheduleRunHistory runIds={rec.runIds} onOpenSession={onOpenSession} />
         </div>
       )}

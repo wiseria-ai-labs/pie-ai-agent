@@ -105,7 +105,7 @@ export function ScheduleDraftCard({ payload, instances, onSubmit, onCancel }: Pr
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 6 }}
       transition={{ duration: DURATION.base, ease: EASE_STANDARD }}
-      className="rounded-[10px] border border-line bg-surface p-3.5 flex flex-col gap-3"
+      className="rounded-[10px] bg-surface p-3.5 flex flex-col gap-3 shadow-[0_4px_16px_rgba(21,25,31,0.05)]"
     >
       {/* Header row */}
       <div className="flex items-center gap-2">
@@ -192,8 +192,8 @@ export function ScheduleDraftCard({ payload, instances, onSubmit, onCancel }: Pr
           />
         ) : (
           /* "created" phase — static non-interactive model row */
-          <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-deep px-2.5 py-1.5">
-            <span className="font-mono text-[12px] text-fg-2">
+          <div className="flex items-center gap-2 rounded-lg bg-surface-deep px-2.5 py-1.5">
+            <span className="text-[12px] text-fg-2">
               {resolvedInst
                 ? `${resolvedInst.nickname || resolvedInst.provider} · ${sel?.model ?? ""}`
                 : sel?.model ?? ""}
@@ -216,7 +216,7 @@ export function ScheduleDraftCard({ payload, instances, onSubmit, onCancel }: Pr
             <button
               type="button"
               onClick={onCancel}
-              className="border border-line rounded-lg px-4 py-2 text-fg-2 text-[13px] font-medium"
+              className="rounded-lg bg-transparent px-4 py-2 text-fg-2 text-[13px] font-medium hover:bg-field"
             >
               {t("common.cancel")}
             </button>
@@ -224,7 +224,7 @@ export function ScheduleDraftCard({ payload, instances, onSubmit, onCancel }: Pr
               type="button"
               disabled={!sel}
               onClick={handleCreate}
-              className="bg-accent-strong text-surface border border-accent-line rounded-lg px-4 py-2 text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-accent-strong text-surface rounded-lg px-4 py-2 text-[13px] font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {t("schedules.draftCardCreate")}
             </button>

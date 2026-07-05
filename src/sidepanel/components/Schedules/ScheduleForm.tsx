@@ -163,14 +163,14 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
+    <section className="flex flex-col gap-3 rounded-card bg-surface p-3.5 shadow-[0_4px_16px_rgba(21,25,31,0.05)]">
       <div className="flex items-baseline justify-between">
         <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">
           {isEdit ? t("schedules.formEditTitle") : t("schedules.formNewTitle")}
         </span>
         <button
           onClick={onCancel}
-          className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
+          className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
         >
           {t("schedules.cancel")}
         </button>
@@ -187,7 +187,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
           id="sched-title"
           value={form.title}
           onChange={(e) => set("title", e.target.value)}
-          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
           placeholder={t("schedules.fieldTitlePlaceholder")}
         />
       </Field>
@@ -198,7 +198,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
           value={form.prompt}
           onChange={(e) => set("prompt", e.target.value)}
           rows={4}
-          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] leading-[18px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] bg-field px-3 py-2 text-[12px] leading-[18px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
           placeholder={t("schedules.fieldPromptPlaceholder")}
         />
       </Field>
@@ -220,7 +220,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
             type="datetime-local"
             value={form.startAtLocal}
             onChange={(e) => set("startAtLocal", e.target.value)}
-            className="w-full rounded-[10px] border border-line bg-field px-2 py-2 text-[11px] text-fg-1 focus:border-accent-line"
+            className="w-full rounded-[10px] bg-field px-2 py-2 text-[11px] text-fg-1 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
           />
         </Field>
         <Field label={t("schedules.fieldInterval")} htmlFor="sched-interval" hint={`≥${MIN_INTERVAL_MINUTES}`}>
@@ -230,7 +230,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
             min={MIN_INTERVAL_MINUTES}
             value={form.intervalMinutes}
             onChange={(e) => set("intervalMinutes", e.target.value)}
-            className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+            className="w-full rounded-[10px] bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
             placeholder={t("schedules.placeholderOnce")}
           />
         </Field>
@@ -241,7 +241,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
             min={1}
             value={form.maxRuns}
             onChange={(e) => set("maxRuns", e.target.value)}
-            className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+            className="w-full rounded-[10px] bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
             placeholder="∞"
           />
         </Field>
@@ -252,7 +252,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
           id="sched-starturl"
           value={form.startUrl}
           onChange={(e) => set("startUrl", e.target.value)}
-          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
           placeholder="https://example.com"
         />
       </Field>
@@ -269,7 +269,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
               min={1}
               value={form.maxStepsPerRun}
               onChange={(e) => set("maxStepsPerRun", e.target.value)}
-              className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+              className="w-full rounded-[10px] bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
               placeholder={t("schedules.placeholderNone")}
             />
           </Field>
@@ -280,7 +280,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
               min={1000}
               value={form.maxRunMs}
               onChange={(e) => set("maxRunMs", e.target.value)}
-              className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+              className="w-full rounded-[10px] bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
               placeholder={t("schedules.placeholderNone")}
             />
           </Field>
@@ -290,7 +290,7 @@ export default function ScheduleForm({ instances, activeInstanceId, activeModel,
       <div className="flex justify-end gap-2 pt-1">
         <button
           onClick={onCancel}
-          className="rounded-[10px] border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:text-fg-1"
+          className="rounded-[10px] bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
         >
           {t("schedules.cancel")}
         </button>

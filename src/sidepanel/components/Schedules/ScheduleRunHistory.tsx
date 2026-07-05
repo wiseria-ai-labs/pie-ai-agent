@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getRun, updateRun } from "@/lib/schedules/store";
 import type { ScheduleRunRecord } from "@/lib/schedules/types";
 import { useI18n } from "@/lib/i18n";
+import VailieMark from "@/sidepanel/components/VailieMark";
 
 interface Props {
   runIds: string[];
@@ -104,7 +105,7 @@ export default function ScheduleRunHistory({ runIds, onOpenSession }: Props) {
             data-unread={run.unread ? "true" : "false"}
             onClick={() => void handleClick(run)}
             disabled={!clickable}
-            className={`flex flex-col gap-1 border-t border-line px-3.5 py-2 text-left first:border-t-0 ${
+            className={`flex flex-col gap-1 px-3.5 py-2 text-left ${
               clickable ? "hover:bg-field" : "cursor-default"
             } ${run.unread ? "bg-accent-tint" : ""}`}
           >
@@ -116,6 +117,7 @@ export default function ScheduleRunHistory({ runIds, onOpenSession }: Props) {
                 />
               )}
               <span className="font-mono text-[11px] text-fg-2">#{numberFormat.format(run.runIndex)}</span>
+              {run.status === "running" && <VailieMark size={14} state="working" />}
               <span className={`text-[11px] font-medium ${OUTCOME_STYLE[run.status]}`}>
                 {t(RUN_STATUS_KEY[run.status])}
               </span>
