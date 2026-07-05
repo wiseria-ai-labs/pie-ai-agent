@@ -1,4 +1,4 @@
-import { IconButton } from "./ui/IconButton";
+import { LegacyIconButton } from "./ui/LegacyIconButton";
 
 /**
  * TopBarSchedulesButton — clock button that opens / closes the Schedules view.
@@ -13,7 +13,7 @@ interface Props {
 
 export default function TopBarSchedulesButton({ isActive, onClick }: Props) {
   return (
-    <IconButton
+    <LegacyIconButton
       size="xs"
       variant="default"
       active={isActive}

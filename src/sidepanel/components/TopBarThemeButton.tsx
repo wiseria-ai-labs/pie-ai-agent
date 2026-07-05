@@ -1,5 +1,5 @@
 import { useT } from "@/lib/i18n";
-import { IconButton } from "./ui/IconButton";
+import { LegacyIconButton } from "./ui/LegacyIconButton";
 
 /**
  * TopBarThemeButton — three-state theme toggle (light / dark / system).
@@ -76,7 +76,7 @@ export default function TopBarThemeButton({
 }: TopBarThemeButtonProps) {
   const t = useT();
   return (
-    <IconButton
+    <LegacyIconButton
       size="xs"
       variant="default"
       onClick={() => onModeChange(cycleTheme(mode))}

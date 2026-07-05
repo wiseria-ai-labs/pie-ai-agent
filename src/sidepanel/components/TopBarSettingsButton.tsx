@@ -1,5 +1,5 @@
 import { useT } from "@/lib/i18n";
-import { IconButton } from "./ui/IconButton";
+import { LegacyIconButton } from "./ui/LegacyIconButton";
 
 /**
  * TopBarSettingsButton — gear button that opens / closes the settings view.
@@ -18,7 +18,7 @@ export default function TopBarSettingsButton({
 }: TopBarSettingsButtonProps) {
   const t = useT();
   return (
-    <IconButton
+    <LegacyIconButton
       size="xs"
       variant="default"
       active={isActive}

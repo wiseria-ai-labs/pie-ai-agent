@@ -23,7 +23,7 @@ import {
   addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
   CUSTOM_PREFIX, providerRefToId, listCustomProviders,
 } from "@/lib/custom-providers";
-import { IconButton } from "./ui/IconButton";
+import { LegacyIconButton } from "./ui/LegacyIconButton";
 import SkillsList from "./SkillsList";
 import SearchProviderSection from "./SearchProviderSection";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
@@ -185,7 +185,7 @@ export default function Settings({ onBack, onRunSkill, openSubscribeNonce }: Pro
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-shrink-0 items-center gap-2.5 border-b border-line bg-canvas px-3.5 py-3">
-        <IconButton
+        <LegacyIconButton
           onClick={onBack}
           size="sm"
           variant="ghost"

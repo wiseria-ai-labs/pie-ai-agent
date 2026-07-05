@@ -1,5 +1,5 @@
 import { useT } from "@/lib/i18n";
-import { IconButton } from "./ui/IconButton";
+import { LegacyIconButton } from "./ui/LegacyIconButton";
 
 /**
  * TopBarListButton — the ≡ hamburger button that toggles the SessionDrawer.
@@ -24,7 +24,7 @@ export default function TopBarListButton({
   const ariaLabel = `${t("topBar.openSessionsList")}${pendingCount > 0 ? t("topBar.pendingBadge", { count: pendingCount }) : ""}`;
 
   return (
-    <IconButton
+    <LegacyIconButton
       size="xs"
       variant="default"
       active={isOpen}

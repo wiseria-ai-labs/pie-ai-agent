@@ -1,5 +1,5 @@
 import { useT } from "@/lib/i18n";
-import { IconButton } from "./ui/IconButton";
+import { LegacyIconButton } from "./ui/LegacyIconButton";
 
 /**
  * TopBarNewSessionButton — the + button that creates a new session.
@@ -15,7 +15,7 @@ export default function TopBarNewSessionButton({
 }: TopBarNewSessionButtonProps) {
   const t = useT();
   return (
-    <IconButton
+    <LegacyIconButton
       size="xs"
       variant="default"
       onClick={onClick}
