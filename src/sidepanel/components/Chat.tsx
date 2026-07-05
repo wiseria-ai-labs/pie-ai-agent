@@ -2068,7 +2068,9 @@ function Composer({
 }) {
   const t = useT();
   const [focused, setFocused] = useState(false);
-  const expanded = focused || streaming || popoverOpen;
+  // Non-active sessions (paused/failed/archived) must stay expanded to keep
+  // ModelPicker/ContextRing reachable even though textarea is disabled.
+  const expanded = focused || streaming || popoverOpen || !sessionAllowsInput;
   return (
     <div className="relative flex flex-shrink-0 flex-col gap-2 bg-transparent px-3 pb-3 pt-3">
       {/* Top fade — a soft gradient replaces the hard divider line, so messages

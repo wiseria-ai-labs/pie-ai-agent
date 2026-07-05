@@ -1275,6 +1275,31 @@ describe("Chat — composer keyboard guards", () => {
     // 展开态动作行可见(ModelPicker 触发器在文档流里)
     expect(shell.querySelector('[data-testid="composer-actions"]')).toBeTruthy();
   });
+
+  it("composer stays expanded for non-active sessions (paused/archived) to keep ModelPicker/ContextRing reachable", async () => {
+    // Issue: paused/failed/archived sessions have disabled textarea, so user can't focus
+    // → composer stayed in capsule state → action row hidden → ModelPicker/ContextRing unreachable.
+    // Fix: non-active sessions force expanded state regardless of focus.
+    seedProvider("anthropic");
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ status: "paused" })}
+      />,
+    );
+
+    const shell = await screen.findByTestId("composer-shell");
+    // Must be expanded (rounded-[18px]) even without focus, because sessionAllowsInput is false
+    expect(shell.className).toContain("rounded-[18px]");
+    expect(shell.className).not.toContain("rounded-[26px]");
+
+    // Action row with ModelPicker/ContextRing must be present and visible
+    const actions = shell.querySelector('[data-testid="composer-actions"]');
+    expect(actions).toBeTruthy();
+    expect(actions!.className).toContain("flex");
+    expect(actions!.className).not.toContain("hidden");
+  });
 });
 
 describe("Chat — Esc-to-terminate keyboard shortcut", () => {
