@@ -1,1 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="26" fill="#14181D"/><circle cx="64" cy="64" r="44" fill="#FAFBFC"/><circle cx="98" cy="30" r="22" fill="#14181D"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Static vector illustration of the VailieMark idle blob (see
+       src/sidepanel/components/VailieMark.tsx MESH.idle for the canonical
+       CSS recipe this mirrors). Not part of the build: the shipped extension
+       icons (icon-16/32/48/128.png) are hand-authored via
+       scripts/render-icons.html, not rasterized from this file. This SVG is
+       only a vector reference used by README hero images. -->
+  <defs>
+    <radialGradient id="vb-peach1" cx="54%" cy="42%" r="24%">
+      <stop offset="0%" stop-color="#FFB3C2" stop-opacity=".35"/>
+      <stop offset="100%" stop-color="#FFB3C2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vb-peach2" cx="66%" cy="26%" r="26%">
+      <stop offset="0%" stop-color="#FFB3C2" stop-opacity=".65"/>
+      <stop offset="100%" stop-color="#FFB3C2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vb-blue1" cx="36%" cy="56%" r="34%">
+      <stop offset="0%" stop-color="#7CB8FF" stop-opacity=".65"/>
+      <stop offset="100%" stop-color="#7CB8FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vb-blue2" cx="58%" cy="72%" r="40%">
+      <stop offset="0%" stop-color="#7CB8FF" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="#7CB8FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vb-silver1" cx="30%" cy="28%" r="28%">
+      <stop offset="0%" stop-color="#D5DEE7" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#D5DEE7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vb-core" cx="50%" cy="46%" r="56%">
+      <stop offset="0%" stop-color="#C7D2DE"/>
+      <stop offset="100%" stop-color="#CFD9E4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="128" height="128" fill="url(#vb-core)"/>
+  <rect width="128" height="128" fill="url(#vb-silver1)"/>
+  <rect width="128" height="128" fill="url(#vb-blue2)"/>
+  <rect width="128" height="128" fill="url(#vb-blue1)"/>
+  <rect width="128" height="128" fill="url(#vb-peach2)"/>
+  <rect width="128" height="128" fill="url(#vb-peach1)"/>
+</svg>
