@@ -30,7 +30,7 @@ describe("Gemini wire converter", () => {
     // Verified at the streamChat level by checking request body shape; here we
     // just confirm the converter strips system from contents[].
     const msgs: AgentMessage[] = [
-      { role: "system", content: "You are Pie." },
+      { role: "system", content: "You are Vailie." },
       { role: "user", content: "hi" },
     ];
     const wire = _toGeminiContentsForTest(msgs);

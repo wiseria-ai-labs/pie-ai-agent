@@ -69,7 +69,7 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
       ? <ManagedStatusPill tone="warning" label={t("managed.account.paymentFailed")} />
       : <ManagedStatusPill tone="neutral" label={t("managed.account.inactive")} />;
 
-  const headline = isActive || isBlocked ? (sub?.planName ?? "Pie") : t("managed.account.noSubscription");
+  const headline = isActive || isBlocked ? (sub?.planName ?? "Vailie") : t("managed.account.noSubscription");
 
   const primary = isActive
     ? { label: t("managed.account.manage"), on: handlePortal }

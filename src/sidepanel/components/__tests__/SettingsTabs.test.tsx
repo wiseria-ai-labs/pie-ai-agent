@@ -121,7 +121,7 @@ describe("Settings 4-tab IA", () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          "Configure a model service to continue. Click Add config in the top-right and use your existing API Key to get Pie working.",
+          "Configure a model service to continue. Click Add config in the top-right and use your existing API Key to get Vailie working.",
         ),
       ).toBeTruthy();
     });
@@ -158,7 +158,7 @@ describe("Settings 4-tab IA", () => {
     fireEvent.click(tabButtons[3]);
 
     const link = await screen.findByRole("link", { name: /official website/i });
-    expect(link.getAttribute("href")).toBe("https://www.pie.chat/");
+    expect(link.getAttribute("href")).toBe("https://vailie.ai/");
   });
 
   it("configs tab: after switching back from General, switch is gone again", async () => {

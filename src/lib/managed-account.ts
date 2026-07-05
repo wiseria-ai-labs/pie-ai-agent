@@ -84,7 +84,7 @@ function normalizeSubscription(raw: unknown): Entitlement["subscription"] {
   if (raw == null || typeof raw !== "object") return null;
   const s = raw as Record<string, unknown>;
   return {
-    planName: typeof s.planName === "string" && s.planName ? s.planName : "Pie",
+    planName: typeof s.planName === "string" && s.planName ? s.planName : "Vailie",
     currentPeriodEnd: typeof s.currentPeriodEnd === "number" ? s.currentPeriodEnd : null,
     cancelAtPeriodEnd: s.cancelAtPeriodEnd === true,
     source: s.source === "redemption" ? "redemption" : "stripe",

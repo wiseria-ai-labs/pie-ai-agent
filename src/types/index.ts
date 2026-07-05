@@ -1,4 +1,4 @@
-// Shared type definitions for Pie
+// Shared type definitions for Vailie
 
 export type { Provider, ModelConfig, ChatMessage, ChatResponse } from "../lib/model-router";
 export * from "./messages";

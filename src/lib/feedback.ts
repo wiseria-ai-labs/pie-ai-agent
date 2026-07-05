@@ -47,7 +47,7 @@ export function buildGithubNewIssueUrl(env: FeedbackEnv): string {
 }
 
 export function buildFeedbackMailto(env: FeedbackEnv): string {
-  const subject = encodeURIComponent("Pie Feedback");
+  const subject = encodeURIComponent("Vailie Feedback");
   const body = encodeURIComponent(issueBody(env));
   return `mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${body}`;
 }

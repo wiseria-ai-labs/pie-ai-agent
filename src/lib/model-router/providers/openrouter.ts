@@ -11,7 +11,7 @@ export async function* streamChat(
   yield* streamChatOpenAICompat(config, messages, signal, tools, {
     customHeaders: () => ({
       "HTTP-Referer": "https://github.com/WiseriaAI/pie-ai-agent",
-      "X-OpenRouter-Title": "Pie",
+      "X-OpenRouter-Title": "Vailie",
     }),
   });
 }

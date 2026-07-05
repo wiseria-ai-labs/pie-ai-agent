@@ -2,7 +2,7 @@ import { useId } from "react";
 import { SparkleGlyph } from "./MeshSparkle";
 
 /**
- * Pie "official subscription" plan mark — the bitten-pie brand mark with a
+ * Vailie "official subscription" plan mark — the bitten-pie brand mark with a
  * multi-colour mesh-gradient sparkle nested in the bite, signalling the paid /
  * managed tier (vs the monochrome BYOK base mark). The body stays strictly
  * two-tone (#14181D base / #FAFBFC pie); only the sparkle carries colour

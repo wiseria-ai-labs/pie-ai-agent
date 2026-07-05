@@ -33,10 +33,10 @@ export function FileAccessCard({ onDismiss }: FileAccessCardProps) {
         Reading local files needs permission
       </div>
       <p className="text-warning-fg/90">
-        Pie can read local files once you turn on
+        Vailie can read local files once you turn on
         <span className="font-medium"> Allow access to file URLs</span> for this
         extension. Click below to open the extension settings, then flip the
-        toggle and come back — Pie will pick it up automatically.
+        toggle and come back — Vailie will pick it up automatically.
       </p>
       <div>
         <button

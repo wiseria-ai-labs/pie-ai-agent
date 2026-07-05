@@ -1,18 +1,19 @@
-// Bridge between the Pie marketing site (pie.chat) and the extension.
-// The site marks its "Subscribe" CTAs with [data-pie-subscribe] and keeps a
-// Chrome Web Store href as the no-extension fallback. When the extension IS
-// installed, this content script intercepts the click, cancels the store
-// navigation, and asks the SW to open the side panel on the managed-subscribe
-// screen. Sending the message synchronously inside the click handler preserves
-// the user gesture chrome.sidePanel.open requires (same trick the quote bubble
-// uses; see background/index.ts "quote-text-captured").
+// Bridge between the Vailie marketing site (vailie.ai, formerly pie.chat) and
+// the extension. The site marks its "Subscribe" CTAs with [data-pie-subscribe]
+// and keeps a Chrome Web Store href as the no-extension fallback. When the
+// extension IS installed, this content script intercepts the click, cancels
+// the store navigation, and asks the SW to open the side panel on the
+// managed-subscribe screen. Sending the message synchronously inside the click
+// handler preserves the user gesture chrome.sidePanel.open requires (same
+// trick the quote bubble uses; see background/index.ts "quote-text-captured").
 import { safeSendMessage } from "./quote/safe-send-message";
 
-// Gate by host: the marker only lives on pie.chat, but a document-level click
-// listener on every page is needless surface — and would let any site open the
-// user's side panel via the attribute. Restrict to the marketing site (plus
+// Gate by host: the marker only lives on vailie.ai (and, during the domain
+// transition, the legacy pie.chat), but a document-level click listener on
+// every page is needless surface — and would let any site open the user's
+// side panel via the attribute. Restrict to the marketing site (plus
 // localhost for `python3 -m http.server` previews).
-const ALLOWED_HOSTS = new Set(["pie.chat", "www.pie.chat", "localhost", "127.0.0.1"]);
+const ALLOWED_HOSTS = new Set(["pie.chat", "www.pie.chat", "vailie.ai", "www.vailie.ai", "localhost", "127.0.0.1"]);
 
 let clickHandler: EventListener | null = null;
 

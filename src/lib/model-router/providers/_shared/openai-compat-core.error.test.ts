@@ -3,7 +3,7 @@ import { streamChatOpenAICompat } from "./openai-compat-core";
 import type { ModelConfig } from "@/lib/model-router";
 
 const cfg: ModelConfig = {
-  provider: "managed", providerName: "Pie 官方订阅",
+  provider: "managed", providerName: "Vailie 官方订阅",
   model: "default", apiKey: "sk-virtual", baseUrl: "https://api.pie.chat",
 };
 
@@ -41,7 +41,7 @@ async function firstEvent(resp: Response) {
 describe("openai-compat error.type → kind", () => {
   it("401 → kind:auth (text unchanged)", async () => {
     expect(await firstEvent(mockResponse(401, '{"error":{"type":"auth_error"}}')))
-      .toMatchObject({ type: "error", kind: "auth", error: "Invalid Pie 官方订阅 API key" });
+      .toMatchObject({ type: "error", kind: "auth", error: "Invalid Vailie 官方订阅 API key" });
   });
   it("429 + budget_exceeded → kind:budget", async () => {
     expect(await firstEvent(mockResponse(429, '{"error":{"type":"budget_exceeded"}}')))
@@ -49,7 +49,7 @@ describe("openai-compat error.type → kind", () => {
   });
   it("429 plain → kind:ratelimit (text unchanged)", async () => {
     expect(await firstEvent(mockResponse(429, '{"error":{"type":"rate_limit"}}', { "retry-after": "3" })))
-      .toMatchObject({ type: "error", kind: "ratelimit", error: "Pie 官方订阅 rate limit exceeded. Retry after 3s" });
+      .toMatchObject({ type: "error", kind: "ratelimit", error: "Vailie 官方订阅 rate limit exceeded. Retry after 3s" });
   });
   it("500 → kind:http", async () => {
     expect(await firstEvent(mockResponse(500, "boom")))

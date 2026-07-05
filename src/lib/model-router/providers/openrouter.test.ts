@@ -25,7 +25,7 @@ describe("openrouter wrapper", () => {
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     const headers = init.headers as Record<string, string>;
     expect(headers["HTTP-Referer"]).toMatch(/github\.com/);
-    expect(headers["X-OpenRouter-Title"]).toBe("Pie");
+    expect(headers["X-OpenRouter-Title"]).toBe("Vailie");
     fetchMock.mockRestore();
   });
 });

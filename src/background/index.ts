@@ -1,4 +1,4 @@
-// Service Worker — background script for Pie
+// Service Worker — background script for Vailie
 
 import type {
   PageContent,
@@ -1814,7 +1814,7 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   }
 });
 
-console.log("[Pie] Service worker started");
+console.log("[Vailie] Service worker started");
 
 // --- Eval harness (dev-only) ---
 // __PIE_EVAL__ 由 Vite define 静态替换为字面量。prod=false → 此调用是死代码,

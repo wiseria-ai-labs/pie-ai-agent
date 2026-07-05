@@ -136,7 +136,7 @@ USE WHEN:
     const allowed = await chrome.extension.isAllowedFileSchemeAccess();
     if (!allowed) {
       deps.notifyNeedsFileAccess?.();
-      return { success: false, error: "file_access_denied: Pie can't read local files until the user turns on 'Allow access to file URLs'. Ask the user to open chrome://extensions, find Pie, enable that toggle, and tell you when it's done — then retry. Pie cannot enable this itself; only the user can flip the toggle." };
+      return { success: false, error: "file_access_denied: Vailie can't read local files until the user turns on 'Allow access to file URLs'. Ask the user to open chrome://extensions, find Vailie, enable that toggle, and tell you when it's done — then retry. Vailie cannot enable this itself; only the user can flip the toggle." };
     }
     let res: Response;
     try { res = await fetch(uri); }

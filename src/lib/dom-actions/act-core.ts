@@ -222,7 +222,7 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
     const editorType = detectEditor(el);
     const strategies: string[] = [];
 
-    console.log("[Pie agent] type start:", {
+    console.log("[Vailie agent] type start:", {
       index,
       tag,
       isInputOrTextarea,
@@ -237,7 +237,7 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
     try {
       (el as HTMLElement).focus();
     } catch (e) {
-      console.warn("[Pie agent] focus threw:", e);
+      console.warn("[Vailie agent] focus threw:", e);
     }
 
     // ── Execute typing strategy ──
@@ -269,7 +269,7 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
           strategies.push("execCommand-delete");
           document.execCommand("delete", false);
         } catch (e) {
-          console.warn("[Pie agent] clear via execCommand failed:", e);
+          console.warn("[Vailie agent] clear via execCommand failed:", e);
         }
       } else {
         // Move caret to end so insertions append
@@ -280,7 +280,7 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
           selection?.removeAllRanges();
           selection?.addRange(range);
         } catch (e) {
-          console.warn("[Pie agent] collapse caret failed:", e);
+          console.warn("[Vailie agent] collapse caret failed:", e);
         }
       }
 
@@ -290,11 +290,11 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
         strategies.push("execCommand-insertText");
         inserted = document.execCommand("insertText", false, text);
         console.log(
-          "[Pie agent] execCommand insertText returned:",
+          "[Vailie agent] execCommand insertText returned:",
           inserted,
         );
       } catch (e) {
-        console.warn("[Pie agent] execCommand insertText threw:", e);
+        console.warn("[Vailie agent] execCommand insertText threw:", e);
       }
 
       // Strategy 2: InputEvent + textContent fallback
@@ -309,7 +309,7 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
           });
           const defaultAllowed = el.dispatchEvent(beforeEvent);
           console.log(
-            "[Pie agent] beforeinput defaultAllowed:",
+            "[Vailie agent] beforeinput defaultAllowed:",
             defaultAllowed,
           );
 
@@ -329,7 +329,7 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
             }),
           );
         } catch (e) {
-          console.warn("[Pie agent] InputEvent strategy threw:", e);
+          console.warn("[Vailie agent] InputEvent strategy threw:", e);
         }
       }
     }
@@ -372,7 +372,7 @@ export async function actByIdxInjected(params: ActParams): Promise<ActResult> {
       elementSize: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
       opacity: style.opacity,
     };
-    console.log("[Pie agent] type post-check:", diagnostic);
+    console.log("[Vailie agent] type post-check:", diagnostic);
 
     if (looksLikeIMEBuffer) {
       return {

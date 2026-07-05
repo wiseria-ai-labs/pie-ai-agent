@@ -7,7 +7,7 @@
 // fallback for edge cases (tab opened after reload but before reinject
 // finishes, or a tab the reinject couldn't reach).
 
-const ORPHAN_MESSAGE = "[Pie] orphaned content script — refresh this tab to restore quoting";
+const ORPHAN_MESSAGE = "[Vailie] orphaned content script — refresh this tab to restore quoting";
 
 export function safeSendMessage(msg: unknown): void {
   try {

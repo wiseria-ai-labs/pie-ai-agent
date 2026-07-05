@@ -620,19 +620,19 @@ function AboutSection() {
       <div className="flex items-center gap-2.5">
         <img
           src={chrome.runtime.getURL("icons/icon-128.png")}
-          alt="Pie"
+          alt="Vailie"
           className="h-[26px] w-[26px] flex-shrink-0 rounded-chip"
         />
         <div className="flex flex-col gap-0.5">
           <div className="flex items-baseline gap-1.5">
-            <span className="text-[13px] font-semibold text-fg-1">Pie</span>
+            <span className="text-[13px] font-semibold text-fg-1">Vailie</span>
             <span className="font-mono text-[11px] text-fg-2">v{v}</span>
           </div>
           <span className="text-[11px] text-fg-3">{t("settings.about.tagline")}</span>
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-3">
-          <a href="https://www.pie.chat/" target="_blank" rel="noopener noreferrer" className="text-[12px] text-fg-2 hover:text-fg-1">{t("settings.about.website")} ↗</a>
+          <a href="https://vailie.ai/" target="_blank" rel="noopener noreferrer" className="text-[12px] text-fg-2 hover:text-fg-1">{t("settings.about.website")} ↗</a>
           <a href="https://github.com/WiseriaAI/pie-ai-agent/releases" target="_blank" rel="noopener noreferrer" className="text-[12px] text-fg-2 hover:text-fg-1">{t("settings.about.changelog")} ↗</a>
         </div>
       </div>

@@ -331,7 +331,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   },
   {
     id: "managed",
-    name: "Pie 官方订阅",
+    name: "Vailie 官方订阅",
     iconColorAsset: "icons/managed-plan.svg",
     // 网关基址 = GATEWAY_BASE（见 managed-config.ts，随构建 mode 切 prod/staging）。聊天打 /v1/chat/completions。
     defaultBaseUrl: GATEWAY_BASE,
