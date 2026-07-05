@@ -46,7 +46,7 @@ export function MenuHub({ open, onClose, onHistory, onSkills, onSchedules, onSet
     <div
       ref={ref}
       role="menu"
-      aria-label="Vailie"
+      aria-label={t("topBar.menu")}
       className="drawer-down absolute left-3 top-[54px] z-30 w-[228px] rounded-[16px] bg-surface p-2 shadow-[0_8px_28px_rgba(21,25,31,0.14)]"
     >
       {rows.map((r) => (

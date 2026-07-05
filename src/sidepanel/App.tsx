@@ -428,7 +428,7 @@ export default function App() {
         onHistory={() => setDrawerOpen(true)}
         onSkills={() => { setView("settings"); setSettingsOpenTab({ tab: "skills", nonce: Date.now() }); }}
         onSchedules={() => setView("schedules")}
-        onSettings={() => setView("settings")}
+        onSettings={() => { setSettingsOpenTab(null); setView("settings"); }}
         version={chrome.runtime.getManifest().version}
         anchorRef={hubButtonRef}
       />
@@ -476,7 +476,7 @@ export default function App() {
           />
         ) : (
           <Settings
-            onBack={() => setView("agent")}
+            onBack={() => { setSettingsOpenTab(null); setView("agent"); }}
             onRunSkill={(id, name) => void handleRunSkill(id, name)}
             openSubscribeNonce={subscribeNonce}
             openTab={settingsOpenTab}
