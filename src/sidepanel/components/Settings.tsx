@@ -66,7 +66,7 @@ interface Props {
 
 export type Tab = "configs" | "skills" | "search" | "general";
 
-export default function Settings({ onBack, onRunSkill, openSubscribeNonce, openTab, onOpenTabConsumed }: Props) {
+export default function Settings({ onBack, onRunSkill, openSubscribeNonce, themeMode, onThemeModeChange, openTab, onOpenTabConsumed }: Props) {
   const t = useT();
   const [tab, setTab] = useState<Tab>("configs");
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
@@ -382,6 +382,29 @@ export default function Settings({ onBack, onRunSkill, openSubscribeNonce, openT
           </div>
         ) : tab === "general" ? (
           <div className="flex flex-col gap-7">
+            {/* 主题(G8:自顶栏迁入;inline segmented,枚举开关规则 spec §6) */}
+            <section className="flex flex-col gap-2.5">
+              <div className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.theme.sectionTitle")}</div>
+              <div role="radiogroup" aria-label={t("settings.theme.sectionTitle")} className="flex bg-field rounded-[12px] p-[3px]">
+                {(["light", "dark", "system"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={themeMode === m}
+                    onClick={() => onThemeModeChange?.(m)}
+                    className={
+                      "flex-1 text-center text-[13px] py-2 rounded-[9px] transition-colors " +
+                      (themeMode === m
+                        ? "bg-surface text-fg-1 font-medium shadow-[0_1px_4px_rgba(21,25,31,0.08)]"
+                        : "text-fg-2")
+                    }
+                  >
+                    {t(`settings.theme.${m}`)}
+                  </button>
+                ))}
+              </div>
+            </section>
             <section className="flex flex-col gap-3.5">
               <div className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.language.sectionTitle")}</div>
               <LanguageSelect />

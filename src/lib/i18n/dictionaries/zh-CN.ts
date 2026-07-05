@@ -41,6 +41,12 @@ export const zhCNDict = {
     connectBackgroundFailedRetry: "无法连接到后台服务，请重试",
   },
   settings: {
+    theme: {
+      sectionTitle: "主题",
+      light: "浅色",
+      dark: "深色",
+      system: "跟随系统",
+    },
     language: {
       sectionTitle: "语言",
       label: "界面语言",

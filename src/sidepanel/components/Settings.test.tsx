@@ -80,6 +80,14 @@ vi.mock("@/lib/log-cap", () => ({
   capLogBytes: vi.fn((logs) => logs),
 }));
 
+// Mock chrome.runtime for FeedbackSection and AboutSection
+global.chrome = {
+  runtime: {
+    getManifest: () => ({ version: "1.0.0" }),
+    getURL: (path: string) => `chrome-extension://mock-id/${path}`,
+  },
+} as any;
+
 function renderSettings(overrides: Partial<ComponentProps<typeof Settings>> = {}) {
   const onBack = vi.fn();
   const onRunSkill = vi.fn();
@@ -218,5 +226,48 @@ describe("Settings component (Task 6: settingsOpenTab sticky state)", () => {
     const backButton = screen.getByRole("button", { name: /back|返回/i });
     fireEvent.click(backButton);
     expect(onBack).toHaveBeenCalledOnce();
+  });
+});
+
+describe("theme segmented in Settings general (Task 7, G8)", () => {
+  it("renders 3 theme options in general tab and reports changes", async () => {
+    const onChange = vi.fn();
+    renderSettings({
+      themeMode: "system",
+      onThemeModeChange: onChange,
+    });
+
+    // Click the general tab
+    const generalTab = screen.getByRole("button", { name: /general/i });
+    fireEvent.click(generalTab);
+
+    // Find the radiogroup by theme/主题 label
+    const group = await screen.findByRole("radiogroup", { name: /theme|主题/i });
+    expect(group).toBeTruthy();
+
+    // Verify 3 radio buttons (light, dark, system)
+    const radios = group.querySelectorAll('[role="radio"]');
+    expect(radios.length).toBe(3);
+
+    // Click dark and verify onChange is called
+    const darkRadio = screen.getByRole("radio", { name: /dark|深色/i });
+    fireEvent.click(darkRadio);
+    expect(onChange).toHaveBeenCalledWith("dark");
+  });
+
+  it("highlights the current theme option", async () => {
+    renderSettings({
+      themeMode: "dark",
+      onThemeModeChange: vi.fn(),
+    });
+
+    const generalTab = screen.getByRole("button", { name: /general/i });
+    fireEvent.click(generalTab);
+
+    const darkRadio = screen.getByRole("radio", { name: /dark|深色/i });
+    expect(darkRadio.getAttribute("aria-checked")).toBe("true");
+
+    const lightRadio = screen.getByRole("radio", { name: /light|浅色/i });
+    expect(lightRadio.getAttribute("aria-checked")).toBe("false");
   });
 });

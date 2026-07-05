@@ -41,6 +41,12 @@ export const jaDict = {
     connectBackgroundFailedRetry: "バックグラウンドサービスに接続できません。もう一度お試しください。",
   },
   settings: {
+    theme: {
+      sectionTitle: "テーマ",
+      light: "ライト",
+      dark: "ダーク",
+      system: "システムに合わせる",
+    },
     language: {
       sectionTitle: "言語",
       label: "UI 言語",

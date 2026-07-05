@@ -41,6 +41,12 @@ export const ptBRDict = {
     connectBackgroundFailedRetry: "Não foi possível acessar o serviço em segundo plano. Tente novamente.",
   },
   settings: {
+    theme: {
+      sectionTitle: "Tema",
+      light: "Claro",
+      dark: "Escuro",
+      system: "Seguir sistema",
+    },
     language: {
       sectionTitle: "Idioma",
       label: "Idioma da interface",

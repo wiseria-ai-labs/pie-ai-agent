@@ -40,6 +40,12 @@ export const enDict = {
     connectBackgroundFailedRetry: "Unable to reach the background service. Please retry.",
   },
   settings: {
+    theme: {
+      sectionTitle: "Theme",
+      light: "Light",
+      dark: "Dark",
+      system: "System",
+    },
     language: {
       sectionTitle: "Language",
       label: "UI language",

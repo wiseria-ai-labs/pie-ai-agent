@@ -41,6 +41,12 @@ export const zhTWDict = {
     connectBackgroundFailedRetry: "無法連線到背景服務，請重試",
   },
   settings: {
+    theme: {
+      sectionTitle: "主題",
+      light: "淺色",
+      dark: "深色",
+      system: "跟隨系統",
+    },
     language: {
       sectionTitle: "語言",
       label: "介面語言",

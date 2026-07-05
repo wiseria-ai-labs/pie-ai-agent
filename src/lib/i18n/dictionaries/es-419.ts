@@ -41,6 +41,12 @@ export const es419Dict = {
     connectBackgroundFailedRetry: "No se puede contactar el servicio en segundo plano. Inténtalo de nuevo.",
   },
   settings: {
+    theme: {
+      sectionTitle: "Tema",
+      light: "Claro",
+      dark: "Oscuro",
+      system: "Seguir sistema",
+    },
     language: {
       sectionTitle: "Idioma",
       label: "Idioma de la interfaz",
