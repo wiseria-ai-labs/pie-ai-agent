@@ -172,7 +172,7 @@ export default function PinnedTabDropdown({
       ref={containerRef}
       role="dialog"
       aria-label={t("pinnedTab.selector")}
-      className="max-h-[60vh] overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
+      className="max-h-[60vh] overflow-hidden rounded-[10px] bg-surface shadow-[0_8px_28px_rgba(21,25,31,0.14)]"
     >
       <div className="border-b border-line bg-canvas px-3.5 py-2">
         <div className="text-[11px] uppercase tracking-[0.08em] text-fg-3">
