@@ -121,8 +121,8 @@ export default function SearchProviderSection() {
         </div>
       </div>
 
-      {/* Card — no border */}
-      <div className="flex flex-col gap-3.5 rounded-[14px] border border-line bg-surface p-4">
+      {/* Card — borderless (无界), soft shadow instead */}
+      <div className="flex flex-col gap-3.5 rounded-card bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)] p-4">
         <div className="flex items-center justify-between">
           <span className="caps text-fg-3">{t("settings.searchProvider.apiKeyLabel")}</span>
           <span className="caps text-fg-3">{t("settings.searchProvider.storageMeta")}</span>
@@ -130,7 +130,7 @@ export default function SearchProviderSection() {
 
         {mode === "empty" && (
           <>
-            <div className="rounded-[10px] border border-line bg-field px-3.5 py-3">
+            <div className="rounded-[10px] bg-field px-3.5 py-3">
               <span className="font-mono text-[13px] text-fg-3">
                 tvly-···································
               </span>

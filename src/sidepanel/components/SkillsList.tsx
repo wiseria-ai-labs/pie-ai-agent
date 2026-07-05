@@ -256,7 +256,7 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
       {/* Concept hint — Skill 与底层 tool 的区别。Phase 3+ 用户经常误以为
           "为什么 click / type / open_url 这些没在列表里" — 它们是 LLM 的原子
           工具，不是 reusable workflow（skill）。 */}
-      <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5 text-[12px] leading-[18px] text-fg-2">
+      <div className="rounded-[10px] bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)] px-3 py-2.5 text-[12px] leading-[18px] text-fg-2">
         {t("skills.empty.cta")}
       </div>
 
@@ -311,7 +311,7 @@ function SkillsSection({
         <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{title}</span>
         <span className="font-mono text-[10px] text-fg-3">{subtitle}</span>
       </div>
-      <div className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
+      <div className="flex flex-col overflow-hidden rounded-card bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)]">
         {children}
       </div>
     </section>
@@ -348,14 +348,14 @@ function SkillRow({
   const slug = normalizeSlug(skill.frontmatter.name) || skill.id;
 
   return (
-    <div className="flex flex-col gap-2 border-t border-line bg-surface px-3.5 py-3.5 first:border-t-0">
+    <div className="flex flex-col gap-2 bg-surface px-3.5 py-3.5 hover:bg-field transition-colors">
       <div className="flex items-center gap-2.5">
         <button
           onClick={onToggle}
           role="switch"
           aria-checked={enabled}
-          className={`flex h-3 w-3 flex-shrink-0 items-center justify-center rounded-full border ${
-            enabled ? "border-accent bg-accent" : "border-line bg-transparent"
+          className={`flex h-3 w-3 flex-shrink-0 items-center justify-center rounded-full ${
+            enabled ? "bg-accent" : "bg-line"
           }`}
           aria-label={
             enabled
@@ -381,7 +381,7 @@ function SkillRow({
         <button
           onClick={onRun}
           disabled={!enabled}
-          className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t("common.run")}
         </button>
@@ -389,7 +389,7 @@ function SkillRow({
           <>
             <button
               onClick={onEdit}
-              className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+              className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
             >
               {t("common.edit")}
             </button>
@@ -397,13 +397,13 @@ function SkillRow({
               <>
                 <button
                   onClick={onDelete}
-                  className="rounded-[10px] border border-warning-line bg-transparent px-2.5 py-1 text-[11px] text-warning hover:bg-warning-tint"
+                  className="rounded-[10px] bg-warning-tint px-2.5 py-1 text-[11px] text-warning-fg hover:opacity-85"
                 >
                   {t("common.confirm")}
                 </button>
                 <button
                   onClick={onCancelDelete}
-                  className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
+                  className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
                 >
                   {t("common.cancel")}
                 </button>
@@ -411,7 +411,7 @@ function SkillRow({
             ) : (
               <button
                 onClick={onAskDelete}
-                className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-3 hover:border-warning-line hover:text-warning"
+                className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-3 hover:bg-warning-tint hover:text-warning"
               >
                 {t("common.delete")}
               </button>
@@ -438,14 +438,14 @@ function SkillForm({
 }) {
   const t = useT();
   return (
-    <section className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
+    <section className="flex flex-col gap-3 rounded-card bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)] p-3.5">
       <div className="flex items-baseline justify-between">
         <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">
           {form.editingId ? t("skills.form.editSkill") : t("skills.form.newSkill")}
         </span>
         <button
           onClick={onCancel}
-          className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:text-fg-1"
+          className="rounded-[10px] bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
         >
           {t("common.cancel")}
         </button>
@@ -461,7 +461,7 @@ function SkillForm({
         <input
           value={form.name}
           onChange={(e) => onChange((p) => ({ ...p, name: e.target.value }))}
-          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] bg-field px-3 py-2 text-[12px] text-fg-1 outline-none placeholder:text-fg-3 focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
           placeholder={t("skills.form.namePlaceholder")}
         />
       </FormField>
@@ -470,7 +470,7 @@ function SkillForm({
         <input
           value={form.description}
           onChange={(e) => onChange((p) => ({ ...p, description: e.target.value }))}
-          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] bg-field px-3 py-2 text-[12px] text-fg-1 outline-none placeholder:text-fg-3 focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
           placeholder={t("skills.form.descPlaceholder")}
         />
       </FormField>
@@ -483,7 +483,7 @@ function SkillForm({
           value={form.instructions}
           onChange={(e) => onChange((p) => ({ ...p, instructions: e.target.value }))}
           rows={8}
-          className="w-full rounded-[10px] border border-line bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded-[10px] bg-field px-3 py-2 font-mono text-[11px] leading-4 text-fg-1 outline-none placeholder:text-fg-3 focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
           placeholder={t("skills.form.instructionsPlaceholder")}
         />
       </FormField>
@@ -491,7 +491,7 @@ function SkillForm({
       <div className="flex justify-end gap-2 pt-1">
         <button
           onClick={onCancel}
-          className="rounded-[10px] border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:text-fg-1"
+          className="rounded-[10px] bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:bg-field hover:text-fg-1"
         >
           {t("common.cancel")}
         </button>
