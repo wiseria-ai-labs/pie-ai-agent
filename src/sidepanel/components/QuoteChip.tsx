@@ -38,7 +38,7 @@ export function QuoteChip({ quote, onRemove }: Props) {
       ) : (
         <span
           aria-hidden
-          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center overflow-hidden rounded-[7px] border border-line bg-canvas"
+          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center overflow-hidden rounded-[7px] bg-canvas"
         >
           {quote.imageDataUrl && (
             <img src={quote.imageDataUrl} alt="" className="h-full w-full object-cover" />
@@ -72,7 +72,7 @@ export function QuoteChip({ quote, onRemove }: Props) {
       {hovered && (
         <div
           role="tooltip"
-          className="absolute bottom-full left-0 z-50 mb-1.5 max-w-[320px] rounded-md border border-line bg-canvas p-2 text-[11px] text-fg-1 shadow"
+          className="absolute bottom-full left-0 z-50 mb-1.5 max-w-[320px] rounded-md bg-canvas p-2 text-[11px] text-fg-1 shadow-[0_8px_28px_rgba(21,25,31,0.14)]"
           style={{ whiteSpace: "normal" }}
         >
           {isText ? (

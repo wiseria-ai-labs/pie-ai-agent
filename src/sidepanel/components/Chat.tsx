@@ -1170,7 +1170,7 @@ After the skill completes, briefly summarize what was created (the user will see
        *  the new PinnedTabDropdown button. Provider info still visible in
        *  Settings; users typically switch there, not from the chat header. */}
       {displayPinnedOrigin && (
-        <div ref={pinBarRef} className="relative flex flex-shrink-0 items-center gap-2 border-b border-line bg-canvas px-4 py-1.5">
+        <div ref={pinBarRef} className="relative flex flex-shrink-0 items-center gap-2 bg-canvas px-4 py-1.5">
           {displayPinnedOrigin && (
             <>
               <button
@@ -1500,7 +1500,6 @@ After the skill completes, briefly summarize what was created (the user will see
                 alignItems: "center",
                 justifyContent: "center",
                 background: "var(--c-field)",
-                border: "1px solid var(--c-line)",
                 borderRadius: 4,
                 flexShrink: 0,
               }}
@@ -1534,7 +1533,6 @@ After the skill completes, briefly summarize what was created (the user will see
                   width: 64,
                   height: 64,
                   display: "block",
-                  border: "1px solid var(--c-line)",
                 }}
               />
               <button
@@ -1550,7 +1548,6 @@ After the skill completes, briefly summarize what was created (the user will see
                   borderRadius: "50%",
                   background: "var(--c-canvas)",
                   color: "var(--c-fg-1)",
-                  border: "1px solid var(--c-line)",
                   fontSize: 12,
                   lineHeight: 1,
                   cursor: "pointer",
@@ -1572,7 +1569,7 @@ After the skill completes, briefly summarize what was created (the user will see
       {pendingRecording && (
         <div
           data-testid="pending-recording-chip"
-          className="mx-3 mb-1.5 flex items-center gap-2 rounded-md border border-line bg-field px-2.5 py-1.5 text-[13px] text-fg-1"
+          className="mx-3 mb-1.5 flex items-center gap-2 rounded-[11px] bg-field px-2.5 py-1.5 text-[13px] text-fg-1"
           title={`${t("chat.recording.sendHint")}\n${pendingRecording.trace.slice(0, 200)}${pendingRecording.trace.length > 200 ? "…" : ""}`}
         >
           <span
@@ -1593,7 +1590,7 @@ After the skill completes, briefly summarize what was created (the user will see
             aria-label={t("chat.recording.discardRecording")}
             data-testid="dismiss-pending-recording"
             onClick={() => onPendingRecordingConsumed?.()}
-            className="ml-auto flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-line bg-canvas text-fg-2 hover:border-fg-3 hover:text-fg-1"
+            className="ml-auto flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-canvas text-fg-2 hover:bg-field hover:text-fg-1"
           >
             ×
           </button>
@@ -1712,11 +1709,11 @@ function EmptyState() {
 function PageChangedBanner({ onNewTask }: { onNewTask: () => void }) {
   const t = useT();
   return (
-    <div className="flex items-center justify-between rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-fg-2">
+    <div className="flex items-center justify-between rounded-md bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)] px-3 py-2 text-[12px] text-fg-2">
       <span>{t("chat.pageChangedBanner")}</span>
       <button
         onClick={onNewTask}
-        className="rounded border border-line bg-field px-2 py-1 text-fg-1 hover:bg-line"
+        className="rounded bg-field px-2 py-1 text-fg-1 hover:bg-line"
       >
         {t("chat.newTask")}
       </button>
@@ -1784,7 +1781,7 @@ function MessageBubble({
                   setEditing(false);
                 }
               }}
-              className="w-full resize-y rounded-[12px] border border-line bg-field px-3 py-2 text-[13px] leading-5 text-fg-1 outline-none focus:border-accent"
+              className="w-full resize-y rounded-[12px] bg-field px-3 py-2 text-[13px] leading-5 text-fg-1 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
             />
             <div className="flex items-center justify-between gap-2">
               <span className="min-w-0 flex-1 truncate text-[11px] text-fg-3">
@@ -1832,7 +1829,7 @@ function MessageBubble({
                   ) : (
                     <span
                       aria-hidden
-                      className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line bg-canvas"
+                      className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-md bg-canvas"
                     >
                       {q.imageDataUrl && (
                         <img
@@ -1882,7 +1879,7 @@ function MessageBubble({
               <span
                 key={a.id}
                 title={t("chat.attachment.imagePlaceholderTitle")}
-                className="inline-block self-start rounded border border-line bg-field px-2 py-0.5 font-mono text-[11px] text-fg-3"
+                className="inline-block self-start rounded bg-field px-2 py-0.5 font-mono text-[11px] text-fg-3"
               >
                 {t("chat.attachment.imageReleasedBadge", { width: a.width, height: a.height })}
               </span>
