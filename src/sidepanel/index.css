@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./components/vailie-mark.css";
 
 @layer base {
   :root {
