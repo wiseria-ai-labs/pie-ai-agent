@@ -12,7 +12,9 @@ describe("design tokens (@theme)", () => {
   it("defines the 3-tier semantic radius scale (additive, not overriding Tailwind defaults)", () => {
     expect(css).toContain("--radius-chip: 6px");
     expect(css).toContain("--radius-control: 10px");
-    expect(css).toContain("--radius-card: 14px");
+    expect(css).toContain("--radius-card: 16px");
+    expect(css).toContain("--radius-field: 11px");
+    expect(css).toContain("--radius-pill: 999px");
   });
 
   it("defines the motion duration + easing tokens", () => {
@@ -45,8 +47,29 @@ describe("design tokens (@theme)", () => {
   });
 
   it("defines the user-bubble color token for both themes", () => {
-    expect(css).toContain("--c-bubble: #E4EAF0"); // light
-    expect(css).toContain("--c-bubble: #2A333D"); // dark
+    expect(css).toContain("--c-bubble: #E9EEF4"); // light
+    expect(css).toContain("--c-bubble: #22303E"); // dark
     expect(css).toContain("--color-bubble: var(--c-bubble)");
+  });
+});
+
+describe("Sky Peach palette (v2.0.0 redesign)", () => {
+  it("uses the sky-blue accent in light and dark", () => {
+    expect(css).toContain("--c-accent: #2F8BFF");       // light
+    expect(css).toContain("--c-accent-strong: #1D6BD6"); // light
+    expect(css).toContain("--c-accent: #6FB3FF");       // dark
+  });
+  it("uses restrained amber for warning", () => {
+    expect(css).toContain("--c-warning: #C9821E");
+    expect(css).toContain("--c-warning-fg: #B0781E");
+  });
+  it("maps the new utilities in @theme", () => {
+    for (const m of ["--color-fg-4", "--color-warning-fg", "--color-danger-fg",
+                     "--color-surface-deep", "--color-overlay-strong", "--color-brand-peach"]) {
+      expect(css).toContain(`${m}: var(`);
+    }
+  });
+  it("keeps brand peach decorative-only (defined, never a bg-* semantic)", () => {
+    expect(css).toContain("--c-brand-peach: #FF9FB2");
   });
 });

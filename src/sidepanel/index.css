@@ -4,144 +4,136 @@
   :root {
     color-scheme: light dark;
 
-    --c-canvas: #FAFBFC;
+    /* neutrals — silver-grey ground (the 60%) */
+    --c-canvas: #F7F9FB;
     --c-surface: #FFFFFF;
-    --c-field: #F4F6F8;
-    --c-line: #E4E8EC;
-    --c-fg-1: #14181D;
-    --c-fg-2: #5A6470;
-    --c-fg-3: #98A1AC;
-    --c-accent: #4A5C6E;
-    --c-accent-strong: #33414E;
-    --c-warning: #B85A4D;
-    --c-dot-grid: rgba(20, 24, 29, 0.04);
-    --c-accent-tint: rgba(74, 92, 110, 0.08);
-    --c-accent-line: rgba(74, 92, 110, 0.3);
-    --c-warning-tint: rgba(184, 90, 77, 0.08);
-    --c-warning-line: rgba(184, 90, 77, 0.4);
-    --c-overlay: rgba(20, 24, 29, 0.04);
-    --c-pending: #8A6D2E;
-    --c-danger-fg: #A02020;
-    --c-danger-line: #E8C0C0;
-    --c-overlay-strong: rgba(20, 24, 29, 0.5);
     --c-surface-deep: #F0F2F4;
-    --c-bubble: #E4EAF0;
-    --c-fg-4: #B8BFC8;
+    --c-field: #F0F3F6;
+    --c-line: #E4E8EC;
+    --c-fg-1: #15191F;
+    --c-fg-2: #59636F;
+    --c-fg-3: #98A2AE;
+    --c-fg-4: #C6CDD5;
+
+    /* accent — sky blue (functional 30%; buttons/links/selected/progress) */
+    --c-accent: #2F8BFF;
+    --c-accent-strong: #1D6BD6;
+    --c-accent-tint: rgba(47, 139, 255, 0.10);
+    --c-accent-line: rgba(47, 139, 255, 0.22);
+    --c-bubble: #E9EEF4;
+
+    /* semantic */
     --c-success: #3E8E63;
     --c-success-tint: rgba(62, 142, 99, 0.10);
+    --c-warning: #C9821E;              /* attention amber (permission cards) */
+    --c-warning-fg: #B0781E;           /* readable amber text on tint */
+    --c-warning-tint: rgba(201, 130, 30, 0.08);
+    --c-warning-line: rgba(201, 130, 30, 0.22);
+    --c-pending: #B8862E;              /* quota caution band 80–95% */
+    --c-danger-fg: #C0574B;            /* destructive text (delete/forget) */
+    --c-danger-line: #E8C0C0;
+
+    /* surfaces & overlays */
+    --c-overlay: rgba(21, 25, 31, 0.04);
+    --c-overlay-strong: rgba(21, 25, 31, 0.5);
+    --c-dot-grid: rgba(21, 25, 31, 0.04);
+
+    /* brand peach — decorative, blob only (see VailieMark). NOT for UI. */
+    --c-brand-peach: #FF9FB2;
   }
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --c-canvas: #0B0D10;
+      --c-canvas: #0C0F13;
       --c-surface: #14171C;
+      --c-surface-deep: #0E1216;
       --c-field: #1A1E25;
       --c-line: #22272F;
       --c-fg-1: #E5E8EC;
       --c-fg-2: #8A929E;
       --c-fg-3: #525965;
-      --c-accent: #B8C8D6;
-      --c-accent-strong: #B8C8D6;
-      --c-warning: #C26B5E;
-      --c-dot-grid: rgba(232, 236, 242, 0.05);
-      --c-accent-tint: rgba(184, 200, 214, 0.08);
-      --c-accent-line: rgba(184, 200, 214, 0.3);
-      --c-warning-tint: rgba(194, 107, 94, 0.08);
-      --c-warning-line: rgba(194, 107, 94, 0.45);
-      --c-overlay: rgba(232, 236, 242, 0.04);
-      --c-pending: #B89968;
-      --c-danger-fg: #8A3A3A;
-      --c-danger-line: #3A2222;
-      --c-overlay-strong: rgba(8, 13, 16, 0.72);
-      --c-surface-deep: #0E1216;
-      --c-bubble: #2A333D;
       --c-fg-4: #3A4049;
+      --c-accent: #6FB3FF;
+      --c-accent-strong: #8CC2FF;
+      --c-accent-tint: rgba(111, 179, 255, 0.14);
+      --c-accent-line: rgba(111, 179, 255, 0.30);
+      --c-bubble: #22303E;
       --c-success: #5FA37D;
       --c-success-tint: rgba(95, 163, 125, 0.14);
+      --c-warning: #D69A45;
+      --c-warning-fg: #D69A45;
+      --c-warning-tint: rgba(214, 154, 69, 0.12);
+      --c-warning-line: rgba(214, 154, 69, 0.30);
+      --c-pending: #C9A25A;
+      --c-danger-fg: #CC7A70;
+      --c-danger-line: #3A2222;
+      --c-overlay: rgba(232, 236, 242, 0.04);
+      --c-overlay-strong: rgba(8, 13, 16, 0.72);
+      --c-dot-grid: rgba(232, 236, 242, 0.05);
+      --c-brand-peach: #FF9FB2;
     }
   }
 
-  /* Explicit theme overrides — applied via document.documentElement.dataset.theme.
-     Higher specificity than @media (prefers-color-scheme), so they win when set.
-     When data-theme is absent, the :root defaults + @media fallback take over
-     (i.e. the "system" mode). */
+  /* Explicit theme override wins over @media (same trick as today). Light and
+     dark bodies are identical to the two blocks above — kept for specificity. */
   [data-theme="light"] {
-    --c-canvas: #FAFBFC;
-    --c-surface: #FFFFFF;
-    --c-field: #F4F6F8;
-    --c-line: #E4E8EC;
-    --c-fg-1: #14181D;
-    --c-fg-2: #5A6470;
-    --c-fg-3: #98A1AC;
-    --c-accent: #4A5C6E;
-    --c-accent-strong: #33414E;
-    --c-warning: #B85A4D;
-    --c-dot-grid: rgba(20, 24, 29, 0.04);
-    --c-accent-tint: rgba(74, 92, 110, 0.08);
-    --c-accent-line: rgba(74, 92, 110, 0.3);
-    --c-warning-tint: rgba(184, 90, 77, 0.08);
-    --c-warning-line: rgba(184, 90, 77, 0.4);
-    --c-overlay: rgba(20, 24, 29, 0.04);
-    --c-pending: #8A6D2E;
-    --c-danger-fg: #A02020;
-    --c-danger-line: #E8C0C0;
-    --c-overlay-strong: rgba(20, 24, 29, 0.5);
-    --c-surface-deep: #F0F2F4;
-    --c-bubble: #E4EAF0;
-    --c-fg-4: #B8BFC8;
-    --c-success: #3E8E63;
-    --c-success-tint: rgba(62, 142, 99, 0.10);
+    --c-canvas: #F7F9FB; --c-surface: #FFFFFF; --c-surface-deep: #F0F2F4;
+    --c-field: #F0F3F6; --c-line: #E4E8EC;
+    --c-fg-1: #15191F; --c-fg-2: #59636F; --c-fg-3: #98A2AE; --c-fg-4: #C6CDD5;
+    --c-accent: #2F8BFF; --c-accent-strong: #1D6BD6;
+    --c-accent-tint: rgba(47,139,255,0.10); --c-accent-line: rgba(47,139,255,0.22);
+    --c-bubble: #E9EEF4;
+    --c-success: #3E8E63; --c-success-tint: rgba(62,142,99,0.10);
+    --c-warning: #C9821E; --c-warning-fg: #B0781E;
+    --c-warning-tint: rgba(201,130,30,0.08); --c-warning-line: rgba(201,130,30,0.22);
+    --c-pending: #B8862E; --c-danger-fg: #C0574B; --c-danger-line: #E8C0C0;
+    --c-overlay: rgba(21,25,31,0.04); --c-overlay-strong: rgba(21,25,31,0.5);
+    --c-dot-grid: rgba(21,25,31,0.04); --c-brand-peach: #FF9FB2;
   }
 
   [data-theme="dark"] {
-    --c-canvas: #0B0D10;
-    --c-surface: #14171C;
-    --c-field: #1A1E25;
-    --c-line: #22272F;
-    --c-fg-1: #E5E8EC;
-    --c-fg-2: #8A929E;
-    --c-fg-3: #525965;
-    --c-accent: #B8C8D6;
-    --c-accent-strong: #B8C8D6;
-    --c-warning: #C26B5E;
-    --c-dot-grid: rgba(232, 236, 242, 0.05);
-    --c-accent-tint: rgba(184, 200, 214, 0.08);
-    --c-accent-line: rgba(184, 200, 214, 0.3);
-    --c-warning-tint: rgba(194, 107, 94, 0.08);
-    --c-warning-line: rgba(194, 107, 94, 0.45);
-    --c-overlay: rgba(232, 236, 242, 0.04);
-    --c-pending: #B89968;
-    --c-danger-fg: #8A3A3A;
-    --c-danger-line: #3A2222;
-    --c-overlay-strong: rgba(8, 13, 16, 0.72);
-    --c-surface-deep: #0E1216;
-    --c-bubble: #2A333D;
-    --c-fg-4: #3A4049;
-    --c-success: #5FA37D;
-    --c-success-tint: rgba(95, 163, 125, 0.14);
+    --c-canvas: #0C0F13; --c-surface: #14171C; --c-surface-deep: #0E1216;
+    --c-field: #1A1E25; --c-line: #22272F;
+    --c-fg-1: #E5E8EC; --c-fg-2: #8A929E; --c-fg-3: #525965; --c-fg-4: #3A4049;
+    --c-accent: #6FB3FF; --c-accent-strong: #8CC2FF;
+    --c-accent-tint: rgba(111,179,255,0.14); --c-accent-line: rgba(111,179,255,0.30);
+    --c-bubble: #22303E;
+    --c-success: #5FA37D; --c-success-tint: rgba(95,163,125,0.14);
+    --c-warning: #D69A45; --c-warning-fg: #D69A45;
+    --c-warning-tint: rgba(214,154,69,0.12); --c-warning-line: rgba(214,154,69,0.30);
+    --c-pending: #C9A25A; --c-danger-fg: #CC7A70; --c-danger-line: #3A2222;
+    --c-overlay: rgba(232,236,242,0.04); --c-overlay-strong: rgba(8,13,16,0.72);
+    --c-dot-grid: rgba(232,236,242,0.05); --c-brand-peach: #FF9FB2;
   }
 }
 
 @theme {
   --color-canvas: var(--c-canvas);
   --color-surface: var(--c-surface);
+  --color-surface-deep: var(--c-surface-deep);
   --color-field: var(--c-field);
   --color-line: var(--c-line);
   --color-fg-1: var(--c-fg-1);
   --color-fg-2: var(--c-fg-2);
   --color-fg-3: var(--c-fg-3);
+  --color-fg-4: var(--c-fg-4);
   --color-accent: var(--c-accent);
   --color-accent-strong: var(--c-accent-strong);
   --color-accent-tint: var(--c-accent-tint);
   --color-accent-line: var(--c-accent-line);
+  --color-bubble: var(--c-bubble);
+  --color-success: var(--c-success);
+  --color-success-tint: var(--c-success-tint);
   --color-warning: var(--c-warning);
+  --color-warning-fg: var(--c-warning-fg);
   --color-warning-tint: var(--c-warning-tint);
   --color-warning-line: var(--c-warning-line);
   --color-pending: var(--c-pending);
+  --color-danger-fg: var(--c-danger-fg);
+  --color-danger-line: var(--c-danger-line);
   --color-overlay: var(--c-overlay);
-  --color-success: var(--c-success);
-  --color-bubble: var(--c-bubble);
-  --color-success-tint: var(--c-success-tint);
+  --color-overlay-strong: var(--c-overlay-strong);
+  --color-brand-peach: var(--c-brand-peach);
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
@@ -151,7 +143,9 @@
        12 ad-hoc values collapse into 3 tiers + rounded-full (Tailwind default). */
   --radius-chip: 6px;      /* icon button · chip · 小指示 */
   --radius-control: 10px;  /* 按钮 · 输入框 · 小卡（代码事实标准） */
-  --radius-card: 14px;     /* 大卡片 · section 面板 */
+  --radius-card: 16px;     /* 大卡片 · section 面板 */
+  --radius-field: 11px;    /* inputs, small controls */
+  --radius-pill: 999px;    /* capsule composer, pills */
 
   /* ── Type scale — mirrors the Foundations board (用途命名). px size + line-height.
        Tailwind v4 maps --text-{name} → text-{name}, --text-{name}--line-height
