@@ -20,6 +20,7 @@ import { processPickedFile } from "@/lib/files/process-picked-file";
 import { fileAttachmentToWrapper } from "@/lib/files/inject";
 import { CollapsibleText } from "./CollapsibleText";
 import { FileChip } from "./FileChip";
+import VailieMark from "./VailieMark";
 import { QuoteGlyph } from "./icons";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import { buildRewindInput } from "@/sidepanel/hooks/useSession/rewind";
@@ -1694,7 +1695,8 @@ function EmptyState() {
   }, []);
   const greeting = t(`chat.${greetingKey}`);
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center">
+    <div className="flex min-h-full flex-col items-center justify-center gap-5 px-6 text-center">
+      <VailieMark size={132} state="idle" data-testid="empty-vailie-mark" />
       <div className="flex max-w-[280px] flex-col items-center gap-3">
         <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.015em] text-fg-1">
           {greeting}

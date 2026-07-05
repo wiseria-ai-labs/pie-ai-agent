@@ -1185,6 +1185,14 @@ describe("EmptyState centered greeting", () => {
     expect(screen.queryByText("SUGGESTED")).toBeNull();
     expect(screen.queryByText("推荐")).toBeNull();
   });
+
+  it("empty state shows the hero VailieMark, greeting, no suggestion chips (G5)", async () => {
+    const session = makeSession();
+    render(<Chat session={session} onOpenSettings={() => {}} providerLabel={null} />);
+    const hero = await screen.findByTestId("empty-vailie-mark");
+    expect(hero.className).toContain("vailie-mark--idle");
+    expect(screen.queryByTestId("suggestion-chips")).toBeNull();
+  });
 });
 
 // ── Composer keyboard guards — IME composition + rapid double-Enter ──────────
