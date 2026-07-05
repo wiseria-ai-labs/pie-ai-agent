@@ -1,10 +1,10 @@
 {
   "extension_name": {
-    "message": "Pie · Open-Source AI Agent for Browser & Tabs",
+    "message": "Vailie · AI Assistant for Chrome",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "Open-source AI agent for Chrome. Reads pages & PDFs, automates tabs. Bring your own key (11 providers) or subscribe. No telemetry.",
+    "message": "Vailie (formerly Pie) is an open-source AI assistant that reads pages, fills forms, and works across tabs.",
     "description": "Short description shown in the Web Store and chrome://extensions."
   }
 }

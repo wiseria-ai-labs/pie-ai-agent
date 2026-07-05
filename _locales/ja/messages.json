@@ -1,10 +1,10 @@
 {
   "extension_name": {
-    "message": "Pie · ブラウザで動くオープンなAIエージェント",
+    "message": "Vailie · オープンなAIブラウザアシスタント",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "Chrome 用オープンソース AI エージェント。ページや PDF を読み、タブを自動化。自分の API キー（11 社）かサブスクで利用、テレメトリなし。",
+    "message": "Vailie（旧 Pie）は、ページを読み取り、フォームに入力し、タブをまたいで動作するオープンソースの AI アシスタントです。",
     "description": "Short description shown in the Web Store and chrome://extensions."
   }
 }

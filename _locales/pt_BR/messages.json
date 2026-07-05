@@ -1,10 +1,10 @@
 {
   "extension_name": {
-    "message": "Pie · Agente de IA aberto para o navegador",
+    "message": "Vailie · Assistente de IA para o navegador",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "Agente de IA aberto para Chrome: lê páginas e PDFs, automatiza abas. Sua chave (11 provedores) ou assinatura. Sem telemetria.",
+    "message": "Vailie (antes Pie) é um assistente de IA de código aberto que lê páginas, preenche formulários e funciona entre abas.",
     "description": "Short description shown in the Web Store and chrome://extensions."
   }
 }

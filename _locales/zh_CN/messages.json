@@ -1,10 +1,10 @@
 {
   "extension_name": {
-    "message": "Pie · 开源浏览器 AI Agent · 多 Tab 自动化",
+    "message": "Vailie · 开源 AI 浏览器助手",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "开源 Chrome AI Agent：读网页与 PDF、跨标签页自动化。自带 API Key（支持 11 家）或订阅 Pie，无遥测。",
+    "message": "Vailie（原 Pie）是开源 AI 浏览器助手：读页面、填表单、跨标签页干活。",
     "description": "Short description shown in the Web Store and chrome://extensions."
   }
 }
