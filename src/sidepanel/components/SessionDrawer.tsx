@@ -4,7 +4,8 @@
  * soft-delete per active row, and real storage usage from getBytesInUse(null).
  *
  * Design spec:
- * - 296px wide, full height, left-anchored, bg var(--c-surface-deep), border-right hairline
+ * - 296px wide, full height, left-anchored, bg var(--c-surface-deep), soft
+ *   drop shadow (borderless — Vailie redesign) in place of a hairline edge
  * - Backdrop (var(--c-overlay-strong)) covers the remaining area; click closes drawer
  * - ESC keydown closes drawer
  * - Focus trap: Tab/Shift+Tab cycle within the drawer
@@ -12,8 +13,9 @@
  *
  * Internal sections:
  * 1. Header: logo + "Sessions" label + session count
- * 2. ACTIVE section: list of non-archived sessions
- * 3. SHOW ARCHIVED toggle (M2-U4 — real, collapsible)
+ * 2. ACTIVE section: title search (role=searchbox) + list of non-archived
+ *    sessions, grouped into 今天/昨天/更早 day buckets (display-only, Task 15)
+ * 3. SHOW ARCHIVED toggle (M2-U4 — real, collapsible; flat list, no day groups)
  * 4. Storage indicator: usage bar + MB label
  *
  * R27 a11y baseline:
@@ -24,7 +26,7 @@
  * - Focus trap within drawer
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 import { getTotalBytes } from "@/lib/sessions/storage";
@@ -47,6 +49,31 @@ interface SessionDrawerProps {
   onResumeSession: (id: string) => void;
 }
 
+// ── groupByDay ────────────────────────────────────────────────────────────────
+// Pure display grouping (D 屏 net-new #2) — buckets the ACTIVE list into
+// 今天/昨天/更早 by `lastAccessedAt` (SessionIndexEntry's real timestamp field;
+// there is no `updatedAt` on this type). Archived rows are intentionally never
+// passed through this — that section keeps its flat, ungrouped list.
+type DayGroupLabel = "today" | "yesterday" | "earlier";
+
+function groupByDay<T extends { lastAccessedAt: number }>(
+  list: T[],
+): { label: DayGroupLabel; items: T[] }[] {
+  const now = new Date();
+  const todayStr = now.toDateString();
+  const y = new Date(now);
+  y.setDate(now.getDate() - 1);
+  const yStr = y.toDateString();
+  const buckets = { today: [] as T[], yesterday: [] as T[], earlier: [] as T[] };
+  for (const s of list) {
+    const d = new Date(s.lastAccessedAt).toDateString();
+    (d === todayStr ? buckets.today : d === yStr ? buckets.yesterday : buckets.earlier).push(s);
+  }
+  return (["today", "yesterday", "earlier"] as const)
+    .filter((k) => buckets[k].length)
+    .map((k) => ({ label: k, items: buckets[k] }));
+}
+
 // ── StorageIndicator ──────────────────────────────────────────────────────────
 
 function StorageIndicator() {
@@ -59,7 +86,7 @@ function StorageIndicator() {
   useStoreChange("instances", () => { void load(); });
   const usedMB = usedBytes / (1024 * 1024);
   return (
-    <div style={{ marginTop: "auto", padding: "14px 16px", borderTop: "1px solid var(--c-line)" }}>
+    <div style={{ marginTop: "auto", padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "center" }}>
         <span
           aria-label={t("sessions.storage")}
@@ -121,7 +148,6 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
         display: "flex",
         alignItems: "center",
         gap: 8,
-        borderLeft: "2px solid transparent",
       }}
     >
       {/* Archived icon: faded circle */}
@@ -175,17 +201,7 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
           type="button"
           aria-label={t("sessions.unarchiveAria", { title: displayTitle })}
           onClick={() => onUnarchive(id)}
-          style={{
-            fontFamily: "Inter, sans-serif",
-            fontSize: 10,
-            fontWeight: 500,
-            color: "var(--c-fg-2)",
-            background: "none",
-            border: "1px solid var(--c-line)",
-            borderRadius: 4,
-            cursor: "pointer",
-            padding: "2px 6px",
-          }}
+          className="rounded-chip bg-transparent px-1.5 py-0.5 text-[10px] font-medium text-fg-2 transition-colors hover:bg-field"
         >
           {t("sessions.restore")}
         </button>
@@ -193,17 +209,7 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
           type="button"
           aria-label={t("sessions.deleteForeverAria", { title: displayTitle })}
           onClick={() => onDeleteForever(id)}
-          style={{
-            fontFamily: "Inter, sans-serif",
-            fontSize: 10,
-            fontWeight: 500,
-            color: "var(--c-danger-fg)",
-            background: "none",
-            border: "1px solid var(--c-danger-line)",
-            borderRadius: 4,
-            cursor: "pointer",
-            padding: "2px 6px",
-          }}
+          className="rounded-chip bg-transparent px-1.5 py-0.5 text-[10px] font-medium text-danger-fg transition-colors hover:bg-field"
         >
           {t("sessions.delete")}
         </button>
@@ -225,11 +231,22 @@ export default function SessionDrawer({
   const t = useT();
   const sessionListRef = useAnimatedList<HTMLUListElement>();
   const [showArchived, setShowArchived] = useState(false);
+  const [query, setQuery] = useState("");
 
   // Sessions split by status — archived goes to the "show archived" section
   const activeSessions = sessions.filter((s) => s.status !== "archived");
   const archivedSessions = sessions.filter((s) => s.status === "archived");
-  const archivedCount = archivedSessions.length;
+
+  // Title substring filter (case-insensitive) — applies to both sections
+  // (reasonable default: a search box should search everything it can see).
+  const matchesQuery = (s: SessionIndexEntry) =>
+    (s.title ?? "").toLowerCase().includes(query.toLowerCase());
+  const filteredActiveSessions = activeSessions.filter(matchesQuery);
+  const filteredArchivedSessions = archivedSessions.filter(matchesQuery);
+  const archivedCount = filteredArchivedSessions.length;
+
+  // Day-grouping is display-only and ACTIVE-section-only — archived stays flat.
+  const dayGroups = groupByDay(filteredActiveSessions);
 
   function handleSelectSession(id: string) {
     onSelectSession(id);
@@ -257,7 +274,7 @@ export default function SessionDrawer({
       backdropTestId="drawer-backdrop"
       panelStyle={{
         background: "var(--c-surface-deep)",
-        borderRight: "1px solid var(--c-line)",
+        boxShadow: "0 8px 28px rgba(21, 25, 31, 0.14)",
       }}
     >
         {/* Header */}
@@ -315,37 +332,54 @@ export default function SessionDrawer({
           </span>
         </div>
 
-        {/* ACTIVE section divider */}
-        <div
-          style={{
-            padding: "14px 16px 6px 16px",
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10,
-            fontWeight: 500,
-            color: "var(--c-fg-3)",
-            letterSpacing: "0.16em",
-            textTransform: "uppercase",
-          }}
-        >
-          {t("sessions.active")} · {activeSessions.length}
+        {/* ACTIVE section divider + title search */}
+        <div style={{ padding: "14px 16px 8px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10,
+              fontWeight: 500,
+              color: "var(--c-fg-3)",
+              letterSpacing: "0.16em",
+              textTransform: "uppercase",
+            }}
+          >
+            {t("sessions.active")} · {filteredActiveSessions.length}
+          </div>
+          <input
+            role="searchbox"
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("sessions.searchPlaceholder")}
+            aria-label={t("sessions.searchPlaceholder")}
+            className="rounded-field bg-field px-3 py-2 text-[13px] text-fg-1 outline-none placeholder:text-fg-3"
+          />
         </div>
 
-        {/* Session list (scrollable) */}
+        {/* Session list (scrollable) — grouped 今天/昨天/更早 (ACTIVE only) */}
         <div style={{ flex: 1, overflowY: "auto" }}>
           <ul
             ref={sessionListRef}
             role="list"
             style={{ margin: 0, padding: 0, listStyle: "none" }}
           >
-            {activeSessions.map((session) => (
-              <SessionRowWithDelete
-                key={session.id}
-                session={session}
-                isActive={session.id === activeSessionId}
-                onSelect={handleSelectSession}
-                onResume={onResumeSession}
-                onDelete={handleSoftDelete}
-              />
+            {dayGroups.map((group) => (
+              <Fragment key={group.label}>
+                <div className="px-4 pt-3 pb-1 text-[11px] tracking-[0.1em] text-fg-3">
+                  {t(`sessions.group.${group.label}`)}
+                </div>
+                {group.items.map((session) => (
+                  <SessionRowWithDelete
+                    key={session.id}
+                    session={session}
+                    isActive={session.id === activeSessionId}
+                    onSelect={handleSelectSession}
+                    onResume={onResumeSession}
+                    onDelete={handleSoftDelete}
+                  />
+                ))}
+              </Fragment>
             ))}
           </ul>
         </div>
@@ -363,7 +397,6 @@ export default function SessionDrawer({
             gap: 6,
             background: "none",
             border: "none",
-            borderTop: "1px solid var(--c-line)",
             cursor: "pointer",
             width: "100%",
             textAlign: "left",
@@ -408,14 +441,14 @@ export default function SessionDrawer({
         {showArchived && (
           <div
             id="archived-session-list"
-            style={{ maxHeight: 200, overflowY: "auto", borderBottom: "1px solid var(--c-line)" }}
+            style={{ maxHeight: 200, overflowY: "auto" }}
           >
             <ul
               role="list"
               aria-label={t("sessions.archivedAria")}
               style={{ margin: 0, padding: 0, listStyle: "none" }}
             >
-              {archivedSessions.length === 0 ? (
+              {filteredArchivedSessions.length === 0 ? (
                 <li
                   style={{
                     padding: "12px 16px",
@@ -427,7 +460,7 @@ export default function SessionDrawer({
                   {t("sessions.noArchived")}
                 </li>
               ) : (
-                archivedSessions.map((session) => (
+                filteredArchivedSessions.map((session) => (
                   <ArchivedRow
                     key={session.id}
                     session={session}
@@ -490,24 +523,11 @@ function SessionRowWithDelete({
             e.stopPropagation();
             void onDelete(session.id);
           }}
-          style={{
-            position: "absolute",
-            top: "50%",
-            right: 8,
-            transform: "translateY(-50%)",
-            fontFamily: "Inter, sans-serif",
-            fontSize: 10,
-            fontWeight: 500,
-            color: "var(--c-fg-3)",
-            background: "var(--c-surface-deep)",
-            border: "1px solid var(--c-line)",
-            borderRadius: 4,
-            cursor: "pointer",
-            padding: "2px 6px",
-            // Only show when row doesn't have a Resume button (paused rows)
-            // If it's a paused row with a Resume button, skip the overlap.
-            display: session.status === "paused" ? "none" : "block",
-          }}
+          // Only show when row doesn't have a Resume button (paused rows) —
+          // if it's a paused row with a Resume button, skip the overlap.
+          className={`absolute top-1/2 right-2 -translate-y-1/2 rounded-chip bg-surface-deep px-1.5 py-0.5 text-[10px] font-medium text-fg-3 transition-colors hover:bg-field ${
+            session.status === "paused" ? "hidden" : ""
+          }`}
         >
           {t("sessions.archive")}
         </button>

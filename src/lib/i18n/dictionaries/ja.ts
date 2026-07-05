@@ -358,6 +358,8 @@ export const jaDict = {
     status: { active: "有効", paused: "一時停止", failed: "失敗", archived: "アーカイブ済み" },
     header: "セッション",
     sessionCount: "{count} セッション",
+    searchPlaceholder: "セッションを検索…",
+    group: { today: "今日", yesterday: "昨日", earlier: "それ以前" },
     active: "有効",
     hideArchived: "アーカイブを隠す",
     showArchived: "アーカイブを表示",

@@ -357,6 +357,8 @@ export const zhCNDict = {
     status: { active: "活跃", paused: "已暂停", failed: "失败", archived: "已归档" },
     header: "会话",
     sessionCount: "{count} 个会话",
+    searchPlaceholder: "搜索会话…",
+    group: { today: "今天", yesterday: "昨天", earlier: "更早" },
     active: "活跃",
     hideArchived: "隐藏已归档",
     showArchived: "显示已归档",

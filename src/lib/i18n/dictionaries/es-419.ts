@@ -358,6 +358,8 @@ export const es419Dict = {
     status: { active: "activa", paused: "pausada", failed: "fallida", archived: "archivada" },
     header: "Sesiones",
     sessionCount: "{count} sesiones",
+    searchPlaceholder: "Buscar sesiones…",
+    group: { today: "Hoy", yesterday: "Ayer", earlier: "Anteriores" },
     active: "Activo",
     hideArchived: "Ocultar archivadas",
     showArchived: "Mostrar archivadas",

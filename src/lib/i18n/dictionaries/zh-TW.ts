@@ -357,6 +357,8 @@ export const zhTWDict = {
     status: { active: "活躍", paused: "已暫停", failed: "失敗", archived: "已封存" },
     header: "工作階段",
     sessionCount: "{count} 個工作階段",
+    searchPlaceholder: "搜尋工作階段…",
+    group: { today: "今天", yesterday: "昨天", earlier: "更早" },
     active: "活躍",
     hideArchived: "隱藏已封存",
     showArchived: "顯示已封存",

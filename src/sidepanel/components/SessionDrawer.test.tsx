@@ -21,15 +21,35 @@ import SessionConfirmCard from "./SessionConfirmCard";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 import type { PinnedTabDriftPayload } from "@/types";
 
+// Task 15 / progress.md flake note (logged at Task 13): a full `pnpm test` run
+// occasionally throws an unhandled "window is not defined" rejection attributed
+// to this file. Root cause: `useAnimatedList` (SessionDrawer.tsx) wraps
+// `@formkit/auto-animate`, which is used nowhere else in production code —
+// only here and in its own AnimatedList.test.tsx. auto-animate wires a
+// ResizeObserver + a rAF-driven measurement loop on the `<ul>` node; when the
+// Drawer's many mount/unmount cycles across this file's 20+ tests race against
+// happy-dom's per-file environment teardown (only reachable when this file
+// runs back-to-back with hundreds of others in the same worker — never
+// reproduces file-in-isolation), a queued callback can fire after that worker's
+// `window` has already been torn down. SessionDrawer's own tests don't exercise
+// animation behavior (that's AnimatedList.test.tsx's job), so we mock the real
+// library out here to remove the async surface entirely. Production code
+// (AnimatedList.tsx) is untouched — this only affects this test file's module
+// graph.
+vi.mock("@formkit/auto-animate/react", () => ({
+  useAutoAnimate: () => [() => {}, () => {}],
+}));
+
 // Helper to build a minimal SessionIndexEntry
 function makeEntry(
   id: string,
   status: SessionIndexEntry["status"],
   title?: string,
+  lastAccessedAt: number = Date.now() - 60_000,
 ): SessionIndexEntry {
   return {
     id,
-    lastAccessedAt: Date.now() - 60_000,
+    lastAccessedAt,
     status,
     title,
   };
@@ -110,6 +130,60 @@ describe("SessionDrawer — session rows", () => {
     expect(list).toBeTruthy();
     const items = screen.getAllByRole("listitem");
     expect(items.length).toBe(2);
+  });
+});
+
+describe("SessionDrawer — Task 15: search + day groups", () => {
+  it("filters sessions by title substring", async () => {
+    const sessions = [
+      makeEntry("s1", "active", "整理书签"),
+      makeEntry("s2", "active", "翻译页面"),
+    ];
+    render(<SessionDrawer {...BASE_PROPS} sessions={sessions} />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "书签" } });
+    expect(screen.getByText("整理书签")).toBeTruthy();
+    expect(screen.queryByText("翻译页面")).toBeNull();
+  });
+
+  it("groups sessions by 今天/昨天/更早", () => {
+    const now = Date.now();
+    const sessions = [
+      makeEntry("s1", "active", "Session Alpha", now),
+      makeEntry("s2", "active", "Session Beta", now - 24 * 60 * 60 * 1000),
+      makeEntry("s3", "active", "Session Gamma", now - 3 * 24 * 60 * 60 * 1000),
+    ];
+    render(<SessionDrawer {...BASE_PROPS} sessions={sessions} />);
+    expect(screen.getByText(/今天|Today/)).toBeTruthy();
+    expect(screen.getByText(/昨天|Yesterday/)).toBeTruthy();
+    expect(screen.getByText(/更早|Earlier/)).toBeTruthy();
+  });
+
+  it("search filters the archived section too (reasonable default)", () => {
+    const sessions = [
+      makeEntry("s1", "archived", "整理书签"),
+      makeEntry("s2", "archived", "翻译页面"),
+    ];
+    render(<SessionDrawer {...BASE_PROPS} sessions={sessions} />);
+    // Expand the archived section first.
+    fireEvent.click(screen.getByText(/Show Archived/));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "书签" } });
+    expect(screen.getByText("整理书签")).toBeTruthy();
+    expect(screen.queryByText("翻译页面")).toBeNull();
+  });
+
+  it("does not group the archived section (flat list, no day-group headers)", () => {
+    const now = Date.now();
+    const sessions = [
+      makeEntry("s1", "archived", "Archived Today", now),
+      makeEntry("s2", "archived", "Archived Long Ago", now - 3 * 24 * 60 * 60 * 1000),
+    ];
+    render(<SessionDrawer {...BASE_PROPS} sessions={sessions} />);
+    fireEvent.click(screen.getByText(/Show Archived/));
+    // Both archived rows render, but no "Earlier" day-group header appears
+    // (grouping is ACTIVE-section-only per the Task 15 brief).
+    expect(screen.getByText("Archived Today")).toBeTruthy();
+    expect(screen.getByText("Archived Long Ago")).toBeTruthy();
+    expect(screen.queryByText(/^Earlier$/)).toBeNull();
   });
 });
 

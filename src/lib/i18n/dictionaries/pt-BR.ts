@@ -358,6 +358,8 @@ export const ptBRDict = {
     status: { active: "ativa", paused: "pausada", failed: "com falha", archived: "arquivada" },
     header: "Sessões",
     sessionCount: "{count} sessões",
+    searchPlaceholder: "Buscar sessões…",
+    group: { today: "Hoje", yesterday: "Ontem", earlier: "Anteriores" },
     active: "Ativo",
     hideArchived: "Ocultar arquivadas",
     showArchived: "Mostrar arquivadas",

@@ -357,6 +357,8 @@ export const enDict = {
     status: { active: "active", paused: "paused", failed: "failed", archived: "archived" },
     header: "Sessions",
     sessionCount: "{count} sessions",
+    searchPlaceholder: "Search sessions…",
+    group: { today: "Today", yesterday: "Yesterday", earlier: "Earlier" },
     active: "Active",
     hideArchived: "Hide Archived",
     showArchived: "Show Archived",
