@@ -105,7 +105,7 @@ export function FileOutputCard({
   return (
     <div
       className={[
-        "flex items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5",
+        "flex items-center gap-3 rounded-xl bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)] px-3 py-2.5",
         dimmed ? "opacity-50" : "",
       ]
         .filter(Boolean)
