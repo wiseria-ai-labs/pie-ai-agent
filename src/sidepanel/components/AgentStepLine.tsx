@@ -2,9 +2,9 @@
  * AgentStepLine — compact single-row representation of one agent step.
  *
  * Three visual states:
- *   - pending: spinning dot + "正在调用 X..." (in-place text replaces between
- *     tool calls, so React reconciliation keeps the same DOM and the
- *     bubble-in animation does NOT replay each step)
+ *   - pending: VailieMark (state="working") + "正在调用 X..." (in-place text
+ *     replaces between tool calls, so React reconciliation keeps the same
+ *     DOM and the bubble-in animation does NOT replay each step)
  *   - ok:      check mark + tool name (faint)
  *   - error:   ✕ + tool name + first line of observation (always visible,
  *     never auto-collapsed — errors deserve attention)
@@ -19,6 +19,7 @@
 import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import { Collapse } from "./ui/Collapse";
+import VailieMark from "./VailieMark";
 import type { ResolvedElement } from "@/types";
 import type { AgentStepImageExtras } from "@/types/messages";
 
@@ -140,10 +141,9 @@ function StatusDot({ status }: { status: "pending" | "ok" | "error" }) {
     return (
       <span
         aria-label={tLoc("agentStep.running")}
-        className="relative flex h-3 w-3 flex-shrink-0 items-center justify-center"
+        className="flex h-4 w-4 flex-shrink-0 items-center justify-center"
       >
-        <span className="absolute inset-0 rounded-full border border-accent-line" />
-        <span className="h-1 w-1 animate-pulse rounded-full bg-accent" />
+        <VailieMark size={16} state="working" label={undefined} />
       </span>
     );
   }

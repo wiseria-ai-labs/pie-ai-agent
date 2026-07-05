@@ -69,3 +69,22 @@ describe("AgentStepLine — image rendering (issue follow-up to #35/#39)", () =>
     expect(screen.getByRole("img", { name: /screenshot/i })).toBeTruthy();
   });
 });
+
+describe("AgentStepLine — status indicator (Task 9: VailieMark swap, G3/G4)", () => {
+  it("pending step shows the working mark; finished steps show none (G3/G4)", () => {
+    const { container: pending } = render(
+      <AgentStepLine tool="click" args={{}} status="pending" />,
+    );
+    expect(pending.querySelector(".vailie-mark--working")).toBeTruthy();
+
+    const { container: done } = render(
+      <AgentStepLine tool="click" args={{}} status="ok" observation="clicked" />,
+    );
+    expect(done.querySelector(".vailie-mark")).toBeNull();
+
+    const { container: errored } = render(
+      <AgentStepLine tool="click" args={{}} status="error" observation="boom" />,
+    );
+    expect(errored.querySelector(".vailie-mark")).toBeNull();
+  });
+});
