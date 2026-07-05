@@ -376,6 +376,7 @@ export const ptBRDict = {
     delete: "Excluir",
     deleteForeverAria: "Excluir {title} para sempre",
     resumeBtn: "Retomar →",
+    pendingDot: "Confirmação pendente",
     pinnedTabClosed: "ABA FIXADA FECHADA",
     pageNavigatedAway: "A PÁGINA NAVEGOU PARA OUTRO LUGAR",
     driftExplanation:

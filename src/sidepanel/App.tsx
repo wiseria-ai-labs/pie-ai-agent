@@ -12,7 +12,7 @@ import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
 import { useRecording } from "@/sidepanel/hooks/useRecording";
 import RecordingMode from "@/sidepanel/components/RecordingMode";
-import { listSessionIndex, getPendingConfirmCount } from "@/lib/sessions/storage";
+import { listSessionIndex, listPendingConfirmSessionIds } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
@@ -105,7 +105,15 @@ export default function App() {
   // (the panel this opens) is Task 6 — this task only wires the trigger.
   const [hubOpen, setHubOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
-  const [pendingCount, setPendingCount] = useState(0);
+  // F3 — session ids with a live pendingConfirm (any kind — storage.ts's
+  // getPendingConfirmCount narrows to kind='agent-tool' for the SEC-PLAN-009
+  // flood limit, which nothing produces anymore; listPendingConfirmSessionIds
+  // is the unfiltered read the pending indicators actually need). One array is
+  // the single source of truth for all three v2 drop-points: the top-bar IP
+  // badge (pendingCount), the MenuHub history-row count, and the session-row
+  // dot (pendingSessionIds itself, passed to the drawer).
+  const [pendingSessionIds, setPendingSessionIds] = useState<string[]>([]);
+  const pendingCount = pendingSessionIds.length;
   // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
   // Settings → NewConfigWizard to open the managed-subscribe screen.
   const [subscribeNonce, setSubscribeNonce] = useState(0);
@@ -181,12 +189,13 @@ export default function App() {
     setSessions(visible);
   }, []);
 
-  // ── Compute pendingCount ──────────────────────────────────────────────────
-  // Count sessions whose :agent record has a live agent-tool pendingConfirm.
+  // ── Compute pendingSessionIds / pendingCount ──────────────────────────────
+  // List sessions whose :agent record has a live pendingConfirm (any kind —
+  // today that's exclusively the resume-drift card, kind='pinned-tab-drift').
   // Scans the IDB `sessions` store; refreshed via the store-bus "sessions"
   // event rather than polling.
   const refreshPendingCount = useCallback(async () => {
-    setPendingCount(await getPendingConfirmCount());
+    setPendingSessionIds(await listPendingConfirmSessionIds());
   }, []);
 
   useEffect(() => {
@@ -431,6 +440,7 @@ export default function App() {
         onSettings={() => { setSettingsOpenTab(null); setView("settings"); }}
         version={chrome.runtime.getManifest().version}
         anchorRef={hubButtonRef}
+        pendingCount={pendingCount}
       />
 
       {/* Recording v1: REC button moved to Composer (within input field).
@@ -495,6 +505,7 @@ export default function App() {
         activeSessionId={session.sessionId}
         onSelectSession={handleSelectSession}
         onResumeSession={handleResumeSession}
+        pendingSessionIds={pendingSessionIds}
       />
     </div>
   );

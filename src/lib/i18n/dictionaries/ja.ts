@@ -376,6 +376,7 @@ export const jaDict = {
     delete: "削除",
     deleteForeverAria: "{title} を完全に削除",
     resumeBtn: "再開 →",
+    pendingDot: "確認待ち",
     pinnedTabClosed: "固定タブが閉じられました",
     pageNavigatedAway: "ページが別の場所へ移動しました",
     driftExplanation:

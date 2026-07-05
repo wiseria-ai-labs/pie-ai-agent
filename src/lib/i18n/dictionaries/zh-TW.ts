@@ -375,6 +375,7 @@ export const zhTWDict = {
     delete: "刪除",
     deleteForeverAria: "永久刪除 {title}",
     resumeBtn: "恢復 →",
+    pendingDot: "待確認",
     pinnedTabClosed: "釘選分頁已關閉",
     pageNavigatedAway: "頁面已跳轉",
     driftExplanation:

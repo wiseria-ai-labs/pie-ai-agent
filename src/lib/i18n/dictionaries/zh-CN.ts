@@ -375,6 +375,7 @@ export const zhCNDict = {
     delete: "删除",
     deleteForeverAria: "永久删除 {title}",
     resumeBtn: "恢复 →",
+    pendingDot: "待确认",
     pinnedTabClosed: "固定标签页已关闭",
     pageNavigatedAway: "页面已跳转",
     driftExplanation:

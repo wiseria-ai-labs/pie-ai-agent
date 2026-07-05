@@ -376,6 +376,7 @@ export const es419Dict = {
     delete: "Eliminar",
     deleteForeverAria: "Eliminar {title} para siempre",
     resumeBtn: "Reanudar →",
+    pendingDot: "Confirmación pendiente",
     pinnedTabClosed: "PESTAÑA FIJADA CERRADA",
     pageNavigatedAway: "LA PÁGINA CAMBIÓ DE SITIO",
     driftExplanation:

@@ -131,6 +131,24 @@ describe("SessionDrawer — session rows", () => {
     const items = screen.getAllByRole("listitem");
     expect(items.length).toBe(2);
   });
+
+  it("F3: renders an accent pending-confirm dot only on the matching session's row", () => {
+    const sessions = [
+      makeEntry("s1", "active", "Has drift card"),
+      makeEntry("s2", "active", "No pending confirm"),
+    ];
+    render(<SessionDrawer {...BASE_PROPS} sessions={sessions} pendingSessionIds={["s1"]} />);
+    const s1Row = screen.getByText("Has drift card").closest("li")!;
+    const s2Row = screen.getByText("No pending confirm").closest("li")!;
+    expect(s1Row.querySelector('[aria-label="Pending confirmation"]')).toBeTruthy();
+    expect(s2Row.querySelector('[aria-label="Pending confirmation"]')).toBeNull();
+  });
+
+  it("F3: renders no dots when pendingSessionIds is omitted", () => {
+    const sessions = [makeEntry("s1", "active", "Session Alpha")];
+    render(<SessionDrawer {...BASE_PROPS} sessions={sessions} />);
+    expect(screen.queryByLabelText("Pending confirmation")).toBeNull();
+  });
 });
 
 describe("SessionDrawer — Task 15: search + day groups", () => {

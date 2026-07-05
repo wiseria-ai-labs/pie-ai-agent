@@ -809,3 +809,37 @@ export async function isPendingConfirmFloodLimited(): Promise<boolean> {
   const count = await getPendingConfirmCount();
   return count > PENDING_CONFIRM_FLOOD_LIMIT;
 }
+
+// ── F3 (v2 redesign) — pending-confirm indicator migration ────────────────────
+//
+// The v1 ≡ button's red dot only ever counted `kind='agent-tool'` pendingConfirm
+// (via getPendingConfirmCount above), which was correct for its narrow
+// SEC-PLAN-009 flood-limit purpose but means it's blind to every OTHER kind —
+// including 'pinned-tab-drift', the resume-drift card and the only kind any
+// code still produces (see background/index.ts). The v2 IA surfaces pending
+// confirms in three places (top-bar IP badge / MenuHub history row / session
+// row dot); all three need the actual live set, not the flood-limit's narrowed
+// one, so this is a separate, unfiltered read.
+
+/**
+ * List the ids of sessions whose `:agent` record currently has a live
+ * `pendingConfirm`, of ANY kind (unlike `getPendingConfirmCount`, which counts
+ * only `kind='agent-tool'` for the flood limit). Read-only — does not touch
+ * the write path or schema; mirrors `getPendingConfirmCount`'s full-scan shape.
+ */
+export async function listPendingConfirmSessionIds(): Promise<string[]> {
+  const all = await tx<Array<{ id: string; value: unknown }>>(
+    STORES.sessions,
+    "readonly",
+    (s) => s.getAll(),
+  );
+  const ids: string[] = [];
+  for (const { id, value } of all) {
+    if (!id.endsWith(":agent")) continue;
+    const agentState = value as SessionAgentState | null | undefined;
+    if (agentState?.pendingConfirm != null) {
+      ids.push(id.slice(0, -":agent".length));
+    }
+  }
+  return ids;
+}

@@ -17,14 +17,24 @@ interface MenuHubProps {
    *  toggle and the menu never closes (same hazard as PinnedTabDropdown's
    *  anchorRef). Optional so the component still works standalone in tests. */
   anchorRef?: RefObject<HTMLElement | null>;
+  /** F3 — pending-confirm count (see App's pendingCount, sourced from
+   *  storage.ts listPendingConfirmSessionIds/getPendingConfirmCount), rendered
+   *  as a small accent count dot at the end of the "Session history" row.
+   *  Omitted or 0 renders nothing. Purely decorative — opening the row
+   *  surfaces the actual pending items — so it's aria-hidden. */
+  pendingCount?: number;
 }
 
-export function MenuHub({ open, onClose, onHistory, onSkills, onSchedules, onSettings, version, anchorRef }: MenuHubProps) {
+export function MenuHub({ open, onClose, onHistory, onSkills, onSchedules, onSettings, version, anchorRef, pendingCount }: MenuHubProps) {
   const t = useT(); // hooks 全部在 early-return 之前(顺序规则)
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    // F9 — preventDefault so App's own document-level Escape handler (which
+    // returns to the agent view when !e.defaultPrevented) doesn't also fire
+    // on the same keypress: pressing Esc to close the hub shouldn't ALSO
+    // navigate away from whatever view (e.g. Settings) it was opened over.
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
     const onDoc = (e: MouseEvent) => {
       const target = e.target as Node;
       if (anchorRef?.current?.contains(target)) return;
@@ -36,11 +46,11 @@ export function MenuHub({ open, onClose, onHistory, onSkills, onSchedules, onSet
   }, [open, onClose, anchorRef]);
 
   if (!open) return null;
-  const rows: { label: string; onPick: () => void; icon: ReactElement }[] = [
-    { label: t("menu.history"), onPick: onHistory, icon: <IconClock /> },
-    { label: t("menu.skills"), onPick: onSkills, icon: <IconSpark /> },
-    { label: t("menu.schedules"), onPick: onSchedules, icon: <IconRepeat /> },
-    { label: t("menu.settings"), onPick: onSettings, icon: <IconGear /> },
+  const rows: { key: string; label: string; onPick: () => void; icon: ReactElement; badge?: number }[] = [
+    { key: "history", label: t("menu.history"), onPick: onHistory, icon: <IconClock />, badge: pendingCount },
+    { key: "skills", label: t("menu.skills"), onPick: onSkills, icon: <IconSpark /> },
+    { key: "schedules", label: t("menu.schedules"), onPick: onSchedules, icon: <IconRepeat /> },
+    { key: "settings", label: t("menu.settings"), onPick: onSettings, icon: <IconGear /> },
   ];
   return (
     <div
@@ -51,14 +61,22 @@ export function MenuHub({ open, onClose, onHistory, onSkills, onSchedules, onSet
     >
       {rows.map((r) => (
         <button
-          key={r.label}
+          key={r.key}
           type="button"
           role="menuitem"
           onClick={() => { r.onPick(); onClose(); }}
           className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 text-[13px] text-fg-1 hover:bg-field transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
         >
           <span className="text-fg-3">{r.icon}</span>
-          {r.label}
+          <span className="flex-1 text-left">{r.label}</span>
+          {!!r.badge && r.badge > 0 && (
+            <span
+              aria-hidden="true"
+              className="flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full bg-accent px-1 font-mono text-[10px] font-semibold text-canvas"
+            >
+              {r.badge}
+            </span>
+          )}
         </button>
       ))}
       {/* 品牌区(G7:不写 formerly Pie) */}

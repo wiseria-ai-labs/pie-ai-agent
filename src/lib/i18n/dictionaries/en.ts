@@ -375,6 +375,7 @@ export const enDict = {
     delete: "Delete",
     deleteForeverAria: "Delete {title} forever",
     resumeBtn: "Resume →",
+    pendingDot: "Pending confirmation",
     pinnedTabClosed: "PINNED TAB CLOSED",
     pageNavigatedAway: "PAGE NAVIGATED AWAY",
     driftExplanation:

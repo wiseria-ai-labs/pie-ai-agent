@@ -47,6 +47,10 @@ interface SessionDrawerProps {
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   onResumeSession: (id: string) => void;
+  /** F3 — session ids with a live pendingConfirm (see App's
+   *  listPendingConfirmSessionIds), rendered as a small accent dot on the
+   *  matching row. Optional so existing callers/tests are unaffected. */
+  pendingSessionIds?: string[];
 }
 
 // ── groupByDay ────────────────────────────────────────────────────────────────
@@ -227,8 +231,10 @@ export default function SessionDrawer({
   activeSessionId,
   onSelectSession,
   onResumeSession,
+  pendingSessionIds,
 }: SessionDrawerProps) {
   const t = useT();
+  const pendingSet = new Set(pendingSessionIds ?? []);
   const sessionListRef = useAnimatedList<HTMLUListElement>();
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
@@ -377,6 +383,7 @@ export default function SessionDrawer({
                     onSelect={handleSelectSession}
                     onResume={onResumeSession}
                     onDelete={handleSoftDelete}
+                    hasPendingConfirm={pendingSet.has(session.id)}
                   />
                 ))}
               </Fragment>
@@ -489,6 +496,7 @@ interface SessionRowWithDeleteProps {
   onSelect: (id: string) => void;
   onResume: (id: string) => void;
   onDelete: (id: string) => void;
+  hasPendingConfirm?: boolean;
 }
 
 function SessionRowWithDelete({
@@ -497,6 +505,7 @@ function SessionRowWithDelete({
   onSelect,
   onResume,
   onDelete,
+  hasPendingConfirm,
 }: SessionRowWithDeleteProps) {
   const t = useT();
   const [hovered, setHovered] = useState(false);
@@ -512,6 +521,7 @@ function SessionRowWithDelete({
         isActive={isActive}
         onSelect={onSelect}
         onResume={onResume}
+        hasPendingConfirm={hasPendingConfirm}
       />
       {/* Delete button — revealed on hover (not shown for archived rows) */}
       {hovered && session.status !== "archived" && (

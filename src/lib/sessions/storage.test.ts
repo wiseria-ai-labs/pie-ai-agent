@@ -10,6 +10,7 @@ import {
   getTotalBytes,
   getPendingConfirmCount,
   isPendingConfirmFloodLimited,
+  listPendingConfirmSessionIds,
   listSessionIndex,
   markFailed,
   markFailedAndScrub,
@@ -673,6 +674,49 @@ describe("getPendingConfirmCount", () => {
     expect(await getPendingConfirmCount()).toBe(2);
     await scrubPendingConfirm(s1.id);
     expect(await getPendingConfirmCount()).toBe(1);
+  });
+});
+
+describe("listPendingConfirmSessionIds (F3 — pending indicator migration)", () => {
+  it("returns [] when no sessions have a pendingConfirm", async () => {
+    await createSession();
+    await createSession();
+    expect(await listPendingConfirmSessionIds()).toEqual([]);
+  });
+
+  it("includes drift-card pendingConfirm (kind=pinned-tab-drift) — unlike getPendingConfirmCount", async () => {
+    // This is the whole point of the new function: the flood-limit counter
+    // deliberately excludes drift cards (P1-10), but drift cards are the only
+    // kind any code still produces (background/index.ts), so the v2 pending
+    // indicators (MenuHub row / session row dot) need to see them.
+    const s1 = await createSession();
+    await setPendingConfirm(s1.id, {
+      confirmationId: "drift-1",
+      kind: "pinned-tab-drift",
+      payload: { reason: "tab-closed", originalTask: "test", lastPinnedTabTitle: "", pinnedOrigin: "https://example.com", lastStepIndex: 0 },
+    });
+    expect(await listPendingConfirmSessionIds()).toEqual([s1.id]);
+    // getPendingConfirmCount stays 0 for the same state (flood limit unaffected).
+    expect(await getPendingConfirmCount()).toBe(0);
+  });
+
+  it("lists every session with a live pendingConfirm, regardless of kind", async () => {
+    const s1 = await createSession();
+    const s2 = await createSession();
+    const s3 = await createSession();
+    await setPendingConfirm(s1.id, { ...MOCK_PENDING, confirmationId: "c1" });
+    await setPendingConfirm(s3.id, { ...MOCK_PENDING, confirmationId: "c3" });
+    const ids = await listPendingConfirmSessionIds();
+    expect(new Set(ids)).toEqual(new Set([s1.id, s3.id]));
+    void s2;
+  });
+
+  it("stops listing a session once its pendingConfirm is scrubbed", async () => {
+    const s1 = await createSession();
+    await setPendingConfirm(s1.id, { ...MOCK_PENDING, confirmationId: "c1" });
+    expect(await listPendingConfirmSessionIds()).toEqual([s1.id]);
+    await scrubPendingConfirm(s1.id);
+    expect(await listPendingConfirmSessionIds()).toEqual([]);
   });
 });
 

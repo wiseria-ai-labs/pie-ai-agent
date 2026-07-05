@@ -18,6 +18,9 @@ interface SessionRowProps {
   isActive: boolean;
   onSelect: (id: string) => void;
   onResume: (id: string) => void;
+  /** F3 — session has a live pendingConfirm (e.g. a resume-drift card
+   *  waiting for Discard). Renders a small accent dot next to the title. */
+  hasPendingConfirm?: boolean;
 }
 
 // ── Status icon components ────────────────────────────────────────────────────
@@ -94,6 +97,7 @@ export default function SessionRow({
   isActive,
   onSelect,
   onResume,
+  hasPendingConfirm,
 }: SessionRowProps) {
   const t = useT();
   const { id, status, title, lastAccessedAt } = session;
@@ -168,21 +172,38 @@ export default function SessionRow({
 
       {/* Text column */}
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-        <span
-          style={{
-            fontFamily: "Inter, sans-serif",
-            fontSize: 13,
-            fontWeight: 500,
-            color: titleColor,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {/* M2-U3 R29: title is a React text node — no innerHTML / dangerouslySetInnerHTML path.
-               HTML entities (e.g. &lt;) from escapeUntrustedWrappers are rendered as literal
-               text by React, not parsed as HTML, so XSS via a crafted LLM title is not possible. */}
-          {displayTitle}
+        <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontFamily: "Inter, sans-serif",
+              fontSize: 13,
+              fontWeight: 500,
+              color: titleColor,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {/* M2-U3 R29: title is a React text node — no innerHTML / dangerouslySetInnerHTML path.
+                 HTML entities (e.g. &lt;) from escapeUntrustedWrappers are rendered as literal
+                 text by React, not parsed as HTML, so XSS via a crafted LLM title is not possible. */}
+            {displayTitle}
+          </span>
+          {hasPendingConfirm && (
+            <span
+              role="img"
+              aria-label={t("sessions.pendingDot")}
+              style={{
+                width: 6,
+                height: 6,
+                flexShrink: 0,
+                borderRadius: "50%",
+                background: "var(--c-accent)",
+              }}
+            />
+          )}
         </span>
         <span
           style={{
