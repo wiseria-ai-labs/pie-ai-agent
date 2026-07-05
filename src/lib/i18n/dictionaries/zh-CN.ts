@@ -457,6 +457,8 @@ export const zhCNDict = {
     themeSystem: "主题：跟随系统。点击切换浅色。",
     openSessionsList: "打开会话列表",
     pendingBadge: "，{count} 个待处理",
+    menu: "Vailie 菜单",
+    pendingCount: "{count} 个待确认",
   },
   providerDropdown: {
     selectProvider: "选择 Provider",

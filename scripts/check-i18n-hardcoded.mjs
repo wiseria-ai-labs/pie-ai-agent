@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 
-const files = execFileSync("git", ["diff", "--name-only", "--cached"], { encoding: "utf8" })
+const files = execFileSync("git", ["diff", "--name-only", "--diff-filter=d", "--cached"], { encoding: "utf8" })
   .split("\n")
   .filter((file) => file.startsWith("src/sidepanel/"))
   .filter((file) => /\.(tsx|ts)$/.test(file))

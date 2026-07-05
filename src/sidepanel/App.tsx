@@ -2,11 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import Chat from "@/sidepanel/components/Chat";
 import Settings from "@/sidepanel/components/Settings";
 import SessionDrawer from "@/sidepanel/components/SessionDrawer";
-import TopBarListButton from "@/sidepanel/components/TopBarListButton";
-import TopBarNewSessionButton from "@/sidepanel/components/TopBarNewSessionButton";
-import TopBarSettingsButton from "@/sidepanel/components/TopBarSettingsButton";
-import TopBarSchedulesButton from "@/sidepanel/components/TopBarSchedulesButton";
-import TopBarThemeButton, { type ThemeMode } from "@/sidepanel/components/TopBarThemeButton";
+import { VailieMark } from "@/sidepanel/components/VailieMark";
+import { IconButton } from "@/sidepanel/components/ui/IconButton";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
 import { getInstance } from "@/lib/instances";
 import { resolveSelection } from "@/lib/model-selection-resolver";
@@ -20,14 +17,70 @@ import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
+import { type ThemeMode } from "@/sidepanel/theme-mode";
+import { useT } from "@/lib/i18n";
 
 type View = "agent" | "settings" | "schedules";
 
 /**
+ * TopBar — v2.0.0 redesign (Task 5, G1/G8): borderless wide bar with exactly
+ * two interactive slots.
+ *   [VailieMark + "Vailie" wordmark — opens the menu hub (Task 6)] …spacer… [+ new session]
+ *
+ * Extracted from App's render so it can be exercised directly in tests
+ * without mounting the full App tree (SW port / IndexedDB / chrome.* mocks).
+ */
+interface TopBarProps {
+  hubOpen: boolean;
+  onToggleHub: () => void;
+  pendingCount: number;
+  onNewSession: () => void;
+  /** Active session title — not rendered (v2 drops the top-bar title text),
+   *  kept as the hub button's native tooltip so it isn't dead data. */
+  sessionTitle: string;
+}
+
+export function TopBar({ hubOpen, onToggleHub, pendingCount, onNewSession, sessionTitle }: TopBarProps) {
+  const t = useT();
+  return (
+    <div
+      style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 12px", flexShrink: 0, zIndex: 10 }}
+      className="bg-canvas"
+    >
+      {/* IP + 字标 = 菜单枢纽入口(G1)。字标同为热区;hover 现 caret。 */}
+      <button
+        type="button"
+        aria-label={t("topBar.menu")}
+        aria-expanded={hubOpen}
+        title={sessionTitle}
+        onClick={onToggleHub}
+        className="group relative flex items-center gap-2 rounded-[12px] px-1.5 py-1 hover:bg-field transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
+      >
+        <VailieMark size={28} state="idle" />
+        <span className="text-[14px] font-semibold tracking-[-0.01em] text-fg-1">Vailie</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+          className="text-fg-3 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+        {/* pending 确认角标(pinned-tab-drift 恢复卡,spec §6 迁移) */}
+        {pendingCount > 0 && (
+          <span aria-label={t("topBar.pendingCount", { count: pendingCount })} className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent" />
+        )}
+      </button>
+
+      <div style={{ flex: 1 }} />
+
+      {/* 右侧唯一常驻:新对话(G1 高频一键) */}
+      <IconButton size={40} aria-label={t("topBar.newSession")} title={`${t("topBar.newSession")} (⌘K)`} onClick={onNewSession}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+      </IconButton>
+    </div>
+  );
+}
+
+/**
  * App — root component.
  *
- * M2-U2 changes:
- * - New top bar: [≡●] [+] {sessionTitle} ─── [settings icon]
+ * v2.0.0 redesign (Task 5):
+ * - New top bar: TopBar (IP hub trigger + lone new-session button) — see above
  * - SessionDrawer overlay for session list
  * - activeSessionId managed via useSession.setActive / createAndActivate
  * - pendingCount computed from storage (sessions with live pendingConfirm)
@@ -41,6 +94,9 @@ export default function App() {
   const [providerLabel, setProviderLabel] = useState<string | null>(null);
   const [chatPrefill, setChatPrefill] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // v2.0.0 (Task 5, G1): the brand hub trigger's open state. MenuHub itself
+  // (the panel this opens) is Task 6 — this task only wires the trigger.
+  const [hubOpen, setHubOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
@@ -330,7 +386,10 @@ export default function App() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [handleNewSession, drawerOpen, view]);
 
-  // ── Session title for top bar ─────────────────────────────────────────────
+  // ── Session title ─────────────────────────────────────────────────────────
+  // v2 no longer renders this in the top bar (the chat stream's first turn is
+  // the context) — kept for the hub trigger's tooltip and for Task 6 (MenuHub)
+  // to surface as the active-session label.
   const activeSessionEntry = sessions.find((s) => s.id === session.sessionId);
   const sessionTitle = activeSessionEntry?.title ?? (session.sessionId ? "New Session" : "…");
 
@@ -339,67 +398,18 @@ export default function App() {
       className="bg-canvas text-fg-1 dot-grid flex h-screen flex-col"
       style={{ position: "relative", overflow: "hidden" }}
     >
-      {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "8px 10px",
-          borderBottom: "1px solid var(--c-line)",
-          flexShrink: 0,
-          background: "var(--c-canvas)",
-          zIndex: 10,
-        }}
-      >
-        {/* ≡ drawer toggle with pending dot */}
-        <TopBarListButton
-          pendingCount={pendingCount}
-          isOpen={drawerOpen}
-          onClick={() => setDrawerOpen((v) => !v)}
-        />
+      <TopBar
+        hubOpen={hubOpen}
+        onToggleHub={() => setHubOpen((v) => !v)}
+        pendingCount={pendingCount}
+        onNewSession={() => void handleNewSession()}
+        sessionTitle={sessionTitle}
+      />
 
-        {/* + new session */}
-        <TopBarNewSessionButton onClick={() => void handleNewSession()} />
-
-        {/* Session title — pure text, not a button */}
-        <span
-          style={{
-            fontFamily: "Inter, sans-serif",
-            fontSize: 13,
-            fontWeight: 500,
-            color: "var(--c-fg-1)",
-            flex: 1,
-            minWidth: 0,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            userSelect: "none",
-          }}
-          title={sessionTitle}
-        >
-          {sessionTitle}
-        </span>
-
-        {/* Recording v1: REC button moved to Composer (within input field).
-            See Chat.tsx <Composer onStartRecording={...} /> + RecordingMode
-            footer Recording bar (Cancel/Finish). */}
-
-        {/* Theme toggle (light / dark / system cycle) */}
-        <TopBarThemeButton mode={themeMode} onModeChange={setThemeMode} />
-
-        {/* Schedules */}
-        <TopBarSchedulesButton
-          isActive={view === "schedules"}
-          onClick={() => setView(view === "schedules" ? "agent" : "schedules")}
-        />
-
-        {/* Settings */}
-        <TopBarSettingsButton
-          isActive={view === "settings"}
-          onClick={() => setView(view === "settings" ? "agent" : "settings")}
-        />
-      </div>
+      {/* Recording v1: REC button moved to Composer (within input field).
+          See Chat.tsx <Composer onStartRecording={...} /> + RecordingMode
+          footer Recording bar (Cancel/Finish). Schedules/Settings navigation
+          and the drawer toggle move into the menu hub (Task 6). */}
 
       {/* ── Main content area ─────────────────────────────────────────────── */}
       {/* key={view} forces remount on switch so .view-enter keyframe replays.
@@ -442,6 +452,8 @@ export default function App() {
             onBack={() => setView("agent")}
             onRunSkill={(id, name) => void handleRunSkill(id, name)}
             openSubscribeNonce={subscribeNonce}
+            themeMode={themeMode}
+            onThemeModeChange={setThemeMode}
           />
         )}
       </div>

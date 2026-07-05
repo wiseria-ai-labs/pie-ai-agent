@@ -450,6 +450,8 @@ export const ptBRDict = {
     themeSystem: "Tema: sistema. Clique para claro.",
     openSessionsList: "Abrir lista de sessões",
     pendingBadge: ", {count} pendente(s)",
+    menu: "Menu do Vailie",
+    pendingCount: "{count} confirmação(ões) pendente(s)",
   },
   providerDropdown: {
     selectProvider: "Selecionar provedor",

@@ -449,6 +449,8 @@ export const enDict = {
     themeSystem: "Theme: system. Click for light.",
     openSessionsList: "Open sessions list",
     pendingBadge: ", {count} pending",
+    menu: "Vailie menu",
+    pendingCount: "{count} pending confirmation(s)",
   },
   providerDropdown: {
     selectProvider: "Select provider",

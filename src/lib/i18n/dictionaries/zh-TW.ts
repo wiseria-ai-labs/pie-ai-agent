@@ -457,6 +457,8 @@ export const zhTWDict = {
     themeSystem: "主題：跟隨系統。點擊切換為淺色。",
     openSessionsList: "開啟工作階段清單",
     pendingBadge: "，{count} 個待處理",
+    menu: "Vailie 選單",
+    pendingCount: "{count} 個待確認",
   },
   providerDropdown: {
     selectProvider: "選擇 Provider",

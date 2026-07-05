@@ -450,6 +450,8 @@ export const es419Dict = {
     themeSystem: "Tema: sistema. Clic para claro.",
     openSessionsList: "Abrir lista de sesiones",
     pendingBadge: ", {count} pendiente(s)",
+    menu: "Menú de Vailie",
+    pendingCount: "{count} confirmación(es) pendiente(s)",
   },
   providerDropdown: {
     selectProvider: "Seleccionar proveedor",

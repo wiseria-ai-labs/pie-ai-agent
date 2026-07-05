@@ -450,6 +450,8 @@ export const jaDict = {
     themeSystem: "テーマ: システム。クリックでライトへ。",
     openSessionsList: "セッション一覧を開く",
     pendingBadge: ", {count} 件保留中",
+    menu: "Vailie メニュー",
+    pendingCount: "{count} 件の確認待ち",
   },
   providerDropdown: {
     selectProvider: "プロバイダーを選択",

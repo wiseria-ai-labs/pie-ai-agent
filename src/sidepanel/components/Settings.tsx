@@ -39,6 +39,7 @@ import { testProviderConnection } from "@/lib/provider-test";
 import { submitFeedback } from "@/lib/managed-account";
 import { readRecentLogs } from "@/lib/log-buffer";
 import { capLogBytes } from "@/lib/log-cap";
+import type { ThemeMode } from "@/sidepanel/theme-mode";
 
 interface Props {
   onBack: () => void;
@@ -46,6 +47,11 @@ interface Props {
   /** Bumped by a website "Subscribe" deep-link — opens the New Config wizard in
    *  managed mode (the official-subscription screen). */
   openSubscribeNonce?: number;
+  /** v2.0.0 (Task 5): theme state is threaded in from App; the general-tab
+   *  picker UI itself lands in Task 7 (G8). Optional so existing callers
+   *  (and this task's own render) don't need to wire it yet. */
+  themeMode?: ThemeMode;
+  onThemeModeChange?: (next: ThemeMode) => void;
 }
 
 type Tab = "configs" | "skills" | "search" | "general";
