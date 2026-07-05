@@ -81,12 +81,21 @@ vi.mock("@/lib/log-cap", () => ({
 }));
 
 // Mock chrome.runtime for FeedbackSection and AboutSection
-global.chrome = {
+(globalThis as unknown as {
+  chrome: {
+    runtime: {
+      getManifest: () => { version: string };
+      getURL: (path: string) => string
+    }
+  }
+}).chrome = {
+  ...(globalThis as unknown as { chrome: object }).chrome,
   runtime: {
+    ...((globalThis as unknown as { chrome: { runtime: object } }).chrome?.runtime ?? {}),
     getManifest: () => ({ version: "1.0.0" }),
     getURL: (path: string) => `chrome-extension://mock-id/${path}`,
   },
-} as any;
+};
 
 function renderSettings(overrides: Partial<ComponentProps<typeof Settings>> = {}) {
   const onBack = vi.fn();
