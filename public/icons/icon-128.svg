@@ -1,40 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <!-- Static vector illustration of the VailieMark idle blob (see
-       src/sidepanel/components/VailieMark.tsx MESH.idle for the canonical
-       CSS recipe this mirrors). Not part of the build: the shipped extension
-       icons (icon-16/32/48/128.png) are hand-authored via
-       scripts/render-icons.html, not rasterized from this file. This SVG is
-       only a vector reference used by README hero images. -->
+  <!-- Static vector of the VailieMark idle blob — an exact port of the CSS
+       recipe in src/sidepanel/components/VailieMark.tsx MESH.idle: each
+       radialGradient maps the unit circle onto that layer's ellipse via
+       gradientTransform (translate = centre ×128, scale = rx/ry ×128) and
+       fades to alpha 0 at the same 85–90% stop as the CSS. Layers are painted
+       bottom-to-top (document order), i.e. the reverse of the CSS list.
+       Not part of the build: the shipped extension icons (icon-16/32/48/128
+       .png) are exported from scripts/render-icons.html, which additionally
+       uses a tighter small-size recipe at 16/32. This SVG is only a vector
+       reference used by README hero images. -->
   <defs>
-    <radialGradient id="vb-peach1" cx="54%" cy="42%" r="24%">
-      <stop offset="0%" stop-color="#FFB3C2" stop-opacity=".35"/>
-      <stop offset="100%" stop-color="#FFB3C2" stop-opacity="0"/>
+    <radialGradient id="vm-core" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
+        gradientTransform="translate(64 58.88) scale(71.68 64)">
+      <stop offset="0" stop-color="#C7D2DE"/>
+      <stop offset=".85" stop-color="#CFD9E4" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="vb-peach2" cx="66%" cy="26%" r="26%">
-      <stop offset="0%" stop-color="#FFB3C2" stop-opacity=".65"/>
-      <stop offset="100%" stop-color="#FFB3C2" stop-opacity="0"/>
+    <radialGradient id="vm-silver" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
+        gradientTransform="translate(38.4 35.84) scale(35.84 30.72)">
+      <stop offset="0" stop-color="#D5DEE7" stop-opacity=".85"/>
+      <stop offset=".85" stop-color="#D5DEE7" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="vb-blue1" cx="36%" cy="56%" r="34%">
-      <stop offset="0%" stop-color="#7CB8FF" stop-opacity=".65"/>
-      <stop offset="100%" stop-color="#7CB8FF" stop-opacity="0"/>
+    <radialGradient id="vm-blue2" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
+        gradientTransform="translate(74.24 92.16) scale(51.2 30.72)">
+      <stop offset="0" stop-color="#7CB8FF" stop-opacity=".55"/>
+      <stop offset=".88" stop-color="#7CB8FF" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="vb-blue2" cx="58%" cy="72%" r="40%">
-      <stop offset="0%" stop-color="#7CB8FF" stop-opacity=".55"/>
-      <stop offset="100%" stop-color="#7CB8FF" stop-opacity="0"/>
+    <radialGradient id="vm-blue1" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
+        gradientTransform="translate(46.08 71.68) scale(43.52 51.2)">
+      <stop offset="0" stop-color="#7CB8FF" stop-opacity=".65"/>
+      <stop offset=".88" stop-color="#7CB8FF" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="vb-silver1" cx="30%" cy="28%" r="28%">
-      <stop offset="0%" stop-color="#D5DEE7" stop-opacity=".85"/>
-      <stop offset="100%" stop-color="#D5DEE7" stop-opacity="0"/>
+    <radialGradient id="vm-peach2" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
+        gradientTransform="translate(84.48 33.28) scale(33.28 28.16)">
+      <stop offset="0" stop-color="#FFB3C2" stop-opacity=".65"/>
+      <stop offset=".86" stop-color="#FFB3C2" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="vb-core" cx="50%" cy="46%" r="56%">
-      <stop offset="0%" stop-color="#C7D2DE"/>
-      <stop offset="100%" stop-color="#CFD9E4" stop-opacity="0"/>
+    <radialGradient id="vm-peach1" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
+        gradientTransform="translate(69.12 53.76) scale(30.72 19.2)">
+      <stop offset="0" stop-color="#FFB3C2" stop-opacity=".35"/>
+      <stop offset=".9" stop-color="#FFB3C2" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <rect width="128" height="128" fill="url(#vb-core)"/>
-  <rect width="128" height="128" fill="url(#vb-silver1)"/>
-  <rect width="128" height="128" fill="url(#vb-blue2)"/>
-  <rect width="128" height="128" fill="url(#vb-blue1)"/>
-  <rect width="128" height="128" fill="url(#vb-peach2)"/>
-  <rect width="128" height="128" fill="url(#vb-peach1)"/>
+  <rect width="128" height="128" fill="url(#vm-core)"/>
+  <rect width="128" height="128" fill="url(#vm-silver)"/>
+  <rect width="128" height="128" fill="url(#vm-blue2)"/>
+  <rect width="128" height="128" fill="url(#vm-blue1)"/>
+  <rect width="128" height="128" fill="url(#vm-peach2)"/>
+  <rect width="128" height="128" fill="url(#vm-peach1)"/>
 </svg>

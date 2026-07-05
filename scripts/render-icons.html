@@ -1,66 +1,107 @@
 <!-- scripts/render-icons.html — open in a browser (or drive headlessly via Playwright),
      draws the 4 extension-icon sizes on <canvas id="canvas-{size}"> and offers download
-     links. MESH recipe = VailieMark idle (128/48) with a tighter-decay variant for the
-     small sizes (32/16) so the blob still reads as a distinct colour cluster at toolbar
-     scale — see src/sidepanel/components/VailieMark.tsx MESH.idle for the source recipe
-     this is hand-tuned from. Zero dependencies; this file is not part of the Vite build. -->
+     links. The 128/48 recipe is a faithful port of VailieMark.tsx MESH.idle: each CSS
+     layer's elliptical radii (rx/ry) and its fade-to-transparent stop (85–90%) are
+     reproduced exactly via a scaled canvas radial gradient, so the result matches the
+     in-app CSS blob — silver-grey opaque core, blue welling up from below, peach wisp
+     upper-right, and all four corners at alpha 0 (the shape is a soft circle defined
+     purely by colour dissolving to transparent). 32/16 use a tighter 3-layer variant
+     (solid "hold" plateau before the fade) so the toolbar-size icon keeps a solid core
+     while preserving the same grey-body / blue-bottom / peach-dot identity.
+     A CSS-rendered reference blob (generated from the same layer data) is shown next
+     to the canvases for eyeball comparison. Zero dependencies; not part of the build. -->
 <!doctype html>
 <meta charset="utf-8" />
 <title>Vailie icon exporter</title>
 <body style="font-family:sans-serif;background:#20232a;color:#eee;padding:16px">
 <h1 style="font-size:14px;font-weight:600">Vailie extension icon exporter</h1>
-<p style="font-size:12px;color:#9aa;max-width:60ch">Each canvas is rendered at its native pixel size (no CSS upscaling) on a checkerboard so alpha edges and toolbar-scale legibility are visible as-is. Click a link to download that PNG.</p>
+<p style="font-size:12px;color:#9aa;max-width:66ch">Each canvas is rendered at its native pixel size (no CSS upscaling) on a checkerboard so alpha edges and toolbar-scale legibility are visible as-is. The leftmost tile is the MESH.idle recipe rendered by the browser's own CSS engine, generated from the same layer table — canvas-128 should be visually identical to it. Click a link to download that PNG.</p>
 <div id="grid" style="display:flex;gap:24px;align-items:flex-end;flex-wrap:wrap"></div>
 <script>
-const LAYERS_LARGE = [ // idle recipe (same lineage as VailieMark.tsx MESH.idle)
-  ["rgba(255,179,194,.35)", .54, .42, .24], ["rgba(255,179,194,.65)", .66, .26, .26],
-  ["rgba(124,184,255,.65)", .36, .56, .34], ["rgba(124,184,255,.55)", .58, .72, .40],
-  ["rgba(213,222,231,.85)", .30, .28, .28], ["rgba(199,210,222,1)", .50, .46, .56],
+// Layer tuple: [color, cx, cy, rx, ry, hold, fade]
+//   cx/cy  — ellipse centre, fraction of the box
+//   rx/ry  — ellipse radii, fraction of the box (CSS "rx% ry% at cx% cy%")
+//   hold   — colour stays solid until this fraction of the ray (0 = linear fade, like CSS)
+//   fade   — colour reaches alpha 0 at this fraction (CSS's "… 0) 88%" stop)
+// Arrays are in CSS background order: FIRST layer paints on TOP.
+
+const LAYERS_LARGE = [ // exact MESH.idle from src/sidepanel/components/VailieMark.tsx
+  ["rgba(255,179,194,.35)", .54, .42, .24, .15, 0, .90],
+  ["rgba(255,179,194,.65)", .66, .26, .26, .22, 0, .86],
+  ["rgba(124,184,255,.65)", .36, .56, .34, .40, 0, .88],
+  ["rgba(124,184,255,.55)", .58, .72, .40, .24, 0, .88],
+  ["rgba(213,222,231,.85)", .30, .28, .28, .24, 0, .85],
+  ["rgba(199,210,222,1)",   .50, .46, .56, .50, 0, .85],
 ];
-const LAYERS_SMALL = [ // tighter decay: small-icon core stays solid, legibility over nuance
-  ["rgba(255,159,178,1)", .54, .30, .30], ["rgba(124,184,255,.9)", .40, .60, .44],
-  ["rgba(196,208,222,1)", .50, .48, .52],
+
+const LAYERS_SMALL = [ // tight decay for 16/32: solid grey body, blue below, peach dot
+  ["rgba(255,159,178,.9)",  .66, .30, .26, .24, .25, .80],
+  ["rgba(124,184,255,.75)", .42, .68, .38, .30, .30, .85],
+  ["rgba(199,210,222,1)",   .50, .46, .48, .46, .50, .95],
 ];
-const RADIUS_FACTOR_SMALL = 1.3; // tighter than LARGE's 1.7 — keeps the small-icon core solid
-const RADIUS_FACTOR_LARGE = 1.7;
+
+const CHECKER =
+  "repeating-conic-gradient(#3a3f47 0% 25%, #2a2e35 0% 50%) 0 0 / 8px 8px";
+
+const toTransparent = (color) => color.replace(/[\d.]+\)$/, "0)");
+
+function paintLayer(ctx, size, [color, cx, cy, rx, ry, hold, fade]) {
+  ctx.save();
+  // Map the unit circle onto the layer's ellipse, so a radius-1 radial
+  // gradient at the origin renders as a true elliptical gradient.
+  ctx.translate(cx * size, cy * size);
+  ctx.scale(rx * size, ry * size);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0, color);
+  if (hold > 0) g.addColorStop(hold, color);
+  g.addColorStop(fade, toTransparent(color));
+  g.addColorStop(1, toTransparent(color));
+  ctx.fillStyle = g;
+  // Rect covering the whole canvas, expressed in the transformed space.
+  ctx.fillRect(-cx / rx, -cy / ry, 1 / rx, 1 / ry);
+  ctx.restore();
+}
+
+function tile(label, el, downloadName) {
+  const wrap = document.createElement("div");
+  wrap.style.textAlign = "center";
+  const cap = document.createElement("div");
+  cap.style.cssText = "font-size:11px;margin-bottom:4px";
+  cap.textContent = label;
+  wrap.append(cap, el);
+  if (downloadName) {
+    const a = document.createElement("a");
+    a.href = el.toDataURL("image/png");
+    a.download = downloadName;
+    a.style.cssText = "display:block;margin-top:4px;font-size:11px;color:#7cb8ff";
+    a.textContent = "download";
+    wrap.append(a);
+  }
+  document.getElementById("grid").append(wrap);
+}
+
+// CSS-engine reference blob, generated from the same LAYERS_LARGE table.
+// This string equals VailieMark.tsx MESH.idle (hold is 0 on every large layer).
+const cssIdle = LAYERS_LARGE
+  .map(([color, cx, cy, rx, ry, , fade]) =>
+    `radial-gradient(${rx * 100}% ${ry * 100}% at ${cx * 100}% ${cy * 100}%, ` +
+    `${color} 0%, ${toTransparent(color)} ${fade * 100}%)`)
+  .join(",");
+const ref = document.createElement("div");
+ref.style.width = ref.style.height = "128px";
+ref.style.background = `${cssIdle}, ${CHECKER}`;
+tile("CSS reference (MESH.idle)", ref, null);
 
 function draw(size) {
   const c = document.createElement("canvas");
   c.width = c.height = size;
   c.id = `canvas-${size}`;
-  c.style.background =
-    "repeating-conic-gradient(#3a3f47 0% 25%, #2a2e35 0% 50%) 0 0 / 8px 8px";
+  c.style.background = CHECKER;
   const ctx = c.getContext("2d");
-  const small = size < 48;
-  const layers = small ? LAYERS_SMALL : LAYERS_LARGE;
-  const radiusFactor = small ? RADIUS_FACTOR_SMALL : RADIUS_FACTOR_LARGE;
-  for (const [color, x, y, r] of [...layers].reverse()) {
-    const g = ctx.createRadialGradient(
-      x * size, y * size, 0,
-      x * size, y * size, r * size * radiusFactor
-    );
-    g.addColorStop(0, color);
-    g.addColorStop(1, color.replace(/[\d.]+\)$/, "0)"));
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-  }
-
-  const wrap = document.createElement("div");
-  wrap.style.textAlign = "center";
-  const label = document.createElement("div");
-  label.style.fontSize = "11px";
-  label.style.marginBottom = "4px";
-  label.textContent = `${size}px`;
-  const a = document.createElement("a");
-  a.href = c.toDataURL("image/png");
-  a.download = `icon-${size}.png`;
-  a.style.display = "block";
-  a.style.marginTop = "4px";
-  a.style.fontSize = "11px";
-  a.style.color = "#7cb8ff";
-  a.textContent = "download";
-  wrap.append(label, c, a);
-  document.getElementById("grid").append(wrap);
+  const layers = size >= 48 ? LAYERS_LARGE : LAYERS_SMALL;
+  // CSS order is top-first; canvas source-over paints last-on-top → reverse.
+  for (const layer of [...layers].reverse()) paintLayer(ctx, size, layer);
+  tile(`${size}px`, c, `icon-${size}.png`);
 }
 
 [128, 48, 32, 16].forEach(draw);
