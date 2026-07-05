@@ -35,17 +35,39 @@ function ensureHost(): HTMLElement {
       .b svg { display: block; }
     </style>
     <button class="b" type="button" aria-label="添加为引用" title="添加为引用">
+      <!-- Vailie IP mesh (F6) — ported from scripts/render-icons.html's
+           LAYERS_SMALL recipe (the same tight-decay 16/32px config used for
+           the extension's own toolbar icon): silver-grey body, blue welling
+           up from below, a peach dot upper-right, all fading to alpha 0 at
+           the edges — no clip, no outline; the shape IS the gradient, same
+           as VailieMark.tsx. Self-contained (no external refs) since this is
+           injected into arbitrary pages via a content script. Layers are
+           painted body → blue → peach so the peach dot sits on top, matching
+           LAYERS_SMALL's documented CSS paint order (first entry = topmost). -->
       <svg width="24" height="24" viewBox="0 0 128 128" aria-hidden="true">
         <defs>
-          <clipPath id="pie-quote-bubble-clip">
-            <circle cx="64" cy="64" r="64"/>
-          </clipPath>
+          <radialGradient id="vailie-quote-mesh-body" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1" gradientTransform="translate(64 58.88) scale(61.44 58.88)">
+            <stop offset="0%" stop-color="rgb(199,210,222)" stop-opacity="1"/>
+            <stop offset="50%" stop-color="rgb(199,210,222)" stop-opacity="1"/>
+            <stop offset="95%" stop-color="rgb(199,210,222)" stop-opacity="0"/>
+            <stop offset="100%" stop-color="rgb(199,210,222)" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="vailie-quote-mesh-blue" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1" gradientTransform="translate(53.76 87.04) scale(48.64 38.4)">
+            <stop offset="0%" stop-color="rgb(124,184,255)" stop-opacity=".75"/>
+            <stop offset="30%" stop-color="rgb(124,184,255)" stop-opacity=".75"/>
+            <stop offset="85%" stop-color="rgb(124,184,255)" stop-opacity="0"/>
+            <stop offset="100%" stop-color="rgb(124,184,255)" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="vailie-quote-mesh-peach" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1" gradientTransform="translate(84.48 38.4) scale(33.28 30.72)">
+            <stop offset="0%" stop-color="rgb(255,159,178)" stop-opacity=".9"/>
+            <stop offset="25%" stop-color="rgb(255,159,178)" stop-opacity=".9"/>
+            <stop offset="80%" stop-color="rgb(255,159,178)" stop-opacity="0"/>
+            <stop offset="100%" stop-color="rgb(255,159,178)" stop-opacity="0"/>
+          </radialGradient>
         </defs>
-        <g clip-path="url(#pie-quote-bubble-clip)">
-          <rect width="128" height="128" fill="#14181D"/>
-          <circle cx="64" cy="64" r="44" fill="#FAFBFC"/>
-          <circle cx="98" cy="30" r="22" fill="#14181D"/>
-        </g>
+        <rect width="128" height="128" fill="url(#vailie-quote-mesh-body)"/>
+        <rect width="128" height="128" fill="url(#vailie-quote-mesh-blue)"/>
+        <rect width="128" height="128" fill="url(#vailie-quote-mesh-peach)"/>
       </svg>
     </button>
   `;
