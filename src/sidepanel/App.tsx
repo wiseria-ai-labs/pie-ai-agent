@@ -12,6 +12,7 @@ import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
 import { useRecording } from "@/sidepanel/hooks/useRecording";
 import RecordingMode from "@/sidepanel/components/RecordingMode";
+import Onboarding from "@/sidepanel/components/Onboarding";
 import { listSessionIndex, listPendingConfirmSessionIds } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
@@ -114,6 +115,11 @@ export default function App() {
   // dot (pendingSessionIds itself, passed to the drawer).
   const [pendingSessionIds, setPendingSessionIds] = useState<string[]>([]);
   const pendingCount = pendingSessionIds.length;
+  // F8 — first-run Onboarding overlay (spec §6 I 屏). Replaces the old
+  // jump-straight-to-Settings firstRun behavior; the config flag is cleared
+  // from each of Onboarding's three exit callbacks below, not on mount, so a
+  // panel closed mid-onboarding still shows it again next open.
+  const [firstRun, setFirstRun] = useState(false);
   // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
   // Settings → NewConfigWizard to open the managed-subscribe screen.
   const [subscribeNonce, setSubscribeNonce] = useState(0);
@@ -209,11 +215,10 @@ export default function App() {
     void refreshSessionIndex();
     void refreshPendingCount();
 
-    // firstRun → open settings
+    // firstRun → show the Onboarding overlay (F8)
     void (async () => {
       if (await getConfig<boolean>("firstRun")) {
-        setView("settings");
-        void removeConfig("firstRun");
+        setFirstRun(true);
       }
     })();
 
@@ -382,6 +387,29 @@ export default function App() {
     setDrawerOpen(false);
   }, [session]);
 
+  // ── Onboarding exits (F8) ──────────────────────────────────────────────────
+  // All three clear the firstRun config flag (moved here from the mount
+  // effect) and dismiss the overlay; managed/byok additionally route into
+  // Settings via the existing subscribeNonce / settingsOpenTab mechanisms
+  // (the same ones the website Subscribe deep-link and MenuHub's Skills
+  // entry use), landing on the right sub-screen instead of just Settings.
+  const handleOnboardingPickManaged = useCallback(() => {
+    setFirstRun(false);
+    void removeConfig("firstRun");
+    setView("settings");
+    setSubscribeNonce((n) => n + 1);
+  }, []);
+  const handleOnboardingPickByok = useCallback(() => {
+    setFirstRun(false);
+    void removeConfig("firstRun");
+    setView("settings");
+    setSettingsOpenTab({ tab: "configs", nonce: Date.now() });
+  }, []);
+  const handleOnboardingSkip = useCallback(() => {
+    setFirstRun(false);
+    void removeConfig("firstRun");
+  }, []);
+
   // ── Keyboard shortcuts (panel-focused) ─────────────────────────────────────
   // Cmd/Ctrl+K → new session, Cmd/Ctrl+D → toggle the session drawer, and Esc →
   // return to chat from Settings/Schedules when idle (the drawer + Composer
@@ -456,7 +484,13 @@ export default function App() {
         className="view-enter"
         style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}
       >
-        {view === "agent" && recording.active ? (
+        {firstRun ? (
+          <Onboarding
+            onPickManaged={handleOnboardingPickManaged}
+            onPickByok={handleOnboardingPickByok}
+            onSkip={handleOnboardingSkip}
+          />
+        ) : view === "agent" && recording.active ? (
           <RecordingMode
             active={recording.active}
             actions={recording.actions}

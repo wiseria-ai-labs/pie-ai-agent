@@ -478,6 +478,16 @@ export const zhTWDict = {
     settings: "設定",
     brandLine: "開源 Apache-2.0 · 無遙測",
   },
+  onboarding: {
+    title: "我是 Vailie。",
+    subtitle: "讀取頁面、填寫表單、跨分頁工作——內建於瀏覽器的 AI 助理。",
+    managedTitle: "訂閱 Vailie Pro",
+    managedBody: "使用 Google 登入即可開始使用，不需自行設定 API Key。",
+    byokTitle: "自備 API Key",
+    byokBody: "串接 OpenAI、Anthropic、Gemini 等 12+ 家服務商。",
+    trustLine: "開源 Apache-2.0 · 無遙測 · 金鑰僅於本機加密儲存",
+    skip: "略過，先逛逛",
+  },
   providerDropdown: {
     selectProvider: "選擇 Provider",
     searchPlaceholder: "搜尋 Provider...",

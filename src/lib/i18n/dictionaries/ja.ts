@@ -471,6 +471,16 @@ export const jaDict = {
     settings: "設定",
     brandLine: "オープンソース Apache-2.0 · テレメトリなし",
   },
+  onboarding: {
+    title: "私が Vailie です。",
+    subtitle: "ページを読み、フォームに入力し、タブをまたいで作業する——ブラウザに組み込まれた AI アシスタント。",
+    managedTitle: "Vailie Pro に登録",
+    managedBody: "Google ログインだけですぐ使える。API キーの設定は不要。",
+    byokTitle: "自分の API キーを使う",
+    byokBody: "OpenAI・Anthropic・Gemini など12以上のプロバイダーに接続。",
+    trustLine: "オープンソース Apache-2.0 · テレメトリなし · キーはローカルで暗号化保存",
+    skip: "スキップして見てみる",
+  },
   providerDropdown: {
     selectProvider: "プロバイダーを選択",
     searchPlaceholder: "プロバイダーを検索...",

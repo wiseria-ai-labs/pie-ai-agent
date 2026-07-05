@@ -478,6 +478,16 @@ export const zhCNDict = {
     settings: "设置",
     brandLine: "开源 Apache-2.0 · 无遥测",
   },
+  onboarding: {
+    title: "我是 Vailie。",
+    subtitle: "读页面、填表单、跨标签页干活——浏览器里的 AI 助手。",
+    managedTitle: "订阅 Vailie Pro",
+    managedBody: "Google 登录即用，无需自己配置 API Key。",
+    byokTitle: "自带 API Key",
+    byokBody: "接入 OpenAI、Anthropic、Gemini 等 12+ 家 provider。",
+    trustLine: "开源 Apache-2.0 · 无遥测 · 密钥仅本地加密存储",
+    skip: "跳过，先逛逛",
+  },
   providerDropdown: {
     selectProvider: "选择 Provider",
     searchPlaceholder: "搜索 Provider...",

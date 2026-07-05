@@ -470,6 +470,16 @@ export const enDict = {
     settings: "Settings",
     brandLine: "Open-source Apache-2.0 · No telemetry",
   },
+  onboarding: {
+    title: "I'm Vailie.",
+    subtitle: "Reads pages, fills forms, works across tabs — an AI assistant built into your browser.",
+    managedTitle: "Subscribe to Vailie Pro",
+    managedBody: "Sign in with Google and start right away — no API key setup.",
+    byokTitle: "Bring your own API key",
+    byokBody: "Connect OpenAI, Anthropic, Gemini, and 12+ other providers.",
+    trustLine: "Open-source Apache-2.0 · No telemetry · Keys encrypted locally only",
+    skip: "Skip, just looking",
+  },
   providerDropdown: {
     selectProvider: "Select provider",
     searchPlaceholder: "Search provider...",

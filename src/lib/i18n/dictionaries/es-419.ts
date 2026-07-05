@@ -471,6 +471,16 @@ export const es419Dict = {
     settings: "Configuración",
     brandLine: "Código abierto Apache-2.0 · Sin telemetría",
   },
+  onboarding: {
+    title: "Soy Vailie.",
+    subtitle: "Lee páginas, completa formularios y trabaja entre pestañas: un asistente de IA integrado en tu navegador.",
+    managedTitle: "Suscríbete a Vailie Pro",
+    managedBody: "Inicia sesión con Google y empieza al instante, sin configurar tu propia API key.",
+    byokTitle: "Usa tu propia API key",
+    byokBody: "Conecta OpenAI, Anthropic, Gemini y más de 12 proveedores.",
+    trustLine: "Código abierto Apache-2.0 · Sin telemetría · Claves cifradas solo en tu equipo",
+    skip: "Omitir, solo quiero mirar",
+  },
   providerDropdown: {
     selectProvider: "Seleccionar proveedor",
     searchPlaceholder: "Buscar proveedor...",

@@ -471,6 +471,16 @@ export const ptBRDict = {
     settings: "Configurações",
     brandLine: "Código aberto Apache-2.0 · Sem telemetria",
   },
+  onboarding: {
+    title: "Eu sou o Vailie.",
+    subtitle: "Lê páginas, preenche formulários e trabalha entre abas — um assistente de IA embutido no seu navegador.",
+    managedTitle: "Assine o Vailie Pro",
+    managedBody: "Entre com o Google e comece na hora, sem configurar sua própria API key.",
+    byokTitle: "Use sua própria API key",
+    byokBody: "Conecte OpenAI, Anthropic, Gemini e mais de 12 provedores.",
+    trustLine: "Código aberto Apache-2.0 · Sem telemetria · Chaves criptografadas somente localmente",
+    skip: "Pular, só olhando",
+  },
   providerDropdown: {
     selectProvider: "Selecionar provedor",
     searchPlaceholder: "Buscar provedor...",
