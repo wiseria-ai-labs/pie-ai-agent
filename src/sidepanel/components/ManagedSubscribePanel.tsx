@@ -11,7 +11,7 @@ import { GoogleGlyph, SparkGlyph } from "./icons";
 import type { Entitlement } from "@/lib/managed-auth";
 
 function SelectRing({ checked }: { checked: boolean }) {
-  if (!checked) return <span className="h-4 w-4 shrink-0 rounded-full border border-line" aria-hidden />;
+  if (!checked) return <span className="h-4 w-4 shrink-0 rounded-full bg-field" aria-hidden />;
   return (
     <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-fg-1" aria-hidden>
       <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none">
@@ -263,7 +263,7 @@ export default function ManagedSubscribePanel({
                         aria-checked={selected === "month"}
                         disabled={busy}
                         onClick={() => setSelected("month")}
-                        className={`flex flex-1 basis-0 flex-col gap-1 rounded-control border p-3 text-left transition-colors ${selected === "month" ? "border-fg-1" : "border-line"}`}
+                        className={`flex flex-1 basis-0 flex-col gap-1 rounded-control p-3 text-left transition-colors ${selected === "month" ? "bg-accent-tint" : "bg-field"}`}
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[12px] font-medium text-fg-2">{t("managed.subscribe.monthly")}</span>
@@ -292,7 +292,7 @@ export default function ManagedSubscribePanel({
                         aria-checked={selected === "year"}
                         disabled={busy}
                         onClick={() => setSelected("year")}
-                        className={`flex flex-1 basis-0 flex-col gap-1 rounded-control border p-3 text-left transition-colors ${selected === "year" ? "border-fg-1" : "border-line"}`}
+                        className={`flex flex-1 basis-0 flex-col gap-1 rounded-control p-3 text-left transition-colors ${selected === "year" ? "bg-accent-tint" : "bg-field"}`}
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[12px] font-medium text-fg-2">{t("managed.subscribe.annual")}</span>
@@ -328,7 +328,7 @@ export default function ManagedSubscribePanel({
             </Button>
           </div>
           {session.entitlement.plan === "none" && (
-            <div className="border-t border-line pt-3.5">
+            <div className="pt-3.5">
               <RedeemCodeForm
                 apiKey={session.apiKey}
                 collapsible

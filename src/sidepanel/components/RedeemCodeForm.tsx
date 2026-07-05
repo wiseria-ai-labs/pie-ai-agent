@@ -61,13 +61,13 @@ export default function RedeemCodeForm({ apiKey, onRedeemed, deps, collapsible =
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder={t("managed.redeem.placeholder")}
-          className="h-9 flex-1 rounded-control border border-line bg-field px-3 font-mono text-[12px] uppercase placeholder:normal-case placeholder:text-fg-3"
+          className="h-9 flex-1 rounded-control bg-field px-3 font-mono text-[12px] uppercase placeholder:normal-case placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
         />
         <button
           type="button"
           disabled={busy || !code.trim()}
           onClick={submit}
-          className="h-9 shrink-0 rounded-control border border-line px-3 text-[12px] text-fg-2 transition-colors hover:border-fg-3 hover:text-fg-1 disabled:opacity-40"
+          className="h-9 shrink-0 rounded-control bg-transparent px-3 text-[12px] text-fg-2 transition-colors hover:bg-field hover:text-fg-1 disabled:opacity-40"
         >
           {busy ? t("managed.redeem.redeeming") : t("managed.redeem.button")}
         </button>

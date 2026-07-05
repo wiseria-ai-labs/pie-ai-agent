@@ -24,9 +24,9 @@ function CtaCard({ tone, title, body, action }: {
   body: string;
   action?: { label: string; on: () => void };
 }) {
-  const box = tone === "warning" ? "border-warning-line bg-warning-tint" : "border-line bg-field";
+  const box = tone === "warning" ? "border border-warning-line bg-warning-tint" : "bg-field";
   return (
-    <div className={`mt-1.5 flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${box}`}>
+    <div className={`mt-1.5 flex items-center gap-2.5 rounded-xl px-3 py-2.5 ${box}`}>
       <div className="flex flex-1 flex-col gap-0.5">
         <div className="text-[13px] font-medium text-fg-1">{title}</div>
         <div className="text-[12px] text-fg-2">{body}</div>

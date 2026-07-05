@@ -200,7 +200,7 @@ export default function ModelPicker(props: Props) {
         role="dialog"
         placement={coords?.bottom != null ? "above" : "below"}
         style={{ left: coords?.left, top: coords?.top, bottom: coords?.bottom }}
-        className="fixed z-[100] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
+        className="fixed z-[100] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card bg-surface shadow-[0_8px_28px_rgba(21,25,31,0.14)]"
       >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
             <span className="text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
@@ -252,7 +252,7 @@ export default function ModelPicker(props: Props) {
           {props.onManage && (
             <button
               onClick={() => { setOpen(false); props.onManage?.(); }}
-              className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 transition-colors hover:bg-field"
+              className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] text-fg-2 transition-colors hover:bg-field"
             >
               <span>{t("modelPicker.manage")}</span>
             </button>
@@ -297,7 +297,7 @@ function ExpandedModels(props: {
           value={props.query}
           onChange={(e) => props.setQuery(e.target.value)}
           placeholder={props.placeholder}
-          className="mx-3.5 mb-1 rounded-chip border border-line bg-field px-2 py-1 text-[11px] text-fg-1 placeholder:text-fg-3 transition-colors focus:border-accent"
+          className="mx-3.5 mb-1 rounded-chip bg-field px-2 py-1 text-[11px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
         />
       )}
       <div className="flex max-h-[240px] flex-col overflow-y-auto">
