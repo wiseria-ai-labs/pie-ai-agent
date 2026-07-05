@@ -2067,6 +2067,8 @@ function Composer({
   onCancelPending: (chatMessageId: string) => void;
 }) {
   const t = useT();
+  const [focused, setFocused] = useState(false);
+  const expanded = focused || streaming || popoverOpen;
   return (
     <div className="relative flex flex-shrink-0 flex-col gap-2 bg-transparent px-3 pb-3 pt-3">
       {/* Top fade — a soft gradient replaces the hard divider line, so messages
@@ -2092,17 +2094,34 @@ function Composer({
             onPick={onPickSkill}
           />
         )}
-        {/* Composer box: top-bottom layout */}
-        <div className="flex flex-col gap-2 rounded-card border border-line bg-field px-3.5 py-3 transition-colors focus-within:border-accent">
+        {/* Composer 两态壳(G2)。展开态=旧版上下两段原样;胶囊态=收纳型 pill。
+            单一 textarea 常驻:形变不重挂节点,焦点/光标不丢。 */}
+        <div
+          data-testid="composer-shell"
+          onFocusCapture={() => setFocused(true)}
+          onBlurCapture={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setFocused(false);
+          }}
+          className={
+            "relative transition-all duration-150 ease-out " +
+            (expanded
+              ? "flex flex-col gap-2 rounded-[18px] bg-surface-deep px-3.5 py-3 shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
+              : "flex items-center rounded-[26px] bg-field h-[52px]")
+          }
+        >
           {/* Top row: textarea full width */}
           <textarea
             value={input}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={t("chat.composerPlaceholder")}
-            rows={3}
+            rows={expanded ? 3 : 1}
             disabled={!sessionAllowsInput}
-            className="min-h-[84px] resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
+            className={
+              expanded
+                ? "min-h-[84px] resize-none bg-transparent text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
+                : "flex-1 min-w-0 resize-none self-center overflow-hidden bg-transparent pl-[52px] pr-[52px] text-[13px] leading-5 text-fg-1 placeholder:text-fg-3 disabled:opacity-50"
+            }
             onPaste={(e) => {
               const dt = e.clipboardData;
               if (!dt) return;
@@ -2157,7 +2176,7 @@ function Composer({
             }}
           />
           {/* Bottom row: action row */}
-          <div className="flex items-center gap-2">
+          <div data-testid="composer-actions" className={expanded ? "flex items-center gap-2" : "hidden"}>
             {/* Issue #34 — ToolsMenu (+ button) stays available during streaming
                 so users can attach images / pick elements / stage quotes on a
                 mid-task instruction before queueing it. Recording is the only
@@ -2234,6 +2253,24 @@ function Composer({
               <PieSendButton onClick={onSubmit} disabled={!input.trim()} />
             )}
           </div>
+          {!expanded && (
+            <>
+              {/* 胶囊态 ＋:absolute 于左端圆心。点击=聚焦 textarea 触发展开
+                  (展开态里有完整 ToolsMenu);onMouseDown+preventDefault 防按钮抢焦点 */}
+              <button
+                type="button"
+                aria-label={t("chat.expandComposer")}
+                title={t("chat.expandComposer")}
+                onMouseDown={(e) => { e.preventDefault(); (e.currentTarget.parentElement?.querySelector("textarea") as HTMLTextAreaElement)?.focus(); }}
+                className="absolute left-0 top-0 flex h-[52px] w-[52px] items-center justify-center text-fg-2 hover:text-fg-1 rounded-[26px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </button>
+              <div className="absolute right-0 top-0 flex h-[52px] w-[52px] items-center justify-center">
+                <PieSendButton onClick={onSubmit} disabled={!input.trim()} />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

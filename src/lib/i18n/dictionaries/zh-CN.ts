@@ -202,6 +202,7 @@ export const zhCNDict = {
     startRecording: "开始录制",
     rec: "录制",
     toolsMenu: "更多工具",
+    expandComposer: "展开输入框",
     sendMessage: "发送消息",
     pending: {
       captionPrefix: "待发送",

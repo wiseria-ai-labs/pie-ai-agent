@@ -202,6 +202,7 @@ export const zhTWDict = {
     startRecording: "開始錄製",
     rec: "錄製",
     toolsMenu: "更多工具",
+    expandComposer: "展開輸入框",
     sendMessage: "傳送訊息",
     pending: {
       captionPrefix: "待傳送",

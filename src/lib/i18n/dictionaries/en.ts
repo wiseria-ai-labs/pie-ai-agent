@@ -202,6 +202,7 @@ export const enDict = {
     startRecording: "Start recording",
     rec: "REC",
     toolsMenu: "More tools",
+    expandComposer: "Expand composer",
     sendMessage: "Send message",
     pending: {
       captionPrefix: "PENDING",

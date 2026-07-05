@@ -203,6 +203,7 @@ export const es419Dict = {
     startRecording: "Iniciar grabación",
     rec: "REC",
     toolsMenu: "Más herramientas",
+    expandComposer: "Expandir el cuadro de mensaje",
     sendMessage: "Enviar mensaje",
     pending: {
       captionPrefix: "PENDIENTE",

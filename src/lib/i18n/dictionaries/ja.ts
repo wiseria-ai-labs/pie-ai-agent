@@ -203,6 +203,7 @@ export const jaDict = {
     startRecording: "記録を開始",
     rec: "REC",
     toolsMenu: "その他のツール",
+    expandComposer: "入力欄を展開",
     sendMessage: "メッセージを送信",
     pending: {
       captionPrefix: "保留中",

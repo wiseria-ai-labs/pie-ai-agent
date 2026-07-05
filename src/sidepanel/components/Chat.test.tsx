@@ -736,6 +736,7 @@ describe("Chat — send clears attachments", () => {
     await screen.findByRole("button", { name: /more tools/i });
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
     await act(async () => {
+      fireEvent.focus(textarea); // G2: expand composer shell so the action row's Send button is unambiguous
       fireEvent.change(textarea, { target: { value: "Hello" } });
     });
 
@@ -837,6 +838,7 @@ describe("Chat — Task 4.4 file attachments", () => {
     // Type something and submit
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
     await act(async () => {
+      fireEvent.focus(textarea); // G2: expand composer shell so the action row's Send button is unambiguous
       fireEvent.change(textarea, { target: { value: "analyze this" } });
     });
 
@@ -880,6 +882,7 @@ describe("Chat — Task 4.4 file attachments", () => {
 
     const textarea = screen.getByPlaceholderText(/Tell the agent/i);
     await act(async () => {
+      fireEvent.focus(textarea); // G2: expand composer shell so the action row's Send button is unambiguous
       fireEvent.change(textarea, { target: { value: "use this" } });
     });
 
@@ -1247,6 +1250,30 @@ describe("Chat — composer keyboard guards", () => {
     });
 
     expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("composer collapses to a capsule when idle and expands on focus (G2)", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession()}
+      />,
+    );
+
+    const shell = await screen.findByTestId("composer-shell");
+    expect(shell.className).toContain("rounded-[26px]"); // capsule
+    expect(shell.className).not.toContain("rounded-[18px]");
+
+    const ta = screen.getByPlaceholderText(/Tell the agent/i);
+    await act(async () => {
+      ta.focus();
+    });
+    await waitFor(() => expect(shell.className).toContain("rounded-[18px]")); // expanded
+
+    // 展开态动作行可见(ModelPicker 触发器在文档流里)
+    expect(shell.querySelector('[data-testid="composer-actions"]')).toBeTruthy();
   });
 });
 

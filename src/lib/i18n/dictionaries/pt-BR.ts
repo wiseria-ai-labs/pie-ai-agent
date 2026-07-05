@@ -203,6 +203,7 @@ export const ptBRDict = {
     startRecording: "Iniciar gravação",
     rec: "REC",
     toolsMenu: "Mais ferramentas",
+    expandComposer: "Expandir campo de mensagem",
     sendMessage: "Enviar mensagem",
     pending: {
       captionPrefix: "PENDENTE",
