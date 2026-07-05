@@ -1,19 +1,22 @@
 import type { CSSProperties } from "react";
 import type { RecordedAction } from "@/lib/recording/types";
 import { useT } from "@/lib/i18n";
+import VailieMark from "./VailieMark";
 
 /**
  * Recording v1 Booth — full-panel view shown while a recording session is
  * live. Replaces the chat body + composer with:
  *
- *   1. Vital Bar — large mono step counter + magenta RECORDING label + halo
- *      pulse. No timer / no waveform: this is DOM-event capture, not audio.
+ *   1. Vital Bar — large mono step counter + RECORDING label (brand blue) +
+ *      VailieMark `recording` variant as the live indicator. No timer / no
+ *      waveform: this is DOM-event capture, not audio.
  *   2. Sequence — one row per RecordedAction: index • type chip • label •
  *      optional REDACTED / UNSTABLE meta chip.
  *   3. Footer Recording Bar — Cancel + Finish (replaces the chat composer).
  *
  * Visual tokens come exclusively from sidepanel/index.css `--c-*` tokens to
- * stay locked to the Pie design system.
+ * stay locked to the Vailie design system (brand blue accent, no magenta —
+ * IP-ified per redesign spec §7.4/§9.2).
  */
 
 interface RecordingModeProps {
@@ -61,7 +64,7 @@ export default function RecordingMode({
             fontSize: 11,
             fontWeight: 600,
             letterSpacing: "0.10em",
-            color: "var(--c-warning)",
+            color: "var(--c-warning-fg)",
           }}
         >
           {t("recording.aborted")}
@@ -98,7 +101,7 @@ export default function RecordingMode({
           flexShrink: 0,
         }}
       >
-        <PulseDot />
+        <VailieMark size={22} state="recording" label={t("recording.recordingAria")} />
         <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span
@@ -132,7 +135,7 @@ export default function RecordingMode({
               fontSize: 11,
               fontWeight: 600,
               letterSpacing: "0.10em",
-              color: "var(--c-pending)",
+              color: "var(--c-accent)",
             }}
           >
             {t("recording.recording")}
@@ -190,12 +193,12 @@ export default function RecordingMode({
             gap: 12,
             padding: "12px 12px 12px 16px",
             background: "var(--c-surface)",
-            border: "1px solid var(--c-pending)",
+            border: "1px solid var(--c-accent)",
             borderRadius: 12,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
-            <SmallPulseDot />
+            <VailieMark size={16} state="recording" label={undefined} />
             <div
               style={{
                 fontFamily: "'JetBrains Mono', monospace",
@@ -292,49 +295,6 @@ export default function RecordingMode({
 }
 
 // ── Subcomponents ─────────────────────────────────────────────
-
-function PulseDot() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 36,
-        height: 36,
-        flexShrink: 0,
-        position: "relative",
-      }}
-    >
-      <span
-        style={{
-          width: 10,
-          height: 10,
-          background: "var(--c-pending)",
-          borderRadius: "50%",
-          // halo via two layered box-shadows; no animation (would burn battery)
-          boxShadow:
-            "0 0 0 5px rgba(194, 96, 190, 0.20), 0 0 0 12px rgba(194, 96, 190, 0.06)",
-        }}
-      />
-    </div>
-  );
-}
-
-function SmallPulseDot() {
-  return (
-    <span
-      style={{
-        width: 8,
-        height: 8,
-        background: "var(--c-pending)",
-        borderRadius: "50%",
-        boxShadow: "0 0 0 4px rgba(194, 96, 190, 0.18)",
-        flexShrink: 0,
-      }}
-    />
-  );
-}
 
 function SequenceRow({ index, action }: { index: number; action: RecordedAction }) {
   const tLoc = useT();
@@ -439,7 +399,7 @@ function SequenceLabel({ action }: { action: RecordedAction }) {
           style={{
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: 12,
-            color: action.redacted ? "var(--c-warning)" : "var(--c-fg-2)",
+            color: action.redacted ? "var(--c-warning-fg)" : "var(--c-fg-2)",
             flex: 1,
             ...wrapText,
           }}
@@ -479,7 +439,7 @@ function MetaChip({ kind }: { kind: "redacted" | "unstable" }) {
         fontSize: 9,
         fontWeight: 600,
         letterSpacing: "0.08em",
-        color: "var(--c-warning)",
+        color: "var(--c-warning-fg)",
       }}
     >
       {kind === "redacted" && (
@@ -487,7 +447,7 @@ function MetaChip({ kind }: { kind: "redacted" | "unstable" }) {
           style={{
             width: 4,
             height: 4,
-            background: "var(--c-warning)",
+            background: "var(--c-warning-fg)",
             borderRadius: "50%",
           }}
         />

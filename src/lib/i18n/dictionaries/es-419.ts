@@ -412,6 +412,7 @@ export const es419Dict = {
     step: "PASO",
     steps: "PASOS",
     recording: "GRABANDO",
+    recordingAria: "Grabación en curso",
     sequence: "SECUENCIA",
     cancel: "Cancelar",
     finish: "Finalizar",

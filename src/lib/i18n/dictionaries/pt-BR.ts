@@ -412,6 +412,7 @@ export const ptBRDict = {
     step: "ETAPA",
     steps: "ETAPAS",
     recording: "GRAVANDO",
+    recordingAria: "Gravação em andamento",
     sequence: "SEQUÊNCIA",
     cancel: "Cancelar",
     finish: "Concluir",

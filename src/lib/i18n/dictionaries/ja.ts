@@ -412,6 +412,7 @@ export const jaDict = {
     step: "ステップ",
     steps: "ステップ",
     recording: "記録中",
+    recordingAria: "記録中です",
     sequence: "シーケンス",
     cancel: "キャンセル",
     finish: "完了",

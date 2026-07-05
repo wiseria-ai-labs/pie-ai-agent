@@ -411,6 +411,7 @@ export const zhCNDict = {
     step: "步",
     steps: "步",
     recording: "录制中",
+    recordingAria: "正在录制中",
     sequence: "操作序列",
     cancel: "取消",
     finish: "完成",

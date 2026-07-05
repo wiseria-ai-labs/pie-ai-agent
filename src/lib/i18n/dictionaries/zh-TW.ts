@@ -411,6 +411,7 @@ export const zhTWDict = {
     step: "步",
     steps: "步",
     recording: "錄製中",
+    recordingAria: "正在錄製中",
     sequence: "操作序列",
     cancel: "取消",
     finish: "完成",

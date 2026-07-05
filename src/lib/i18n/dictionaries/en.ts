@@ -411,6 +411,7 @@ export const enDict = {
     step: "STEP",
     steps: "STEPS",
     recording: "RECORDING",
+    recordingAria: "Recording in progress",
     sequence: "SEQUENCE",
     cancel: "Cancel",
     finish: "Finish",
