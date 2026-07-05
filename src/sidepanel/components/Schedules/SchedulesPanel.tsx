@@ -42,8 +42,8 @@ type T = ReturnType<typeof useI18n>["t"];
 
 // Filled pills so each state reads clearly at a glance (the previous 8%-tint
 // chips were too faint): active = accent fill, paused = warning fill, completed
-// = neutral filled. disabled (below) = dashed outline. All use high-contrast
-// text-canvas on the saturated fills.
+// = neutral filled. disabled (below) = bare muted text, no chip. All use
+// high-contrast text-canvas on the saturated fills.
 const STATUS_STYLE: Record<ScheduleRecord["status"], string> = {
   active: "border-transparent bg-accent text-canvas",
   paused: "border-transparent bg-warning text-canvas",
@@ -55,7 +55,7 @@ const STATUS_STYLE: Record<ScheduleRecord["status"], string> = {
  * `enabled === false` is ALWAYS a deliberate user action (auto-pause on failures
  * / instance deletion and terminal completion never touch `enabled`), so it
  * reads as DISABLED regardless of status — including a completed or paused
- * schedule the user has turned off. Dashed outline = "you turned it off".
+ * schedule the user has turned off. Bare muted text (no chip) = "you turned it off".
  * When enabled, the badge reflects the lifecycle status (active / paused /
  * completed).
  */
