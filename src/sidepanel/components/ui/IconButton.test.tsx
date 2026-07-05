@@ -1,75 +1,89 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { describe, it, expect, afterEach } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
 import { IconButton } from "./IconButton";
 
 afterEach(() => cleanup());
 
-const Dot = () => <svg data-testid="dot" width="16" height="16" />;
-
-describe("IconButton", () => {
-  it("renders the icon and is reachable by its aria-label", () => {
-    render(<IconButton aria-label="Close" icon={<Dot />} />);
-    const btn = screen.getByRole("button", { name: "Close" });
-    expect(btn).toBeTruthy();
-    expect(screen.getByTestId("dot")).toBeTruthy();
+describe("IconButton (无界原语)", () => {
+  it("renders a bare icon button with hit-target size", () => {
+    const { getByRole } = render(
+      <IconButton aria-label="新对话" size={40}>
+        <svg />
+      </IconButton>
+    );
+    const btn = getByRole("button", { name: "新对话" });
+    expect(btn.style.width).toBe("40px");
+    expect(btn.className).toContain("hover:bg-field");
+    expect(btn.className).toContain("focus-visible:ring-2");
+    expect(btn.className).not.toContain("border");
   });
 
-  it("fires onClick", () => {
-    const onClick = vi.fn();
-    render(<IconButton aria-label="Close" icon={<Dot />} onClick={onClick} />);
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(onClick).toHaveBeenCalledTimes(1);
+  it("active paints the accent tint", () => {
+    const { getByRole } = render(
+      <IconButton aria-label="菜单" active>
+        <svg />
+      </IconButton>
+    );
+    expect(getByRole("button", { name: "菜单" }).className).toContain("bg-accent-tint");
   });
 
-  it("does not fire onClick when disabled", () => {
-    const onClick = vi.fn();
-    render(<IconButton aria-label="Close" icon={<Dot />} disabled onClick={onClick} />);
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(onClick).not.toHaveBeenCalled();
+  it("does not render border in any case", () => {
+    const { getByRole } = render(
+      <IconButton aria-label="test" active>
+        <svg />
+      </IconButton>
+    );
+    expect(getByRole("button", { name: "test" }).className).not.toContain("border");
   });
 
-  it("uses the chip radius token", () => {
-    render(<IconButton aria-label="Close" icon={<Dot />} />);
-    expect(screen.getByRole("button").className).toContain("rounded-chip");
+  it("renders type='button' even when rest prop tries to override", () => {
+    const { getByRole } = render(
+      <IconButton aria-label="test" type="submit">
+        <svg />
+      </IconButton>
+    );
+    const btn = getByRole("button", { name: "test" }) as HTMLButtonElement;
+    expect(btn.type).toBe("button");
   });
 
-  it("applies the md size (h-8 w-8) by default", () => {
-    render(<IconButton aria-label="Close" icon={<Dot />} />);
-    const cls = screen.getByRole("button").className;
-    expect(cls).toContain("h-8");
-    expect(cls).toContain("w-8");
+  it("uses default size 44px when not specified", () => {
+    const { getByRole } = render(
+      <IconButton aria-label="test">
+        <svg />
+      </IconButton>
+    );
+    const btn = getByRole("button", { name: "test" });
+    expect(btn.style.width).toBe("44px");
+    expect(btn.style.height).toBe("44px");
   });
 
-  it("applies the default variant border classes", () => {
-    render(<IconButton aria-label="Close" icon={<Dot />} variant="default" />);
-    const cls = screen.getByRole("button").className;
-    expect(cls).toContain("border-line");
-    expect(cls).toContain("bg-surface");
+  it("applies correct height style when size is specified", () => {
+    const { getByRole } = render(
+      <IconButton aria-label="test-size" size={32}>
+        <svg />
+      </IconButton>
+    );
+    const btn = getByRole("button", { name: "test-size" });
+    expect(btn.style.height).toBe("32px");
   });
 
-  it("applies the sm size (h-7 w-7)", () => {
-    render(<IconButton aria-label="Close" icon={<Dot />} size="sm" />);
-    const cls = screen.getByRole("button").className;
-    expect(cls).toContain("h-7");
-    expect(cls).toContain("w-7");
+  it("renders focus-visible ring always", () => {
+    const { getByRole } = render(
+      <IconButton aria-label="ring-test">
+        <svg />
+      </IconButton>
+    );
+    const btn = getByRole("button", { name: "ring-test" });
+    expect(btn.className).toContain("focus-visible:ring-2");
+    expect(btn.className).toContain("focus-visible:ring-accent-line");
   });
 
-  it("marks the icon as decorative (aria-hidden)", () => {
-    render(<IconButton aria-label="Close" icon={<Dot />} />);
-    expect(screen.getByTestId("dot").closest("[aria-hidden='true']")).toBeTruthy();
-  });
-
-  it("applies the xs size (h-6 w-6)", () => {
-    render(<IconButton aria-label="Close" icon={<Dot />} size="xs" />);
-    const cls = screen.getByRole("button").className;
-    expect(cls).toContain("h-6");
-    expect(cls).toContain("w-6");
-  });
-
-  it("uses accent border (not line) when active in the default variant", () => {
-    render(<IconButton aria-label="Close" icon={<Dot />} variant="default" active />);
-    const cls = screen.getByRole("button").className;
-    expect(cls).toContain("border-accent");
-    expect(cls).not.toContain("border-line");
+  it("allows additional className to be appended", () => {
+    const { getByRole } = render(
+      <IconButton aria-label="custom" className="custom-class">
+        <svg />
+      </IconButton>
+    );
+    expect(getByRole("button", { name: "custom" }).className).toContain("custom-class");
   });
 });

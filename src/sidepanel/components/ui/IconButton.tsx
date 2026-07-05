@@ -1,33 +1,44 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode, JSX } from "react";
 
 type Size = "xs" | "sm" | "md";
 type Variant = "default" | "ghost";
 
-interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  /** Accessible label — REQUIRED for an icon-only button. */
+// 新的无界原语：用 children 和 number size
+interface IconButtonNewProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  size?: number; // px hit-target; icon sizes itself. Default 44 (wide top bar).
+  active?: boolean;
+  children: ReactNode; // an svg
+  icon?: never;
+  variant?: never;
+}
+
+// 旧的 API（保持向后兼容）：用 icon 和字符串 size
+interface IconButtonLegacyProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   "aria-label": string;
   icon: ReactNode;
   size?: Size;
   variant?: Variant;
-  /** Active / pressed visual state (e.g. a toggle that is currently on). */
   active?: boolean;
+  children?: never;
 }
 
-const SIZE: Record<Size, string> = {
+export type IconButtonProps = IconButtonNewProps | IconButtonLegacyProps;
+
+// Legacy: Size mapping for old API
+const SIZE_LEGACY: Record<Size, string> = {
   xs: "h-6 w-6", // 24px
   sm: "h-7 w-7", // 28px
   md: "h-8 w-8", // 32px
 };
 
-// Base (non-color) classes per variant. Border-color / text-color are resolved
-// by `tone()` instead, so the active state is OWNED here and can't be lost to
-// Tailwind class-ordering (active never emits the inactive border class).
+// Legacy: Base classes per variant
 const VARIANT_BASE: Record<Variant, string> = {
   default: "border bg-surface",
   ghost: "bg-transparent",
 };
 
-function tone(variant: Variant, active: boolean): string {
+// Legacy: Tone function for coloring
+function toneLegacy(variant: Variant, active: boolean): string {
   if (variant === "default") {
     return active
       ? "border-accent text-fg-1"
@@ -39,32 +50,65 @@ function tone(variant: Variant, active: boolean): string {
     : "text-fg-2 hover:bg-field hover:text-fg-1";
 }
 
-export function IconButton({
-  icon,
-  size = "md",
-  variant = "ghost",
-  active = false,
-  className = "",
-  type = "button",
-  ...rest
-}: IconButtonProps) {
+export function IconButton(
+  props: IconButtonProps
+): JSX.Element {
+  // Discriminate: if icon prop exists, use legacy API
+  if ("icon" in props && props.icon !== undefined) {
+    const {
+      icon,
+      size = "md",
+      variant = "ghost",
+      active = false,
+      className = "",
+      type = "button",
+      ...rest
+    } = props as IconButtonLegacyProps;
+
+    return (
+      <button
+        type={type}
+        className={[
+          "inline-flex shrink-0 items-center justify-center rounded-chip",
+          "transition-[background-color,border-color,color] duration-150 ease-out",
+          "disabled:opacity-30 disabled:pointer-events-none",
+          SIZE_LEGACY[size],
+          VARIANT_BASE[variant],
+          toneLegacy(variant, active),
+          className,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        {...rest}
+      >
+        <span aria-hidden="true">{icon}</span>
+      </button>
+    );
+  }
+
+  // New API: borderless primitive
+  const {
+    size = 44,
+    active,
+    className,
+    children,
+    ...rest
+  } = props as IconButtonNewProps;
+
   return (
     <button
-      type={type}
-      className={[
-        "inline-flex shrink-0 items-center justify-center rounded-chip",
-        "transition-[background-color,border-color,color] duration-150 ease-out",
-        "disabled:opacity-30 disabled:pointer-events-none",
-        SIZE[size],
-        VARIANT_BASE[variant],
-        tone(variant, active),
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
       {...rest}
+      type="button"
+      style={{ width: size, height: size }}
+      className={
+        "flex items-center justify-center rounded-[12px] transition-colors " +
+        "text-fg-2 hover:bg-field hover:text-fg-1 " +
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line " +
+        (active ? "bg-accent-tint text-accent-strong " : "") +
+        (className ?? "")
+      }
     >
-      <span aria-hidden="true">{icon}</span>
+      {children}
     </button>
   );
 }
