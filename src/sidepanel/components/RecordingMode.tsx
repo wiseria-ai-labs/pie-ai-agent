@@ -198,7 +198,10 @@ export default function RecordingMode({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
-            <VailieMark size={16} state="recording" label={undefined} />
+            {/* G3 motion budget: the Vital Bar's mark above is the sole animated
+                instance for this screen — this Footer Bar duplicate stays static
+                so RecordingMode never exceeds the ≤2-animated-instances rule. */}
+            <VailieMark size={16} state="recording" label={undefined} animate={false} />
             <div
               style={{
                 fontFamily: "'JetBrains Mono', monospace",
