@@ -2268,7 +2268,19 @@ function Composer({
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
               </button>
               <div className="absolute right-0 top-0 flex h-[52px] w-[52px] items-center justify-center">
-                <PieSendButton onClick={onSubmit} disabled={!input.trim()} />
+                {/* F2 fix: mousedown on this button focuses it, which flips
+                    `focused` true (composer-shell's onFocusCapture) and
+                    synchronously re-renders to the expanded layout — unmounting
+                    THIS button before the click's mouseup lands, so the send
+                    is silently swallowed. preventDefault on mousedown blocks
+                    the browser's implicit focus-on-mousedown so the capsule
+                    stays put through the click (same fix as the ＋ button
+                    above, minus its explicit re-focus). */}
+                <PieSendButton
+                  onClick={onSubmit}
+                  disabled={!input.trim()}
+                  onMouseDown={(e) => e.preventDefault()}
+                />
               </div>
             </>
           )}
@@ -2434,12 +2446,16 @@ function ToolsMenu({
 
 function PieSendButton({
   onClick,
+  onMouseDown,
   disabled,
   "aria-label": ariaLabel,
   title: titleProp,
   className,
 }: {
   onClick: () => void;
+  /** F2 — capsule-state callers pass preventDefault here so a mousedown
+   *  can't blur-collapse the shell out from under the pending click. */
+  onMouseDown?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   disabled: boolean;
   "aria-label"?: string;
   title?: string;
@@ -2453,6 +2469,7 @@ function PieSendButton({
     <button
       type="button"
       onClick={onClick}
+      onMouseDown={onMouseDown}
       disabled={disabled}
       aria-label={label}
       title={titleStr}

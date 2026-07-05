@@ -750,6 +750,53 @@ describe("Chat — send clears attachments", () => {
       expect.objectContaining({ content: "Hello" }),
     );
   });
+
+  it("F2: capsule-state Send button survives a mousedown before the click (doesn't swallow the message)", async () => {
+    // Regression for "capsule swallows the click": mousedown on a focusable
+    // button focuses it by default, which (via composer-shell's
+    // onFocusCapture) flips `focused` true and re-renders to the expanded
+    // layout — unmounting the capsule's Send button before the click lands.
+    // The fix is onMouseDown={(e) => e.preventDefault()} on that button.
+    seedProvider("anthropic");
+    const sendMock = vi.fn();
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ sendMessage: sendMock })}
+      />,
+    );
+
+    // Type without focusing (jsdom's change event doesn't imply focus), then
+    // confirm the shell is still in the capsule state — leftover text sitting
+    // in an idle, unfocused composer is exactly the real-world setup for this
+    // bug (type, look away, come back and hit Send without refocusing).
+    await screen.findByRole("button", { name: /more tools/i });
+    const textarea = screen.getByPlaceholderText(/Tell the agent/i);
+    fireEvent.change(textarea, { target: { value: "Hello capsule" } });
+    const shell = await screen.findByTestId("composer-shell");
+    expect(shell.className).toContain("rounded-[26px]"); // still capsule
+
+    // Two "Send message" buttons exist in the DOM at once in capsule state:
+    // the expanded action row's own copy stays mounted (merely CSS-hidden via
+    // composer-actions' "hidden" class, not unmounted) alongside the capsule's.
+    // Target the capsule one specifically — it's the one NOT inside
+    // composer-actions.
+    const sendBtn = Array.from(
+      shell.querySelectorAll<HTMLButtonElement>('button[aria-label="Send message"]'),
+    ).find((el) => !el.closest('[data-testid="composer-actions"]'))!;
+    expect(sendBtn).toBeTruthy();
+    const notCancelled = fireEvent.mouseDown(sendBtn);
+    expect(notCancelled).toBe(false); // preventDefault() fired on mousedown
+    await act(async () => {
+      fireEvent.click(sendBtn);
+    });
+
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "Hello capsule" }),
+    );
+  });
 });
 
 // ── Task 4.4 — FileChip + file attachment send path ──────────────────────────
