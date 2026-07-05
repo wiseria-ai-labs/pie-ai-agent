@@ -353,7 +353,7 @@ export default function SessionDrawer({
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("sessions.searchPlaceholder")}
             aria-label={t("sessions.searchPlaceholder")}
-            className="rounded-field bg-field px-3 py-2 text-[13px] text-fg-1 outline-none placeholder:text-fg-3"
+            className="rounded-field bg-field px-3 py-2 text-[13px] text-fg-1 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)] placeholder:text-fg-3"
           />
         </div>
 

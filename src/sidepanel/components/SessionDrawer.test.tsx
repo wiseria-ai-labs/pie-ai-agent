@@ -134,6 +134,12 @@ describe("SessionDrawer — session rows", () => {
 });
 
 describe("SessionDrawer — Task 15: search + day groups", () => {
+  it("searchbox has focus visual feedback classes", () => {
+    render(<SessionDrawer {...BASE_PROPS} />);
+    const searchbox = screen.getByRole("searchbox");
+    expect(searchbox.className).toContain("focus:bg-surface-deep");
+  });
+
   it("filters sessions by title substring", async () => {
     const sessions = [
       makeEntry("s1", "active", "整理书签"),
