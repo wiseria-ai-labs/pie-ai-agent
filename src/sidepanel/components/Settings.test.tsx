@@ -7,7 +7,7 @@
  */
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import type { ComponentProps } from "react";
+import { useState, type ComponentProps } from "react";
 import Settings from "@/sidepanel/components/Settings";
 
 afterEach(() => {
@@ -150,26 +150,67 @@ describe("Settings component (Task 6: settingsOpenTab sticky state)", () => {
     });
   });
 
-  it("resets to default tab when openTab prop becomes null after being set", async () => {
-    const { rerender } = renderSettings({ openTab: { tab: "skills", nonce: 1 } });
+  it("consume-once: calls onOpenTabConsumed exactly once right after applying openTab.tab", async () => {
+    const onOpenTabConsumed = vi.fn();
+    renderSettings({ openTab: { tab: "skills", nonce: 1 }, onOpenTabConsumed });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Skills/i }).getAttribute("class")).toContain("bg-field");
+    });
+    expect(onOpenTabConsumed).toHaveBeenCalledOnce();
+  });
+
+  // Mini integration harness — reproduces the App-level wiring that the unit
+  // tests above cannot see (Settings alone has no owner to clear its state
+  // for). Mirrors App.tsx: `openTab` state + onOpenTabConsumed → setNull,
+  // plus a toggle to mount/unmount Settings the way switching `view` does.
+  //
+  // This is the regression test for the original Task 6 bug: MenuHub's
+  // "Skills" route left `settingsOpenTab` sticky, so leaving Settings and
+  // coming back via a *plain* route (no new openTab) replayed "skills"
+  // instead of defaulting to "configs". Mutation-verified below (see report).
+  function AppLikeHarness() {
+    const [mounted, setMounted] = useState(true);
+    const [openTab, setOpenTab] = useState<{ tab: "skills" | "configs" | "search" | "general"; nonce: number } | null>(
+      { tab: "skills", nonce: 1 },
+    );
+    return (
+      <div>
+        <button onClick={() => setMounted(false)}>unmount</button>
+        <button onClick={() => setMounted(true)}>remount-plain</button>
+        {mounted && (
+          <Settings
+            onBack={() => {}}
+            onRunSkill={() => {}}
+            openSubscribeNonce={0}
+            openTab={openTab}
+            onOpenTabConsumed={() => setOpenTab(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  it("integration: plain remount after a routed Settings visit defaults to 'configs', not the stale route", async () => {
+    render(<AppLikeHarness />);
+
+    // First visit is routed to "skills" (e.g. MenuHub's Skills destination).
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Skills/i }).getAttribute("class")).toContain("bg-field");
     });
 
-    // Simulate App clearing openTab (the fix: onSettings callback sets it to null).
-    rerender(
-      <Settings
-        onBack={() => {}}
-        onRunSkill={() => {}}
-        openSubscribeNonce={0}
-        openTab={null}
-      />,
-    );
+    // Leave Settings (unmount) and come back via a plain route — no new
+    // openTab is set, exactly like MenuHub's "Settings" destination or the
+    // top-bar back button landing on a fresh Settings mount.
+    fireEvent.click(screen.getByText("unmount"));
+    fireEvent.click(screen.getByText("remount-plain"));
 
-    // The tab should not change via effect (effect uses nonce dependency),
-    // so it stays on skills. But this test documents that null clears the sticky state,
-    // and App's wrapper of onBack() sets it to null to prevent re-trigger.
-    // The real test is at App level (plain settings route → tab defaults to configs).
+    await waitFor(() => {
+      const configsTab = screen.getByRole("button", { name: /Configs/i });
+      expect(configsTab.getAttribute("class")).toContain("bg-field");
+    });
+    // And "skills" must NOT still be showing as active.
+    expect(screen.getByRole("button", { name: /Skills/i }).getAttribute("class")).not.toContain("bg-field");
   });
 
   it("calls onBack when the back button is clicked", async () => {

@@ -55,11 +55,18 @@ interface Props {
   /** v2.0.0 (Task 6): bumped by MenuHub route callbacks (e.g. "Skills") to
    *  force a specific tab open, mirroring the openSubscribeNonce pattern above. */
   openTab?: { tab: Tab; nonce: number } | null;
+  /** v2.0.0 (Task 6, consume-once): called right after the openTab effect
+   *  applies `openTab.tab`, mirroring the deep-link consume pattern in App
+   *  (chrome.storage.session.remove after reading). Lets the owner (App)
+   *  clear its state so a later plain remount doesn't replay a stale tab —
+   *  the protection lives here, next to the effect it guards, rather than
+   *  relying solely on the caller remembering to clear it independently. */
+  onOpenTabConsumed?: () => void;
 }
 
 export type Tab = "configs" | "skills" | "search" | "general";
 
-export default function Settings({ onBack, onRunSkill, openSubscribeNonce, openTab }: Props) {
+export default function Settings({ onBack, onRunSkill, openSubscribeNonce, openTab, onOpenTabConsumed }: Props) {
   const t = useT();
   const [tab, setTab] = useState<Tab>("configs");
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
@@ -108,8 +115,15 @@ export default function Settings({ onBack, onRunSkill, openSubscribeNonce, openT
   }, [openSubscribeNonce]);
 
   // MenuHub route (Task 6, G1) — e.g. "Skills" jumps straight to that tab.
+  // Consume-once: notify the owner immediately after applying the tab so it
+  // can null out its state, the same way App consumes the "Subscribe"
+  // deep-link. Without this, a later plain remount that doesn't clear openTab
+  // would silently replay the stale tab instead of defaulting to "configs".
   useEffect(() => {
-    if (openTab) setTab(openTab.tab);
+    if (openTab) {
+      setTab(openTab.tab);
+      onOpenTabConsumed?.();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTab?.nonce]);
 

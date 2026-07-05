@@ -480,6 +480,7 @@ export default function App() {
             onRunSkill={(id, name) => void handleRunSkill(id, name)}
             openSubscribeNonce={subscribeNonce}
             openTab={settingsOpenTab}
+            onOpenTabConsumed={() => setSettingsOpenTab(null)}
             themeMode={themeMode}
             onThemeModeChange={setThemeMode}
           />
