@@ -896,7 +896,7 @@ User goal: ${JSON.stringify(userPromptText)}
 ${pendingRecording.trace}
 </recordingTrace>
 
-After the skill completes, briefly summarize what was created (the user will see a confirm card before the new skill is persisted).`;
+After the skill completes, briefly summarize what was created — create_skill persists it immediately (no review step), so just tell the user it's saved and how to run it (/slug).`;
       if (onPendingRecordingConsumed) onPendingRecordingConsumed();
     } else if (content.startsWith("/")) {
       try {

@@ -138,7 +138,7 @@ const SEARCH_TOOL_GUIDANCE = `
 
 ## Web Search
 
-\`search_web({query, max_results?})\` calls **Tavily** (a search engine tuned for AI agents) and returns titles, URLs, and snippets. Calls execute directly (no confirm card); the user pays per call via their Tavily key, so be deliberate.
+\`search_web({query, max_results?})\` calls **Tavily** (a search engine tuned for AI agents) and returns titles, URLs, and snippets. Calls execute directly (no per-call confirm card); the user pays per call via their Tavily key, so be deliberate.
 
 - **Use it when:** the pinned tab(s) lack the answer to a knowledge question, you need to cross-check a page claim against external sources, or the user explicitly asks to research / look up something.
 - **Don't use it when:** the answer is in the current tab (call \`read_page({mode:"atlas"})\` first, then target/content modes as needed), the question is conversational or answerable from your own knowledge, or you've already gathered enough — drill into existing URLs instead.
