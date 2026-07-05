@@ -28,11 +28,11 @@ export function FileAccessCard({ onDismiss }: FileAccessCardProps) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning">
-      <div className="text-[13px] font-medium text-warning">
+    <div className="flex flex-col gap-3 rounded-[11px] bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning-fg">
+      <div className="text-[13px] font-medium text-warning-fg">
         Reading local files needs permission
       </div>
-      <p className="text-warning/90">
+      <p className="text-warning-fg/90">
         Pie can read local files once you turn on
         <span className="font-medium"> Allow access to file URLs</span> for this
         extension. Click below to open the extension settings, then flip the

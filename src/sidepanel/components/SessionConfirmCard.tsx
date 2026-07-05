@@ -65,12 +65,12 @@ function DriftCard({
 
   return (
     <div
-      className="flex flex-col gap-3 rounded-lg border border-warning-line bg-warning-tint px-4 py-3.5 text-[13px]"
+      className="flex flex-col gap-3 rounded-[11px] bg-warning-tint px-4 py-3.5 text-[13px]"
       role="dialog"
       aria-labelledby="session-drift-title"
     >
       <div className="flex flex-col gap-1.5">
-        <span className="caps text-warning" id="session-drift-title">
+        <span className="caps text-warning-fg" id="session-drift-title">
           {reasonHeadline}
         </span>
         <p className="leading-5 text-fg-1">

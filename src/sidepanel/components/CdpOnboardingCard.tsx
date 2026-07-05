@@ -7,10 +7,10 @@ interface Props {
 export function CdpOnboardingCard({ onAnswer }: Props) {
   const t = useT();
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning">
-      <div className="text-[13px] font-medium text-warning">{t("cdpOnboarding.title")}</div>
-      <p className="text-warning/90">{t("cdpOnboarding.body1")}</p>
-      <p className="text-warning/90">{t("cdpOnboarding.body2")}</p>
+    <div className="flex flex-col gap-3 rounded-[11px] bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning-fg">
+      <div className="text-[13px] font-medium text-warning-fg">{t("cdpOnboarding.title")}</div>
+      <p className="text-warning-fg/90">{t("cdpOnboarding.body1")}</p>
+      <p className="text-warning-fg/90">{t("cdpOnboarding.body2")}</p>
       <div className="flex gap-2">
         <button
           type="button"

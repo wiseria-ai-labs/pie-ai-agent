@@ -2350,7 +2350,7 @@ function ToolsMenu({
             transform: shown ? "translateY(0)" : "translateY(8px)",
             transition: "opacity 0.18s ease, transform 0.18s ease",
           }}
-          className="absolute bottom-full left-0 z-20 mb-2 w-max whitespace-nowrap overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
+          className="absolute bottom-full left-0 z-20 mb-2 w-max whitespace-nowrap overflow-hidden rounded-[10px] bg-surface shadow-[0_8px_28px_rgba(21,25,31,0.14)]"
         >
           {onPickElement && (
             <button

@@ -32,11 +32,11 @@ export function LocalFileRequestCard({ onChoose, onCancel }: Props) {
   }, []);
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning">
-      <div className="text-[13px] font-medium text-warning">
+    <div className="flex flex-col gap-3 rounded-[11px] bg-warning-tint px-3 py-2.5 text-[12px] leading-[18px] text-warning-fg">
+      <div className="text-[13px] font-medium text-warning-fg">
         {t("chat.files.requestTitle")}
       </div>
-      <p className="text-warning/90">{t("chat.files.requestBody")}</p>
+      <p className="text-warning-fg/90">{t("chat.files.requestBody")}</p>
       <div className="flex gap-2">
         <button
           type="button"
