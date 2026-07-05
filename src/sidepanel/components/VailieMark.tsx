@@ -56,7 +56,7 @@ const MESH: Record<VailieState, string> = {
     "radial-gradient(48% 48% at 50% 48%, rgba(196,208,222,1) 0%, rgba(207,217,228,0) 94%)",
 };
 
-export interface VailieMarkProps extends Omit<HTMLAttributes<HTMLSpanElement>, "className" | "style"> {
+export interface VailieMarkProps extends Omit<HTMLAttributes<HTMLSpanElement>, "className" | "style" | "role" | "aria-hidden" | "aria-label"> {
   /** px diameter of the (square) box. Default 28 — the top-bar size. */
   size?: number;
   state?: VailieState;
@@ -78,12 +78,12 @@ export function VailieMark({ size = 28, state = "idle", animate = true, classNam
   };
   return (
     <span
+      {...rest}
       className={`vailie-mark vailie-mark--${state}${animate ? "" : " vailie-mark--static"}${className ? " " + className : ""}`}
       style={style}
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
-      {...rest}
     />
   );
 }

@@ -42,4 +42,18 @@ describe("VailieMark", () => {
     expect(el.getAttribute("data-testid")).toBe("vailie-mark-blob");
     expect(el.getAttribute("data-custom")).toBe("test-value");
   });
+
+  it("rest spread cannot override a11y semantics", () => {
+    const { container } = render(
+      <VailieMark
+        label="Vailie working"
+        {...({ role: "presentation", "aria-hidden": false } as Record<string, unknown>)}
+      />
+    );
+    const el = container.firstElementChild as HTMLElement;
+    // Component's own role/aria-label/aria-hidden must win, not rest props
+    expect(el.getAttribute("role")).toBe("img");
+    expect(el.getAttribute("aria-label")).toBe("Vailie working");
+    expect(el.hasAttribute("aria-hidden")).toBe(false);
+  });
 });
