@@ -259,13 +259,13 @@ export default function NewConfigWizard(props: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
-      <div role="group" aria-label="Config type" className="flex w-full overflow-hidden rounded-[10px] border border-line">
-        {([["byok", "newConfigWizard.tabByok"], ["managed", "newConfigWizard.tabManaged"]] as const).map(([m, labelKey], i) => (
+    <div className="flex flex-col gap-3 rounded-card bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)] p-3.5">
+      <div role="group" aria-label="Config type" className="flex w-full bg-field rounded-[12px] p-[3px]">
+        {([["byok", "newConfigWizard.tabByok"], ["managed", "newConfigWizard.tabManaged"]] as const).map(([m, labelKey]) => (
           <button key={m} type="button" aria-pressed={entryMode === m}
             onClick={() => setEntryMode(m)}
-            className={`flex flex-1 items-center justify-center px-1.5 py-2 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
-              entryMode === m ? "bg-accent-tint font-semibold text-accent" : "bg-transparent text-fg-3 hover:bg-field hover:text-fg-1"}`}>
+            className={"flex-1 text-center text-[12px] py-2 rounded-[9px] transition-colors " +
+              (entryMode === m ? "bg-surface text-fg-1 font-medium shadow-[0_1px_4px_rgba(21,25,31,0.08)]" : "text-fg-2")}>
             {t(labelKey)}
           </button>
         ))}
@@ -481,7 +481,7 @@ export default function NewConfigWizard(props: Props) {
               (customMode !== "new" ||
                 (!!draftName.trim() && /^https?:\/\//.test(draftBaseUrl)));
             return (
-              <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-3.5 py-3">
+              <div className="flex flex-wrap items-center gap-1.5 px-3.5 py-3">
                 {props.testResult?.ok === false && (
                   <div
                     className="min-w-full rounded border border-warning-line bg-warning-tint px-2.5 py-1.5 text-[11px] text-warning"

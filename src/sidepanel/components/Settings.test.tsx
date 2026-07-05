@@ -115,32 +115,32 @@ describe("Settings component (Task 6: settingsOpenTab sticky state)", () => {
   it("renders the default 'configs' tab when openTab is null", async () => {
     renderSettings({ openTab: null });
     await waitFor(() => {
-      const configsTab = screen.getByRole("button", { name: /Configs/i });
-      expect(configsTab.getAttribute("class")).toContain("bg-field"); // active tab
+      const configsTab = screen.getByRole("tab", { name: /Configs/i });
+      expect(configsTab.getAttribute("class")).toContain("bg-surface"); // active tab
     });
   });
 
   it("renders the 'skills' tab when openTab specifies it", async () => {
     renderSettings({ openTab: { tab: "skills", nonce: 1 } });
     await waitFor(() => {
-      const skillsTab = screen.getByRole("button", { name: /Skills/i });
-      expect(skillsTab.getAttribute("class")).toContain("bg-field"); // active tab
+      const skillsTab = screen.getByRole("tab", { name: /Skills/i });
+      expect(skillsTab.getAttribute("class")).toContain("bg-surface"); // active tab
     });
   });
 
   it("clears sticky openTab state on tab switch via user interaction", async () => {
     const { rerender } = renderSettings({ openTab: { tab: "skills", nonce: 1 } });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Skills/i }).getAttribute("class")).toContain("bg-field");
+      expect(screen.getByRole("tab", { name: /Skills/i }).getAttribute("class")).toContain("bg-surface");
     });
 
     // User manually clicks a different tab.
-    const configsTab = screen.getByRole("button", { name: /Configs/i });
+    const configsTab = screen.getByRole("tab", { name: /Configs/i });
     fireEvent.click(configsTab);
 
     // This proves the internal setTab works; openTab prop still has old value but UI is correct.
     await waitFor(() => {
-      expect(configsTab.getAttribute("class")).toContain("bg-field");
+      expect(configsTab.getAttribute("class")).toContain("bg-surface");
     });
   });
 
@@ -148,7 +148,7 @@ describe("Settings component (Task 6: settingsOpenTab sticky state)", () => {
     // Simulate the bug: openTab prop is sticky across a Settings remount.
     const { rerender } = renderSettings({ openTab: { tab: "skills", nonce: 1 } });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Skills/i }).getAttribute("class")).toContain("bg-field");
+      expect(screen.getByRole("tab", { name: /Skills/i }).getAttribute("class")).toContain("bg-surface");
     });
 
     // Component re-mounts with the same stale openTab prop (as would happen before the fix).
@@ -163,7 +163,7 @@ describe("Settings component (Task 6: settingsOpenTab sticky state)", () => {
 
     // The skills tab should still be active (effect runs again on mount).
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Skills/i }).getAttribute("class")).toContain("bg-field");
+      expect(screen.getByRole("tab", { name: /Skills/i }).getAttribute("class")).toContain("bg-surface");
     });
   });
 
@@ -172,7 +172,7 @@ describe("Settings component (Task 6: settingsOpenTab sticky state)", () => {
     renderSettings({ openTab: { tab: "skills", nonce: 1 }, onOpenTabConsumed });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Skills/i }).getAttribute("class")).toContain("bg-field");
+      expect(screen.getByRole("tab", { name: /Skills/i }).getAttribute("class")).toContain("bg-surface");
     });
     expect(onOpenTabConsumed).toHaveBeenCalledOnce();
   });
@@ -213,7 +213,7 @@ describe("Settings component (Task 6: settingsOpenTab sticky state)", () => {
 
     // First visit is routed to "skills" (e.g. MenuHub's Skills destination).
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Skills/i }).getAttribute("class")).toContain("bg-field");
+      expect(screen.getByRole("tab", { name: /Skills/i }).getAttribute("class")).toContain("bg-surface");
     });
 
     // Leave Settings (unmount) and come back via a plain route — no new
@@ -223,11 +223,11 @@ describe("Settings component (Task 6: settingsOpenTab sticky state)", () => {
     fireEvent.click(screen.getByText("remount-plain"));
 
     await waitFor(() => {
-      const configsTab = screen.getByRole("button", { name: /Configs/i });
-      expect(configsTab.getAttribute("class")).toContain("bg-field");
+      const configsTab = screen.getByRole("tab", { name: /Configs/i });
+      expect(configsTab.getAttribute("class")).toContain("bg-surface");
     });
     // And "skills" must NOT still be showing as active.
-    expect(screen.getByRole("button", { name: /Skills/i }).getAttribute("class")).not.toContain("bg-field");
+    expect(screen.getByRole("tab", { name: /Skills/i }).getAttribute("class")).not.toContain("bg-surface");
   });
 
   it("calls onBack when the back button is clicked", async () => {
@@ -247,7 +247,7 @@ describe("theme segmented in Settings general (Task 7, G8)", () => {
     });
 
     // Click the general tab
-    const generalTab = screen.getByRole("button", { name: /general/i });
+    const generalTab = screen.getByRole("tab", { name: /general/i });
     fireEvent.click(generalTab);
 
     // Find the radiogroup by theme/主题 label
@@ -270,7 +270,7 @@ describe("theme segmented in Settings general (Task 7, G8)", () => {
       onThemeModeChange: vi.fn(),
     });
 
-    const generalTab = screen.getByRole("button", { name: /general/i });
+    const generalTab = screen.getByRole("tab", { name: /general/i });
     fireEvent.click(generalTab);
 
     const darkRadio = screen.getByRole("radio", { name: /dark|深色/i });

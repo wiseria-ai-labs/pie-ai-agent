@@ -72,7 +72,7 @@ export default function CustomProviderFields(props: Props) {
           onChange={(e) => props.onNameChange(e.target.value)}
           maxLength={40}
           placeholder={t("customProvider.namePlaceholder")}
-          className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
         />
       </Field>
 
@@ -81,7 +81,7 @@ export default function CustomProviderFields(props: Props) {
           value={props.baseUrl}
           onChange={(e) => props.onBaseUrlChange(e.target.value)}
           placeholder={t("customProvider.baseUrlPlaceholder")}
-          className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+          className="w-full rounded bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
         />
         <div className="flex flex-col gap-0.5">
           <span className="font-mono text-[10px] text-fg-2">
@@ -103,7 +103,7 @@ export default function CustomProviderFields(props: Props) {
           <button
             onClick={props.onTest}
             disabled={testDisabled}
-            className="flex items-center gap-1.5 self-start rounded border border-line bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:border-fg-3 disabled:opacity-30"
+            className="flex items-center gap-1.5 self-start rounded bg-transparent px-3 py-1.5 text-[11px] text-fg-2 hover:bg-field disabled:opacity-30"
           >
             {props.testing && (
               <svg className="h-3 w-3 animate-spin" viewBox="0 0 16 16" fill="none">

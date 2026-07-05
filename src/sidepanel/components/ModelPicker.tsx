@@ -180,7 +180,7 @@ export default function ModelPicker(props: Props) {
         aria-label={current ? `${providerName(current)} ${props.currentModel ?? ""}` : t("modelPicker.none")}
       >
         {current && <ProviderIcon provider={current.provider} size={16} className="text-accent" />}
-        <span className="font-mono">
+        <span>
           {current ? `${providerName(current)} · ${displayModel(current, props.currentModel)}` : t("modelPicker.none")}
         </span>
         {props.locked ? (
@@ -203,8 +203,8 @@ export default function ModelPicker(props: Props) {
         className="fixed z-[100] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
       >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
-            <span className="font-mono text-[10px] text-fg-3">{props.instances.length} {t("modelPicker.providersSuffix")}</span>
+            <span className="text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
+            <span className="text-[10px] text-fg-3">{props.instances.length} {t("modelPicker.providersSuffix")}</span>
           </div>
           <div className="flex max-h-[360px] flex-col overflow-y-auto">
             {props.instances.map((inst) => {
@@ -219,7 +219,7 @@ export default function ModelPicker(props: Props) {
                     <ProviderIcon provider={inst.provider} size={22} className={isCurrentProvider ? "text-accent" : "text-fg-2"} />
                     <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-fg-1">{providerName(inst)}</span>
                     {!isExpanded && isCurrentProvider && props.currentModel && (
-                      <span className="font-mono text-[10px] text-accent">{displayModel(inst, props.currentModel)}</span>
+                      <span className="text-[10px] text-accent">{displayModel(inst, props.currentModel)}</span>
                     )}
                     <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden style={{ transform: isExpanded ? "rotate(90deg)" : "none", flexShrink: 0, transition: "transform 0.2s ease" }}>
                       <path d="M3 2L5 4L3 6" fill="none" stroke="#8A929E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
@@ -349,7 +349,7 @@ function ExpandedModels(props: {
                     </svg>
                   )}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-1">{r.id}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-fg-1">{r.id}</span>
                 {r.meta?.vision && <span className="rounded-full bg-line px-1.5 text-[9px] text-fg-3">{t("modelDropdown.vision")}</span>}
                 {r.meta?.tools && <span className="rounded-full bg-line px-1.5 text-[9px] text-fg-3">{t("modelDropdown.tools")}</span>}
               </button>

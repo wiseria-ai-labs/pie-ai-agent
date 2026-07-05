@@ -138,7 +138,7 @@ describe("Settings 4-tab IA", () => {
     // Scope to the tab-bar container (data-testid) and read its buttons in
     // order: configs(0), skills(1), search(2), general(3). This is more robust
     // than positional slicing off the global button list.
-    const tabButtons = within(screen.getByTestId("settings-tabs")).getAllByRole("button");
+    const tabButtons = within(screen.getByTestId("settings-tabs")).getAllByRole("tab");
     expect(tabButtons).toHaveLength(4);
 
     // Click the 4th tab (General)
@@ -154,7 +154,7 @@ describe("Settings 4-tab IA", () => {
     render(<Settings onBack={vi.fn()} />);
 
     await waitFor(() => expect(screen.queryByRole("switch")).toBeNull());
-    const tabButtons = within(screen.getByTestId("settings-tabs")).getAllByRole("button");
+    const tabButtons = within(screen.getByTestId("settings-tabs")).getAllByRole("tab");
     fireEvent.click(tabButtons[3]);
 
     const link = await screen.findByRole("link", { name: /official website/i });
@@ -166,7 +166,7 @@ describe("Settings 4-tab IA", () => {
 
     await waitFor(() => expect(screen.queryByRole("switch")).toBeNull());
 
-    const tabButtons = within(screen.getByTestId("settings-tabs")).getAllByRole("button");
+    const tabButtons = within(screen.getByTestId("settings-tabs")).getAllByRole("tab");
 
     // Go to General
     fireEvent.click(tabButtons[3]);

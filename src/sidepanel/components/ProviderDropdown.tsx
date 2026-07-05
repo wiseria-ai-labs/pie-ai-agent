@@ -64,7 +64,7 @@ export default function ProviderDropdown(props: Props) {
       <button
         aria-label={selectedName ?? t("providerDropdown.selectProvider")}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-[10px] border border-line bg-field px-3 py-2.5 text-left text-[13px] text-fg-1"
+        className="flex items-center gap-2 rounded-[10px] bg-field px-3 py-2.5 text-left text-[13px] text-fg-1"
       >
         {props.value && <ProviderIcon provider={props.value} size={16} className="text-fg-1" />}
         <span>{selectedName ?? t("providerDropdown.selectProvider")}</span>
@@ -75,17 +75,17 @@ export default function ProviderDropdown(props: Props) {
 
       <DropdownPanel
         open={open}
-        className="flex flex-col rounded-[10px] border border-line bg-surface"
+        className="flex flex-col rounded-[10px] bg-surface shadow-[0_8px_28px_rgba(21,25,31,0.14)]"
       >
           {/* Search input */}
-          <div className="border-b border-line p-2">
+          <div className="p-2">
             <input
               type="text"
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("providerDropdown.searchPlaceholder")}
-              className="w-full rounded-[8px] border border-line bg-field px-2.5 py-1.5 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+              className="w-full rounded-[8px] bg-field px-2.5 py-1.5 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
             />
           </div>
 
@@ -172,7 +172,7 @@ export default function ProviderDropdown(props: Props) {
           </div>
 
           {/* Fixed footer */}
-          <div className="border-t border-line">
+          <div>
             <button
               onClick={() => {
                 props.onCreateCustom();

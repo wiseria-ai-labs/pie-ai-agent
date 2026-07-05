@@ -23,7 +23,7 @@ import {
   addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
   CUSTOM_PREFIX, providerRefToId, listCustomProviders,
 } from "@/lib/custom-providers";
-import { LegacyIconButton } from "./ui/LegacyIconButton";
+import { IconButton } from "./ui/IconButton";
 import SkillsList from "./SkillsList";
 import SearchProviderSection from "./SearchProviderSection";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
@@ -213,21 +213,15 @@ export default function Settings({ onBack, onRunSkill, openSubscribeNonce, theme
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-shrink-0 items-center gap-2.5 border-b border-line bg-canvas px-3.5 py-3">
-        <LegacyIconButton
-          onClick={onBack}
-          size="sm"
-          variant="ghost"
-          aria-label={t("settings.backToAgent")}
-          icon={
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M9 11L5 7L9 3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          }
-        />
+      <header className="flex flex-shrink-0 items-center gap-2.5 bg-canvas px-3.5 py-3">
+        <IconButton size={28} onClick={onBack} aria-label={t("settings.backToAgent")}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M9 11L5 7L9 3" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </IconButton>
         <span className="text-[17px] font-semibold tracking-[-0.01em] text-fg-1">{t("settings.title")}</span>
       </header>
-      <div className="flex-shrink-0 border-b border-line bg-canvas px-3.5 pb-3.5 pt-3">
+      <div className="flex-shrink-0 bg-canvas px-3.5 pb-3.5 pt-3">
         <SegmentedTabs value={tab} onChange={setTab} />
       </div>
 
@@ -241,7 +235,7 @@ export default function Settings({ onBack, onRunSkill, openSubscribeNonce, theme
                 {!showWizard && (
                   <button
                     onClick={() => setShowWizard(true)}
-                    className="flex h-8 items-center gap-2 rounded-control border border-line bg-transparent px-3 text-[12px] text-accent transition-colors hover:bg-field"
+                    className="flex h-8 items-center gap-2 rounded-control bg-transparent px-3 text-[12px] text-accent transition-colors hover:bg-field"
                   >
                     {t("settings.myConfigs.newConfigButton")}
                   </button>
@@ -458,17 +452,13 @@ function SegmentedTabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => 
     { id: "general", label: t("settings.tabs.general") },
   ];
   return (
-    <div data-testid="settings-tabs" className="flex w-full overflow-hidden rounded-control border border-line">
-      {tabs.map((tb, i) => {
-        const active = value === tb.id;
+    <div data-testid="settings-tabs" role="tablist" className="flex w-full bg-field rounded-[12px] p-[3px]">
+      {tabs.map((tb) => {
+        const on = tb.id === value;
         return (
-          <button
-            key={tb.id}
-            onClick={() => onChange(tb.id)}
-            className={`flex-1 py-1.5 text-[12px] transition-colors ${i > 0 ? "border-l border-line" : ""} ${
-              active ? "bg-field font-medium text-fg-1" : "bg-transparent text-fg-2 hover:text-fg-1"
-            }`}
-          >
+          <button key={tb.id} type="button" role="tab" aria-selected={on} onClick={() => onChange(tb.id)}
+            className={"flex-1 text-center text-[13px] py-2 rounded-[9px] transition-colors " +
+              (on ? "bg-surface text-fg-1 font-medium shadow-[0_1px_4px_rgba(21,25,31,0.08)]" : "text-fg-2")}>
             {tb.label}
           </button>
         );
@@ -522,7 +512,7 @@ export function FeedbackSection({ instances }: { instances: DecryptedInstance[] 
         onChange={(e) => { setMessage(e.target.value); if (status !== "idle") setStatus("idle"); }}
         placeholder={t("settings.feedback.placeholder")}
         rows={3}
-        className="w-full resize-y rounded-control border border-line bg-field px-2.5 py-2 text-[13px] text-fg-1 placeholder:text-fg-3 focus:outline-none"
+        className="w-full resize-y rounded-control bg-field px-2.5 py-2 text-[13px] text-fg-1 placeholder:text-fg-3 focus:outline-none"
       />
       <div className="flex items-center justify-between gap-3 pt-0.5">
         <label className="flex items-center gap-2 text-[12px] text-fg-2">
@@ -563,7 +553,7 @@ function CdpInputSection({
       <div className="flex items-baseline justify-between">
         <span className="text-[15px] font-semibold tracking-[-0.005em] text-fg-1">{t("settings.experimental")}</span>
       </div>
-      <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5">
+      <div className="flex flex-col gap-3 rounded-card bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)] p-3.5">
         <div className="flex items-start gap-3">
           <div className="flex flex-1 flex-col gap-1">
             <div className="text-[13px] font-medium text-fg-1">{t("settings.cdpInput.title")}</div>
@@ -608,8 +598,8 @@ function Switch({
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors ${
-        checked ? "border-accent-line bg-accent-tint" : "border-line bg-field"
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+        checked ? "bg-accent-tint" : "bg-field"
       }`}
     >
       <span

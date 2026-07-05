@@ -31,7 +31,7 @@ export default function ModelMetaEditor({ initial, showTools, modelIdReadonly, m
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex w-full max-w-md flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+      <div className="flex w-full max-w-md flex-col gap-3 rounded-lg bg-surface shadow-[0_8px_28px_rgba(21,25,31,0.14)] p-4">
         <span className="caps text-fg-1">
           {modelIdReadonly
             ? t("customProvider.editModelCaps")
@@ -44,7 +44,7 @@ export default function ModelMetaEditor({ initial, showTools, modelIdReadonly, m
             readOnly={modelIdReadonly}
             onChange={(e) => setDraft((prev) => ({ ...prev, id: e.target.value }))}
             placeholder={modelIdPlaceholder ?? t("modelDropdown.modelIdPlaceholder")}
-            className={`w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line${modelIdReadonly ? " opacity-60 cursor-default" : ""}`}
+            className={`w-full rounded bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]${modelIdReadonly ? " opacity-60 cursor-default" : ""}`}
           />
         </Field>
 
@@ -53,7 +53,7 @@ export default function ModelMetaEditor({ initial, showTools, modelIdReadonly, m
             value={draft.displayName ?? ""}
             onChange={(e) => setDraft((prev) => ({ ...prev, displayName: e.target.value }))}
             placeholder={t("customProvider.displayNamePlaceholder")}
-            className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 focus:border-accent-line"
+            className="w-full rounded bg-field px-3 py-2 text-[12px] text-fg-1 placeholder:text-fg-3 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
           />
         </Field>
 
@@ -66,7 +66,7 @@ export default function ModelMetaEditor({ initial, showTools, modelIdReadonly, m
             onChange={(e) =>
               setDraft((prev) => ({ ...prev, maxContextTokens: Number(e.target.value) || 0 }))
             }
-            className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 focus:border-accent-line"
+            className="w-full rounded bg-field px-3 py-2 text-[12px] text-fg-1 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
           />
         </Field>
 
@@ -94,7 +94,7 @@ export default function ModelMetaEditor({ initial, showTools, modelIdReadonly, m
         <div className="flex justify-end gap-2 pt-1">
           <button
             onClick={onCancel}
-            className="rounded border border-line bg-transparent px-3 py-1.5 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+            className="rounded bg-transparent px-3 py-1.5 text-[12px] text-fg-2 hover:bg-field hover:text-fg-1"
           >
             {t("common.cancel")}
           </button>
@@ -115,8 +115,8 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   return (
     <label className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-3">{label}</span>
-        {hint && <span className="font-mono text-[10px] text-fg-3">{hint}</span>}
+        <span className="text-[10px] uppercase tracking-[0.12em] text-fg-3">{label}</span>
+        {hint && <span className="text-[10px] text-fg-3">{hint}</span>}
       </div>
       {children}
     </label>

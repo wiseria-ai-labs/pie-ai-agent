@@ -17,8 +17,8 @@ interface Props {
 export default function InstancesList(props: Props) {
   const t = useT();
   return (
-    <div className="flex flex-col overflow-hidden rounded-[14px] border border-line bg-surface">
-      {props.instances.map((inst, i) => {
+    <div className="flex flex-col overflow-hidden rounded-card bg-surface shadow-[0_4px_16px_rgba(21,25,31,0.05)]">
+      {props.instances.map((inst) => {
         const isOpen = props.expandedId === inst.id;
         const providerMeta = !inst.provider.startsWith(CUSTOM_PREFIX)
           ? getProviderMeta(inst.provider as BuiltinProvider)
@@ -31,7 +31,7 @@ export default function InstancesList(props: Props) {
           return providerMeta ? resolveEndpointVariant(providerMeta, inst.endpointVariant)?.label ?? null : null;
         })();
         return (
-          <div key={inst.id} className={i > 0 ? "border-t border-line" : ""}>
+          <div key={inst.id}>
             <div
               role="button"
               tabIndex={0}
@@ -66,7 +66,7 @@ export default function InstancesList(props: Props) {
                 <path d="M2.5 3.5L4.5 5.5L6.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <Collapse open={isOpen} className="border-t border-line bg-surface">{props.renderForm(inst.id)}</Collapse>
+            <Collapse open={isOpen} className="bg-surface">{props.renderForm(inst.id)}</Collapse>
           </div>
         );
       })}

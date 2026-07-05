@@ -159,11 +159,11 @@ export default function InstanceForm(props: Props) {
       {!props.hideProviderField && (
         <Field label={t("instanceForm.provider")}>
           {metaLoading && isCustomProvider ? (
-            <div className="h-[38px] animate-pulse rounded border border-line bg-field" />
+            <div className="h-[38px] animate-pulse rounded bg-field" />
           ) : (
-            <div className="flex items-center gap-2 rounded-[10px] bg-field border border-line px-3 py-2.5 text-[13px] text-fg-2">
+            <div className="flex items-center gap-2 rounded-[10px] bg-field px-3 py-2.5 text-[13px] text-fg-2">
               <span className="text-fg-1">{meta ? providerDisplayName(meta, t) : props.provider}</span>
-              <span className="ml-auto font-mono text-[10px] text-fg-3">{t("instanceForm.locked")}</span>
+              <span className="ml-auto text-[10px] text-fg-3">{t("instanceForm.locked")}</span>
             </div>
           )}
         </Field>
@@ -171,10 +171,10 @@ export default function InstanceForm(props: Props) {
 
       {variants.length > 0 && (
         <FieldDiv label={t("instanceForm.endpoint")} hint={selectedVariant?.baseUrl ?? meta?.defaultBaseUrl}>
-          <div role="group" aria-label={t("instanceForm.endpoint")} className="flex w-full overflow-hidden rounded-[10px] border border-line">
+          <div role="group" aria-label={t("instanceForm.endpoint")} className="flex w-full bg-field rounded-[12px] p-[3px]">
             {/* 默认端点（Plan）在左、Pay-as-you-go variant 在右——跨 provider 对齐。 */}
             {[{ id: undefined as string | undefined, label: meta?.defaultEndpointLabel ?? t("instanceForm.endpointDefault") },
-              ...variants.map((v) => ({ id: v.id as string | undefined, label: v.label }))].map((opt, i) => {
+              ...variants.map((v) => ({ id: v.id as string | undefined, label: v.label }))].map((opt) => {
               const active = endpointVariant === opt.id;
               return (
                 <button
@@ -182,18 +182,10 @@ export default function InstanceForm(props: Props) {
                   type="button"
                   aria-pressed={active}
                   onClick={() => setEndpointVariant(opt.id)}
-                  className={`flex flex-1 items-center justify-center gap-1 px-1.5 py-2 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
-                    active
-                      ? "bg-accent-tint font-semibold text-accent"
-                      : "bg-transparent text-fg-3 hover:bg-field hover:text-fg-1"
-                  }`}
+                  className={"flex-1 truncate text-center text-[12px] py-2 rounded-[9px] transition-colors " +
+                    (active ? "bg-surface text-fg-1 font-medium shadow-[0_1px_4px_rgba(21,25,31,0.08)]" : "text-fg-2")}
                 >
-                  {active && (
-                    <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden className="shrink-0">
-                      <path d="M2 5.5L4.5 8L9 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                  <span className="truncate">{opt.label}</span>
+                  {opt.label}
                 </button>
               );
             })}
@@ -207,7 +199,7 @@ export default function InstanceForm(props: Props) {
             <button
               type="button"
               onClick={() => setReplacing(true)}
-              className="min-w-0 overflow-x-auto whitespace-nowrap rounded-[10px] border border-line bg-field px-3 py-2.5 text-left font-mono text-[13px] text-fg-1 hover:border-fg-3 focus:border-accent-line"
+              className="min-w-0 overflow-x-auto whitespace-nowrap rounded-[10px] bg-field px-3 py-2.5 text-left font-mono text-[13px] text-fg-1 outline-none hover:bg-line focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
             >
               {partialReveal(props.existingApiKey)}
             </button>
@@ -221,12 +213,12 @@ export default function InstanceForm(props: Props) {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={selectedVariant?.placeholder ?? meta?.placeholder ?? ""}
-                className="min-w-0 flex-1 rounded-[10px] bg-field border border-line focus:border-accent-line px-3 py-2.5 text-[13px] text-fg-1"
+                className="min-w-0 flex-1 rounded-[10px] bg-field px-3 py-2.5 text-[13px] text-fg-1 outline-none focus:bg-surface-deep focus:shadow-[0_6px_24px_rgba(29,107,214,0.10)]"
               />
               <button
                 type="button"
                 onClick={() => setShowKey(!showKey)}
-                className="shrink-0 rounded-[10px] border border-line bg-transparent px-2.5 py-2 text-[12px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
+                className="shrink-0 rounded-[10px] bg-transparent px-2.5 py-2 text-[12px] text-fg-2 hover:bg-field hover:text-fg-1"
               >
                 {showKey ? t("instanceForm.hideKey") : t("instanceForm.showKey")}
               </button>
