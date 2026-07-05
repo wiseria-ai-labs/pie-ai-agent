@@ -41,6 +41,22 @@ describe("subscribe bridge", () => {
     expect(sendMessageMock).toHaveBeenCalledOnce();
   });
 
+  it("on vailie.ai: click on a marked CTA sends open-managed-subscribe + prevents default", () => {
+    setup("vailie.ai");
+    attachSubscribeBridge();
+    const ev = click("sub");
+    expect(sendMessageMock).toHaveBeenCalledWith({ type: "open-managed-subscribe" });
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it("on www.vailie.ai: click on a marked CTA sends open-managed-subscribe + prevents default", () => {
+    setup("www.vailie.ai");
+    attachSubscribeBridge();
+    const ev = click("sub");
+    expect(sendMessageMock).toHaveBeenCalledWith({ type: "open-managed-subscribe" });
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
   it("ignores clicks on unmarked elements", () => {
     setup("www.pie.chat");
     attachSubscribeBridge();
