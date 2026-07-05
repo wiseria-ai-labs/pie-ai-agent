@@ -162,8 +162,8 @@ Your job:
    - name: short human-readable label
    - description: one sentence — what it does and when to use it
    - instructions: the natural-language step-by-step workflow you wrote
-   The user will see a confirm card with the full skill content before it
-   is persisted — that is their review surface.
+   The skill is persisted immediately by create_skill; after the call
+   succeeds, tell the user the skill was created and how to run it (/slug).
 5. After create_skill succeeds, call done with a 1-2 sentence summary
    ("Created skill 'X' with N steps").
 

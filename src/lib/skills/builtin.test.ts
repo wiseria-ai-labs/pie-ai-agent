@@ -50,4 +50,10 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
     expect(text).toContain("switch_to_new_tab");
     expect(text).toMatch(/标签页|tab/);
   });
+
+  it("create_skill_from_recording instructions never claim a confirm card (removed layer)", () => {
+    const pkg = BUILT_IN_SKILL_PACKAGES.find((p) => p.id === "create_skill_from_recording")!;
+    const all = JSON.stringify(pkg);
+    expect(all).not.toMatch(/confirm card/i);
+  });
 });
