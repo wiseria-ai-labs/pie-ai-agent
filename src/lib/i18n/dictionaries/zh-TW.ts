@@ -460,6 +460,13 @@ export const zhTWDict = {
     menu: "Vailie 選單",
     pendingCount: "{count} 個待確認",
   },
+  menu: {
+    history: "工作階段紀錄",
+    skills: "技能",
+    schedules: "排程任務",
+    settings: "設定",
+    brandLine: "開源 Apache-2.0 · 無遙測",
+  },
   providerDropdown: {
     selectProvider: "選擇 Provider",
     searchPlaceholder: "搜尋 Provider...",

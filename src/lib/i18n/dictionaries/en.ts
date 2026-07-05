@@ -452,6 +452,13 @@ export const enDict = {
     menu: "Vailie menu",
     pendingCount: "{count} pending confirmation(s)",
   },
+  menu: {
+    history: "Session history",
+    skills: "Skills",
+    schedules: "Schedules",
+    settings: "Settings",
+    brandLine: "Open-source Apache-2.0 · No telemetry",
+  },
   providerDropdown: {
     selectProvider: "Select provider",
     searchPlaceholder: "Search provider...",

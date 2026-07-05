@@ -453,6 +453,13 @@ export const es419Dict = {
     menu: "Menú de Vailie",
     pendingCount: "{count} confirmación(es) pendiente(s)",
   },
+  menu: {
+    history: "Historial de sesiones",
+    skills: "Habilidades",
+    schedules: "Programaciones",
+    settings: "Configuración",
+    brandLine: "Código abierto Apache-2.0 · Sin telemetría",
+  },
   providerDropdown: {
     selectProvider: "Seleccionar proveedor",
     searchPlaceholder: "Buscar proveedor...",

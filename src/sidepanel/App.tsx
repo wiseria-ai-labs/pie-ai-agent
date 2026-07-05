@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, type RefObject } from "react";
 import Chat from "@/sidepanel/components/Chat";
-import Settings from "@/sidepanel/components/Settings";
+import Settings, { type Tab as SettingsTab } from "@/sidepanel/components/Settings";
 import SessionDrawer from "@/sidepanel/components/SessionDrawer";
+import { MenuHub } from "@/sidepanel/components/MenuHub";
 import { VailieMark } from "@/sidepanel/components/VailieMark";
 import { IconButton } from "@/sidepanel/components/ui/IconButton";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
@@ -38,9 +39,14 @@ interface TopBarProps {
   /** Active session title — not rendered (v2 drops the top-bar title text),
    *  kept as the hub button's native tooltip so it isn't dead data. */
   sessionTitle: string;
+  /** Task 6 — forwarded to MenuHub as anchorRef so its outside-click handler
+   *  ignores clicks on this trigger (otherwise a mousedown-close races the
+   *  click's own toggle and the menu never closes). Optional: tests that
+   *  exercise TopBar alone don't need it. */
+  hubButtonRef?: RefObject<HTMLButtonElement | null>;
 }
 
-export function TopBar({ hubOpen, onToggleHub, pendingCount, onNewSession, sessionTitle }: TopBarProps) {
+export function TopBar({ hubOpen, onToggleHub, pendingCount, onNewSession, sessionTitle, hubButtonRef }: TopBarProps) {
   const t = useT();
   return (
     <div
@@ -49,6 +55,7 @@ export function TopBar({ hubOpen, onToggleHub, pendingCount, onNewSession, sessi
     >
       {/* IP + 字标 = 菜单枢纽入口(G1)。字标同为热区;hover 现 caret。 */}
       <button
+        ref={hubButtonRef}
         type="button"
         aria-label={t("topBar.menu")}
         aria-expanded={hubOpen}
@@ -102,6 +109,12 @@ export default function App() {
   // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
   // Settings → NewConfigWizard to open the managed-subscribe screen.
   const [subscribeNonce, setSubscribeNonce] = useState(0);
+  // v2.0.0 (Task 6, G1): MenuHub's "Skills" destination — forces Settings onto
+  // a specific tab. nonce so re-picking the same tab still re-triggers.
+  const [settingsOpenTab, setSettingsOpenTab] = useState<{ tab: SettingsTab; nonce: number } | null>(null);
+  // v2.0.0 (Task 6): shared between TopBar's hub trigger and MenuHub's
+  // outside-click handler (as anchorRef) — see hubButtonRef doc above.
+  const hubButtonRef = useRef<HTMLButtonElement>(null);
   // M1: theme mode owned at App level so the button reflects state and we
   // can persist to localStorage. M2 will wire data-theme to actually switch.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -404,6 +417,20 @@ export default function App() {
         pendingCount={pendingCount}
         onNewSession={() => void handleNewSession()}
         sessionTitle={sessionTitle}
+        hubButtonRef={hubButtonRef}
+      />
+
+      {/* Menu hub (Task 6, G1): low-frequency destinations behind the IP mark —
+          session history / skills / schedules / settings + brand footer. */}
+      <MenuHub
+        open={hubOpen}
+        onClose={() => setHubOpen(false)}
+        onHistory={() => setDrawerOpen(true)}
+        onSkills={() => { setView("settings"); setSettingsOpenTab({ tab: "skills", nonce: Date.now() }); }}
+        onSchedules={() => setView("schedules")}
+        onSettings={() => setView("settings")}
+        version={chrome.runtime.getManifest().version}
+        anchorRef={hubButtonRef}
       />
 
       {/* Recording v1: REC button moved to Composer (within input field).
@@ -452,6 +479,7 @@ export default function App() {
             onBack={() => setView("agent")}
             onRunSkill={(id, name) => void handleRunSkill(id, name)}
             openSubscribeNonce={subscribeNonce}
+            openTab={settingsOpenTab}
             themeMode={themeMode}
             onThemeModeChange={setThemeMode}
           />

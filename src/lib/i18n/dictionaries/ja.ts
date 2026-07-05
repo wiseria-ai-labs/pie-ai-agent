@@ -453,6 +453,13 @@ export const jaDict = {
     menu: "Vailie メニュー",
     pendingCount: "{count} 件の確認待ち",
   },
+  menu: {
+    history: "セッション履歴",
+    skills: "スキル",
+    schedules: "スケジュール",
+    settings: "設定",
+    brandLine: "オープンソース Apache-2.0 · テレメトリなし",
+  },
   providerDropdown: {
     selectProvider: "プロバイダーを選択",
     searchPlaceholder: "プロバイダーを検索...",

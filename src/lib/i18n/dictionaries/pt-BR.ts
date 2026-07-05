@@ -453,6 +453,13 @@ export const ptBRDict = {
     menu: "Menu do Vailie",
     pendingCount: "{count} confirmação(ões) pendente(s)",
   },
+  menu: {
+    history: "Histórico de sessões",
+    skills: "Habilidades",
+    schedules: "Agendamentos",
+    settings: "Configurações",
+    brandLine: "Código aberto Apache-2.0 · Sem telemetria",
+  },
   providerDropdown: {
     selectProvider: "Selecionar provedor",
     searchPlaceholder: "Buscar provedor...",

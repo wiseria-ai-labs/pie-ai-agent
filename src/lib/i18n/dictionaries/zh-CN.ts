@@ -460,6 +460,13 @@ export const zhCNDict = {
     menu: "Vailie 菜单",
     pendingCount: "{count} 个待确认",
   },
+  menu: {
+    history: "会话历史",
+    skills: "技能",
+    schedules: "定时任务",
+    settings: "设置",
+    brandLine: "开源 Apache-2.0 · 无遥测",
+  },
   providerDropdown: {
     selectProvider: "选择 Provider",
     searchPlaceholder: "搜索 Provider...",
