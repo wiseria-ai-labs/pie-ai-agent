@@ -79,6 +79,16 @@ Source: "{#DistDir}\srt-win.exe";        DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\pie-host.bat";    DestDir: "{app}"; Flags: ignoreversion
 Source: "{#DistDir}\vc_redist.x64.exe";  DestDir: "{tmp}"; Flags: deleteafterinstall
 
+[Icons]
+; Start-menu entry so users have a graphical way to relaunch the tray after they quit it (parity
+; with mac's /Applications/Pie Link.app -- #405). {autoprograms} under this admin/machine-wide
+; install (PrivilegesRequired=admin) resolves to {commonprograms} (all-users Start menu), matching
+; the machine-wide semantics of the HKLM Run key -- NOT the elevating admin's private Start menu.
+; Inno removes the shortcut on uninstall automatically. Uses PieTray.exe's own icon resource (a
+; branded .ico lands with #379); no desktop shortcut by design (see #405). Single-instance is
+; enforced in PieTray.cs (a named mutex), so a second click just no-ops onto the running tray.
+Name: "{autoprograms}\Pie Link"; Filename: "{app}\PieTray.exe"
+
 [Registry]
 ; Native-messaging host manifest path -> Chrome + Edge, machine-wide (HKLM, read for every user;
 ; we are elevated). Points at the world-readable manifest json under {app} (see WriteNativeManifest).

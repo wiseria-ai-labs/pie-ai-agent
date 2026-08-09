@@ -25,14 +25,28 @@ namespace PieLink
         // named pipe basename，对齐 daemon/src/paths.ts 的 PIPE_NAME（加法演进不 bump PROTOCOL_VERSION）。
         internal const string PipeName = "ai.wiseria.pie";
 
+        // 单实例守卫（#405）：装了开始菜单快捷方式后，用户可能连点两次入口。Run 键只在登录时起一次，
+        // 撞不到；手动入口一撞就是两个托盘图标（且各自能点「退出 Pie Link」去 kill daemon）。mac 靠
+        // Launch Services 天然单实例；Windows 得自己用命名 Mutex 做。Global\ 前缀 = 跨会话唯一（machine-wide
+        // 安装语义一致），已在运行则第二个进程静默退出（用户从开始菜单点第二次的心智就是「打开它」，
+        // 已经在托盘里就够了，弹「已在运行」提示框只是噪音）。
+        private const string SingleInstanceMutexName = "Global\\ai.wiseria.pie.tray";
+
         [STAThread]
         private static void Main()
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            using (var ctx = new TrayContext())
+            bool createdNew;
+            // 进程存活期间持有 Mutex（不 Dispose / 不 ReleaseMutex）：进程退出时 OS 自动释放。
+            using (new Mutex(true, SingleInstanceMutexName, out createdNew))
             {
-                Application.Run(ctx);
+                if (!createdNew) return; // 已有托盘在跑：静默退出，不抢占、不弹框。
+
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                using (var ctx = new TrayContext())
+                {
+                    Application.Run(ctx);
+                }
             }
         }
     }
