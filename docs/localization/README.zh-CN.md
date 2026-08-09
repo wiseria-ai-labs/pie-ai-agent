@@ -125,6 +125,29 @@ pnpm build
 
 然后把生成的 `dist/` 文件夹作为已解压扩展加载（步骤 3–5 同上）。
 
+### Pie Link —— 连接你的电脑（可选）
+
+[Pie Link](https://www.pie.chat/link) 是可选的伴侣程序，让 Pie 使用本地 Skill、运行本地
+脚本，并把任务交给 Claude Code、Codex、Cursor 等本地 AI 编码工具。
+
+**在 Windows 上：**
+
+1. 从 [Releases 页面](https://github.com/WiseriaAI/pie-ai-agent/releases) 下载最新的
+   `pie-link-setup-<version>.exe`。
+2. 运行它。Windows SmartScreen 可能提示发行者无法识别——首个版本未签名，属正常现象。
+   点击**更多信息 → 仍要运行**。
+3. 通过唯一一次**用户账户控制（UAC）**提权。安装器会在这一次提权内装好脚本沙箱，不会
+   二次弹窗。
+4. 托盘图标出现即表示 Pie Link 就绪，扩展会自动连接（在侧边栏打开**设置 → Pie Link** 确认）。
+
+卸载：**设置 → 应用 → 已安装的应用 → Pie Link → 卸载**（或运行安装目录下的
+`unins000.exe`）。这会清除本地沙箱账户、防火墙规则、注册表键和文件。
+
+> 如果连接异常——例如面板显示已连接但功能不工作——在终端运行 `pie doctor`
+> （`"%ProgramFiles%\Pie Link\pie.exe" doctor`）。它会检查安装路径、Visual C++ 运行库、
+> 沙箱设施，以及 native-messaging 注册表键（包括可能静默遮蔽机器键的过期 per-user
+> **HKCU** 键），并给出每一项的修复方法。
+
 ## 配置
 
 1. 打开侧边栏，进入 **Settings**

@@ -33,3 +33,27 @@ test("invalid network declarations do not flip ok (断网是安全兜底不是�
   // ok 只由 socket + claude CLI 决定，两者相同（不受 invalidNetwork 影响）
   expect(withInvalid.ok).toBe(withNone.ok);
 });
+
+test("non-Windows platform produces no Windows-check noise", async () => {
+  const win: string[] = [];
+  const r = await doctor(() => [], {
+    platform: "darwin",
+    windowsChecks: async () => {
+      win.push("SHOULD-NOT-RUN");
+      return { ok: false, lines: ["SHOULD-NOT-RUN"] };
+    },
+  });
+  expect(win).toEqual([]);
+  expect(r.lines.some((l) => l.includes("SHOULD-NOT-RUN"))).toBe(false);
+  expect(r.lines.some((l) => l.includes("native-messaging"))).toBe(false);
+});
+
+test("win32 platform appends Windows checks and factors their ok verdict", async () => {
+  const r = await doctor(() => [], {
+    platform: "win32",
+    windowsChecks: async () => ({ ok: false, lines: ["Chrome native-messaging: HKCU key present — SHADOWS ..."] }),
+  });
+  expect(r.lines.some((l) => l.includes("HKCU key present"))).toBe(true);
+  // A failing Windows verdict drags the overall ok to false.
+  expect(r.ok).toBe(false);
+});
