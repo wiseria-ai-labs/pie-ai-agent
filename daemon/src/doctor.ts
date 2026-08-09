@@ -1,15 +1,19 @@
 import { existsSync } from "fs";
 import { paths } from "./paths";
+import { detectAgents, type DetectedAgent } from "./agents";
 import { listSkillsMerged } from "./skill-store";
 import type { SkillSummary } from "../../src/types/local-bridge";
 
 export async function doctor(
   // 注入点：默认扫真实两根，测试可传桩清单做 hermetic 断言。
   listSkills: () => SkillSummary[] = listSkillsMerged,
-  // Windows 检查项注入点：默认走真机 doctor（reg query / net use / srt 探针），非 win32 跳过；
-  // 测试传桩在 mac/linux 上覆盖 win32 分支做 hermetic 断言。
+  // 其余注入点统一收在一个 opts 里（别再往参数表上并列加）：
+  // - detect：agent 探测，默认走 detectAgents（真机要问 login shell PATH）；
+  // - windowsChecks：Windows 检查项，默认走真机 doctor（reg query / net use / srt 探针），
+  //   非 win32 跳过；测试传桩在 mac/linux 上覆盖 win32 分支做 hermetic 断言。
   opts: {
     platform?: NodeJS.Platform;
+    detect?: () => DetectedAgent[];
     windowsChecks?: () => Promise<{ ok: boolean; lines: string[] }>;
   } = {},
 ): Promise<{ ok: boolean; lines: string[] }> {
@@ -23,8 +27,21 @@ export async function doctor(
   } else {
     lines.push(`socket ${paths.ipcPath}: ${ipcPresent ? "present" : "absent (daemon not running?)"}`);
   }
-  const claude = Bun.which("claude");
-  lines.push(`claude CLI: ${claude ?? "NOT FOUND on PATH"}`);
+
+  // 与 handoff / 设置页同一个真源（detectAgents）：login shell PATH（Windows 走 env+注册表）、
+  // binPaths 回落、全部候选。裸 Bun.which("claude") 在 menubar app 这类 launchd 上下文里
+  // 必然 miss（PATH 只有 /usr/bin:/bin:...），报的是环境差异不是故障。
+  let agents: DetectedAgent[] = [];
+  try {
+    agents = (opts.detect ?? detectAgents)();
+  } catch {
+    /* 探测失败（shell 超时等）不该拖垮 doctor 的其余检查 */
+  }
+  lines.push(
+    agents.length
+      ? `agents: ${agents.map((a) => `${a.id} → ${a.path}`).join(", ")}`
+      : "agents: none detected",
+  );
 
   // skill 网络声明健康检查：列出被安全丢弃的非法域名（作者信号；不影响 ok，
   // 断网是安全兜底而非故障）。
@@ -40,8 +57,9 @@ export async function doctor(
     }
   }
 
-  // pipe 平台无法 fs 判在场（ipcPresent=null）→ 不拿它压 ok，只看 claude CLI。
-  let ok = (ipcPresent ?? true) && claude != null;
+  // ok = daemon 健康度，与「装没装 agent」无关：只用 codex/cursor 的用户不该恒 exit 1。
+  // pipe 平台无法 fs 判在场（ipcPresent=null）→ 不拿它压 ok。
+  let ok = ipcPresent ?? true;
 
   // Windows 专属检查项（F1/F5/F6 + NM 注册表 HKCU 遮蔽）。非 win32 整体跳过——不产生噪音输出
   // （沿用 doctor 平台分支惯例）。

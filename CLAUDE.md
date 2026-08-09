@@ -67,6 +67,8 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - `dist/manifest.json` 的 `background.service_worker` 和 `content_scripts[0].js[0]` 必须以 `.js` 结尾（不是 `.ts`）
 - `manifest.version` 必须等于 tag 去掉 `v` 前缀（即 package.json / manifest.json 没 bump 就发 tag 会被拦下）
+- **daemon 版本闸**（`daemon-version-gate` job，两个 daemon 构建 job 都 `needs` 它）：`daemon/` 相对上一个 `v*` tag 有改动，`daemon/package.json` 的 `version` 就必须跟着改。理由：`/usr/local/bin/pie` 只能靠用户重装 pkg 更新，而「有没有新版」的每一处判断（扩展侧 `MIN_DAEMON_VERSION` 升级卡、pkg 文件名 `pie-link-<ver>.pkg`、顶栏显示的 `Pie Link v<ver>`）都只比这一个数字——它不动，这些同时失明，连用户跑的是哪个二进制都问不出来（历史上 v1.3.0 / v1.3.1 两次发版都动了 daemon 却没 bump）。闸在 **release 级不是 PR 级**：一个 feature 拆 N 个 PR 不该跳 N 个版本，攒一批发版时对齐即可；`workflow_dispatch` 补传历史 tag 跳过此闸。
+  被拦下时的动作：bump `daemon/package.json` 的 `version`（daemon 版本独立于扩展版本，各走各的号）。是否同时抬扩展侧的 `MIN_DAEMON_VERSION`（`src/background/local-bridge.ts`）另判——抬了会给全部存量用户弹「去下载 pkg 重装」的升级卡，只在 daemon 有用户可感知的实质改动时才值得。
 
 补传历史 tag：`gh workflow run release.yml -f tag=v0.x.y`（用 `workflow_dispatch`，会 checkout 那个 tag commit 重 build + `--clobber` 覆盖）。
 
