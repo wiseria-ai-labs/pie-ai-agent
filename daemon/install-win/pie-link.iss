@@ -183,6 +183,25 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;
 
+// Upgrade path: the payload we are about to overwrite ({app}\PieTray.exe, {app}\pie.exe) is
+// locked while the tray / daemon run, and CloseApplications=no means Inno will not police them
+// for us. Without this, "installed + tray running" (or "+ daemon resident after the extension
+// connected") re-installs hit DeleteFile error 5 on the locked exe and, under
+// /VERYSILENT /SUPPRESSMSGBOXES, silently roll the whole install back (Abort default). This is
+// symmetric with the taskkill pair in CurUninstallStepChanged, but must fire BEFORE [Files] copies:
+// PrepareToInstall is the last [Code] hook that runs before [InstallDelete]/[Files] (ssInstall /
+// ssPostInstall are both too late). Best-effort: taskkill on a not-running image returns 128, which
+// is the normal first-install case, so both exit codes are ignored -- returning any non-empty string
+// here would ABORT the install.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code: Integer;
+begin
+  Result := '';
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im PieTray.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im pie.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then

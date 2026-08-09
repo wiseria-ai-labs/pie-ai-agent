@@ -124,6 +124,28 @@ test("iss runs the HKCU cleanup at post-install (CurStepChanged), before the man
   expect(write).toBeGreaterThan(call);
 });
 
+// ── #399: kill the tray + daemon BEFORE [Files] copies (upgrade-path lock -> silent rollback) ──
+// On "installed + tray/daemon running" re-installs the locked {app}\PieTray.exe / {app}\pie.exe make
+// Inno's DeleteFile fail (error 5); under /VERYSILENT /SUPPRESSMSGBOXES this silently rolls the whole
+// install back. PrepareToInstall is the last [Code] hook before [InstallDelete]/[Files], so both
+// taskkills must live there (symmetric with the uninstall-side pair), not in ssPostInstall (too late).
+test("iss kills both PieTray.exe and pie.exe in PrepareToInstall (before [Files] copies)", () => {
+  const start = iss.indexOf("function PrepareToInstall(");
+  expect(start).toBeGreaterThan(-1);
+  // Body = from the function header to the next top-level procedure/function declaration.
+  const rest = iss.slice(start + 1);
+  const nextDecl = rest.search(/\n(?:procedure|function)\s/);
+  const body = nextDecl === -1 ? rest : rest.slice(0, nextDecl);
+  expect(body).toMatch(/taskkill\.exe'\),\s*'\/f \/im PieTray\.exe'/);
+  expect(body).toMatch(/taskkill\.exe'\),\s*'\/f \/im pie\.exe'/);
+});
+
+test("iss keeps CloseApplications=no (killing is done by us, not Inno's restart manager)", () => {
+  // Explicit guard: switching to CloseApplications=yes + RestartApplications changes the tray's
+  // ExecAsOriginalUser restart semantics and must be a deliberate, test-updating decision.
+  expect(iss).toMatch(/CloseApplications\s*=\s*no/);
+});
+
 // ── #392.2: CI pins the innosetup choco version (ISCC path is hardcoded to "Inno Setup 6") ──
 test("release workflow pins the innosetup choco version", () => {
   expect(releaseYml).toMatch(/choco install innosetup --version=6\.\d+\.\d+/);
