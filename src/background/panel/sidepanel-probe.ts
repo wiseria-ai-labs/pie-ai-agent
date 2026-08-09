@@ -24,7 +24,7 @@
 // persisted user preference that overrides everything here.
 
 import { panelDocumentResponds } from "@/lib/panel-host/panel-ping";
-import { getConfig, setConfig } from "@/lib/idb/config-store";
+import { getConfig, removeConfig, setConfig } from "@/lib/idb/config-store";
 
 /**
  * How long to wait for `chrome.sidePanel.open()` itself to settle. Covers the
@@ -107,6 +107,21 @@ export function applyActionClickBehavior(browserHandlesClick: boolean): void {
   } catch {
     /* no sidePanel namespace — clicks reach action.onClicked by default */
   }
+}
+
+/**
+ * Drop the measured verdict, in memory and on disk, so the next open re-probes.
+ *
+ * The manual override records `unsupported` — which `tryOpenSidePanel`
+ * short-circuits on for the life of the install. Turning the override back off
+ * therefore has to erase that verdict too, or the browser never gets another
+ * chance to prove it can show a side panel.
+ */
+export function forgetVerdict(): void {
+  verdict = "unknown";
+  void removeConfig(VERDICT_STORAGE_KEY).catch(() => {
+    /* unwritable — worst case the stale verdict is re-read next session */
+  });
 }
 
 export function rememberVerdict(next: Exclude<Verdict, "unknown">): void {

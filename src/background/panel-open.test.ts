@@ -315,6 +315,29 @@ describe("forceFallbackPanel", () => {
   });
 });
 
+describe("turning the window override back off", () => {
+  it("re-probes and re-arms the browser instead of staying stuck on windows", async () => {
+    // Reported on Chrome: right-clicking the icon opens the panel in a window
+    // (which also pins verdict=unsupported and takes clicks off the browser),
+    // and flipping the setting back off changed nothing — every later click
+    // still opened a window. Two leftovers, both cleared here.
+    installTabs([{ id: 1, url: "https://a.test/", windowId: 200 }]);
+    const setPanelBehavior = vi.fn(async () => {});
+    g.chrome.sidePanel = { open: vi.fn(async () => {}), setPanelBehavior };
+    installSidePanelContexts(true);
+    initPanelOpening();
+
+    await forceFallbackPanel({ windowId: 200 });
+    await setPanelMode("auto"); // the user unticks the setting
+
+    await vi.waitFor(async () => {
+      expect(await getConfig("sidepanel_support")).toBeUndefined();
+    });
+    expect(setPanelBehavior).toHaveBeenLastCalledWith({ openPanelOnActionClick: false });
+    await expect(tryOpenSidePanel({ tabId: 1 })).resolves.toBe("opened");
+  });
+});
+
 describe("initPanelOpening", () => {
   it("keeps clicks with the extension when support has never been proven", async () => {
     // Guarantees an entry point on a browser that stored openPanelOnActionClick
