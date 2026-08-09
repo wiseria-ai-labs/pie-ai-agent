@@ -103,6 +103,30 @@ namespace PieLink
                     ["es-419"] = "El servicio de Pie Link no responde. Intenta volver a iniciar sesión.",
                     ["pt-BR"] = "O serviço do Pie Link não está respondendo. Tente sair e entrar de novo.",
                 },
+                ["diagnostics"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Diagnostics", ["zh-CN"] = "诊断", ["zh-TW"] = "診斷",
+                    ["ja"] = "診断", ["es-419"] = "Diagnóstico", ["pt-BR"] = "Diagnóstico",
+                },
+                ["repairSandbox"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Repair Sandbox", ["zh-CN"] = "修复沙箱", ["zh-TW"] = "修復沙箱",
+                    ["ja"] = "サンドボックスを修復", ["es-419"] = "Reparar sandbox",
+                    ["pt-BR"] = "Reparar sandbox",
+                },
+                ["diagTitleOk"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Diagnostics — All Good", ["zh-CN"] = "诊断 — 一切正常",
+                    ["zh-TW"] = "診斷 — 一切正常", ["ja"] = "診断 — 問題なし",
+                    ["es-419"] = "Diagnóstico — Todo en orden", ["pt-BR"] = "Diagnóstico — Tudo certo",
+                },
+                ["diagTitleProblem"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Diagnostics — Problems Found", ["zh-CN"] = "诊断 — 发现问题",
+                    ["zh-TW"] = "診斷 — 發現問題", ["ja"] = "診断 — 問題が見つかりました",
+                    ["es-419"] = "Diagnóstico — Se encontraron problemas",
+                    ["pt-BR"] = "Diagnóstico — Problemas encontrados",
+                },
                 ["openLogs"] = new Dictionary<string, string>
                 {
                     ["en"] = "Open Logs Folder", ["zh-CN"] = "打开日志目录", ["zh-TW"] = "開啟日誌目錄",
@@ -315,6 +339,15 @@ namespace PieLink
             }
 
             menu.Items.Add(new ToolStripSeparator());
+
+            var diagnostics = new ToolStripMenuItem(L10n.T("diagnostics"));
+            diagnostics.Click += (_, __) => RunDoctor();
+            menu.Items.Add(diagnostics);
+
+            var repair = new ToolStripMenuItem(L10n.T("repairSandbox"));
+            repair.Click += (_, __) => RepairSandbox();
+            menu.Items.Add(repair);
+
             var openLogs = new ToolStripMenuItem(L10n.T("openLogs"));
             openLogs.Click += (_, __) => OpenLogsFolder();
             menu.Items.Add(openLogs);
@@ -340,6 +373,89 @@ namespace PieLink
                 Process.Start(new ProcessStartInfo("explorer.exe", "\"" + dir + "\"") { UseShellExecute = true });
             }
             catch { /* best-effort */ }
+        }
+
+        // pie.exe 与 PieTray.exe 同目录（安装器把二者装进同一 app 目录）。
+        private static string PieExePath()
+        {
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pie.exe");
+        }
+
+        // 「诊断」= 跑 `pie.exe doctor` 抓 stdout+stderr，用 MessageBox 展示全文（原生 Ctrl+C 可复制）。
+        // UseShellExecute=false + CreateNoWindow=true 抓管道且不闪黑框；exit 0 → 正常态，非 0 → 问题态。
+        private void RunDoctor()
+        {
+            string output;
+            int exitCode;
+            try
+            {
+                var psi = new ProcessStartInfo(PieExePath(), "doctor")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                using (var proc = Process.Start(psi))
+                {
+                    // 并发读两个管道，避免其一填满 buffer 时死锁（doctor 输出走 stderr，但两头都读稳妥）。
+                    var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+                    var stderr = proc.StandardError.ReadToEnd();
+                    var stdout = stdoutTask.GetAwaiter().GetResult();
+                    proc.WaitForExit();
+                    exitCode = proc.ExitCode;
+                    output = (stdout + stderr).Trim();
+                }
+            }
+            catch (Exception ex)
+            {
+                // pie.exe 缺失 / 无法启动：当问题态展示异常信息，别静默吞掉。
+                output = ex.Message;
+                exitCode = -1;
+            }
+            bool ok = exitCode == 0;
+            if (output.Length == 0) output = ok ? "OK" : "(no output)";
+            MessageBox.Show(output, L10n.T(ok ? "diagTitleOk" : "diagTitleProblem"),
+                MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        // 「修复沙箱」= 提权依次跑 windows-uninstall + windows-install，跑完自动再诊断一次让用户看结果。
+        // 必须两步：srt 幂等判定只看凭据在不在、不验能否登录，单跑 install 会「成功地什么都没修」（见 #400）。
+        private void RepairSandbox()
+        {
+            // 第一步被取消（UAC 点否）则不继续第二步，也不再诊断——保持沙箱原状、不弹错。
+            if (!RunElevated("windows-uninstall")) return;
+            if (!RunElevated("windows-install")) return;
+            RunDoctor();
+        }
+
+        // 提权跑 `pie.exe <arg>`：runas verb 必须走 ShellExecute；WindowStyle.Hidden 压掉控制台黑框。
+        // 返回 false 仅当用户取消 UAC（NativeErrorCode 1223）——调用方据此中止后续步骤且不弹错、不诊断。
+        // 其它失败返回 true：best-effort 不阻断，让流程继续，最终由随后的诊断展示真实状态。
+        private static bool RunElevated(string arg)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo(PieExePath(), arg)
+                {
+                    UseShellExecute = true, // runas 提权必须 ShellExecute（不能重定向管道）
+                    Verb = "runas",
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                };
+                using (var proc = Process.Start(psi))
+                {
+                    if (proc != null) proc.WaitForExit();
+                }
+                return true;
+            }
+            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+            {
+                return false; // 用户取消 UAC：静默返回，中止链路
+            }
+            catch
+            {
+                return true; // 非取消失败：不阻断，交给随后的诊断显示实况
+            }
         }
 
         // 「退出 Pie Link」= 关整套（对齐 mac Docker Desktop 模型）：先按 pid 结束 daemon，再退托盘。
