@@ -103,8 +103,56 @@ jobs:
             "pie-${{ steps.tag.outputs.version }}-edge.zip" \
             --clobber
 
+  # daemon 版本闸：daemon/ 相对上一个 tag 有改动，daemon/package.json 的 version 就必须跟着动。
+  # 为什么需要：daemon 是高频改动面，但 /usr/local/bin/pie 只能靠用户重装 pkg 更新，而
+  # 「有没有新版」全靠版本号比较（扩展侧 MIN_DAEMON_VERSION、pkg 文件名、doctor 显示的
+  # v<ver>）。版本号不动 = 所有这些判断同时失明，连用户跑的是哪个二进制都问不出来。
+  # 闸在 release 级（不是 PR 级）：一个 feature 拆 N 个 PR 不该跳 N 个版本，攒一批发版时对齐即可。
+  daemon-version-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0   # 需要完整历史 + tags 才能和上一个 tag 比
+
+      - name: daemon/ changed ⇒ daemon version must change
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # 补传历史 tag（workflow_dispatch）是重建既成事实，版本关系当时就定了，不复查。
+          # 判断放 step 内而非 job 级 if：job 被 skip 会连带 skip 掉 needs 它的构建 job。
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "workflow_dispatch rebuild — gate skipped"; exit 0
+          fi
+          CUR="${GITHUB_REF_NAME}"
+          PREV="$(git tag --list 'v*' --sort=-v:refname | grep -A1 -x "$CUR" | tail -n1)"
+          if [ -z "$PREV" ] || [ "$PREV" = "$CUR" ]; then
+            echo "no previous v* tag — first release, gate skipped"; exit 0
+          fi
+          echo "comparing $PREV → $CUR"
+          if git diff --quiet "$PREV" "$CUR" -- daemon/; then
+            echo "daemon/ unchanged — gate passed"; exit 0
+          fi
+          # 上一个 tag 里还没有 daemon/package.json（daemon 那时刚引入）→ 无从比较，放行。
+          # 2>/dev/null + || true：set -e 下 git show 失败会让闸误报 fail。
+          PREV_V="$(git show "$PREV:daemon/package.json" 2>/dev/null | jq -r .version || true)"
+          CUR_V="$(git show "$CUR:daemon/package.json" | jq -r .version)"
+          if [ -z "$PREV_V" ] || [ "$PREV_V" = "null" ]; then
+            echo "no daemon/package.json at $PREV — gate passed"; exit 0
+          fi
+          if [ "$PREV_V" = "$CUR_V" ]; then
+            echo "::error::daemon/ changed since $PREV but daemon/package.json version is still $CUR_V. Bump it — users can only get the new binary via a version-named pkg, and every 'is there an update' check compares this number."
+            git diff --stat "$PREV" "$CUR" -- daemon/
+            exit 1
+          fi
+          echo "daemon version $PREV_V → $CUR_V — gate passed"
+
   build-daemon-pkg:
     runs-on: macos-14
+    needs: daemon-version-gate
     steps:
       - name: Resolve tag
         id: tag
@@ -171,6 +219,7 @@ jobs:
 
   build-daemon-win:
     runs-on: windows-latest
+    needs: daemon-version-gate
     steps:
       - name: Resolve tag
         id: tag
