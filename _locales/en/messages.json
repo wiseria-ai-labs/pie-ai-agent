@@ -6,5 +6,9 @@
   "extension_description": {
     "message": "Open-source AI agent for Chrome. Reads pages & PDFs, automates tabs. Bring your own key (11 providers) or subscribe. No telemetry.",
     "description": "Short description shown in the Web Store and chrome://extensions."
+  },
+  "extension_description_edge": {
+    "message": "Open-source AI agent for your browser. Reads pages & PDFs, automates tabs. Your own key (11 providers) or subscribe. No telemetry.",
+    "description": "Edge Add-ons rejects store copy that names other browsers; substituted for extension_description when packaging for Edge."
   }
 }

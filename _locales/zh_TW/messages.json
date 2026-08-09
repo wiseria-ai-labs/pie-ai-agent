@@ -6,5 +6,9 @@
   "extension_description": {
     "message": "開源 Chrome AI Agent：讀網頁與 PDF、跨分頁自動化。自帶 API Key（支援 11 家）或訂閱 Pie，無遙測。",
     "description": "Short description shown in the Web Store and chrome://extensions."
+  },
+  "extension_description_edge": {
+    "message": "開源瀏覽器 AI Agent：讀網頁與 PDF、跨分頁自動化。自帶 API Key（支援 11 家）或訂閱 Pie，無遙測。",
+    "description": "Edge Add-ons rejects store copy that names other browsers; substituted for extension_description when packaging for Edge."
   }
 }
