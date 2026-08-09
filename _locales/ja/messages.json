@@ -6,5 +6,9 @@
   "extension_description": {
     "message": "Chrome 用オープンソース AI エージェント。ページや PDF を読み、タブを自動化。自分の API キー（11 社）かサブスクで利用、テレメトリなし。",
     "description": "Short description shown in the Web Store and chrome://extensions."
+  },
+  "extension_description_edge": {
+    "message": "ブラウザ用オープンソース AI エージェント。ページや PDF を読み、タブを自動化。自分の API キー（11 社）かサブスクで利用、テレメトリなし。",
+    "description": "Edge Add-ons rejects store copy that names other browsers; substituted for extension_description when packaging for Edge."
   }
 }

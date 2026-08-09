@@ -6,5 +6,9 @@
   "extension_description": {
     "message": "Agente de IA aberto para Chrome: lê páginas e PDFs, automatiza abas. Sua chave (11 provedores) ou assinatura. Sem telemetria.",
     "description": "Short description shown in the Web Store and chrome://extensions."
+  },
+  "extension_description_edge": {
+    "message": "Agente de IA aberto para o navegador: lê páginas e PDFs, automatiza abas. Sua chave (11 provedores) ou assinatura. Sem telemetria.",
+    "description": "Edge Add-ons rejects store copy that names other browsers; substituted for extension_description when packaging for Edge."
   }
 }

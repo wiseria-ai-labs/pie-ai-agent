@@ -86,23 +86,12 @@ jobs:
           ls -la pie-${{ steps.tag.outputs.version }}.zip
 
       - name: Package Edge zip
-        # Edge rejects the package outright ("The manifest shouldn't contain the
-        # key field"). Chrome needs it: `key` pins the extension ID, and the
-        # Google OAuth redirect URI is registered against that ID. So the two
-        # stores get different zips — same build, one field apart.
+        # Same build, minus the things Edge's validator objects to — see
+        # scripts/make-edge-package.mjs. Runs after the Chrome zip because it
+        # rewrites dist/ in place.
         run: |
-          node -e "
-            const fs = require('fs');
-            const p = 'dist/manifest.json';
-            const m = JSON.parse(fs.readFileSync(p, 'utf8'));
-            delete m.key;
-            fs.writeFileSync(p, JSON.stringify(m, null, 2) + '\n');
-          "
+          node scripts/make-edge-package.mjs dist
           (cd dist && zip -rq "../pie-${{ steps.tag.outputs.version }}-edge.zip" .)
-          if unzip -p "pie-${{ steps.tag.outputs.version }}-edge.zip" manifest.json | grep -q '"key"'; then
-            echo 'FAIL: key survived into the Edge package'
-            exit 1
-          fi
           ls -la pie-${{ steps.tag.outputs.version }}-edge.zip
 
       - name: Upload to release
