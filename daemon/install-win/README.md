@@ -34,7 +34,14 @@ macOS `.pkg`（`daemon/install/`）的 Windows 对应物。权威设计：
   作用域）。若标准用户凭**另一个**管理员账户提权，HKCU / `%LOCALAPPDATA%` 会落到那个管理员的
   hive/profile，而 Chrome 以标准用户身份跑 → 永远读不到 per-user 的 NM manifest。HKLM 的 NM
   host 键对每个用户都生效，manifest json 放 `{app}` 世界可读，从根上消掉这个身份错配。
-- **`[Code]` ssPostInstall**（顺序，容错）：写 native manifest → `vc_redist /install /quiet
+  **清 HKCU 同名遮蔽键（防御性）**：Chrome / Edge 读 NM host 时 **HKCU 优先于 HKLM**，机器上若
+  残留一份 HKCU `ai.wiseria.pie` 键（手工试装 / 旧 per-user 形态）会**静默遮蔽**安装器写的 HKLM 键，
+  浏览器转而启动那份键指向的死路径 →「本地打通」连不上却看不出异常（PR #382 真机验收实际踩到）。
+  ssPostInstall 里用 **`ExecAsOriginalUser` 跑 `reg delete`** 清掉 Chrome/Edge 两个 HKCU 键：
+  之所以不用 `[Registry]` 的 HKCU `deletekey`，是因为提权安装下它解析到**发起提权的管理员** hive，
+  而真正遮蔽的是**实际用浏览器的用户** hive；`ExecAsOriginalUser` 以原始调用者身份跑才命中后者。
+  键不存在只是非零退出，容错不阻断。与 #365 给 `pie doctor` 的**检测**互补，这里是安装器**主动预防**。
+- **`[Code]` ssPostInstall**（顺序，容错）：清 HKCU 遮蔽键 → 写 native manifest → `vc_redist /install /quiet
   /norestart`（**F1**，先于沙箱）→ `pie.exe windows-install`（装沙箱设施，一次 UAC 内完成；
   **失败/取消不阻断安装**，只降级脚本执行，spec §3.2 fail-closed）→ 以调用者身份启动托盘。
 - **卸载**：停托盘 → `pie.exe windows-uninstall`（清 `srt-sandbox` 账户 / WFP / ACE）→ 杀
@@ -51,7 +58,9 @@ iscc /DMyAppVersion=1.2.3 daemon\install-win\pie-link.iss
 - `MyAppVersion`（必给）= daemon/package.json 的 version；CI 从那里读。
 - `DistDir`（可选，默认 `..\dist` = `daemon/dist`）= 上表四个 payload 的暂存目录。
 - CI 接线见 `.github/workflows/release.yml` 的 `build-daemon-win` job（每 tag 交叉编译 +
-  `choco install innosetup` + iscc → 上传 release asset）。
+  `choco install innosetup --version=6.7.1` + iscc → 上传 release asset）。**choco 版本固定在
+  6.x**：ISCC 路径写死 `Inno Setup 6\ISCC.exe`，choco 包一旦跟进 Inno Setup 7 大版本，目录会变成
+  `Inno Setup 7`、这步就找不到 ISCC 而 fail（且只在发 tag 时暴露）。要升 7 时同步改 pin 与路径。
 
 ## 尚未做（首期明确不含）
 

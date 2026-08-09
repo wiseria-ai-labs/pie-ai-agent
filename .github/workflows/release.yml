@@ -269,7 +269,13 @@ jobs:
 
       - name: Install Inno Setup
         shell: pwsh
-        run: choco install innosetup --no-progress -y
+        # Pin the version: the ISCC path below is hardcoded to "Inno Setup 6". Inno Setup 7.0.x is
+        # already published; once the choco package follows the major bump, choco installs into
+        # "Inno Setup 7" and the packaging step can no longer find ISCC.exe -- a failure that only
+        # surfaces at tag-push time (installer silently missing from the release). Pinning keeps the
+        # build reproducible, matching the srt exact-pin convention. Bump both this pin and the path
+        # below together when intentionally moving to Inno Setup 7.
+        run: choco install innosetup --version=6.7.1 --no-progress -y
 
       - name: Package installer (iscc)
         shell: pwsh

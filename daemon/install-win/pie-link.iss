@@ -157,10 +157,37 @@ begin
   ExecAsOriginalUser(ExpandConstant('{app}\PieTray.exe'), '', '', SW_SHOW, ewNoWait, Code);
 end;
 
+// Chrome / Edge resolve the native-messaging host path from HKCU *before* HKLM. A stale HKCU key
+// for our host (a hand-deployed dev build, or a hypothetical past per-user install form) therefore
+// silently shadows the machine-wide HKLM key this installer writes: the browser launches whatever
+// dead path the HKCU key names and "Pie Link" shows connected-but-broken with no visible cause.
+// This happened during real-machine acceptance (PR #382 -- a Gate 0 `C:\pie\` deployment kept
+// answering via its HKCU key even after uninstall). We proactively clear the residue here.
+//
+// Tradeoff (spec note in #392): the obvious `[Registry]` HKCU `deletekey` would resolve to the
+// *elevating admin's* hive under a standard-user + admin-credential elevation -- not the hive of
+// the user who actually runs the browser, which is exactly the account whose stale key does the
+// shadowing. So we clear it via `reg delete` under ExecAsOriginalUser (the same original-caller
+// context as StartTray), which targets the real browser user's HKCU. A missing key just yields a
+// nonzero exit, which is fine -- this is best-effort cleanup, never fatal. (#365 gives `pie doctor`
+// the complementary *detection*; this is the installer-side *prevention*.)
+procedure ClearShadowingHkcuKeys();
+var
+  Code: Integer;
+begin
+  ExecAsOriginalUser(ExpandConstant('{sys}\reg.exe'),
+    'delete "HKCU\Software\Google\Chrome\NativeMessagingHosts\{#NmHostName}" /f',
+    '', SW_HIDE, ewWaitUntilTerminated, Code);
+  ExecAsOriginalUser(ExpandConstant('{sys}\reg.exe'),
+    'delete "HKCU\Software\Microsoft\Edge\NativeMessagingHosts\{#NmHostName}" /f',
+    '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
+    ClearShadowingHkcuKeys();
     WriteNativeManifest();
     InstallSandboxFacility();
     StartTray();
