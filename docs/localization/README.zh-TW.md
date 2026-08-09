@@ -125,6 +125,29 @@ pnpm build
 
 然後把產生的 `dist/` 資料夾作為未封裝擴充功能載入（步驟 3–5 同上）。
 
+### Pie Link —— 連接你的電腦（選用）
+
+[Pie Link](https://www.pie.chat/link) 是選用的伴侶程式，讓 Pie 使用本機 Skill、執行本機
+腳本，並把任務交給 Claude Code、Codex、Cursor 等本機 AI 編碼工具。
+
+**在 Windows 上：**
+
+1. 從 [Releases 頁面](https://github.com/WiseriaAI/pie-ai-agent/releases) 下載最新的
+   `pie-link-setup-<version>.exe`。
+2. 執行它。Windows SmartScreen 可能提示發行者無法辨識——首個版本未簽章，屬正常現象。
+   點擊**其他資訊 → 仍要執行**。
+3. 通過唯一一次**使用者帳戶控制（UAC）**提權。安裝程式會在這一次提權內裝好腳本沙箱，不會
+   二次彈窗。
+4. 工作列圖示出現即表示 Pie Link 就緒，擴充功能會自動連線（在側邊欄開啟**設定 → Pie Link** 確認）。
+
+解除安裝：**設定 → 應用程式 → 已安裝的應用程式 → Pie Link → 解除安裝**（或執行安裝目錄下的
+`unins000.exe`）。這會清除本機沙箱帳戶、防火牆規則、登錄機碼和檔案。
+
+> 如果連線異常——例如面板顯示已連線但功能無法運作——在終端機執行 `pie doctor`
+> （`"%ProgramFiles%\Pie Link\pie.exe" doctor`）。它會檢查安裝路徑、Visual C++ 執行階段、
+> 沙箱設施，以及 native-messaging 登錄機碼（包括可能靜默遮蔽機器機碼的過期 per-user
+> **HKCU** 機碼），並給出每一項的修復方法。
+
 ## 設定
 
 1. 開啟側邊欄，進入 **Settings**

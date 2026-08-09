@@ -143,6 +143,35 @@ pnpm build
 
 Then load the generated `dist/` folder as an unpacked extension (steps 3–5 above).
 
+### Pie Link — connect to your computer (optional)
+
+[Pie Link](https://www.pie.chat/link) is the optional companion that lets Pie use
+local Skills, run local scripts, and hand tasks off to local AI coding tools like
+Claude Code, Codex, and Cursor.
+
+**On Windows:**
+
+1. Download the latest `pie-link-setup-<version>.exe` from the
+   [Releases page](https://github.com/WiseriaAI/pie-ai-agent/releases).
+2. Run it. Windows SmartScreen may warn that the publisher is unrecognized — the
+   first release is unsigned, so this is expected. Click **More info → Run
+   anyway**.
+3. Approve the single **User Account Control** prompt. The installer sets up the
+   script sandbox within that one elevation — there is no second prompt.
+4. When the tray icon appears, Pie Link is ready and the extension connects
+   automatically (open **Settings → Pie Link** in the side panel to confirm).
+
+To uninstall, go to **Settings → Apps → Installed apps → Pie Link → Uninstall**
+(or run `unins000.exe` in the install folder). This removes the local sandbox
+account, firewall rules, registry keys, and files.
+
+> If the connection ever misbehaves — for example the panel says connected but
+> nothing works — run `pie doctor` from a terminal (`"%ProgramFiles%\Pie
+> Link\pie.exe" doctor`). It checks the install path, the Visual C++ runtime,
+> the sandbox facility, and the native-messaging registry keys (including a
+> stale per-user **HKCU** key that can silently shadow the installer's machine
+> key), and prints how to fix each one.
+
 ## Configure
 
 1. Open the side panel and go to **Settings**

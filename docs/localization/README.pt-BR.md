@@ -146,6 +146,35 @@ pnpm build
 
 Depois carregue a pasta `dist/` gerada como extensão sem compactação (passos 3–5 acima).
 
+### Pie Link — conecte seu computador (opcional)
+
+[Pie Link](https://www.pie.chat/link) é o complemento opcional que permite ao Pie usar
+Skills locais, executar scripts locais e repassar tarefas a ferramentas locais de
+programação com IA como Claude Code, Codex e Cursor.
+
+**No Windows:**
+
+1. Baixe o `pie-link-setup-<version>.exe` mais recente na
+   [página de Releases](https://github.com/WiseriaAI/pie-ai-agent/releases).
+2. Execute-o. O Windows SmartScreen pode avisar que o editor não é reconhecido — a
+   primeira versão não é assinada, então isso é esperado. Clique em **Mais informações →
+   Executar assim mesmo**.
+3. Aprove o único prompt de **Controle de Conta de Usuário (UAC)**. O instalador
+   configura o sandbox de scripts nessa única elevação; não há um segundo prompt.
+4. Quando o ícone da bandeja aparecer, o Pie Link está pronto e a extensão se conecta
+   automaticamente (abra **Configurações → Pie Link** no painel lateral para confirmar).
+
+Para desinstalar, vá em **Configurações → Aplicativos → Aplicativos instalados → Pie
+Link → Desinstalar** (ou execute `unins000.exe` na pasta de instalação). Isso remove a
+conta local do sandbox, as regras de firewall, as chaves de registro e os arquivos.
+
+> Se a conexão apresentar problemas — por exemplo, o painel diz conectado mas nada
+> funciona — execute `pie doctor` em um terminal (`"%ProgramFiles%\Pie Link\pie.exe"
+> doctor`). Ele verifica o caminho de instalação, o runtime do Visual C++, o sandbox e
+> as chaves de registro do native-messaging (incluindo uma chave **HKCU** por usuário
+> obsoleta que pode ocultar silenciosamente a chave de máquina do instalador) e mostra
+> como corrigir cada uma.
+
 ## Configuração
 
 1. Abra o painel lateral e vá em **Settings**
