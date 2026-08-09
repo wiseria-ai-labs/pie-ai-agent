@@ -27,10 +27,35 @@ describe("parseRegQueryDefault", () => {
     expect(parseRegQueryDefault(out)).toBe("%LOCALAPPDATA%\\PieLink\\ai.wiseria.pie.json");
   });
 
+  test("parses localized value-name column identically to English (中文 (默认) 回归)", () => {
+    // A localized `reg` MUI translates the default value name; Simplified Chinese prints `(默认)`.
+    // Anchoring on the English `(Default)` string made a healthy key parse as null → doctor
+    // falsely claiming the HKLM key was MISSING and silently killing the HKCU-shadow check.
+    const path = "C:\\Program Files\\Pie Link\\ai.wiseria.pie.json";
+    const english = `    (Default)    REG_SZ    ${path}`;
+    const chinese = `    (默认)    REG_SZ    ${path}`;
+    const expandChinese = `    (默认)    REG_EXPAND_SZ    ${path}`;
+    expect(parseRegQueryDefault(english)).toBe(path);
+    expect(parseRegQueryDefault(chinese)).toBe(path);
+    expect(parseRegQueryDefault(expandChinese)).toBe(path);
+    // All three resolve to the exact same path.
+    expect(parseRegQueryDefault(chinese)).toBe(parseRegQueryDefault(english));
+  });
+
   test("returns null when the key/value is absent", () => {
-    // reg.exe prints the error to stderr; stdout has no (Default) line.
+    // reg.exe prints the error to stderr; stdout has no value line.
     expect(parseRegQueryDefault("ERROR: The system was unable to find the specified registry key")).toBeNull();
     expect(parseRegQueryDefault("")).toBeNull();
+    // A localized key header alone (no REG_ value row) must not be mistaken for a value.
+    expect(
+      parseRegQueryDefault(
+        [
+          "",
+          `HKEY_LOCAL_MACHINE\\Software\\Google\\Chrome\\NativeMessagingHosts\\${NM_HOST_NAME}`,
+          "",
+        ].join("\r\n"),
+      ),
+    ).toBeNull();
   });
 });
 

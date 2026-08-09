@@ -41,14 +41,21 @@ export const NM_BROWSERS: NmBrowser[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Extract the `(Default)` value from `reg query "<key>" /ve` stdout. The value line looks like
+ * Extract the default value from `reg query "<key>" /ve` stdout. The value line looks like
  * `    (Default)    REG_SZ    C:\path\to\ai.wiseria.pie.json`. Returns null when the key/value is
- * absent (reg prints an error to stderr and no `(Default)` line). Both REG_SZ and REG_EXPAND_SZ
+ * absent (reg prints an error to stderr and no value line). Both REG_SZ and REG_EXPAND_SZ
  * are accepted.
+ *
+ * The value-name column is matched as `\S+` rather than the literal `(Default)`: on a localized
+ * Windows the `reg` MUI translates it (Simplified Chinese prints `(默认)`, etc.), and anchoring on
+ * the English string made a successful `/ve` query parse as null → doctor falsely reporting the
+ * HKLM key MISSING and silently disabling the HKCU-shadow check (the most valuable probe here).
+ * `/ve` queries only the default value, so stdout carries at most one REG_SZ/REG_EXPAND_SZ row —
+ * matching the type column is unambiguous regardless of the value name's language.
  */
 export function parseRegQueryDefault(stdout: string): string | null {
   for (const line of stdout.split(/\r?\n/)) {
-    const m = line.match(/^\s*\(Default\)\s+REG_(?:SZ|EXPAND_SZ)\s+(.*)$/i);
+    const m = line.match(/^\s*\S+\s+REG_(?:SZ|EXPAND_SZ)\s+(.*)$/i);
     if (m) return m[1].trim();
   }
   return null;
