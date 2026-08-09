@@ -6,11 +6,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -297,23 +297,39 @@ namespace PieLink
             if (oldHandle != IntPtr.Zero) DestroyIcon(oldHandle);
         }
 
-        // 被咬一口的派（对齐 public/icons/icon-128.svg 与 mac pieTemplateIcon 的比例）。
-        // 连接态 = 实心暖色派；未连接态 = 暗灰半透明派。咬口用 SourceCopy 挖真透明。
+        // 品牌图标（对齐 public/icons/icon-128.svg：深圆角底板 + 白派 + 右上咬口），从嵌入的多档
+        // pie.ico 取 32 档画进 32×32 ARGB bitmap。底板保留——纯白派在浅色任务栏上会消失，咬口本就是
+        // 底板色实心，底板在则咬口自然成立，无需挖透明。连接态原色；未连接态整体压 alpha 到 40%
+        // （这份资产近乎无彩色，去饱和无效，只能压透明度）。
+        //
+        // 固定取 32 档而非 SystemInformation.SmallIconSize：NotifyIcon 交给 shell 的是 HICON，由
+        // explorer.exe（per-monitor DPI aware）按需绘制，不经本进程 DPI 虚拟化；PieTray.exe 是
+        // DPI-unaware 进程，SmallIconSize 只返回虚拟化后的 16×16 反而选错档。给 32 让 explorer 在
+        // 100% 下 downsample、200% 下正好。若 200% 真机仍糊，把取档尺寸改成 48（ico 内已有 48 档）。
         private static Bitmap BuildBitmap(bool connected)
         {
             var bmp = new Bitmap(32, 32, PixelFormat.Format32bppArgb);
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("pie.ico"))
+            using (var icon = new Icon(stream, new Size(32, 32)))
             using (var g = Graphics.FromImage(bmp))
             {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.Clear(Color.Transparent);
-                var fill = connected
-                    ? Color.FromArgb(255, 0xE0, 0x8A, 0x2B) // 暖琥珀 = 已连接
-                    : Color.FromArgb(110, 0x9A, 0x9A, 0x9A); // 暗灰半透明 = 未连接
-                using (var brush = new SolidBrush(fill))
-                    g.FillEllipse(brush, 4, 4, 24, 24); // 派 心(16,16) r12
-                g.CompositingMode = CompositingMode.SourceCopy; // 覆盖为透明 = 真挖洞
-                using (var clear = new SolidBrush(Color.Transparent))
-                    g.FillEllipse(clear, 20, 1, 12, 12); // 咬口 右上
+                if (connected)
+                {
+                    g.DrawIcon(icon, new Rectangle(0, 0, 32, 32));
+                }
+                else
+                {
+                    // ColorMatrix Matrix33 = 整体 alpha 乘子，把不透明像素压到 40% 做「变淡」态。
+                    using (var src = icon.ToBitmap())
+                    using (var attrs = new ImageAttributes())
+                    {
+                        var matrix = new ColorMatrix { Matrix33 = 0.4f };
+                        attrs.SetColorMatrix(matrix);
+                        g.DrawImage(src, new Rectangle(0, 0, 32, 32),
+                            0, 0, src.Width, src.Height, GraphicsUnit.Pixel, attrs);
+                    }
+                }
             }
             return bmp;
         }

@@ -70,7 +70,16 @@ using System.Reflection;
 "@ | Set-Content -Encoding UTF8 -Path $asmInfo
 
 # /target:winexe = 无控制台窗口；/platform:x64 对齐首期 x64-only 支持面。
+# 品牌图标（#379）：/win32icon 管 PE 文件图标（资源管理器 / 任务管理器 / 卸载项），
+# /resource 把同一 .ico 嵌成运行期可读资源（托盘 NotifyIcon.Icon 用，见 PieTray.BuildBitmap）。
+# 两者互不替代，都要。两个开关都预拼成整串变量再传：`/resource:...,pie.ico` 里的裸逗号若不包进
+# 字符串，PowerShell 会当数组运算符把它拆成两个参数，csc 就收到断掉的开关。
+$icon = Join-Path $PSScriptRoot "pie.ico"
+$win32IconArg = "/win32icon:$icon"
+$resourceArg = "/resource:$icon,pie.ico"
 & $csc /nologo /target:winexe /platform:x64 /out:"$out" `
+    $win32IconArg `
+    $resourceArg `
     /r:System.dll `
     /r:System.Drawing.dll `
     /r:System.Windows.Forms.dll `
