@@ -18,6 +18,8 @@ export const EXPECTED_ORIGIN = `chrome-extension://${EXT_ID}/`;
 
 /** The two browsers whose native-messaging host keys the installer writes (HKLM, machine-wide). */
 export interface NmBrowser {
+  /** Stable check id surfaced in `--json` (`nm_chrome` / `nm_edge`) — a key, not display text. */
+  id: string;
   name: string;
   hklmKey: string;
   hkcuKey: string;
@@ -25,16 +27,35 @@ export interface NmBrowser {
 
 export const NM_BROWSERS: NmBrowser[] = [
   {
+    id: "nm_chrome",
     name: "Chrome",
     hklmKey: `HKLM\\Software\\Google\\Chrome\\NativeMessagingHosts\\${NM_HOST_NAME}`,
     hkcuKey: `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${NM_HOST_NAME}`,
   },
   {
+    id: "nm_edge",
     name: "Edge",
     hklmKey: `HKLM\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${NM_HOST_NAME}`,
     hkcuKey: `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${NM_HOST_NAME}`,
   },
 ];
+
+/**
+ * A single structured doctor check, consumed by `pie doctor --json` (the Windows tray renders
+ * these into plain-language lines and localises the title by `id`; #406). `id` is a STABLE key,
+ * never user-facing text; `detail` is the raw technical detail (English, never translated) and is
+ * only meaningful on non-`ok` checks — the tray shows it under abnormal items for screenshots.
+ *
+ * `status` is decoupled from the doctor `ok` verdict on purpose: the sandbox facility being NOT
+ * ready is `error` here (it's actionable — "Repair Sandbox") even though it does NOT flip `ok`
+ * (fail-closed degrade, spec §3.2). See #406 for why the tray must not key its title off `ok`.
+ */
+export type DoctorCheckStatus = "ok" | "warn" | "error";
+export interface DoctorCheck {
+  id: string;
+  status: DoctorCheckStatus;
+  detail: string;
+}
 
 // ---------------------------------------------------------------------------
 // Pure parsers / classifiers (unit-tested directly)
@@ -184,9 +205,15 @@ export interface WindowsDoctorDeps {
 export async function runWindowsDoctor(depsOverride: Partial<WindowsDoctorDeps> = {}): Promise<{
   ok: boolean;
   lines: string[];
+  checks: DoctorCheck[];
 }> {
   const deps = { ...defaultWindowsDoctorDeps(), ...depsOverride };
   const lines: string[] = [];
+  // Structured checks for `--json` (#406). Built ALONGSIDE `lines` from the same branches so the
+  // two never diverge; the human-readable `lines` output stays byte-for-byte unchanged. The pipe
+  // and agent probes are deliberately excluded — the tray must not surface "not running" (lazy
+  // launch, benign) or agent detection (unrelated to the Windows tray diagnostics).
+  const checks: DoctorCheck[] = [];
   let ok = true;
 
   // --- Named pipe reachability: distinguish "not running" (lazy launch, benign) from a fault.
@@ -212,18 +239,30 @@ export async function runWindowsDoctor(depsOverride: Partial<WindowsDoctorDeps> 
     lines.push(`  ERROR: on a network location (${installVerdict.reason}) — elevation breaks with`);
     lines.push("  ERROR_BAD_NETPATH. Reinstall Pie Link to a local disk (default: Program Files).");
     ok = false;
+    checks.push({
+      id: "install_path",
+      status: "error",
+      detail: `${deps.execPath} — on a network location (${installVerdict.reason})`,
+    });
   } else {
     lines.push(`install path: ${deps.execPath} (${installVerdict.reason})`);
+    checks.push({ id: "install_path", status: "ok", detail: deps.execPath });
   }
 
   // --- F1: srt-win.exe dynamically links VCRUNTIME140.dll; without it the loader dies silently.
   if (deps.fileExists(deps.vcRuntimePath)) {
     lines.push("VC++ runtime (VCRUNTIME140.dll): present");
+    checks.push({ id: "vc_runtime", status: "ok", detail: "VCRUNTIME140.dll present" });
   } else {
     lines.push("VC++ runtime (VCRUNTIME140.dll): MISSING — srt-win.exe dies silently at loader");
     lines.push("  stage (no error, no UAC). Install the Microsoft Visual C++ x64 redistributable");
     lines.push("  (vc_redist.x64). Only run_skill_script is affected.");
     ok = false;
+    checks.push({
+      id: "vc_runtime",
+      status: "error",
+      detail: "VCRUNTIME140.dll missing — install the Microsoft Visual C++ x64 redistributable",
+    });
   }
 
   // --- F6: sandbox facility readiness (behavioural probe, NOT filter enumeration).
@@ -231,23 +270,30 @@ export async function runWindowsDoctor(depsOverride: Partial<WindowsDoctorDeps> 
     const sandbox = await deps.sandboxReady();
     if (sandbox.ready) {
       lines.push("Windows script sandbox facility: ready");
+      checks.push({ id: "sandbox", status: "ok", detail: "ready" });
     } else {
       lines.push(`Windows script sandbox facility: NOT ready${sandbox.reason ? ` — ${sandbox.reason}` : ""}`);
       lines.push("  Only run_skill_script is affected; the bridge / skills / handoff are unaffected");
       lines.push("  (fail-closed degrade). Reinstall Pie Link to restore. (ok not affected.)");
+      // `error` in `--json` even though `ok` is NOT flipped — this is the exact decoupling #406
+      // requires so the tray flags a credential-broken sandbox instead of saying "All Good".
+      checks.push({ id: "sandbox", status: "error", detail: sandbox.reason ?? "not ready" });
     }
   } catch (e) {
-    lines.push(`Windows script sandbox facility: probe error — ${e instanceof Error ? e.message : String(e)}`);
+    const detail = e instanceof Error ? e.message : String(e);
+    lines.push(`Windows script sandbox facility: probe error — ${detail}`);
+    checks.push({ id: "sandbox", status: "error", detail: `probe error — ${detail}` });
   }
 
   // --- Native-messaging registry keys: HKLM (installed) + HKCU (shadow) for Chrome + Edge.
   for (const b of NM_BROWSERS) {
-    checkNmBrowser(b, deps, lines, (flip) => {
+    const check = checkNmBrowser(b, deps, lines, (flip) => {
       if (flip) ok = false;
     });
+    checks.push(check);
   }
 
-  return { ok, lines };
+  return { ok, lines, checks };
 }
 
 /**
@@ -261,9 +307,13 @@ function checkNmBrowser(
   deps: WindowsDoctorDeps,
   lines: string[],
   flipOk: (flip: boolean) => void,
-): void {
+): DoctorCheck {
   const hkcu = deps.regQueryDefault(b.hkcuKey);
   const hklm = deps.regQueryDefault(b.hklmKey);
+  // Collect error details in the same order the lines are pushed; the check is `error` iff any
+  // fault is found. `ok` detail carries the HKLM manifest path (screenshot / verification aid).
+  const errors: string[] = [];
+  let okDetail = "";
 
   // HKCU shadow — the marquee check. Report even when its manifest resolves fine.
   if (hkcu != null) {
@@ -272,35 +322,46 @@ function checkNmBrowser(
     lines.push(`  HKCU points at: ${hkcu}`);
     lines.push(`  Remove it: reg delete "${b.hkcuKey}" /f`);
     flipOk(true);
+    errors.push(`HKCU key shadows HKLM (points at: ${hkcu})`);
   }
 
   // HKLM presence — what the installer writes.
   if (hklm == null) {
     lines.push(`${b.name} native-messaging: HKLM key MISSING — install is incomplete, reinstall Pie Link`);
     flipOk(true);
+    errors.push("HKLM key missing — install incomplete");
   } else {
     lines.push(`${b.name} native-messaging: HKLM key present -> ${hklm}`);
     const m = checkNmManifest(hklm, { fileExists: deps.fileExists, readFile: deps.readFile });
     if (!m.jsonExists) {
       lines.push(`  ERROR: manifest json not found at ${hklm}`);
       flipOk(true);
+      errors.push(`manifest json not found at ${hklm}`);
     } else if (m.parseError) {
       lines.push(`  ERROR: manifest json is unreadable/invalid: ${m.parseError}`);
       flipOk(true);
+      errors.push(`manifest json unreadable/invalid: ${m.parseError}`);
     } else {
       if (!m.hostPathExists) {
         lines.push(`  ERROR: host wrapper missing: ${m.hostPath ?? "(no path field)"}`);
         flipOk(true);
+        errors.push(`host wrapper missing: ${m.hostPath ?? "(no path field)"}`);
       }
       if (!m.hasExpectedOrigin) {
         lines.push(`  ERROR: allowed_origins is missing ${EXPECTED_ORIGIN}`);
         flipOk(true);
+        errors.push(`allowed_origins is missing ${EXPECTED_ORIGIN}`);
       }
       if (m.hostPathExists && m.hasExpectedOrigin) {
         lines.push("  manifest OK (host wrapper present, allowed_origins carries the extension id)");
+        okDetail = `HKLM -> ${hklm}`;
       }
     }
   }
+
+  return errors.length > 0
+    ? { id: b.id, status: "error", detail: errors.join("; ") }
+    : { id: b.id, status: "ok", detail: okDetail };
 }
 
 function safeMappedDrives(deps: WindowsDoctorDeps): Set<string> {
