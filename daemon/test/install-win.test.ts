@@ -155,6 +155,15 @@ test("PieTray enforces single-instance via a Global named mutex (#405)", () => {
   expect(trayCs).toMatch(/if\s*\(!createdNew\)\s*return;/);
 });
 
+test("PieTray tolerates a Global mutex it cannot open without crashing (#407 review)", () => {
+  // A Global\ mutex held by another logon session has a default DACL that only grants the creator's
+  // session; a second user's tray (fast user switching / HKLM Run) can neither create nor open it, so
+  // `new Mutex(...)` throws UnauthorizedAccessException. Without a catch the process dies as a WER CLR
+  // crash instead of the intended silent single-instance exit. Guard the try/catch stays in place.
+  expect(trayCs).toMatch(/catch\s*\(\s*UnauthorizedAccessException\b/);
+  expect(trayCs).toMatch(/catch\s*\(\s*WaitHandleCannotBeOpenedException\b/);
+});
+
 // ── #392.2: CI pins the innosetup choco version (ISCC path is hardcoded to "Inno Setup 6") ──
 test("release workflow pins the innosetup choco version", () => {
   expect(releaseYml).toMatch(/choco install innosetup --version=6\.\d+\.\d+/);

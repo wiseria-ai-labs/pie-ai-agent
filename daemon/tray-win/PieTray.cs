@@ -36,8 +36,27 @@ namespace PieLink
         private static void Main()
         {
             bool createdNew;
+            Mutex mutex;
             // 进程存活期间持有 Mutex（不 Dispose / 不 ReleaseMutex）：进程退出时 OS 自动释放。
-            using (new Mutex(true, SingleInstanceMutexName, out createdNew))
+            try
+            {
+                mutex = new Mutex(true, SingleInstanceMutexName, out createdNew);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // 另一个登录会话已持有同名 Global\ mutex：.NET 默认 DACL 只授权 {SYSTEM, 创建者会话,
+                // 创建者用户}，别的登录会话既建不了（已存在）也 open 不了（无匹配 ACE），CreateMutex 拿到
+                // ACCESS_DENIED 后回落的 OpenMutex 同样被拒 → 抛异常。这仍是「已有托盘在跑」，按单实例
+                // 语义静默退出，绝不能让未捕获异常把进程崩成 WER（多用户机器上第二个用户点开始菜单项即触发）。
+                return;
+            }
+            catch (WaitHandleCannotBeOpenedException)
+            {
+                // 同名已存在但类型/句柄不可打开：一并按「已在运行」处理。
+                return;
+            }
+
+            using (mutex)
             {
                 if (!createdNew) return; // 已有托盘在跑：静默退出，不抢占、不弹框。
 
