@@ -22,6 +22,7 @@ import {
 import { onStoreChange } from "@/lib/store-bus";
 import {
   applyActionClickBehavior,
+  forgetVerdict,
   getSidePanelVerdict,
   loadStoredVerdict,
   rememberVerdict,
@@ -45,7 +46,21 @@ import { FALLBACK_MENU_ID, installPanelContextMenu } from "./panel/context-menu"
 export function initPanelOpening(): void {
   installPanelContextMenu();
   onStoreChange("config", (c) => {
-    if (c.id === PANEL_MODE_KEY) void getPanelMode().catch(() => {});
+    if (c.id !== PANEL_MODE_KEY) return;
+    const before = getPanelModeSync();
+    void getPanelMode()
+      .then((mode) => {
+        if (mode === before) return;
+        // Both directions of the toggle need the click behaviour handed back to
+        // the service worker: turning the override ON so `openPanel` is reached
+        // at all, turning it OFF so a re-probe can run. The probe re-earns the
+        // browser-handled flag on success.
+        applyActionClickBehavior(false);
+        // And going back to auto must erase the verdict the override recorded,
+        // or `tryOpenSidePanel` keeps short-circuiting to the fallback window.
+        if (mode === "auto") forgetVerdict();
+      })
+      .catch(() => {});
   });
 
   void (async () => {
