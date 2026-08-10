@@ -66,8 +66,10 @@ CloseApplications=no
 ;   SignTool=mysign $f     (define `mysign` in Inno's Tool settings / CI) and sign pie.exe /
 ;   PieTray.exe before packaging. Left as a placeholder here on purpose.
 
-; No custom SetupIconFile yet: the tray icon is code-drawn (amber pie); the branded .ico asset
-; lands with #379 and will be referenced here (SetupIconFile + PieTray resource) at that point.
+; Branded installer icon (#379): setup .exe file icon + wizard window icon. Relative to this .iss
+; dir. UninstallDisplayIcon stays PieTray.exe — its /win32icon (build-tray.ps1) makes the uninstall
+; entry icon correct automatically.
+SetupIconFile=..\tray-win\pie.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
