@@ -9,7 +9,7 @@ afterEach(() => cleanup());
 function setup(overrides: Partial<ComponentProps<typeof CustomProviderFields>> = {}) {
   const props = {
     name: "", baseUrl: "",
-    onNameChange: vi.fn(), onBaseUrlChange: vi.fn(), onTest: vi.fn(),
+    onNameChange: vi.fn(), onBaseUrlChange: vi.fn(), onWireChange: vi.fn(), onTest: vi.fn(),
     ...overrides,
   };
   render(<CustomProviderFields {...props} />);
@@ -36,6 +36,23 @@ describe("CustomProviderFields", () => {
     const p = setup({ baseUrl: "https://x/v1" });
     fireEvent.click(screen.getByRole("button", { name: /test connection/i }));
     expect(p.onTest).toHaveBeenCalled();
+  });
+
+  it("wire dropdown defaults to chat/completions and maps selections (#415)", () => {
+    const p = setup({ wire: undefined });
+    const select = screen.getByRole("combobox") as HTMLSelectElement;
+    expect(select.value).toBe("chat");
+    // choosing Responses forwards the "responses" wire
+    fireEvent.change(select, { target: { value: "responses" } });
+    expect(p.onWireChange).toHaveBeenCalledWith("responses");
+    // choosing Chat Completions clears the wire back to undefined
+    fireEvent.change(select, { target: { value: "chat" } });
+    expect(p.onWireChange).toHaveBeenCalledWith(undefined);
+  });
+
+  it("wire dropdown reflects a stored responses wire (#415)", () => {
+    setup({ wire: "responses" });
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("responses");
   });
 
   it("shows test error", () => {

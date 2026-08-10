@@ -10,6 +10,7 @@ import {
   addCustomProviderModel,
   updateCustomProviderModel,
   removeCustomProviderModel,
+  updateCustomProvider,
   getInstancesUsingCustomProvider,
   deleteCustomProvider,
   CUSTOM_PREFIX,
@@ -110,6 +111,34 @@ describe("custom provider CRUD + persistence (IDB config store)", () => {
 
   it("getCustomProvider returns null for unknown id", async () => {
     expect(await getCustomProvider("nope")).toBeNull();
+  });
+
+  describe("wire protocol persistence (#415)", () => {
+    it("saveCustomProvider persists wire: 'responses' and reads it back", async () => {
+      const id = await saveCustomProvider({ name: "R", baseUrl: "https://r/v1", models: [], wire: "responses" });
+      expect((await getCustomProvider(id))!.wire).toBe("responses");
+    });
+
+    it("legacy data (no wire) reads back undefined", async () => {
+      const id = await saveCustomProvider({ name: "C", baseUrl: "https://c/v1", models: [] });
+      expect((await getCustomProvider(id))!.wire).toBeUndefined();
+    });
+
+    it("updateCustomProvider can set and then clear wire", async () => {
+      const id = await saveCustomProvider({ name: "X", baseUrl: "https://x/v1", models: [] });
+      await updateCustomProvider(id, { wire: "responses" });
+      expect((await getCustomProvider(id))!.wire).toBe("responses");
+      await updateCustomProvider(id, { wire: undefined });
+      expect((await getCustomProvider(id))!.wire).toBeUndefined();
+    });
+
+    it("updateCustomProvider without a wire key leaves it untouched", async () => {
+      const id = await saveCustomProvider({ name: "X", baseUrl: "https://x/v1", models: [], wire: "responses" });
+      await updateCustomProvider(id, { name: "renamed" });
+      const cp = await getCustomProvider(id);
+      expect(cp!.name).toBe("renamed");
+      expect(cp!.wire).toBe("responses");
+    });
   });
 
   it("deleteCustomProvider removes entity + index entry when unreferenced", async () => {

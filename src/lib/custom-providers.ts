@@ -9,6 +9,15 @@ export interface StoredCustomProvider {
   name: string;
   baseUrl: string;
   models: CustomModelMeta[];
+  /**
+   * Wire protocol for this provider's endpoints (#415). Absent (`undefined`) =
+   * `/v1/chat/completions` (OpenAI-compat, the default and all legacy data).
+   * `"responses"` = `/v1/responses` — required by proxies fronting gpt-5.x,
+   * where chat/completions rejects function tools + reasoning_effort together.
+   * Provider-level, not per-model: point two providers at the same baseUrl to
+   * mix wires.
+   */
+  wire?: "responses";
   createdAt: number;
   updatedAt: number;
 }
@@ -59,6 +68,7 @@ export async function saveCustomProvider(input: {
   name: string;
   baseUrl: string;
   models: CustomModelMeta[];
+  wire?: "responses";
 }): Promise<string> {
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -67,6 +77,7 @@ export async function saveCustomProvider(input: {
     name: input.name,
     baseUrl: input.baseUrl.replace(/\/$/, ""),
     models: input.models,
+    ...(input.wire && { wire: input.wire }),
     createdAt: now,
     updatedAt: now,
   };
@@ -89,7 +100,7 @@ export async function saveCustomProvider(input: {
 
 export async function updateCustomProvider(
   id: string,
-  patch: Partial<{ name: string; baseUrl: string; models: CustomModelMeta[] }>,
+  patch: Partial<{ name: string; baseUrl: string; models: CustomModelMeta[]; wire: "responses" | undefined }>,
 ): Promise<void> {
   const stored = await getConfig<StoredCustomProvider>(ENTITY_KEY(id));
   if (!stored) throw new Error(`Custom provider ${id} not found`);
@@ -98,6 +109,10 @@ export async function updateCustomProvider(
     ...(patch.name !== undefined && { name: patch.name }),
     ...(patch.baseUrl !== undefined && { baseUrl: patch.baseUrl.replace(/\/$/, "") }),
     ...(patch.models !== undefined && { models: patch.models }),
+    // `wire` is presence-keyed, not value-keyed: passing `wire: undefined`
+    // clears it (switch back to chat/completions), so honour any `wire` key
+    // in the patch — including an explicit undefined.
+    ...("wire" in patch && { wire: patch.wire }),
     updatedAt: Date.now(),
   };
   await setConfig(ENTITY_KEY(id), next);

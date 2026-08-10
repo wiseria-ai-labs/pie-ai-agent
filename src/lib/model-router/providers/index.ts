@@ -46,7 +46,10 @@ export function dispatchStreamChat(config: ModelConfig): StreamChatFn {
     return BUILTIN_DISPATCH[config.provider as BuiltinProvider];
   }
   if (typeof config.provider === "string" && config.provider.startsWith("custom:")) {
-    return streamChatOpenAICompat;
+    // #415 — custom providers pick their wire explicitly (no model-id guessing):
+    // `wire: "responses"` routes to the OpenAI /v1/responses core (proxies
+    // fronting gpt-5.x), everything else stays on /v1/chat/completions.
+    return config.wire === "responses" ? openaiChat : streamChatOpenAICompat;
   }
   throw new Error(`Unknown provider: ${config.provider}`);
 }
