@@ -153,6 +153,10 @@ jobs:
   build-daemon-pkg:
     runs-on: macos-14
     needs: daemon-version-gate
+    # #403：把版本号 + macOS 自更新物 zip 的 sha256 暴露给 daemon-latest-json 汇总 job。
+    outputs:
+      version: ${{ steps.dv.outputs.version }}
+      macos_sha: ${{ steps.zipsha.outputs.sha }}
     steps:
       - name: Resolve tag
         id: tag
@@ -201,6 +205,11 @@ jobs:
           APPLE_NOTARY_KEY_ISSUER: ${{ secrets.APPLE_NOTARY_KEY_ISSUER }}
         run: daemon/install/release-pkg.sh gpccjhdgjkmalnepmeclooflliiocfed "${{ steps.dv.outputs.version }}"
 
+      - name: Hash macOS update zip
+        id: zipsha
+        # #403 自更新 sha256 硬闸的期望值来源：release-pkg.sh 产出的已签名 pie-darwin-universal.zip。
+        run: echo "sha=$(shasum -a 256 daemon/dist/pie-darwin-universal.zip | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -209,17 +218,23 @@ jobs:
           gh release upload "${{ steps.tag.outputs.ref }}" \
             "daemon/dist/pie-link-${{ steps.dv.outputs.version }}.pkg" \
             pie-link.pkg \
+            "daemon/dist/pie-darwin-universal.zip" \
             --clobber
 
-      - name: Verify pkg asset reachable
+      - name: Verify pkg + update-zip assets reachable
         run: |
           sleep 5
-          curl -fsSIL -o /dev/null --retry 3 --retry-delay 5 --retry-all-errors \
-            "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/pie-link.pkg"
+          for asset in pie-link.pkg pie-darwin-universal.zip; do
+            curl -fsSIL -o /dev/null --retry 3 --retry-delay 5 --retry-all-errors \
+              "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/$asset"
+          done
 
   build-daemon-win:
     runs-on: windows-latest
     needs: daemon-version-gate
+    # #403：把 Windows 安装器 sha256 暴露给 daemon-latest-json 汇总 job（托盘检查更新用它做 best-effort 校验）。
+    outputs:
+      windows_sha: ${{ steps.winsha.outputs.sha }}
     steps:
       - name: Resolve tag
         id: tag
@@ -288,6 +303,15 @@ jobs:
       # --- Code signing placeholder (spec decision 9): first release ships unsigned; wire signtool
       #     here once a cert is in secrets (sign pie.exe / PieTray.exe pre-package + the setup exe).
 
+      - name: Stable-name + hash installer
+        id: winsha
+        shell: bash
+        # #403：除版本名安装器外，再产一个固定名 pie-link-setup.exe，供扩展升级卡 WIN_SETUP_URL
+        # 与托盘「检查更新」的 /latest/download/ 稳定别名命中；并算 sha256 交汇总 job 写进 latest.json。
+        run: |
+          cp "daemon/dist/pie-link-setup-${{ steps.dv.outputs.version }}.exe" daemon/dist/pie-link-setup.exe
+          echo "sha=$(sha256sum daemon/dist/pie-link-setup.exe | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Upload installer to release
         shell: bash
         env:
@@ -295,11 +319,57 @@ jobs:
         run: |
           gh release upload "${{ steps.tag.outputs.ref }}" \
             "daemon/dist/pie-link-setup-${{ steps.dv.outputs.version }}.exe" \
+            "daemon/dist/pie-link-setup.exe" \
             --clobber
 
-      - name: Verify installer asset reachable
+      - name: Verify installer assets reachable
         shell: bash
         run: |
           sleep 5
+          for asset in "pie-link-setup-${{ steps.dv.outputs.version }}.exe" pie-link-setup.exe; do
+            curl -fsSIL -o /dev/null --retry 3 --retry-delay 5 --retry-all-errors \
+              "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/$asset"
+          done
+
+  # #403 自更新 appcast：汇总 mac + win 两 job 的版本号与 sha256，生成固定名 pie-link-latest.json。
+  # daemon checkUpdate / 托盘检查更新 / 扩展升级卡都从 /releases/latest/download/pie-link-latest.json 读它。
+  daemon-latest-json:
+    runs-on: ubuntu-latest
+    needs: [build-daemon-pkg, build-daemon-win]
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "ref=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build + upload pie-link-latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          VER="${{ needs.build-daemon-pkg.outputs.version }}"
+          MAC_SHA="${{ needs.build-daemon-pkg.outputs.macos_sha }}"
+          WIN_SHA="${{ needs.build-daemon-win.outputs.windows_sha }}"
+          BASE="https://github.com/${{ github.repository }}/releases/latest/download"
+          [ -n "$VER" ] && [ -n "$MAC_SHA" ] && [ -n "$WIN_SHA" ] || {
+            echo "::error::missing version/sha inputs (VER=$VER MAC_SHA=$MAC_SHA WIN_SHA=$WIN_SHA)"; exit 1; }
+          cat > pie-link-latest.json <<EOF
+          {
+            "version": "$VER",
+            "macos": { "url": "$BASE/pie-darwin-universal.zip", "sha256": "$MAC_SHA" },
+            "windows": { "url": "$BASE/pie-link-setup.exe", "sha256": "$WIN_SHA" }
+          }
+          EOF
+          cat pie-link-latest.json
+          gh release upload "${{ steps.tag.outputs.ref }}" pie-link-latest.json --clobber
+
+      - name: Verify latest.json asset reachable
+        run: |
+          sleep 5
           curl -fsSIL -o /dev/null --retry 3 --retry-delay 5 --retry-all-errors \
-            "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/pie-link-setup-${{ steps.dv.outputs.version }}.exe"
+            "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/pie-link-latest.json"

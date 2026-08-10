@@ -140,6 +140,8 @@ export const enDict = {
       upgradeAvailable: "A newer Pie Link is available. Download and reinstall to upgrade.",
       upgradeRequired: "Pie Link is incompatible with this extension. Upgrade it before the local bridge can be used.",
       downloadUpdate: "Download update",
+      upgradeMenubarHint:
+        "After this one-time install, future updates are one click from the Pie icon in the menu bar — no download, no password.",
       installTitle: "Install Pie Link",
       installBody:
         "The local bridge needs Pie Link installed on this computer. Learn what it does and get the installer from the Pie Link page — double-click to finish and it connects automatically.",

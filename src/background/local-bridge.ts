@@ -37,7 +37,9 @@ let capabilities: string[] = [];
 // ── 版本握手（spec §6）──────────────────────────────────────────────
 // 扩展内置最低 daemon 版本；daemonVersion < MIN = 软升级提示（功能按 capability
 // 降级继续用）。旧 daemon 不带 daemonVersion → daemonVersion=null → 视为过旧。
-export const MIN_DAEMON_VERSION = "0.1.0";
+// #403：抬到 0.2.0 —— 落点迁移（daemon 真身挪进 ~/.pie/bin）必须让存量用户装一次新
+// pkg 才能进入零提权自更新通道，升级卡正是那个入口。装过一次后此后更新不再走 pkg。
+export const MIN_DAEMON_VERSION = "0.2.0";
 let daemonVersion: string | null = null;
 let protocolMismatch = false;
 

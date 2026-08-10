@@ -246,6 +246,39 @@ export interface ListAuditResult {
   entries: AuditEntry[];
 }
 
+// ── 自更新（check_update / apply_update，#403）──────────────────────────
+// daemon 真身住 ~/.pie/bin/pie（用户可写），更新 = 下载新二进制 → 验签 → 原子
+// rename 覆盖 → 由顶栏 app kickstart 重启。零提权、零安装器、零密码。
+// 加法演进：两个新 method 只增不改语义，PROTOCOL_VERSION 不动。
+
+/** `pie-link-latest.json`（release asset，固定名，靠 /releases/latest/download/ 稳定 URL 命中）。 */
+export interface PieLinkLatest {
+  version: string;
+  macos: { url: string; sha256: string };
+  windows: { url: string; sha256: string };
+}
+
+/** check_update 结果：当前 vs 最新版本比较 + 平台对应的下载 URL。 */
+export interface CheckUpdateResult {
+  current: string;
+  latest: string;
+  /** latest > current（三段 semver 比较） */
+  available: boolean;
+  /** 本平台的更新物 URL（macos.url / windows.url）；无法确定时省略 */
+  url?: string;
+  /** false = 本平台不支持 daemon 自更新（Windows 走安装器，见 supported=false 分支）。
+   *  apply_update 只在 supported=true 时可用。 */
+  supported: boolean;
+}
+
+/** apply_update 结果（仅 macOS）：换文件成功后回新版本号，调用方决定何时 kickstart。 */
+export interface ApplyUpdateResult {
+  /** 替换后磁盘上的新版本号（= latest.version） */
+  version: string;
+  /** 被替换的二进制绝对路径（~/.pie/bin/pie），回给顶栏 app 做日志 */
+  path: string;
+}
+
 // ── status（顶栏 app / 诊断用）────────────────────────────────────────
 export interface StatusResult {
   version: string;
@@ -280,7 +313,9 @@ export interface BridgeRequest {
     | "list_grants"
     | "revoke_grant"
     | "list_audit"
-    | "status";
+    | "status"
+    | "check_update"
+    | "apply_update";
   params: unknown;
 }
 export type BridgeResponse =

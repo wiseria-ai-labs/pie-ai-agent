@@ -583,15 +583,16 @@ describe("local-bridge", () => {
     }
 
     it("current daemon version tracked, no upgrade needed", async () => {
-      const mod = await handshake("0.1.0");
-      expect(mod.bridgeDaemonVersion()).toBe("0.1.0");
+      const mod = await handshake("0.2.0");
+      expect(mod.bridgeDaemonVersion()).toBe("0.2.0");
       expect(mod.bridgeNeedsUpgrade()).toBe(false);
       expect(mod.bridgeProtocolMismatch()).toBe(false);
     });
 
     it("daemonVersion below MIN → needsUpgrade", async () => {
-      const mod = await handshake("0.0.9");
-      expect(mod.bridgeDaemonVersion()).toBe("0.0.9");
+      // 0.1.x（落点迁移前）低于 MIN 0.2.0 → 升级卡引导装一次新 pkg 完成迁移（#403）
+      const mod = await handshake("0.1.9");
+      expect(mod.bridgeDaemonVersion()).toBe("0.1.9");
       expect(mod.bridgeNeedsUpgrade()).toBe(true);
     });
 

@@ -70,6 +70,44 @@ enum L10n {
             "en": "Quit Pie Link", "zh-CN": "退出 Pie Link", "zh-TW": "結束 Pie Link",
             "ja": "Pie Link を終了", "es-419": "Salir de Pie Link", "pt-BR": "Sair do Pie Link",
         ],
+        // #403：自更新（顶栏一键）
+        "updateNow": [
+            "en": "Update now", "zh-CN": "点此更新", "zh-TW": "點此更新",
+            "ja": "今すぐ更新", "es-419": "Actualizar ahora", "pt-BR": "Atualizar agora",
+        ],
+        "newVersion": [
+            "en": "New version", "zh-CN": "有新版", "zh-TW": "有新版",
+            "ja": "新しいバージョン", "es-419": "Nueva versión", "pt-BR": "Nova versão",
+        ],
+        "checkForUpdates": [
+            "en": "Check for updates", "zh-CN": "检查更新", "zh-TW": "檢查更新",
+            "ja": "更新を確認", "es-419": "Buscar actualizaciones", "pt-BR": "Verificar atualizações",
+        ],
+        "upToDate": [
+            "en": "Pie Link is up to date", "zh-CN": "Pie Link 已是最新版", "zh-TW": "Pie Link 已是最新版",
+            "ja": "Pie Link は最新です", "es-419": "Pie Link está actualizado", "pt-BR": "O Pie Link está atualizado",
+        ],
+        "updating": [
+            "en": "Updating…", "zh-CN": "更新中…", "zh-TW": "更新中…",
+            "ja": "更新中…", "es-419": "Actualizando…", "pt-BR": "Atualizando…",
+        ],
+        "updateDone": [
+            "en": "Updated Pie Link", "zh-CN": "Pie Link 已更新", "zh-TW": "Pie Link 已更新",
+            "ja": "Pie Link を更新しました", "es-419": "Pie Link actualizado", "pt-BR": "Pie Link atualizado",
+        ],
+        "updateDoneBody": [
+            "en": "Now running v", "zh-CN": "已更新到 v", "zh-TW": "已更新到 v",
+            "ja": "現在のバージョン v", "es-419": "Ahora en la v", "pt-BR": "Agora na v",
+        ],
+        "updateFailed": [
+            "en": "Update failed", "zh-CN": "更新失败", "zh-TW": "更新失敗",
+            "ja": "更新に失敗しました", "es-419": "Actualización fallida", "pt-BR": "Falha na atualização",
+        ],
+        "checkFailed": [
+            "en": "Couldn't check for updates", "zh-CN": "检查更新失败", "zh-TW": "檢查更新失敗",
+            "ja": "更新を確認できませんでした", "es-419": "No se pudo buscar actualizaciones",
+            "pt-BR": "Não foi possível verificar atualizações",
+        ],
         // 活动窗口
         "activityTitle": [
             "en": "Pie Link · Activity / Logs", "zh-CN": "Pie Link · 活动 / 日志",
@@ -199,8 +237,59 @@ func queryDaemon(_ method: String, _ params: [String: Any] = [:]) -> [String: An
     return obj["result"] as? [String: Any]
 }
 
+/// 与 queryDaemon 同一 wire，但回完整响应信封（ok/result/error 都在），供 apply_update
+/// 这类需要把失败原因展示给用户的调用点用。失败时 result 为 nil、error 为 daemon 给的原因。
+func queryDaemonEnvelope(_ method: String, _ params: [String: Any] = [:]) -> (result: [String: Any]?, error: String?) {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard fd >= 0 else { return (nil, "socket() failed") }
+    defer { close(fd) }
+    // apply_update 涉及下载 + 验签，比 status 慢；给 60s 超时（不是默认 1s）。
+    var tv = timeval(tv_sec: 60, tv_usec: 0)
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    let ok = socketPath.withCString { src -> Bool in
+        guard strlen(src) < 104 else { return false }
+        return withUnsafeMutablePointer(to: &addr.sun_path) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 104) { dst in strcpy(dst, src); return true }
+        }
+    }
+    guard ok else { return (nil, "socket path too long") }
+    let connected = withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+        }
+    }
+    guard connected == 0 else { return (nil, "daemon not reachable") }
+    let req: [String: Any] = ["id": UUID().uuidString, "method": method, "params": params]
+    guard var line = try? JSONSerialization.data(withJSONObject: req) else { return (nil, "encode failed") }
+    line.append(0x0A)
+    let sent = line.withUnsafeBytes { write(fd, $0.baseAddress, line.count) }
+    guard sent == line.count else { return (nil, "write failed") }
+    var buf = Data()
+    var chunk = [UInt8](repeating: 0, count: 65536)
+    while !buf.contains(0x0A) {
+        let n = read(fd, &chunk, chunk.count)
+        if n <= 0 || buf.count > 4_000_000 { return (nil, "no response") }
+        buf.append(contentsOf: chunk[0..<n])
+    }
+    guard let nl = buf.firstIndex(of: 0x0A),
+          let obj = try? JSONSerialization.jsonObject(with: buf[..<nl]) as? [String: Any]
+    else { return (nil, "bad response") }
+    if obj["ok"] as? Bool == true { return (obj["result"] as? [String: Any], nil) }
+    let err = (obj["error"] as? [String: Any])?["message"] as? String
+    return (nil, err ?? "unknown error")
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var statusItem: NSStatusItem!
+
+    // #403：启动时后台查一次 check_update，缓存结果供菜单读取（不阻塞开菜单）。
+    // available=true 时菜单插「有新版 · 点此更新」；否则给「检查更新」项。
+    private var cachedLatest: String?
+    private var cachedAvailable = false
+    private var isUpdating = false
 
     func applicationDidFinishLaunching(_: Notification) {
         ensureDaemonRunning()
@@ -210,6 +299,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
+        refreshUpdateCache()
+    }
+
+    /// 后台查 check_update，缓存 available/latest（一次；用户点「检查更新」会再触发）。
+    private func refreshUpdateCache() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let r = queryDaemon("check_update")
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let r = r {
+                    self.cachedAvailable = (r["available"] as? Bool) ?? false
+                    self.cachedLatest = r["latest"] as? String
+                }
+            }
+        }
     }
 
     // 点开菜单才查 daemon（status 一次）。正在运行/最近执行 skill 不进菜单
@@ -228,6 +332,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(indented(L10n.t("notResponding")))
         }
         menu.addItem(.separator())
+        // #403：更新入口。正在更新时禁用；有新版则「有新版 vX.Y.Z · 点此更新」；
+        // 否则给「检查更新」（点了后台再查一次并弹结果）。
+        if isUpdating {
+            menu.addItem(disabled(L10n.t("updating")))
+        } else if cachedAvailable, let latest = cachedLatest {
+            menu.addItem(item("\(L10n.t("newVersion")) v\(latest) · \(L10n.t("updateNow"))", #selector(applyUpdateNow)))
+        } else {
+            menu.addItem(item(L10n.t("checkForUpdates"), #selector(checkForUpdatesClicked)))
+        }
         menu.addItem(item(L10n.t("activityMenu"), #selector(openActivity)))
         menu.addItem(item(L10n.t("diagnose"), #selector(runDoctor)))
         menu.addItem(.separator())
@@ -287,6 +400,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.messageText = "pie doctor"
         alert.informativeText = out
         alert.runModal()
+    }
+
+    // #403：点「检查更新」——后台再查一次 check_update，弹结果（有新版则提示可从菜单更新）。
+    @objc func checkForUpdatesClicked() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let (r, _) = queryDaemonEnvelope("check_update")
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                let available = (r?["available"] as? Bool) ?? false
+                let latest = r?["latest"] as? String
+                self.cachedAvailable = available
+                self.cachedLatest = latest
+                let alert = NSAlert()
+                if r == nil {
+                    alert.messageText = L10n.t("checkFailed")
+                } else if available, let latest = latest {
+                    alert.messageText = "\(L10n.t("newVersion")) v\(latest)"
+                    alert.informativeText = L10n.t("updateNow")
+                } else {
+                    alert.messageText = L10n.t("upToDate")
+                }
+                alert.runModal()
+            }
+        }
+    }
+
+    // #403：点「点此更新」——apply_update 换文件 → launchctl kickstart -k 重启 daemon 跑新
+    // 二进制 → 刷新缓存。任一步失败弹 NSAlert 给原因（三道硬闸失败即中止、不替换）。
+    @objc func applyUpdateNow() {
+        guard !isUpdating else { return }
+        isUpdating = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let (result, error) = queryDaemonEnvelope("apply_update")
+            var kickstarted = false
+            if result != nil {
+                // 只换了文件，daemon 仍跑老 inode——kickstart -k 杀掉重启到新二进制。
+                kickstarted = Self.launchctl(["kickstart", "-k", "gui/\(getuid())/ai.wiseria.pie"])
+            }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.isUpdating = false
+                let alert = NSAlert()
+                if let result = result {
+                    let ver = result["version"] as? String ?? "?"
+                    self.cachedAvailable = false
+                    self.cachedLatest = ver
+                    alert.messageText = L10n.t("updateDone")
+                    alert.informativeText = "\(L10n.t("updateDoneBody"))\(ver)"
+                    if !kickstarted {
+                        // 换文件成功但重启没成——下次 daemon 自然重启（launchd KeepAlive）会跑新版。
+                        alert.informativeText += "\n(pie doctor)"
+                    }
+                    // 重启后 daemon 版本已变，刷新缓存与后续菜单显示。
+                    self.refreshUpdateCache()
+                } else {
+                    alert.messageText = L10n.t("updateFailed")
+                    alert.informativeText = error ?? ""
+                }
+                alert.runModal()
+            }
+        }
     }
 
     private func disabled(_ title: String) -> NSMenuItem {

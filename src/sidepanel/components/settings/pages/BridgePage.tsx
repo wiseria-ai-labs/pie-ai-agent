@@ -5,7 +5,13 @@ import { AgentBrandIcon } from "../../hitl/agent-brand-icons";
 import { queryBridgeStatus, type BridgeStatus } from "../bridge-status";
 
 // Pie Link 安装包稳定 URL（release latest）——升级卡下载按钮直链（升级用户已知 Pie Link 是什么，直链摩擦最小）。
-const PKG_URL = "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg";
+// #403：按平台分流——macOS 下 .pkg、Windows 下 setup.exe。旧代码只有 mac .pkg，Windows 用户点
+// 升级卡会下到错的包。两个都是 /releases/latest/download/ 稳定别名（release.yml 上传固定名 asset）。
+const MAC_PKG_URL = "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg";
+const WIN_SETUP_URL = "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link-setup.exe";
+// 运行平台判定（同步，够用）：Windows 走 setup.exe，其余（mac）走 pkg。
+const IS_WINDOWS = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+const INSTALLER_URL = IS_WINDOWS ? WIN_SETUP_URL : MAC_PKG_URL;
 // 官网 Pie Link 介绍页（介绍 + 下载 + 卸载说明）——首次安装卡跳这里，给首装用户上下文。
 const LINK_URL = "https://www.pie.chat/link";
 
@@ -173,13 +179,20 @@ export function LocalBridgeSection() {
                     : t("settings.localBridge.upgradeAvailable")}
                 </div>
                 <a
-                  href={PKG_URL}
+                  href={INSTALLER_URL}
                   target="_blank"
                   rel="noreferrer"
                   className="self-start rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1"
                 >
                   {t("settings.localBridge.downloadUpdate")}
                 </a>
+                {/* macOS：装过这一次新版后，此后更新一键走顶栏 Pie 图标（零提权、零密码，#403）。
+                    Windows 侧 UAC 省不掉，仍走下载安装器，故不显示此提示。 */}
+                {!IS_WINDOWS && (
+                  <div className="text-[11px] leading-relaxed text-fg-3">
+                    {t("settings.localBridge.upgradeMenubarHint")}
+                  </div>
+                )}
               </div>
             )}
             {showInstallCard && (

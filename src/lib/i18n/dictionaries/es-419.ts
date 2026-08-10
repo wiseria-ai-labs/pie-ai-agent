@@ -142,6 +142,8 @@ export const es419Dict = {
       upgradeAvailable: "Hay una versión más reciente de Pie Link disponible. Descárgala y reinstálala para actualizar.",
       upgradeRequired: "Pie Link no es compatible con esta extensión. Actualízalo para poder usar el puente local.",
       downloadUpdate: "Descargar actualización",
+      upgradeMenubarHint:
+        "Después de esta instalación única, las próximas actualizaciones se hacen con un clic en el ícono de Pie en la barra de menús: sin descargas ni contraseña.",
       installTitle: "Instalar Pie Link",
       installBody:
         "El puente local necesita Pie Link instalado en esta computadora. Conoce qué hace y obtén el instalador desde la página de Pie Link: haz doble clic para terminar y se conectará automáticamente.",

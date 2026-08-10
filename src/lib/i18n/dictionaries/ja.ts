@@ -141,6 +141,8 @@ export const jaDict = {
       upgradeAvailable: "新しいバージョンの Pie Link が利用可能です。ダウンロードして再インストールするとアップグレードできます。",
       upgradeRequired: "Pie Link がこの拡張機能と互換性がありません。ローカル連携を使うにはアップグレードが必要です。",
       downloadUpdate: "更新をダウンロード",
+      upgradeMenubarHint:
+        "この一度のインストール後は、メニューバーの Pie アイコンをクリックするだけで更新できます——ダウンロードもパスワードも不要です。",
       installTitle: "Pie Link をインストール",
       installBody:
         "ローカル連携にはこのパソコンに Pie Link のインストールが必要です。Pie Link の紹介ページで内容を確認してインストーラーを入手し、ダブルクリックで完了すると自動的に接続されます。",
