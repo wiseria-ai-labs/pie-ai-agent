@@ -6,6 +6,12 @@ export const PIPE_NAME = "ai.wiseria.pie";
 
 export interface Paths {
   pieDir: string;
+  /**
+   * daemon 真身落点 `~/.pie/bin`（用户可写）。#403 起 daemon/host wrapper 都住这里，
+   * `/usr/local/bin/pie` 退化成指向 `binDir/pie` 的 symlink。自更新原子 rename 覆盖
+   * `binDir/pie`，零提权。Windows 侧本字段保持形状一致但不参与运行时链路（走安装器）。
+   */
+  binDir: string;
   /** daemon listen / host connect 的 IPC 地址：mac/linux = unix socket 文件；win32 = named pipe。 */
   ipcPath: string;
   /**
@@ -44,6 +50,7 @@ export function computePaths(
   const ipcPath = isWin ? `\\\\.\\pipe\\${PIPE_NAME}` : p.join(pieDir, "daemon.sock");
   return {
     pieDir,
+    binDir: p.join(pieDir, "bin"),
     ipcPath,
     socketPath: ipcPath,
     isPipe: isWin,

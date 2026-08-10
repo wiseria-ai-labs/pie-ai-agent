@@ -11,6 +11,7 @@ using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -138,6 +139,42 @@ namespace PieLink
                     ["en"] = "Quit Pie Link", ["zh-CN"] = "退出 Pie Link", ["zh-TW"] = "結束 Pie Link",
                     ["ja"] = "Pie Link を終了", ["es-419"] = "Salir de Pie Link", ["pt-BR"] = "Sair de Pie Link",
                 },
+                // #403：检查更新（Windows 走「下载 setup.exe → 覆盖安装，一次 UAC」，UAC 省不掉）
+                ["checkForUpdates"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Check for updates", ["zh-CN"] = "检查更新", ["zh-TW"] = "檢查更新",
+                    ["ja"] = "更新を確認", ["es-419"] = "Buscar actualizaciones", ["pt-BR"] = "Verificar atualizações",
+                },
+                ["upToDate"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Pie Link is up to date.", ["zh-CN"] = "Pie Link 已是最新版。", ["zh-TW"] = "Pie Link 已是最新版。",
+                    ["ja"] = "Pie Link は最新です。", ["es-419"] = "Pie Link está actualizado.", ["pt-BR"] = "O Pie Link está atualizado.",
+                },
+                ["checkFailed"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Couldn't check for updates.", ["zh-CN"] = "检查更新失败。", ["zh-TW"] = "檢查更新失敗。",
+                    ["ja"] = "更新を確認できませんでした。", ["es-419"] = "No se pudo buscar actualizaciones.",
+                    ["pt-BR"] = "Não foi possível verificar atualizações.",
+                },
+                ["updateTitle"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Update Pie Link", ["zh-CN"] = "更新 Pie Link", ["zh-TW"] = "更新 Pie Link",
+                    ["ja"] = "Pie Link を更新", ["es-419"] = "Actualizar Pie Link", ["pt-BR"] = "Atualizar Pie Link",
+                },
+                ["updatePrompt"] = new Dictionary<string, string>
+                {
+                    ["en"] = "A new version is available. Download and install it now?",
+                    ["zh-CN"] = "有新版本可用。现在下载并安装吗？",
+                    ["zh-TW"] = "有新版本可用。現在下載並安裝嗎？",
+                    ["ja"] = "新しいバージョンがあります。今すぐダウンロードしてインストールしますか？",
+                    ["es-419"] = "Hay una nueva versión disponible. ¿Descargar e instalar ahora?",
+                    ["pt-BR"] = "Uma nova versão está disponível. Baixar e instalar agora?",
+                },
+                ["downloadFailed"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Download failed.", ["zh-CN"] = "下载失败。", ["zh-TW"] = "下載失敗。",
+                    ["ja"] = "ダウンロードに失敗しました。", ["es-419"] = "La descarga falló.", ["pt-BR"] = "Falha no download.",
+                },
             };
     }
 
@@ -217,6 +254,98 @@ namespace PieLink
             });
             task.ContinueWith(t => { _ = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
             return task.Wait(timeoutMs) ? task.Result : null;
+        }
+    }
+
+    /// <summary>#403 Windows 更新：读同一份 pie-link-latest.json，有新版则下载 setup.exe 并运行
+    /// （Inno 覆盖安装，一次 UAC）。UAC 在 Windows 省不掉，只优化「不知道有新版 / 找不到下载」。</summary>
+    internal static class Updater
+    {
+        // 与 daemon/src/update.ts 同一固定 URL + 同一白名单前缀（下载物 URL 必须以它开头）。
+        internal const string LatestJsonUrl =
+            "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link-latest.json";
+        internal const string ReleasesUrlPrefix = "https://github.com/WiseriaAI/pie-ai-agent/releases/";
+
+        private static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
+
+        internal sealed class Latest { public string Version; public string Url; public string Sha256; }
+
+        /// <summary>三段 semver 比较（与扩展侧 compareDaemonVersions / update.ts compareVersions 同语义）。</summary>
+        internal static int CompareVersions(string a, string b)
+        {
+            var pa = ParseTriplet(a);
+            var pb = ParseTriplet(b);
+            for (int i = 0; i < 3; i++)
+            {
+                int d = pa[i] - pb[i];
+                if (d != 0) return d < 0 ? -1 : 1;
+            }
+            return 0;
+        }
+
+        private static int[] ParseTriplet(string v)
+        {
+            var parts = (v ?? "").Split('.');
+            var r = new int[3];
+            for (int i = 0; i < 3; i++)
+            {
+                int n;
+                r[i] = i < parts.Length && int.TryParse(parts[i], out n) ? n : 0;
+            }
+            return r;
+        }
+
+        /// <summary>GET latest.json，解析出 windows 平台的 url/sha256/version。失败返回 null。</summary>
+        internal static Latest FetchLatest()
+        {
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12; // GitHub 要 TLS 1.2
+                using (var wc = new WebClient())
+                {
+                    wc.Headers.Add("User-Agent", "PieLinkTray");
+                    var body = wc.DownloadString(LatestJsonUrl);
+                    var root = Json.Deserialize<Dictionary<string, object>>(body);
+                    if (root == null) return null;
+                    string version = root.TryGetValue("version", out var v) ? Convert.ToString(v) : null;
+                    if (!(root.TryGetValue("windows", out var w) && w is Dictionary<string, object> win)) return null;
+                    string url = win.TryGetValue("url", out var u) ? Convert.ToString(u) : null;
+                    string sha = win.TryGetValue("sha256", out var s) ? Convert.ToString(s) : null;
+                    if (string.IsNullOrEmpty(version) || string.IsNullOrEmpty(url)) return null;
+                    return new Latest { Version = version, Url = url, Sha256 = sha };
+                }
+            }
+            catch { return null; }
+        }
+
+        /// <summary>下载 setup.exe 到临时目录并返回路径；URL 白名单 + sha256 校验，任一不过返回 null。</summary>
+        internal static string DownloadInstaller(Latest latest)
+        {
+            try
+            {
+                if (latest.Url == null || !latest.Url.StartsWith(ReleasesUrlPrefix, StringComparison.Ordinal)) return null;
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                var dest = Path.Combine(Path.GetTempPath(), "pie-link-setup-" + latest.Version + ".exe");
+                using (var wc = new WebClient())
+                {
+                    wc.Headers.Add("User-Agent", "PieLinkTray");
+                    wc.DownloadFile(latest.Url, dest);
+                }
+                if (!string.IsNullOrEmpty(latest.Sha256) && !Sha256Matches(dest, latest.Sha256)) return null;
+                return dest;
+            }
+            catch { return null; }
+        }
+
+        private static bool Sha256Matches(string path, string expectedHex)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            using (var fs = File.OpenRead(path))
+            {
+                var hash = sha.ComputeHash(fs);
+                var hex = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                return string.Equals(hex, expectedHex.Trim().ToLowerInvariant(), StringComparison.Ordinal);
+            }
         }
     }
 
@@ -348,6 +477,10 @@ namespace PieLink
             repair.Click += (_, __) => RepairSandbox();
             menu.Items.Add(repair);
 
+            var checkUpdate = new ToolStripMenuItem(L10n.T("checkForUpdates"));
+            checkUpdate.Click += (_, __) => CheckForUpdates(status);
+            menu.Items.Add(checkUpdate);
+
             var openLogs = new ToolStripMenuItem(L10n.T("openLogs"));
             openLogs.Click += (_, __) => OpenLogsFolder();
             menu.Items.Add(openLogs);
@@ -417,6 +550,48 @@ namespace PieLink
             if (output.Length == 0) output = ok ? "OK" : "(no output)";
             MessageBox.Show(output, L10n.T(ok ? "diagTitleOk" : "diagTitleProblem"),
                 MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        // #403「检查更新」= 读 pie-link-latest.json，与当前版本比较；有新版则下载 setup.exe（URL 白名单
+        // + sha256 校验）并运行（Inno 覆盖安装，一次 UAC）。UAC 在 Windows 省不掉，daemon 自更新不走这条。
+        private void CheckForUpdates(DaemonClient.Status status)
+        {
+            var latest = Updater.FetchLatest();
+            if (latest == null)
+            {
+                MessageBox.Show(L10n.T("checkFailed"), L10n.T("updateTitle"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            // 当前版本未知（daemon 没跑）时也允许更新——把它当作「比任何版本都旧」处理。
+            var current = status != null ? status.Version : "0.0.0";
+            if (Updater.CompareVersions(latest.Version, current) <= 0)
+            {
+                MessageBox.Show(L10n.T("upToDate"), L10n.T("updateTitle"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            var answer = MessageBox.Show(
+                L10n.T("updatePrompt") + "\n\nv" + current + " → v" + latest.Version,
+                L10n.T("updateTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (answer != DialogResult.Yes) return;
+
+            var installer = Updater.DownloadInstaller(latest);
+            if (installer == null)
+            {
+                MessageBox.Show(L10n.T("downloadFailed"), L10n.T("updateTitle"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            try
+            {
+                // ShellExecute 运行签名安装器 → Inno 弹一次 UAC 覆盖安装（signed exe，SmartScreen 认得）。
+                Process.Start(new ProcessStartInfo(installer) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, L10n.T("updateTitle"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         // 「修复沙箱」= 提权依次跑 windows-uninstall + windows-install，跑完自动再诊断一次让用户看结果。

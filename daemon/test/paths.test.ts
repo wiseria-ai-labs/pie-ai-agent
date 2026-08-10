@@ -3,6 +3,7 @@ import { join, win32, posix } from "path";
 import { paths, computePaths, assertSessionId, sessionWorkspace, PIPE_NAME } from "../src/paths";
 
 test("skill_fs paths sit under ~/.pie", () => {
+  expect(paths.binDir).toBe(join(paths.pieDir, "bin"));
   expect(paths.skillsDir).toBe(join(paths.pieDir, "skills"));
   expect(paths.grantsPath).toBe(join(paths.pieDir, "grants.json"));
   expect(paths.auditPath).toBe(join(paths.pieDir, "logs", "audit.jsonl"));
@@ -14,6 +15,7 @@ test("skill_fs paths sit under ~/.pie", () => {
 test("computePaths(darwin): ~/.pie + unix socket file, isPipe=false", () => {
   const p = computePaths("darwin", "/Users/me");
   expect(p.pieDir).toBe("/Users/me/.pie");
+  expect(p.binDir).toBe("/Users/me/.pie/bin");
   expect(p.ipcPath).toBe("/Users/me/.pie/daemon.sock");
   expect(p.socketPath).toBe(p.ipcPath); // 历史字段名 = ipcPath
   expect(p.isPipe).toBe(false);
@@ -29,6 +31,7 @@ test("computePaths(darwin): ~/.pie + unix socket file, isPipe=false", () => {
 test("computePaths(win32): %USERPROFILE%\\.pie + named pipe, isPipe=true", () => {
   const p = computePaths("win32", "C:\\Users\\me");
   expect(p.pieDir).toBe(win32.join("C:\\Users\\me", ".pie"));
+  expect(p.binDir).toBe(win32.join("C:\\Users\\me", ".pie", "bin"));
   expect(p.ipcPath).toBe(`\\\\.\\pipe\\${PIPE_NAME}`);
   expect(p.socketPath).toBe(p.ipcPath);
   expect(p.isPipe).toBe(true);

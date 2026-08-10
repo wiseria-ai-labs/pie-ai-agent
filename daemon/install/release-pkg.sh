@@ -13,12 +13,20 @@ INST_ID="$(security find-identity -v | sed -n 's/.*"\(Developer ID Installer: [^
 [ -n "$APP_ID" ] || { echo "no Developer ID Application identity in keychain" >&2; exit 1; }
 [ -n "$INST_ID" ] || { echo "no Developer ID Installer identity in keychain" >&2; exit 1; }
 
-# 1) 双 target 编译 + lipo universal
+# Apple Team ID：从签名身份名 "Developer ID Application: Name (TEAMID)" 括号里取出。
+# #403 自更新把它**编译期内嵌进二进制**（--define PIE_TEAM_ID），运行时拿它比对下载物的
+# codesign TeamIdentifier（不从下载物读期望值）。来源即签名身份，天然与实际签名一致。
+TEAM_ID="$(printf '%s' "$APP_ID" | sed -n 's/.*(\([A-Z0-9]\{6,\}\))$/\1/p')"
+[ -n "$TEAM_ID" ] || { echo "could not parse Team ID from identity: $APP_ID" >&2; exit 1; }
+
+# 1) 双 target 编译 + lipo universal（PIE_TEAM_ID 与 PIE_DAEMON_VERSION 一同内嵌）
 ( cd "$ROOT" \
   && bun build ./src/cli.ts --compile --target=bun-darwin-arm64 \
-       --define "process.env.PIE_DAEMON_VERSION=\"$VERSION\"" --outfile dist/pie-arm64 \
+       --define "process.env.PIE_DAEMON_VERSION=\"$VERSION\"" \
+       --define "process.env.PIE_TEAM_ID=\"$TEAM_ID\"" --outfile dist/pie-arm64 \
   && bun build ./src/cli.ts --compile --target=bun-darwin-x64 \
-       --define "process.env.PIE_DAEMON_VERSION=\"$VERSION\"" --outfile dist/pie-x64 )
+       --define "process.env.PIE_DAEMON_VERSION=\"$VERSION\"" \
+       --define "process.env.PIE_TEAM_ID=\"$TEAM_ID\"" --outfile dist/pie-x64 )
 lipo -create "$ROOT/dist/pie-arm64" "$ROOT/dist/pie-x64" -output "$ROOT/dist/pie-universal"
 
 # 2) 签二进制（hardened runtime + JIT entitlements）
@@ -26,6 +34,10 @@ codesign --force --options runtime --timestamp \
   --entitlements "$ROOT/install/pie.entitlements" \
   --sign "$APP_ID" "$ROOT/dist/pie-universal"
 codesign --verify --strict "$ROOT/dist/pie-universal"
+
+# 2.1) #403 自更新物：把已签名的 pie-universal 打成 zip（顶栏 app 自更新下载它 → 验签 →
+# 原子 rename 覆盖 ~/.pie/bin/pie）。固定名，release.yml 传成 /latest/download/ 稳定 asset。
+ditto -c -k --keepParent "$ROOT/dist/pie-universal" "$ROOT/dist/pie-darwin-universal.zip"
 
 # 2.5) 顶栏 app：构建 + 签名（hardened runtime，无需 JIT entitlements）
 "$ROOT/menubar/build-app.sh" "$ROOT/dist" "$VERSION"

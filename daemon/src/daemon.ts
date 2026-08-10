@@ -13,6 +13,7 @@ import { runSkillScript } from "./skill-exec";
 import { listGrants, revokeGrant, sweepGrants } from "./grants";
 import { readAuditTail } from "./audit";
 import { getStatus, markExtensionSocket, dropSocket } from "./status";
+import { checkUpdate, applyUpdate } from "./update";
 import { isAddrInUseError } from "./daemon-launcher";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
@@ -191,6 +192,23 @@ export async function handleMessage(line: string): Promise<string> {
       } catch (e) {
         log("error", "status.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "status_failed", message: String(e) } });
+      }
+    }
+    case "check_update": {
+      try {
+        return respond({ ok: true, result: await checkUpdate() });
+      } catch (e) {
+        log("error", "check_update.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "check_update_failed", message: String(e) } });
+      }
+    }
+    case "apply_update": {
+      try {
+        return respond({ ok: true, result: await applyUpdate() });
+      } catch (e) {
+        // update.ts 的三道硬闸失败即抛，中止且不替换——错误如实回给顶栏 app 弹 NSAlert。
+        log("error", "apply_update.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "apply_update_failed", message: String(e) } });
       }
     }
     default:

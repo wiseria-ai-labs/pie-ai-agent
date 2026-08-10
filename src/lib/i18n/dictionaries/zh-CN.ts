@@ -140,6 +140,7 @@ export const zhCNDict = {
       upgradeAvailable: "有新版本的 Pie Link 可用，下载后重新安装即可升级。",
       upgradeRequired: "Pie Link 版本与扩展不兼容，需要升级后才能使用本地打通。",
       downloadUpdate: "下载新版",
+      upgradeMenubarHint: "装过这一次后，以后更新只需点顶栏的 Pie 图标一键完成——无需下载、无需密码。",
       installTitle: "安装 Pie Link",
       installBody: "本地打通需要在这台电脑上安装 Pie Link。先在 Pie Link 介绍页了解它，再下载安装包，双击完成安装后会自动连接。",
       installDownload: "了解并安装 Pie Link",

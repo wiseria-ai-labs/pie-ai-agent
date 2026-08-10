@@ -25,6 +25,31 @@ test("unknown method returns structured error", async () => {
   expect(res.error.code).toBe("unknown_method");
 });
 
+// #403：check_update 是 dispatch 里认得的 method（真实网络在单测里必然失败 → 结构化
+// 错误，而不是回 unknown_method）。证明布线在，且失败走 check_update_failed 而非泄漏。
+test("check_update is a known method (network failure → structured error, not unknown_method)", async () => {
+  const out = await handleMessage(JSON.stringify({ id: "u1", method: "check_update", params: {} }));
+  const res = JSON.parse(out);
+  expect(res.id).toBe("u1");
+  if (res.ok) {
+    // 若测试环境恰好能出网并命中 latest.json，结果形状也必须合规。
+    expect(typeof res.result.current).toBe("string");
+    expect(typeof res.result.supported).toBe("boolean");
+  } else {
+    expect(res.error.code).toBe("check_update_failed");
+  }
+});
+
+// apply_update 同理是认得的 method；非 macOS / 校验失败都走 apply_update_failed，
+// 绝不回 unknown_method。
+test("apply_update is a known method (aborts with structured error, not unknown_method)", async () => {
+  const out = await handleMessage(JSON.stringify({ id: "u2", method: "apply_update", params: {} }));
+  const res = JSON.parse(out);
+  expect(res.id).toBe("u2");
+  expect(res.ok).toBe(false);
+  expect(res.error.code).toBe("apply_update_failed");
+});
+
 // Finding 2: Unix STREAM socket doesn't preserve message boundaries — a
 // request's JSON can be split across two `data` events. Without per-connection
 // carry buffering, each half-line fails JSON.parse independently and the
