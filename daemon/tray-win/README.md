@@ -45,7 +45,15 @@ JSON）等 net48 自带程序集，运行期无第三方依赖。
 
 **编码**：`PieTray.cs` 与 `build-tray.ps1` 必须存成**带 BOM 的 UTF-8**。中文系统的
 Windows PowerShell 5.1 按 ANSI(GBK) 读无 BOM 的 `.ps1`，中文注释乱码后语法直接崩；`csc`
-同样会把无 BOM 源码按 ANSI 读，六语言菜单文案会乱码进 exe。
+同样会把无 BOM 源码按 ANSI 读，六语言菜单文案会乱码进 exe。`DoctorJson.cs` /
+`DoctorJsonSmoke.cs` 是**纯 ASCII**（注释全英文），故不需要 BOM——但若日后往这两个文件加
+非 ASCII 字符，就得同样存成带 BOM 的 UTF-8。
+
+**冒烟测试**：`build-tray.ps1` 编完 `PieTray.exe` 后，会用同一个 `csc` 把 `DoctorJson.cs`
+（`pie doctor --json` 的解析层，已抽离 WinForms/L10n）+ `DoctorJsonSmoke.cs` 编成一个控制台
+exe 跑一次断言，用真 .NET Framework `JavaScriptSerializer` 覆盖 checks 解析（JSON 数组会被
+反序列化成 `ArrayList` 而非 `object[]`，`is object[]` 恒 false 会让整条渲染失效——#408
+review F1）。断言失败即 `throw` 让构建红；这是 C# 解析层唯一的护栏（无单测框架）。
 
 ## 品牌图标资产
 

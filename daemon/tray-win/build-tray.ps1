@@ -85,8 +85,25 @@ $resourceArg = "/resource:$icon,pie.ico"
     /r:System.Windows.Forms.dll `
     /r:System.Web.Extensions.dll `
     (Join-Path $PSScriptRoot "PieTray.cs") `
+    (Join-Path $PSScriptRoot "DoctorJson.cs") `
     "$asmInfo"
 if ($LASTEXITCODE -ne 0) { throw "csc failed with exit $LASTEXITCODE" }
 
 Remove-Item $asmInfo -ErrorAction SilentlyContinue
 Write-Host "built $out"
+
+# 冒烟测试：用真 .NET Framework JavaScriptSerializer 跑一遍 DoctorJson.ParseChecks，挡住 #408 review F1
+# （JSON 数组反序列化成 ArrayList 而非 object[]，`is object[]` 恒 false → 整条 checks 渲染失效）。
+# C# 解析层没有单测框架，这是最低成本护栏；失败即让构建红。DoctorJson.cs 不依赖 WinForms，
+# 单独编个控制台 exe 跑一次即可，跑完删掉不随发布。
+$smokeExe = Join-Path $OutDir "DoctorJsonSmoke.exe"
+& $csc /nologo /target:exe /platform:x64 /out:"$smokeExe" `
+    /r:System.Web.Extensions.dll `
+    (Join-Path $PSScriptRoot "DoctorJson.cs") `
+    (Join-Path $PSScriptRoot "DoctorJsonSmoke.cs")
+if ($LASTEXITCODE -ne 0) { throw "smoke csc failed with exit $LASTEXITCODE" }
+& $smokeExe
+$smokeExit = $LASTEXITCODE
+Remove-Item $smokeExe -ErrorAction SilentlyContinue
+if ($smokeExit -ne 0) { throw "DoctorJson smoke test failed (exit $smokeExit)" }
+Write-Host "DoctorJson smoke test passed"

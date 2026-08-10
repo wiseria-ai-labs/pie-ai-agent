@@ -3,6 +3,7 @@ import { paths } from "./paths";
 import { detectAgents, type DetectedAgent } from "./agents";
 import { listSkillsMerged } from "./skill-store";
 import type { SkillSummary } from "../../src/types/local-bridge";
+import type { DoctorCheck } from "./windows-doctor";
 
 export async function doctor(
   // 注入点：默认扫真实两根，测试可传桩清单做 hermetic 断言。
@@ -14,11 +15,14 @@ export async function doctor(
   opts: {
     platform?: NodeJS.Platform;
     detect?: () => DetectedAgent[];
-    windowsChecks?: () => Promise<{ ok: boolean; lines: string[] }>;
+    windowsChecks?: () => Promise<{ ok: boolean; lines: string[]; checks?: DoctorCheck[] }>;
   } = {},
-): Promise<{ ok: boolean; lines: string[] }> {
+): Promise<{ ok: boolean; lines: string[]; checks: DoctorCheck[] }> {
   const platform = opts.platform ?? process.platform;
   const lines: string[] = [];
+  // Structured checks for `pie doctor --json` (#406). Only the Windows tray consumes these, so the
+  // array is empty on non-win32 (the human-readable `lines` are the sole cross-platform contract).
+  let checks: DoctorCheck[] = [];
   // named pipe 不在文件系统命名空间，existsSync 无法反映 daemon 是否在跑——只报地址、
   // 不做在场判定；ok 在 pipe 平台不把 IPC 在场性算进去（避免误报「未运行」）。
   const ipcPresent = paths.isPipe ? null : existsSync(paths.ipcPath);
@@ -73,7 +77,8 @@ export async function doctor(
     const win = await runWin();
     lines.push(...win.lines);
     ok = ok && win.ok;
+    checks = win.checks ?? [];
   }
 
-  return { ok, lines };
+  return { ok, lines, checks };
 }
