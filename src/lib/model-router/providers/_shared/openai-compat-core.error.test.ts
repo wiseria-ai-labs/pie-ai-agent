@@ -30,6 +30,24 @@ function mockBrokenStreamResponse() {
   } as unknown as Response;
 }
 
+// ok:true response that streams the given SSE text once, then closes. Used to
+// exercise in-stream error payloads (relay upstream failures) that carry no
+// `choices` and would otherwise be dropped as garbage lines.
+function mockStreamingResponse(sse: string) {
+  const chunk = new TextEncoder().encode(sse);
+  let sent = false;
+  return {
+    ok: true, status: 200,
+    headers: { get: () => null },
+    body: {
+      getReader: () => ({
+        read: async () => (sent ? { done: true, value: undefined } : ((sent = true), { done: false, value: chunk })),
+        releaseLock: () => {},
+      }),
+    },
+  } as unknown as Response;
+}
+
 async function firstEvent(resp: Response) {
   vi.stubGlobal("fetch", vi.fn(async () => resp));
   const gen = streamChatOpenAICompat(cfg, [{ role: "user", content: "hi" }]);
@@ -58,5 +76,15 @@ describe("openai-compat error.type → kind", () => {
   it("stream interrupted mid-flight → kind:network", async () => {
     expect(await firstEvent(mockBrokenStreamResponse()))
       .toMatchObject({ type: "error", kind: "network" });
+  });
+  it("in-stream error payload (no choices) → kind:http, not silently dropped", async () => {
+    const sse = 'data: {"error":{"message":"upstream timeout"}}\n\ndata: [DONE]\n\n';
+    expect(await firstEvent(mockStreamingResponse(sse)))
+      .toMatchObject({ type: "error", kind: "http", error: "Pie 官方订阅 API error: upstream timeout" });
+  });
+  it("in-stream error payload as bare string → kind:http", async () => {
+    const sse = 'data: {"error":"gateway exploded"}\n\n';
+    expect(await firstEvent(mockStreamingResponse(sse)))
+      .toMatchObject({ type: "error", kind: "http", error: "Pie 官方订阅 API error: gateway exploded" });
   });
 });
