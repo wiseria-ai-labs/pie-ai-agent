@@ -513,6 +513,10 @@ namespace PieLink
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
+                    // pie.exe 输出 UTF-8；不显式指定则 .NET Framework 按系统 ANSI 代码页（zh-CN=GBK）解码，
+                    // 会把 em dash 等非 ASCII 读成乱码（`鈥?`），废掉 detail 的截图/复制排障用途。
+                    StandardOutputEncoding = new UTF8Encoding(false),
+                    StandardErrorEncoding = new UTF8Encoding(false),
                 };
                 using (var proc = Process.Start(psi))
                 {
@@ -532,7 +536,7 @@ namespace PieLink
                 return;
             }
 
-            var checks = ParseChecks(stdout);
+            var checks = DoctorJson.ParseChecks(stdout);
             if (checks == null || checks.Count == 0)
             {
                 // JSON 解析失败 / 没有 checks（非 Windows daemon 或旧版）：回落到原始全文 + 问题态。
@@ -546,42 +550,9 @@ namespace PieLink
             RenderChecks(checks);
         }
 
-        // 单个结构化检查项（对齐 daemon DoctorCheck：id 稳定 key / status 三态 / detail 原始英文技术细节）。
-        private sealed class DoctorCheck
-        {
-            public string Id;
-            public string Status; // "ok" | "warn" | "error"
-            public string Detail;
-        }
-
-        // 解析 `pie doctor --json` 的 stdout：`{ "ok": bool, "checks": [ {id,status,detail}, ... ] }`。
-        // 任何解析异常 / 结构不符 → 返回 null（调用方回落全文），绝不抛。
-        private static List<DoctorCheck> ParseChecks(string stdout)
-        {
-            if (string.IsNullOrWhiteSpace(stdout)) return null;
-            try
-            {
-                var json = new JavaScriptSerializer();
-                var root = json.Deserialize<Dictionary<string, object>>(stdout.Trim());
-                if (root == null || !root.TryGetValue("checks", out var raw)) return null;
-                if (!(raw is object[] arr)) return null;
-                var list = new List<DoctorCheck>();
-                foreach (var item in arr)
-                {
-                    if (!(item is Dictionary<string, object> c)) continue;
-                    var id = c.TryGetValue("id", out var i) ? Convert.ToString(i) : null;
-                    var status = c.TryGetValue("status", out var s) ? Convert.ToString(s) : null;
-                    var detail = c.TryGetValue("detail", out var d) ? Convert.ToString(d) : "";
-                    if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(status)) continue;
-                    list.Add(new DoctorCheck { Id = id, Status = status, Detail = detail ?? "" });
-                }
-                return list;
-            }
-            catch
-            {
-                return null;
-            }
-        }
+        // DoctorCheck 类型与 `pie doctor --json` 的解析已抽到 DoctorJson.cs（不依赖 WinForms/L10n），
+        // 好让 DoctorJsonSmoke.cs 控制台冒烟测试用真 .NET Framework JavaScriptSerializer 覆盖它——
+        // ArrayList vs object[] 的坑（#408 review F1）只在真机 .NET 重现，此前 C# 解析层零覆盖。
 
         // 按项渲染：异常项排最前；每项一行「{图标} {人话标题}：{状态词}」，异常项下补「怎么办」+ 原始 detail。
         // 标题：任一 error → 问题态（Warning）；否则正常态（Information）。warn 显示为提示但不翻标题（#406）。
@@ -608,7 +579,7 @@ namespace PieLink
                 string icon = isOk ? "✓" : "⚠";
                 string title = L10n.TOrNull("doctor." + c.Id) ?? c.Id; // 未知 id 兜底显示原始 key
                 string statusWord = StatusWord(c.Id, c.Status);
-                sb.AppendLine(icon + " " + title + "：" + statusWord);
+                sb.AppendLine(icon + " " + title + LabelSep() + statusWord);
 
                 if (!isOk)
                 {
@@ -623,6 +594,20 @@ namespace PieLink
                 L10n.T(anyError ? "diagTitleProblem" : "diagTitleOk"),
                 MessageBoxButtons.OK,
                 anyError ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+        }
+
+        // 「标题—状态词」分隔符：CJK locale 用全角「：」，西文 locale 用半角「: 」（避免 `Install location：OK` 的突兀排版）。
+        private static string LabelSep()
+        {
+            switch (L10n.Lang)
+            {
+                case "zh-CN":
+                case "zh-TW":
+                case "ja":
+                    return "：";
+                default:
+                    return ": ";
+            }
         }
 
         // 状态词：优先按 id 取覆盖（如 sandbox.bad=「未就绪」、vc_runtime.ok=「已安装」），否则回落通用词。
