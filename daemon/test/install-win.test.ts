@@ -128,20 +128,57 @@ test("iss runs the HKCU cleanup at post-install (CurStepChanged), before the man
   expect(write).toBeGreaterThan(call);
 });
 
-// ── #399: kill the tray + daemon BEFORE [Files] copies (upgrade-path lock -> silent rollback) ──
+// ── #399: free the payload BEFORE [Files] copies (upgrade-path lock -> silent rollback) ────────
 // On "installed + tray/daemon running" re-installs the locked {app}\PieTray.exe / {app}\pie.exe make
 // Inno's DeleteFile fail (error 5); under /VERYSILENT /SUPPRESSMSGBOXES this silently rolls the whole
-// install back. PrepareToInstall is the last [Code] hook before [InstallDelete]/[Files], so both
-// taskkills must live there (symmetric with the uninstall-side pair), not in ssPostInstall (too late).
-test("iss kills both PieTray.exe and pie.exe in PrepareToInstall (before [Files] copies)", () => {
+// install back. PrepareToInstall is the last [Code] hook before [InstallDelete]/[Files], so the work
+// must live there (symmetric with the uninstall-side pair), not in ssPostInstall (too late).
+function prepareToInstallBody(): string {
   const start = iss.indexOf("function PrepareToInstall(");
   expect(start).toBeGreaterThan(-1);
   // Body = from the function header to the next top-level procedure/function declaration.
   const rest = iss.slice(start + 1);
   const nextDecl = rest.search(/\n(?:procedure|function)\s/);
-  const body = nextDecl === -1 ? rest : rest.slice(0, nextDecl);
+  return nextDecl === -1 ? rest : rest.slice(0, nextDecl);
+}
+
+test("iss kills both PieTray.exe and pie.exe in PrepareToInstall (before [Files] copies)", () => {
+  const body = prepareToInstallBody();
   expect(body).toMatch(/taskkill\.exe'\),\s*'\/f \/im PieTray\.exe'/);
   expect(body).toMatch(/taskkill\.exe'\),\s*'\/f \/im pie\.exe'/);
+});
+
+// The regression the taskkill pair alone did NOT catch (real-machine acceptance): a connected
+// extension re-spawns the daemon ~1s after the kill (Chrome -> pie-host.bat -> pie.exe host ->
+// pie.exe daemon), so [Files] hits a freshly re-locked pie.exe and rolls back anyway. Windows can't
+// delete a running image but can rename it, so the old exes are moved aside and [Files] copies into
+// free names. Deleting a stale *.old must come BEFORE the rename or the rename has nowhere to land.
+test("iss renames the running payload aside before [Files] (taskkill alone loses the race, #399)", () => {
+  const body = prepareToInstallBody();
+  const delOld = body.indexOf("DeleteFile(ExpandConstant('{app}\\pie.exe.old'))");
+  const renamePie = body.search(/RenameFile\(ExpandConstant\('\{app\}\\pie\.exe'\),\s*ExpandConstant\('\{app\}\\pie\.exe\.old'\)\)/);
+  const renameTray = body.search(/RenameFile\(ExpandConstant\('\{app\}\\PieTray\.exe'\),\s*ExpandConstant\('\{app\}\\PieTray\.exe\.old'\)\)/);
+  expect(delOld).toBeGreaterThan(-1);
+  expect(renamePie).toBeGreaterThan(delOld);
+  expect(renameTray).toBeGreaterThan(-1);
+  // Both renamed-aside files must be cleaned up on uninstall (Inno doesn't track them).
+  expect(iss).toMatch(/Type: files; Name: "\{app\}\\pie\.exe\.old"/);
+  expect(iss).toMatch(/Type: files; Name: "\{app\}\\PieTray\.exe\.old"/);
+});
+
+// After the rename the OLD daemon is still running off pie.exe.old and still owns the named pipe;
+// without a post-copy kill the extension keeps talking to the previous version. It must land after
+// InstallSandboxFacility (which runs a short-lived `pie.exe windows-install` of its own).
+test("iss kills the stale daemon in ssPostInstall, after InstallSandboxFacility, before StartTray", () => {
+  const start = iss.indexOf("procedure CurStepChanged(");
+  expect(start).toBeGreaterThan(-1);
+  const body = iss.slice(start);
+  const sandbox = body.indexOf("InstallSandboxFacility();");
+  const kill = body.search(/taskkill\.exe'\),\s*'\/f \/im pie\.exe'/);
+  const startTray = body.indexOf("StartTray();");
+  expect(sandbox).toBeGreaterThan(-1);
+  expect(kill).toBeGreaterThan(sandbox);
+  expect(startTray).toBeGreaterThan(kill);
 });
 
 test("iss keeps CloseApplications=no (killing is done by us, not Inno's restart manager)", () => {

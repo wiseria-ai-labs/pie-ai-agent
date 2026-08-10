@@ -105,6 +105,10 @@ Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; Native-messaging manifest json lives under {app} (written in [Code]); remove it explicitly (the
 ; [Files] payload is auto-removed, but the json is created at runtime so Inno doesn't track it).
 Type: files; Name: "{app}\{#NmHostName}.json"
+; Renamed-aside payload from an upgrade (PrepareToInstall's rename-then-replace, #399). Untracked by
+; Inno for the same reason, and the uninstaller's taskkill pair has already released them.
+Type: files; Name: "{app}\pie.exe.old"
+Type: files; Name: "{app}\PieTray.exe.old"
 
 [Code]
 // The NM manifest json lives beside the payload in {app} (Program Files) so it is machine-wide
@@ -199,12 +203,27 @@ end;
 // locked while the tray / daemon run, and CloseApplications=no means Inno will not police them
 // for us. Without this, "installed + tray running" (or "+ daemon resident after the extension
 // connected") re-installs hit DeleteFile error 5 on the locked exe and, under
-// /VERYSILENT /SUPPRESSMSGBOXES, silently roll the whole install back (Abort default). This is
-// symmetric with the taskkill pair in CurUninstallStepChanged, but must fire BEFORE [Files] copies:
-// PrepareToInstall is the last [Code] hook that runs before [InstallDelete]/[Files] (ssInstall /
-// ssPostInstall are both too late). Best-effort: taskkill on a not-running image returns 128, which
-// is the normal first-install case, so both exit codes are ignored -- returning any non-empty string
-// here would ABORT the install.
+// /VERYSILENT /SUPPRESSMSGBOXES, silently roll the whole install back (Abort default).
+//
+// taskkill ALONE DOES NOT FIX IT (#399, caught in real-machine acceptance): the daemon is
+// lazy-launched by the browser, so a connected extension re-spawns it about a second after we kill
+// it -- Chrome runs pie-host.bat -> `pie.exe host` -> `pie.exe daemon` -- and [Files] then hits the
+// freshly re-locked pie.exe anyway. Observed timeline: taskkill at 29.0s, new pie.exe pair at 30s,
+// DeleteFile error 5 at 31.6s, rollback at 35.7s. There is no window to widen here: the re-spawn is
+// driven by the extension's reconnect backoff, which the installer cannot control.
+//
+// So the lock is side-stepped instead of raced: Windows refuses to DELETE a running image but
+// happily RENAMES it (the mapping follows the inode, not the path). Renaming the old exes out of
+// the way leaves [Files] copying into free names, which cannot fail no matter who is running.
+// Whatever still runs keeps executing the renamed image; the *.old files are deleted by the next
+// install (this function) and by [UninstallDelete]. taskkill is kept so the stale daemon goes away
+// promptly, but correctness no longer depends on its timing. The `.old` DeleteFile can only fail if
+// a process from a PREVIOUS upgrade still holds it -- that one is killed below (a renamed image
+// keeps its original process name, so `/im pie.exe` still matches it) and the delete then succeeds
+// on the following run; a failed rename would merely reproduce the old error 5, never something
+// worse. Best-effort throughout: taskkill on a not-running image returns 128, which is the normal
+// first-install case, so both exit codes are ignored -- returning any non-empty string here would
+// ABORT the install.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Code: Integer;
@@ -212,15 +231,27 @@ begin
   Result := '';
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im PieTray.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im pie.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  DeleteFile(ExpandConstant('{app}\pie.exe.old'));
+  DeleteFile(ExpandConstant('{app}\PieTray.exe.old'));
+  RenameFile(ExpandConstant('{app}\pie.exe'), ExpandConstant('{app}\pie.exe.old'));
+  RenameFile(ExpandConstant('{app}\PieTray.exe'), ExpandConstant('{app}\PieTray.exe.old'));
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Code: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
     ClearShadowingHkcuKeys();
     WriteNativeManifest();
     InstallSandboxFacility();
+    // The pre-copy rename (PrepareToInstall) leaves the OLD daemon running off pie.exe.old, and it
+    // still owns the named pipe -- the extension would keep talking to the previous version until
+    // something restarts it. Kill it here, after the new payload is in place: the next extension
+    // reconnect lazy-launches the new pie.exe. Must come after InstallSandboxFacility (which itself
+    // runs a short-lived `pie.exe windows-install` and would be killed mid-flight otherwise).
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im pie.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
     StartTray();
   end;
 end;
