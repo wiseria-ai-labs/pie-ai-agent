@@ -241,6 +241,14 @@ export async function* streamChatOpenAICompat(
               : {}),
           };
         }
+        // 中转/网关在扣费后上游失败时会推 {"error":{...}} 再关流；这条没有
+        // choices，不拦住就会被下面的判空 continue 当垃圾行丢掉，最终静默变成
+        // 一次空回复（连带真实扣费）。对齐 providers/openai.ts 的既有形状透传。
+        if (data.error) {
+          const m = typeof data.error === "string" ? data.error : (data.error.message ?? "stream error");
+          yield { type: "error", error: `${displayProviderName(config)} API error: ${m}`, kind: "http" };
+          return;
+        }
         const choice = data.choices?.[0];
         if (!choice) continue;
         const delta = choice.delta;

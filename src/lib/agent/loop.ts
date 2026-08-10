@@ -2293,6 +2293,24 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }, "fail");
         return;
       }
+      if (completion === "empty") {
+        // 空完成：无 tool call、无任何文本产出（stopReason 非 length）。通常是上游/
+        // 中转在扣费后失败（#413），却被静默当成一次空回复然后结束任务——不走
+        // chat-done，改与 LLM-stream-error 同路失败，让用户看到红色报错而非黑洞。
+        // TODO(#354): English fallback，同 truncated-empty。
+        const msg =
+          "The model returned an empty response (no text, no tool call). This " +
+          "usually means the upstream provider or relay failed after accepting " +
+          "the request. Check the provider's status, or try another model.";
+        emit(withSession({ type: "chat-error", error: msg }, sessionId));
+        await emitDone({
+          type: "agent-done-task",
+          success: false,
+          summary: msg,
+          stepCount: stepIndex,
+        }, "fail");
+        return;
+      }
       if (completion === "truncated-partial") {
         // 部分答案已流式发出但不完整——追加可见提示，再走正常 pure-text 收尾。
         emit(
