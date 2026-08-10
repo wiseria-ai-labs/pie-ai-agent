@@ -291,3 +291,105 @@ describe("runWindowsDoctor orchestrator", () => {
     expect(EXT_ID).toBe("gpccjhdgjkmalnepmeclooflliiocfed");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Structured `checks` array for `--json` (#406). The tray renders these; the sandbox item is
+// `error` even though `ok` stays true, and the pipe/agents probes are excluded.
+// ---------------------------------------------------------------------------
+
+describe("runWindowsDoctor checks (--json)", () => {
+  function findCheck(checks: { id: string }[], id: string) {
+    return checks.find((c) => c.id === id);
+  }
+
+  test("all-healthy → every check ok, covers the 4 categories", async () => {
+    const r = await runWindowsDoctor(healthyDeps());
+    const ids = r.checks.map((c) => c.id).sort();
+    expect(ids).toEqual(["install_path", "nm_chrome", "nm_edge", "sandbox", "vc_runtime"]);
+    expect(r.checks.every((c) => c.status === "ok")).toBe(true);
+    // ok detail carries the HKLM manifest path for verification.
+    expect(findCheck(r.checks, "nm_chrome")!.detail).toContain("HKLM ->");
+  });
+
+  test("pipe/agents probes never leak into checks", async () => {
+    const r = await runWindowsDoctor(healthyDeps({ probePipe: async () => "not-running" }));
+    expect(r.checks.some((c) => c.id === "pipe" || c.id === "agents")).toBe(false);
+    expect(r.checks.length).toBe(5);
+  });
+
+  test("sandbox NOT ready → check is error even though ok stays true", async () => {
+    const r = await runWindowsDoctor(
+      healthyDeps({
+        sandboxReady: async () => ({ ready: false, reason: "CreateProcessWithLogonW: logon failure" }),
+      }),
+    );
+    // The exact #406 contradiction: verdict ok, but the tray must see error.
+    expect(r.ok).toBe(true);
+    const sandbox = findCheck(r.checks, "sandbox")!;
+    expect(sandbox.status).toBe("error");
+    expect(sandbox.detail).toContain("logon failure");
+  });
+
+  test("sandbox probe throw → error check with the probe message", async () => {
+    const r = await runWindowsDoctor(
+      healthyDeps({
+        sandboxReady: async () => {
+          throw new Error("srt exploded");
+        },
+      }),
+    );
+    const sandbox = findCheck(r.checks, "sandbox")!;
+    expect(sandbox.status).toBe("error");
+    expect(sandbox.detail).toContain("srt exploded");
+  });
+
+  test("network install path → install_path check is error with the reason", async () => {
+    const r = await runWindowsDoctor(healthyDeps({ execPath: "\\\\vmshare\\Pie Link\\pie.exe" }));
+    const c = findCheck(r.checks, "install_path")!;
+    expect(c.status).toBe("error");
+    expect(c.detail).toContain("network location");
+  });
+
+  test("missing VC++ runtime → vc_runtime check is error", async () => {
+    const r = await runWindowsDoctor(
+      healthyDeps({ fileExists: (p) => !p.toLowerCase().includes("vcruntime140") && p.includes("Pie Link") }),
+    );
+    expect(findCheck(r.checks, "vc_runtime")!.status).toBe("error");
+  });
+
+  test("HKCU shadow → nm_chrome check is error and detail names the shadow path", async () => {
+    const r = await runWindowsDoctor(
+      healthyDeps({
+        regQueryDefault: (key) =>
+          key.startsWith("HKCU") && key.includes("Google")
+            ? "C:\\pie\\ai.wiseria.pie.json"
+            : key.startsWith("HKLM")
+              ? "C:\\Program Files\\Pie Link\\ai.wiseria.pie.json"
+              : null,
+      }),
+    );
+    const c = findCheck(r.checks, "nm_chrome")!;
+    expect(c.status).toBe("error");
+    expect(c.detail).toContain("C:\\pie\\ai.wiseria.pie.json");
+    // Edge is untouched → still ok.
+    expect(findCheck(r.checks, "nm_edge")!.status).toBe("ok");
+  });
+
+  test("HKLM missing → nm check error, both browsers", async () => {
+    const r = await runWindowsDoctor(healthyDeps({ regQueryDefault: () => null }));
+    expect(findCheck(r.checks, "nm_chrome")!.status).toBe("error");
+    expect(findCheck(r.checks, "nm_edge")!.status).toBe("error");
+    expect(findCheck(r.checks, "nm_chrome")!.detail).toContain("HKLM key missing");
+  });
+
+  test("broken manifest (missing host wrapper) → nm check error", async () => {
+    const r = await runWindowsDoctor(
+      healthyDeps({
+        fileExists: (p) =>
+          p.endsWith("ai.wiseria.pie.json") || p.toLowerCase().includes("vcruntime140"),
+      }),
+    );
+    expect(findCheck(r.checks, "nm_chrome")!.status).toBe("error");
+    expect(findCheck(r.checks, "nm_chrome")!.detail).toContain("host wrapper missing");
+  });
+});

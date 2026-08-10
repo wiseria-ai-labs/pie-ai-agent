@@ -6,11 +6,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -25,14 +25,47 @@ namespace PieLink
         // named pipe basename，对齐 daemon/src/paths.ts 的 PIPE_NAME（加法演进不 bump PROTOCOL_VERSION）。
         internal const string PipeName = "ai.wiseria.pie";
 
+        // 单实例守卫（#405）：装了开始菜单快捷方式后，用户可能连点两次入口。Run 键只在登录时起一次，
+        // 撞不到；手动入口一撞就是两个托盘图标（且各自能点「退出 Pie Link」去 kill daemon）。mac 靠
+        // Launch Services 天然单实例；Windows 得自己用命名 Mutex 做。Global\ 前缀 = 跨会话唯一（machine-wide
+        // 安装语义一致），已在运行则第二个进程静默退出（用户从开始菜单点第二次的心智就是「打开它」，
+        // 已经在托盘里就够了，弹「已在运行」提示框只是噪音）。
+        private const string SingleInstanceMutexName = "Global\\ai.wiseria.pie.tray";
+
         [STAThread]
         private static void Main()
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            using (var ctx = new TrayContext())
+            bool createdNew;
+            Mutex mutex;
+            // 进程存活期间持有 Mutex（不 Dispose / 不 ReleaseMutex）：进程退出时 OS 自动释放。
+            try
             {
-                Application.Run(ctx);
+                mutex = new Mutex(true, SingleInstanceMutexName, out createdNew);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // 另一个登录会话已持有同名 Global\ mutex：.NET 默认 DACL 只授权 {SYSTEM, 创建者会话,
+                // 创建者用户}，别的登录会话既建不了（已存在）也 open 不了（无匹配 ACE），CreateMutex 拿到
+                // ACCESS_DENIED 后回落的 OpenMutex 同样被拒 → 抛异常。这仍是「已有托盘在跑」，按单实例
+                // 语义静默退出，绝不能让未捕获异常把进程崩成 WER（多用户机器上第二个用户点开始菜单项即触发）。
+                return;
+            }
+            catch (WaitHandleCannotBeOpenedException)
+            {
+                // 同名已存在但类型/句柄不可打开：一并按「已在运行」处理。
+                return;
+            }
+
+            using (mutex)
+            {
+                if (!createdNew) return; // 已有托盘在跑：静默退出，不抢占、不弹框。
+
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                using (var ctx = new TrayContext())
+                {
+                    Application.Run(ctx);
+                }
             }
         }
     }
@@ -60,12 +93,21 @@ namespace PieLink
 
         internal static string T(string key)
         {
+            var v = TOrNull(key);
+            return v ?? key;
+        }
+
+        /// <summary>Like <see cref="T"/> but returns null for an unknown key (never the raw key).
+        /// Used by the per-check doctor renderer so optional rows (status overrides / hints) can be
+        /// skipped when a locale doesn't define them, instead of leaking "doctor.x.hint" text.</summary>
+        internal static string TOrNull(string key)
+        {
             if (Table.TryGetValue(key, out var row))
             {
                 if (row.TryGetValue(Lang, out var v)) return v;
                 if (row.TryGetValue("en", out var en)) return en;
             }
-            return key;
+            return null;
         }
 
         private static readonly Dictionary<string, Dictionary<string, string>> Table =
@@ -126,6 +168,115 @@ namespace PieLink
                     ["zh-TW"] = "診斷 — 發現問題", ["ja"] = "診断 — 問題が見つかりました",
                     ["es-419"] = "Diagnóstico — Se encontraron problemas",
                     ["pt-BR"] = "Diagnóstico — Problemas encontrados",
+                },
+                // --- Per-check doctor lines (#406). Titles keyed by the daemon's stable check id;
+                // status words + "how to fix" hints looked up as doctor.<id>.<ok|bad|hint> with a
+                // fallback to the generic doctor.statusOk / doctor.statusBad. daemon `detail` stays
+                // raw English (never translated) and is appended verbatim under abnormal items.
+                ["doctor.statusOk"] = new Dictionary<string, string>
+                {
+                    ["en"] = "OK", ["zh-CN"] = "正常", ["zh-TW"] = "正常",
+                    ["ja"] = "正常", ["es-419"] = "Correcto", ["pt-BR"] = "Correto",
+                },
+                ["doctor.statusBad"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Problem", ["zh-CN"] = "异常", ["zh-TW"] = "異常",
+                    ["ja"] = "問題あり", ["es-419"] = "Problema", ["pt-BR"] = "Problema",
+                },
+                ["doctor.statusWarn"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Notice", ["zh-CN"] = "注意", ["zh-TW"] = "注意",
+                    ["ja"] = "注意", ["es-419"] = "Aviso", ["pt-BR"] = "Aviso",
+                },
+                ["doctor.nm_chrome"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Browser connection (Chrome)", ["zh-CN"] = "浏览器连接（Chrome）",
+                    ["zh-TW"] = "瀏覽器連線（Chrome）", ["ja"] = "ブラウザ接続（Chrome）",
+                    ["es-419"] = "Conexión del navegador (Chrome)", ["pt-BR"] = "Conexão do navegador (Chrome)",
+                },
+                ["doctor.nm_chrome.hint"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Reinstall Pie Link to restore the browser connection",
+                    ["zh-CN"] = "重新安装 Pie Link 可恢复浏览器连接",
+                    ["zh-TW"] = "重新安裝 Pie Link 可恢復瀏覽器連線",
+                    ["ja"] = "Pie Link を再インストールすると接続が復旧します",
+                    ["es-419"] = "Reinstala Pie Link para restaurar la conexión del navegador",
+                    ["pt-BR"] = "Reinstale o Pie Link para restaurar a conexão do navegador",
+                },
+                ["doctor.nm_edge"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Browser connection (Edge)", ["zh-CN"] = "浏览器连接（Edge）",
+                    ["zh-TW"] = "瀏覽器連線（Edge）", ["ja"] = "ブラウザ接続（Edge）",
+                    ["es-419"] = "Conexión del navegador (Edge)", ["pt-BR"] = "Conexão do navegador (Edge)",
+                },
+                ["doctor.nm_edge.hint"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Reinstall Pie Link to restore the browser connection",
+                    ["zh-CN"] = "重新安装 Pie Link 可恢复浏览器连接",
+                    ["zh-TW"] = "重新安裝 Pie Link 可恢復瀏覽器連線",
+                    ["ja"] = "Pie Link を再インストールすると接続が復旧します",
+                    ["es-419"] = "Reinstala Pie Link para restaurar la conexión del navegador",
+                    ["pt-BR"] = "Reinstale o Pie Link para restaurar a conexão do navegador",
+                },
+                ["doctor.sandbox"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Script sandbox", ["zh-CN"] = "脚本沙箱", ["zh-TW"] = "指令碼沙箱",
+                    ["ja"] = "スクリプトサンドボックス", ["es-419"] = "Sandbox de scripts",
+                    ["pt-BR"] = "Sandbox de scripts",
+                },
+                ["doctor.sandbox.ok"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Ready", ["zh-CN"] = "就绪", ["zh-TW"] = "就緒",
+                    ["ja"] = "準備完了", ["es-419"] = "Listo", ["pt-BR"] = "Pronto",
+                },
+                ["doctor.sandbox.bad"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Not ready", ["zh-CN"] = "未就绪", ["zh-TW"] = "未就緒",
+                    ["ja"] = "未準備", ["es-419"] = "No está listo", ["pt-BR"] = "Não está pronto",
+                },
+                ["doctor.sandbox.hint"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Click \"Repair Sandbox\" to fix it",
+                    ["zh-CN"] = "点「修复沙箱」可以修好",
+                    ["zh-TW"] = "點「修復沙箱」即可修復",
+                    ["ja"] = "「サンドボックスを修復」をクリックすると修復できます",
+                    ["es-419"] = "Haz clic en \"Reparar sandbox\" para solucionarlo",
+                    ["pt-BR"] = "Clique em \"Reparar sandbox\" para corrigir",
+                },
+                ["doctor.install_path"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Install location", ["zh-CN"] = "安装位置", ["zh-TW"] = "安裝位置",
+                    ["ja"] = "インストール場所", ["es-419"] = "Ubicación de instalación",
+                    ["pt-BR"] = "Local de instalação",
+                },
+                ["doctor.install_path.hint"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Reinstall Pie Link to a local disk",
+                    ["zh-CN"] = "把 Pie Link 重新安装到本地磁盘",
+                    ["zh-TW"] = "將 Pie Link 重新安裝到本機磁碟",
+                    ["ja"] = "Pie Link をローカルディスクに再インストールしてください",
+                    ["es-419"] = "Reinstala Pie Link en un disco local",
+                    ["pt-BR"] = "Reinstale o Pie Link em um disco local",
+                },
+                ["doctor.vc_runtime"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Runtime library", ["zh-CN"] = "运行库", ["zh-TW"] = "執行庫",
+                    ["ja"] = "ランタイムライブラリ", ["es-419"] = "Biblioteca de runtime",
+                    ["pt-BR"] = "Biblioteca de runtime",
+                },
+                ["doctor.vc_runtime.ok"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Installed", ["zh-CN"] = "已安装", ["zh-TW"] = "已安裝",
+                    ["ja"] = "インストール済み", ["es-419"] = "Instalado", ["pt-BR"] = "Instalado",
+                },
+                ["doctor.vc_runtime.hint"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Install the Microsoft Visual C++ x64 runtime",
+                    ["zh-CN"] = "安装 Microsoft Visual C++ x64 运行库",
+                    ["zh-TW"] = "安裝 Microsoft Visual C++ x64 執行庫",
+                    ["ja"] = "Microsoft Visual C++ x64 ランタイムをインストールしてください",
+                    ["es-419"] = "Instala el runtime de Microsoft Visual C++ x64",
+                    ["pt-BR"] = "Instale o runtime do Microsoft Visual C++ x64",
                 },
                 ["openLogs"] = new Dictionary<string, string>
                 {
@@ -297,23 +448,39 @@ namespace PieLink
             if (oldHandle != IntPtr.Zero) DestroyIcon(oldHandle);
         }
 
-        // 被咬一口的派（对齐 public/icons/icon-128.svg 与 mac pieTemplateIcon 的比例）。
-        // 连接态 = 实心暖色派；未连接态 = 暗灰半透明派。咬口用 SourceCopy 挖真透明。
+        // 品牌图标（对齐 public/icons/icon-128.svg：深圆角底板 + 白派 + 右上咬口），从嵌入的多档
+        // pie.ico 取 32 档画进 32×32 ARGB bitmap。底板保留——纯白派在浅色任务栏上会消失，咬口本就是
+        // 底板色实心，底板在则咬口自然成立，无需挖透明。连接态原色；未连接态整体压 alpha 到 40%
+        // （这份资产近乎无彩色，去饱和无效，只能压透明度）。
+        //
+        // 固定取 32 档而非 SystemInformation.SmallIconSize：NotifyIcon 交给 shell 的是 HICON，由
+        // explorer.exe（per-monitor DPI aware）按需绘制，不经本进程 DPI 虚拟化；PieTray.exe 是
+        // DPI-unaware 进程，SmallIconSize 只返回虚拟化后的 16×16 反而选错档。给 32 让 explorer 在
+        // 100% 下 downsample、200% 下正好。若 200% 真机仍糊，把取档尺寸改成 48（ico 内已有 48 档）。
         private static Bitmap BuildBitmap(bool connected)
         {
             var bmp = new Bitmap(32, 32, PixelFormat.Format32bppArgb);
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("pie.ico"))
+            using (var icon = new Icon(stream, new Size(32, 32)))
             using (var g = Graphics.FromImage(bmp))
             {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.Clear(Color.Transparent);
-                var fill = connected
-                    ? Color.FromArgb(255, 0xE0, 0x8A, 0x2B) // 暖琥珀 = 已连接
-                    : Color.FromArgb(110, 0x9A, 0x9A, 0x9A); // 暗灰半透明 = 未连接
-                using (var brush = new SolidBrush(fill))
-                    g.FillEllipse(brush, 4, 4, 24, 24); // 派 心(16,16) r12
-                g.CompositingMode = CompositingMode.SourceCopy; // 覆盖为透明 = 真挖洞
-                using (var clear = new SolidBrush(Color.Transparent))
-                    g.FillEllipse(clear, 20, 1, 12, 12); // 咬口 右上
+                if (connected)
+                {
+                    g.DrawIcon(icon, new Rectangle(0, 0, 32, 32));
+                }
+                else
+                {
+                    // ColorMatrix Matrix33 = 整体 alpha 乘子，把不透明像素压到 40% 做「变淡」态。
+                    using (var src = icon.ToBitmap())
+                    using (var attrs = new ImageAttributes())
+                    {
+                        var matrix = new ColorMatrix { Matrix33 = 0.4f };
+                        attrs.SetColorMatrix(matrix);
+                        g.DrawImage(src, new Rectangle(0, 0, 32, 32),
+                            0, 0, src.Width, src.Height, GraphicsUnit.Pixel, attrs);
+                    }
+                }
             }
             return bmp;
         }
@@ -381,42 +548,127 @@ namespace PieLink
             return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "pie.exe");
         }
 
-        // 「诊断」= 跑 `pie.exe doctor` 抓 stdout+stderr，用 MessageBox 展示全文（原生 Ctrl+C 可复制）。
-        // UseShellExecute=false + CreateNoWindow=true 抓管道且不闪黑框；exit 0 → 正常态，非 0 → 问题态。
+        // 「诊断」= 跑 `pie.exe doctor --json`，把结构化 checks 渲染成人话逐项展示（#406）。
+        // JSON 走 stdout，人类可读全文走 stderr（互不混）；解析成功就按项渲染，失败回落到全文（问题态）。
         private void RunDoctor()
         {
-            string output;
+            string stdout, stderr;
             int exitCode;
             try
             {
-                var psi = new ProcessStartInfo(PieExePath(), "doctor")
+                var psi = new ProcessStartInfo(PieExePath(), "doctor --json")
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
+                    // pie.exe 输出 UTF-8；不显式指定则 .NET Framework 按系统 ANSI 代码页（zh-CN=GBK）解码，
+                    // 会把 em dash 等非 ASCII 读成乱码（`鈥?`），废掉 detail 的截图/复制排障用途。
+                    StandardOutputEncoding = new UTF8Encoding(false),
+                    StandardErrorEncoding = new UTF8Encoding(false),
                 };
                 using (var proc = Process.Start(psi))
                 {
-                    // 并发读两个管道，避免其一填满 buffer 时死锁（doctor 输出走 stderr，但两头都读稳妥）。
+                    // 并发读两个管道，避免其一填满 buffer 时死锁（JSON→stdout，全文→stderr）。
                     var stdoutTask = proc.StandardOutput.ReadToEndAsync();
-                    var stderr = proc.StandardError.ReadToEnd();
-                    var stdout = stdoutTask.GetAwaiter().GetResult();
+                    stderr = proc.StandardError.ReadToEnd();
+                    stdout = stdoutTask.GetAwaiter().GetResult();
                     proc.WaitForExit();
                     exitCode = proc.ExitCode;
-                    output = (stdout + stderr).Trim();
                 }
             }
             catch (Exception ex)
             {
                 // pie.exe 缺失 / 无法启动：当问题态展示异常信息，别静默吞掉。
-                output = ex.Message;
-                exitCode = -1;
+                MessageBox.Show(ex.Message, L10n.T("diagTitleProblem"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
-            bool ok = exitCode == 0;
-            if (output.Length == 0) output = ok ? "OK" : "(no output)";
-            MessageBox.Show(output, L10n.T(ok ? "diagTitleOk" : "diagTitleProblem"),
-                MessageBoxButtons.OK, ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+
+            var checks = DoctorJson.ParseChecks(stdout);
+            if (checks == null || checks.Count == 0)
+            {
+                // JSON 解析失败 / 没有 checks（非 Windows daemon 或旧版）：回落到原始全文 + 问题态。
+                var raw = (stdout + stderr).Trim();
+                if (raw.Length == 0) raw = "(no output)";
+                MessageBox.Show(raw, L10n.T("diagTitleProblem"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            RenderChecks(checks);
+        }
+
+        // DoctorCheck 类型与 `pie doctor --json` 的解析已抽到 DoctorJson.cs（不依赖 WinForms/L10n），
+        // 好让 DoctorJsonSmoke.cs 控制台冒烟测试用真 .NET Framework JavaScriptSerializer 覆盖它——
+        // ArrayList vs object[] 的坑（#408 review F1）只在真机 .NET 重现，此前 C# 解析层零覆盖。
+
+        // 按项渲染：异常项排最前；每项一行「{图标} {人话标题}：{状态词}」，异常项下补「怎么办」+ 原始 detail。
+        // 标题：任一 error → 问题态（Warning）；否则正常态（Information）。warn 显示为提示但不翻标题（#406）。
+        private static void RenderChecks(List<DoctorCheck> checks)
+        {
+            // error 排前、warn 次之、ok 最后；同级保持 daemon 给出的原顺序（稳定排序）。
+            var ordered = new List<DoctorCheck>();
+            foreach (var s in new[] { "error", "warn", "ok" })
+                foreach (var c in checks)
+                    if (string.Equals(c.Status, s, StringComparison.OrdinalIgnoreCase))
+                        ordered.Add(c);
+            // 未知 status 的项兜底收尾，避免被吞掉。
+            foreach (var c in checks)
+                if (!ordered.Contains(c)) ordered.Add(c);
+
+            bool anyError = false;
+            var sb = new StringBuilder();
+            foreach (var c in ordered)
+            {
+                bool isError = string.Equals(c.Status, "error", StringComparison.OrdinalIgnoreCase);
+                bool isOk = string.Equals(c.Status, "ok", StringComparison.OrdinalIgnoreCase);
+                if (isError) anyError = true;
+
+                string icon = isOk ? "✓" : "⚠";
+                string title = L10n.TOrNull("doctor." + c.Id) ?? c.Id; // 未知 id 兜底显示原始 key
+                string statusWord = StatusWord(c.Id, c.Status);
+                sb.AppendLine(icon + " " + title + LabelSep() + statusWord);
+
+                if (!isOk)
+                {
+                    var hint = L10n.TOrNull("doctor." + c.Id + ".hint");
+                    if (!string.IsNullOrEmpty(hint)) sb.AppendLine("    " + hint);
+                    if (!string.IsNullOrEmpty(c.Detail)) sb.AppendLine("    " + c.Detail);
+                }
+            }
+
+            MessageBox.Show(
+                sb.ToString().TrimEnd(),
+                L10n.T(anyError ? "diagTitleProblem" : "diagTitleOk"),
+                MessageBoxButtons.OK,
+                anyError ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+        }
+
+        // 「标题—状态词」分隔符：CJK locale 用全角「：」，西文 locale 用半角「: 」（避免 `Install location：OK` 的突兀排版）。
+        private static string LabelSep()
+        {
+            switch (L10n.Lang)
+            {
+                case "zh-CN":
+                case "zh-TW":
+                case "ja":
+                    return "：";
+                default:
+                    return ": ";
+            }
+        }
+
+        // 状态词：优先按 id 取覆盖（如 sandbox.bad=「未就绪」、vc_runtime.ok=「已安装」），否则回落通用词。
+        private static string StatusWord(string id, string status)
+        {
+            bool isOk = string.Equals(status, "ok", StringComparison.OrdinalIgnoreCase);
+            bool isWarn = string.Equals(status, "warn", StringComparison.OrdinalIgnoreCase);
+            var perId = L10n.TOrNull("doctor." + id + "." + (isOk ? "ok" : "bad"));
+            if (perId != null) return perId;
+            if (isOk) return L10n.T("doctor.statusOk");
+            if (isWarn) return L10n.T("doctor.statusWarn");
+            return L10n.T("doctor.statusBad");
         }
 
         // 「修复沙箱」= 提权依次跑 windows-uninstall + windows-install，跑完自动再诊断一次让用户看结果。
