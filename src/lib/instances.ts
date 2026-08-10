@@ -178,18 +178,20 @@ export async function getActiveInstance(): Promise<string | null> {
   return (await getConfig<string>(ACTIVE_KEY)) ?? null;
 }
 
-// #62 — resolve a custom provider model's vision capability from its stored
-// CustomModelMeta. Returns `true`/`false` when the model is found in the
-// provider's model list; `undefined` when the provider entity or the model
-// id is missing (both treated as fail-closed downstream).
-async function resolveCustomModelVision(
+// #62 / #415 — resolve a custom provider model's vision capability + the
+// provider-level wire protocol from its stored entity in a single IDB read.
+// `vision` is `true`/`false` when the model is found in the provider's list,
+// `undefined` when the provider entity or model id is missing (fail-closed
+// downstream). `wire` is `"responses"` iff the provider is set to the Responses
+// wire, else `undefined` (chat/completions).
+async function resolveCustomModelBits(
   provider: ProviderRef,
   model: string,
-): Promise<boolean | undefined> {
+): Promise<{ vision: boolean | undefined; wire: "responses" | undefined }> {
   const id = providerRefToId(provider);
-  if (!id) return undefined;
+  if (!id) return { vision: undefined, wire: undefined };
   const cp = await getCustomProvider(id);
-  return cp?.models.find((m) => m.id === model)?.vision;
+  return { vision: cp?.models.find((m) => m.id === model)?.vision, wire: cp?.wire };
 }
 
 export async function resolveModelConfig(instanceId: string, model: string): Promise<ModelConfig | null> {
@@ -212,10 +214,14 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
   // get screenshot tools. Stays `undefined` when pcmm also misses (truly unknown
   // → fail-closed downstream, unchanged).
   let vision: boolean | undefined;
+  // #415 — custom-provider wire protocol; undefined for builtins/managed.
+  let wire: "responses" | undefined;
   if (inst.provider === "managed") {
     vision = cachedManagedModel(inst.apiKey, effectiveModel)?.vision;
   } else if (inst.provider.startsWith("custom:")) {
-    vision = await resolveCustomModelVision(inst.provider, effectiveModel);
+    const bits = await resolveCustomModelBits(inst.provider, effectiveModel);
+    vision = bits.vision;
+    wire = bits.wire;
   } else {
     vision = resolveModelVision(inst.provider as BuiltinProvider, effectiveModel, inst.fetchedModels);
     if (vision === undefined) {
@@ -235,6 +241,7 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
     ...(inst.maxTokens != null && { maxTokens: inst.maxTokens }),
     ...(maxOutputTokens != null && { maxOutputTokens }),
     ...(vision !== undefined && { vision }),
+    ...(wire && { wire }),
     ...(inst.rpmLimit != null && { rpmLimit: inst.rpmLimit }),
     rateKey: instanceId,
   };

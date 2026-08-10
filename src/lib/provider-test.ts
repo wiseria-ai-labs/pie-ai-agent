@@ -15,6 +15,8 @@ export interface ProviderConnectionTestInput {
   model: string;
   apiKey: string;
   baseUrl: string;
+  /** #415 — custom-provider wire protocol; probe follows the same wire as chat. */
+  wire?: "responses";
 }
 
 export async function testProviderConnection(
@@ -44,6 +46,7 @@ export async function testProviderConnection(
           model: input.model,
           apiKey: input.apiKey,
           baseUrl: input.baseUrl,
+          ...(input.wire && { wire: input.wire }),
           // 16 而非 1：reasoning 模型的思考 token 也计入输出预算（OpenAI
           // Responses 的 max_output_tokens 最小值即 16）；探针只看「能否成功
           // 返回」不看内容。

@@ -54,6 +54,8 @@ export interface ProviderTestOptions {
   baseUrl?: string;
   providerName?: string;
   candidateModels?: ModelMeta[];
+  /** #415 — custom-provider wire protocol for the connection probe. */
+  wire?: "responses";
 }
 
 /** Sentinel ref for a not-yet-saved custom provider being authored in the form. */
@@ -88,6 +90,8 @@ export default function NewConfigWizard(props: Props) {
   const [customMode, setCustomMode] = useState<"none" | "new" | "edit">("none");
   const [draftName, setDraftName] = useState("");
   const [draftBaseUrl, setDraftBaseUrl] = useState("");
+  // #415 — provider-level wire protocol; undefined = /v1/chat/completions.
+  const [draftWire, setDraftWire] = useState<"responses" | undefined>(undefined);
   const [draftModels, setDraftModels] = useState<string[]>([]);
   const [draftMetas, setDraftMetas] = useState<Record<string, StoredCustomModelMeta>>({});
   const [testing, setTesting] = useState(false);
@@ -230,11 +234,12 @@ export default function NewConfigWizard(props: Props) {
         name: draftName.trim(),
         baseUrl: draftBaseUrl.trim(),
         models,
+        wire: draftWire,
       });
       props.onCreate(`${CUSTOM_PREFIX}${newId}`, payload);
     } else if (customMode === "edit") {
       const id = providerRefToId(provider!);
-      if (id) await updateCustomProvider(id, { name: draftName.trim(), baseUrl: draftBaseUrl.trim() });
+      if (id) await updateCustomProvider(id, { name: draftName.trim(), baseUrl: draftBaseUrl.trim(), wire: draftWire });
       props.onCreate(provider!, payload);
     } else {
       props.onCreate(provider!, payload);
@@ -300,6 +305,7 @@ export default function NewConfigWizard(props: Props) {
           setProvider(DRAFT_CUSTOM_REF);
           setDraftName("");
           setDraftBaseUrl("");
+          setDraftWire(undefined);
           setDraftModels([]);
           setDraftMetas({});
           setCustomFetched([]);
@@ -310,6 +316,7 @@ export default function NewConfigWizard(props: Props) {
           setProvider(`${CUSTOM_PREFIX}${cp.id}`);
           setDraftName(cp.name);
           setDraftBaseUrl(cp.baseUrl);
+          setDraftWire(cp.wire);
           // Reset new-draft model state so stale draft entries from a prior
           // "+ New custom provider" attempt never leak into the edited provider.
           setDraftModels([]);
@@ -328,8 +335,10 @@ export default function NewConfigWizard(props: Props) {
         <CustomProviderFields
           name={draftName}
           baseUrl={draftBaseUrl}
+          wire={draftWire}
           onNameChange={setDraftName}
           onBaseUrlChange={setDraftBaseUrl}
+          onWireChange={setDraftWire}
           onTest={handleCustomTest}
           testing={testing}
           testError={testError}
@@ -340,8 +349,10 @@ export default function NewConfigWizard(props: Props) {
         <CustomProviderFields
           name={draftName}
           baseUrl={draftBaseUrl}
+          wire={draftWire}
           onNameChange={setDraftName}
           onBaseUrlChange={setDraftBaseUrl}
+          onWireChange={setDraftWire}
           onTest={handleCustomTest}
           testing={testing}
           testError={testError}
@@ -398,6 +409,7 @@ export default function NewConfigWizard(props: Props) {
                 : (fetchedModels ?? []);
             props.onTest(provider, p, {
               ...(editingCustom && { baseUrl: draftBaseUrl.trim(), providerName: draftName.trim() || undefined }),
+              ...(editingCustom && draftWire && { wire: draftWire }),
               ...(candidateModels.length > 0 && { candidateModels }),
             });
           }}

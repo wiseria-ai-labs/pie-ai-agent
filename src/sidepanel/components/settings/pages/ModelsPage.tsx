@@ -20,7 +20,7 @@ import { getProviderMeta, resolveProviderMeta, resolveEndpointVariant } from "@/
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import {
   addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
-  CUSTOM_PREFIX, providerRefToId, listCustomProviders,
+  CUSTOM_PREFIX, providerRefToId, listCustomProviders, getCustomProvider,
 } from "@/lib/custom-providers";
 import InstanceForm, { type InstanceFormPayload } from "../../InstanceForm";
 import InstancesList from "../../InstancesList";
@@ -135,6 +135,15 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
       ?? inst?.fetchedModels?.[0]?.id
       ?? (await firstModelForProvider(provider, id ?? undefined, payload.endpointVariant ?? null))
       ?? "";
+    // #415 — the probe must ride the same wire as real chat. The wizard passes
+    // the unsaved draft wire via options; when testing an already-saved custom
+    // provider from the list (no options.wire), read it from the stored entity
+    // so a Responses provider doesn't get probed on chat/completions.
+    let wire = options.wire;
+    if (wire === undefined && provider.startsWith(CUSTOM_PREFIX)) {
+      const cpId = providerRefToId(provider);
+      if (cpId) wire = (await getCustomProvider(cpId))?.wire;
+    }
     const cfg = {
       provider,
       model,
@@ -145,6 +154,7 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
       })(),
       baseUrl: ((options.baseUrl?.trim() || variant?.baseUrl) ?? meta.defaultBaseUrl).replace(/\/+$/, ""),
       providerName: options.providerName ?? meta.name,
+      ...(wire && { wire }),
     };
     try {
       if (!cfg.apiKey.trim()) throw new Error("API key cannot be empty");

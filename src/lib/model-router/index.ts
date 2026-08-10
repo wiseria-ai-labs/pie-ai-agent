@@ -59,6 +59,14 @@ export interface ModelConfig {
   rpmLimit?: number;
   /** 限流计数 key，resolveModelConfig 填 instanceId；缺省回落 apiKey。 */
   rateKey?: string;
+  /**
+   * Custom-provider wire protocol (#415). `undefined` = `/v1/chat/completions`
+   * (OpenAI-compat, default); `"responses"` = `/v1/responses` (OpenAI Responses
+   * wire, for proxies fronting gpt-5.x). Resolved at task-start by
+   * `resolveModelConfig` from the custom provider entity's `wire`; only the
+   * custom-provider dispatch branch reads it (builtins ignore it).
+   */
+  wire?: "responses";
 }
 
 // Panel↔SW wire protocol message — content stays string (Phase 1 wire invariant);

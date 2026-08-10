@@ -3,8 +3,11 @@ import { useT } from "@/lib/i18n";
 interface Props {
   name: string;
   baseUrl: string;
+  /** #415 — provider-level wire protocol; undefined = /v1/chat/completions. */
+  wire?: "responses";
   onNameChange: (v: string) => void;
   onBaseUrlChange: (v: string) => void;
+  onWireChange: (v: "responses" | undefined) => void;
   onTest: () => void;
   testing?: boolean;
   testError?: string | null;
@@ -96,6 +99,22 @@ export default function CustomProviderFields(props: Props) {
             </span>
           )}
         </div>
+      </Field>
+
+      <Field label={t("customProvider.wire")}>
+        <select
+          value={props.wire ?? "chat"}
+          onChange={(e) =>
+            props.onWireChange(e.target.value === "responses" ? "responses" : undefined)
+          }
+          className="w-full rounded border border-line bg-field px-3 py-2 text-[12px] text-fg-1 focus:border-accent-line"
+        >
+          <option value="chat">{t("customProvider.wireChat")}</option>
+          <option value="responses">{t("customProvider.wireResponses")}</option>
+        </select>
+        <span className="font-mono text-[10px] text-fg-3">
+          ⓘ {t("customProvider.wireHint")}
+        </span>
       </Field>
 
       {props.showTestButton !== false && (

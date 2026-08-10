@@ -210,6 +210,29 @@ describe("resolveModelConfig — vision per model (#35 / #39)", () => {
       expect(cfg!.vision).toBeUndefined();
     });
   });
+
+  describe("custom provider wire protocol wired from entity (#415)", () => {
+    it("wire: 'responses' provider → ModelConfig.wire === 'responses'", async () => {
+      const cpId = await saveCustomProvider({
+        name: "R", baseUrl: "https://r/v1",
+        models: [{ id: "gpt-5.6-luna", vision: false, tools: true, maxContextTokens: 128_000 }],
+        wire: "responses",
+      });
+      const id = await createInstance({ provider: `custom:${cpId}`, nickname: "C", apiKey: "k" });
+      const cfg = await resolveModelConfig(id, "gpt-5.6-luna");
+      expect(cfg!.wire).toBe("responses");
+    });
+
+    it("legacy custom provider (no wire) → ModelConfig.wire undefined", async () => {
+      const cpId = await saveCustomProvider({
+        name: "C", baseUrl: "https://c/v1",
+        models: [{ id: "m", vision: false, tools: true, maxContextTokens: 128_000 }],
+      });
+      const id = await createInstance({ provider: `custom:${cpId}`, nickname: "C", apiKey: "k" });
+      const cfg = await resolveModelConfig(id, "m");
+      expect(cfg!.wire).toBeUndefined();
+    });
+  });
 });
 
 describe("resolveModelConfig — builtin custom model vision via pcmm", () => {
