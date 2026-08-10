@@ -10,6 +10,10 @@ import { join } from "node:path";
 const dir = join(import.meta.dir, "..", "install-win");
 const iss = readFileSync(join(dir, "pie-link.iss"), "utf8");
 const bat = readFileSync(join(dir, "pie-host.bat"), "utf8");
+const trayCs = readFileSync(
+  join(import.meta.dir, "..", "tray-win", "PieTray.cs"),
+  "utf8",
+);
 const releaseYml = readFileSync(
   join(import.meta.dir, "..", "..", ".github", "workflows", "release.yml"),
   "utf8",
@@ -144,6 +148,42 @@ test("iss keeps CloseApplications=no (killing is done by us, not Inno's restart 
   // Explicit guard: switching to CloseApplications=yes + RestartApplications changes the tray's
   // ExecAsOriginalUser restart semantics and must be a deliberate, test-updating decision.
   expect(iss).toMatch(/CloseApplications\s*=\s*no/);
+});
+
+// ── #405: Start-menu shortcut (graphical relaunch entry) + single-instance guard ────────────
+// The tray is the only foreground surface Pie Link has on Windows; without a Start-menu entry a
+// user who quits it (the tray's own "Quit Pie Link" item) has no non-CLI way to bring it back.
+test("iss ships a Start-menu shortcut to the tray under {autoprograms} (all-users, #405)", () => {
+  expect(iss).toMatch(/\[Icons\]/);
+  // {autoprograms} (not {userprograms}) so an admin-credential elevation lands the shortcut in the
+  // all-users Start menu, matching the machine-wide HKLM Run key -- not the elevating admin's hive.
+  expect(iss).toMatch(
+    /Name:\s*"\{autoprograms\}\\Pie Link";\s*Filename:\s*"\{app\}\\PieTray\.exe"/,
+  );
+});
+
+test("iss does NOT create a desktop shortcut (#405 explicit non-goal)", () => {
+  expect(iss).not.toMatch(/\{autodesktop\}|\{userdesktop\}|\{commondesktop\}/);
+});
+
+test("PieTray enforces single-instance via a Global named mutex (#405)", () => {
+  // A manual launch entry means a second click could spawn a second tray; a machine-wide Global\
+  // mutex makes the second process no-op instead of stacking a second icon that can also kill the daemon.
+  // (Two backslashes in the raw source == one runtime backslash in the C# string literal.)
+  expect(trayCs).toContain('"Global\\\\ai.wiseria.pie.tray"');
+  // The mutex is acquired at startup, capturing whether this process created it.
+  expect(trayCs).toMatch(/new Mutex\(true,\s*SingleInstanceMutexName,\s*out createdNew\)/);
+  // The second instance must bail out silently (no "already running" dialog) when it didn't create the mutex.
+  expect(trayCs).toMatch(/if\s*\(!createdNew\)\s*return;/);
+});
+
+test("PieTray tolerates a Global mutex it cannot open without crashing (#407 review)", () => {
+  // A Global\ mutex held by another logon session has a default DACL that only grants the creator's
+  // session; a second user's tray (fast user switching / HKLM Run) can neither create nor open it, so
+  // `new Mutex(...)` throws UnauthorizedAccessException. Without a catch the process dies as a WER CLR
+  // crash instead of the intended silent single-instance exit. Guard the try/catch stays in place.
+  expect(trayCs).toMatch(/catch\s*\(\s*UnauthorizedAccessException\b/);
+  expect(trayCs).toMatch(/catch\s*\(\s*WaitHandleCannotBeOpenedException\b/);
 });
 
 // ── #392.2: CI pins the innosetup choco version (ISCC path is hardcoded to "Inno Setup 6") ──

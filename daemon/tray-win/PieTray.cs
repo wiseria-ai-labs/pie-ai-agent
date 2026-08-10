@@ -25,14 +25,47 @@ namespace PieLink
         // named pipe basename，对齐 daemon/src/paths.ts 的 PIPE_NAME（加法演进不 bump PROTOCOL_VERSION）。
         internal const string PipeName = "ai.wiseria.pie";
 
+        // 单实例守卫（#405）：装了开始菜单快捷方式后，用户可能连点两次入口。Run 键只在登录时起一次，
+        // 撞不到；手动入口一撞就是两个托盘图标（且各自能点「退出 Pie Link」去 kill daemon）。mac 靠
+        // Launch Services 天然单实例；Windows 得自己用命名 Mutex 做。Global\ 前缀 = 跨会话唯一（machine-wide
+        // 安装语义一致），已在运行则第二个进程静默退出（用户从开始菜单点第二次的心智就是「打开它」，
+        // 已经在托盘里就够了，弹「已在运行」提示框只是噪音）。
+        private const string SingleInstanceMutexName = "Global\\ai.wiseria.pie.tray";
+
         [STAThread]
         private static void Main()
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            using (var ctx = new TrayContext())
+            bool createdNew;
+            Mutex mutex;
+            // 进程存活期间持有 Mutex（不 Dispose / 不 ReleaseMutex）：进程退出时 OS 自动释放。
+            try
             {
-                Application.Run(ctx);
+                mutex = new Mutex(true, SingleInstanceMutexName, out createdNew);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // 另一个登录会话已持有同名 Global\ mutex：.NET 默认 DACL 只授权 {SYSTEM, 创建者会话,
+                // 创建者用户}，别的登录会话既建不了（已存在）也 open 不了（无匹配 ACE），CreateMutex 拿到
+                // ACCESS_DENIED 后回落的 OpenMutex 同样被拒 → 抛异常。这仍是「已有托盘在跑」，按单实例
+                // 语义静默退出，绝不能让未捕获异常把进程崩成 WER（多用户机器上第二个用户点开始菜单项即触发）。
+                return;
+            }
+            catch (WaitHandleCannotBeOpenedException)
+            {
+                // 同名已存在但类型/句柄不可打开：一并按「已在运行」处理。
+                return;
+            }
+
+            using (mutex)
+            {
+                if (!createdNew) return; // 已有托盘在跑：静默退出，不抢占、不弹框。
+
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                using (var ctx = new TrayContext())
+                {
+                    Application.Run(ctx);
+                }
             }
         }
     }
