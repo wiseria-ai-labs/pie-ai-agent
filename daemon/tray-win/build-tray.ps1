@@ -70,14 +70,40 @@ using System.Reflection;
 "@ | Set-Content -Encoding UTF8 -Path $asmInfo
 
 # /target:winexe = 无控制台窗口；/platform:x64 对齐首期 x64-only 支持面。
+# 品牌图标（#379）：/win32icon 管 PE 文件图标（资源管理器 / 任务管理器 / 卸载项），
+# /resource 把同一 .ico 嵌成运行期可读资源（托盘 NotifyIcon.Icon 用，见 PieTray.BuildBitmap）。
+# 两者互不替代，都要。两个开关都预拼成整串变量再传：`/resource:...,pie.ico` 里的裸逗号若不包进
+# 字符串，PowerShell 会当数组运算符把它拆成两个参数，csc 就收到断掉的开关。
+$icon = Join-Path $PSScriptRoot "pie.ico"
+$win32IconArg = "/win32icon:$icon"
+$resourceArg = "/resource:$icon,pie.ico"
 & $csc /nologo /target:winexe /platform:x64 /out:"$out" `
+    $win32IconArg `
+    $resourceArg `
     /r:System.dll `
     /r:System.Drawing.dll `
     /r:System.Windows.Forms.dll `
     /r:System.Web.Extensions.dll `
     (Join-Path $PSScriptRoot "PieTray.cs") `
+    (Join-Path $PSScriptRoot "DoctorJson.cs") `
     "$asmInfo"
 if ($LASTEXITCODE -ne 0) { throw "csc failed with exit $LASTEXITCODE" }
 
 Remove-Item $asmInfo -ErrorAction SilentlyContinue
 Write-Host "built $out"
+
+# 冒烟测试：用真 .NET Framework JavaScriptSerializer 跑一遍 DoctorJson.ParseChecks，挡住 #408 review F1
+# （JSON 数组反序列化成 ArrayList 而非 object[]，`is object[]` 恒 false → 整条 checks 渲染失效）。
+# C# 解析层没有单测框架，这是最低成本护栏；失败即让构建红。DoctorJson.cs 不依赖 WinForms，
+# 单独编个控制台 exe 跑一次即可，跑完删掉不随发布。
+$smokeExe = Join-Path $OutDir "DoctorJsonSmoke.exe"
+& $csc /nologo /target:exe /platform:x64 /out:"$smokeExe" `
+    /r:System.Web.Extensions.dll `
+    (Join-Path $PSScriptRoot "DoctorJson.cs") `
+    (Join-Path $PSScriptRoot "DoctorJsonSmoke.cs")
+if ($LASTEXITCODE -ne 0) { throw "smoke csc failed with exit $LASTEXITCODE" }
+& $smokeExe
+$smokeExit = $LASTEXITCODE
+Remove-Item $smokeExe -ErrorAction SilentlyContinue
+if ($smokeExit -ne 0) { throw "DoctorJson smoke test failed (exit $smokeExit)" }
+Write-Host "DoctorJson smoke test passed"

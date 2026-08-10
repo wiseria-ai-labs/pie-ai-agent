@@ -15,6 +15,14 @@ export async function runCli(argv: string[]): Promise<number> {
     }
     case "doctor": {
       const r = await doctor();
+      // `--json` (#406): structured `{ ok, checks }` to stdout for the Windows tray; the
+      // human-readable lines still go to stderr so the two streams never mix. The default
+      // (no-flag) path is byte-for-byte unchanged — lines to stderr, exit code by `ok`.
+      if (argv[1] === "--json") {
+        for (const l of r.lines) console.error(l);
+        console.log(JSON.stringify({ ok: r.ok, checks: r.checks }));
+        return r.ok ? 0 : 1;
+      }
       for (const l of r.lines) console.error(l);
       return r.ok ? 0 : 1;
     }
