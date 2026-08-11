@@ -632,6 +632,7 @@ export const es419Dict = {
     editProvider: "Editar proveedor",
     deleteProvider: "Eliminar proveedor",
     newCustomProvider: "+ Nuevo proveedor personalizado",
+    configured: "Configurado",
   },
   schedules: {
     // Page chrome

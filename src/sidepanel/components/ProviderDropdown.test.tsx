@@ -117,4 +117,30 @@ describe("ProviderDropdown", () => {
     expect(screen.getByText("GLM(Zhipu)")).toBeTruthy();
     expect(screen.queryByText("OpenAI")).toBeFalsy();
   });
+
+  // #3 regression: configured providers stay VISIBLE (marked, not selectable) —
+  // hiding them removed the only edit/delete entry for configured custom providers.
+  it("configured builtin: shown with chip, not selectable", () => {
+    const p = setup({ configuredRefs: ["anthropic"] });
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    const row = screen.getByText("Anthropic").closest("button")!;
+    expect(row.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Configured")).toBeTruthy();
+    fireEvent.click(row);
+    expect(p.onSelect).not.toHaveBeenCalled();
+  });
+
+  it("configured custom: select disabled but edit/delete still fire", () => {
+    const p = setup({ configuredRefs: ["custom:cp1"] });
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    const row = screen.getByText("My Proxy").closest("button")!;
+    expect(row.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(row);
+    expect(p.onSelect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /edit provider/i }));
+    expect(p.onEditCustom).toHaveBeenCalledWith(CUSTOM);
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i })); // reopen
+    fireEvent.click(screen.getByRole("button", { name: /delete provider/i }));
+    expect(p.onDeleteCustom).toHaveBeenCalledWith(CUSTOM);
+  });
 });

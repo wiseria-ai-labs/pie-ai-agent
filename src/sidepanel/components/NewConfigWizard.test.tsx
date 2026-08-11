@@ -38,18 +38,27 @@ describe("NewConfigWizard (builtin path)", () => {
     expect(onCreate).toHaveBeenCalledWith("anthropic", expect.objectContaining({ apiKey: "sk-ant-x" }));
   });
 
-  it("hides providers that already have a config", async () => {
+  // #3: configured providers stay visible (chip + disabled select) instead of
+  // being hidden — hiding removed the only edit/delete entry for custom providers.
+  it("shows already-configured providers as non-selectable instead of hiding them", async () => {
+    const onCreate = vi.fn();
     render(
       <NewConfigWizard
         existingProviderRefs={["anthropic"]}
-        onCreate={vi.fn()}
+        onCreate={onCreate}
         onCancel={vi.fn()}
         onTest={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
-    expect(screen.queryByText("Anthropic")).toBeNull();
-    expect(screen.getByText("OpenAI")).toBeTruthy();
+    const row = screen.getByText("Anthropic").closest("button")!;
+    expect(row.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Configured")).toBeTruthy();
+    fireEvent.click(row);
+    // not selected → no API key form appeared for it
+    expect(screen.queryByLabelText("api key")).toBeNull();
+    // unconfigured providers remain selectable
+    expect((screen.getByText("OpenAI").closest("button")!).hasAttribute("disabled")).toBe(false);
   });
 });
 
@@ -156,6 +165,40 @@ describe("NewConfigWizard (custom path)", () => {
       ),
     );
     expect(onCreate).toHaveBeenCalledWith("custom:newid", expect.objectContaining({ apiKey: "sk-x" }));
+  });
+
+  // #3: a configured custom provider is still editable from the dropdown; the
+  // edit screen saves the provider patch in place — it must NOT show the
+  // create-config form (a second createInstance would throw) nor call onCreate.
+  it("edit configured custom: saves provider patch in place, no instance form", async () => {
+    vi.spyOn(cp, "listCustomProviders").mockResolvedValue([
+      { id: "cp1", name: "Proxy", baseUrl: "https://p/v1", models: [], createdAt: 0, updatedAt: 0 },
+    ]);
+    vi.spyOn(cp, "getInstancesUsingCustomProvider").mockResolvedValue([{ id: "i1", nickname: "x", model: "m" }]);
+    const updSpy = vi.spyOn(cp, "updateCustomProvider").mockResolvedValue();
+    const onCreate = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <NewConfigWizard
+        existingProviderRefs={["custom:cp1"]}
+        onCreate={onCreate}
+        onCancel={onCancel}
+        onTest={vi.fn()}
+      />,
+    );
+    await screen.findByRole("button", { name: /select provider/i });
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    await screen.findByText("Proxy");
+    fireEvent.click(screen.getByRole("button", { name: /edit provider/i }));
+    // Provider-level fields only — no API-key form for a configured provider.
+    expect(screen.queryByLabelText("api key")).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText(/my custom provider/i), { target: { value: "Proxy2" } });
+    fireEvent.click(screen.getByText("Save", { selector: "button" }));
+    await waitFor(() =>
+      expect(updSpy).toHaveBeenCalledWith("cp1", expect.objectContaining({ name: "Proxy2" })),
+    );
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalled();
   });
 
   it("delete custom: blocks when instances depend on it", async () => {

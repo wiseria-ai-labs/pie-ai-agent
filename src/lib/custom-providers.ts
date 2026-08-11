@@ -1,5 +1,5 @@
 import type { ProviderRef } from "@/lib/model-router";
-import { listInstances } from "@/lib/instances";
+import { listInstances, updateInstance } from "@/lib/instances";
 import { getConfig, setConfig } from "@/lib/idb/config-store";
 import { txMulti, STORES } from "@/lib/idb/db";
 import { publishChange } from "@/lib/store-bus";
@@ -118,6 +118,26 @@ export async function updateCustomProvider(
   await setConfig(ENTITY_KEY(id), next);
 }
 
+/** ModelPicker / firstModelForProvider only read `instance.customModels` —
+ *  the provider entity's model list is invisible to them (#3: a model added in
+ *  Settings showed up there but could never be selected in the Composer).
+ *  Every entity-model mutation therefore mirrors the id list onto all
+ *  instances referencing this provider. Idempotent: only writes on drift. */
+async function syncInstancesCustomModels(
+  cpId: string,
+  transform: (models: string[]) => string[],
+): Promise<void> {
+  const ref = `${CUSTOM_PREFIX}${cpId}`;
+  const insts = await listInstances();
+  for (const inst of insts) {
+    if (inst.provider !== ref) continue;
+    const cur = inst.customModels ?? [];
+    const next = transform(cur);
+    if (next.length === cur.length && next.every((x, i) => x === cur[i])) continue;
+    await updateInstance(inst.id, { customModels: next });
+  }
+}
+
 /** Append a model to a custom provider's model list. Idempotent on model id
  *  (a duplicate id is ignored, never overwritten — use updateCustomProviderModel
  *  to change an existing model's meta). */
@@ -127,8 +147,14 @@ export async function addCustomProviderModel(
 ): Promise<void> {
   const stored = await getCustomProvider(id);
   if (!stored) throw new Error(`Custom provider ${id} not found`);
-  if (stored.models.some((m) => m.id === meta.id)) return;
-  await updateCustomProvider(id, { models: [...stored.models, meta] });
+  if (!stored.models.some((m) => m.id === meta.id)) {
+    await updateCustomProvider(id, { models: [...stored.models, meta] });
+  }
+  // Runs even when the entity already had the id, so re-adding a model heals
+  // pre-fix instances whose customModels never received it.
+  await syncInstancesCustomModels(id, (models) =>
+    models.includes(meta.id) ? models : [...models, meta.id],
+  );
 }
 
 /** Replace an existing model's meta (matched by id; id itself is preserved).
@@ -151,6 +177,30 @@ export async function removeCustomProviderModel(id: string, modelId: string): Pr
   const stored = await getCustomProvider(id);
   if (!stored) throw new Error(`Custom provider ${id} not found`);
   await updateCustomProvider(id, { models: stored.models.filter((m) => m.id !== modelId) });
+  await syncInstancesCustomModels(id, (models) => models.filter((m) => m !== modelId));
+}
+
+/** Startup repair (#3): union each custom provider's entity model ids into the
+ *  customModels of every instance referencing it. Pre-dual-write versions
+ *  persisted Settings-added models on the entity only, leaving existing
+ *  instances with an empty pick list. Idempotent and cheap (writes only on
+ *  drift), so it runs on every boot without a sentinel; errors are swallowed —
+ *  a failed repair must not block startup. */
+export async function backfillCustomProviderInstanceModels(): Promise<void> {
+  try {
+    const cps = await listCustomProviders();
+    for (const cp of cps) {
+      if (cp.models.length === 0) continue;
+      const ids = cp.models.map((m) => m.id);
+      await syncInstancesCustomModels(cp.id, (models) => {
+        const merged = [...models];
+        for (const mid of ids) if (!merged.includes(mid)) merged.push(mid);
+        return merged;
+      });
+    }
+  } catch {
+    // Non-fatal: the dual-write path still heals on the next model edit.
+  }
 }
 
 export async function getInstancesUsingCustomProvider(id: string): Promise<CustomProviderInstanceRef[]> {

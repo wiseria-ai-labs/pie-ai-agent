@@ -632,6 +632,7 @@ export const ptBRDict = {
     editProvider: "Editar provedor",
     deleteProvider: "Excluir provedor",
     newCustomProvider: "+ Novo provedor personalizado",
+    configured: "Configurado",
   },
   schedules: {
     // Page chrome

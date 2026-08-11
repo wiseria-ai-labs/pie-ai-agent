@@ -61,6 +61,26 @@ describe("ProviderModelList", () => {
     expect(screen.queryByText("should-not-appear")).toBeNull();
   });
 
+  // #3: the 未拉取/↻ refresh row is an openrouter-only affordance. Custom
+  // providers have no /v1/models refresh handler wired, so the row must not
+  // render for them even when onRefresh is passed (it was a dead button).
+  it("never shows the refresh row for custom providers", () => {
+    render(
+      <ProviderModelList
+        provider="custom:cp1"
+        customModels={["m1"]}
+        onRefresh={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/refresh/i)).toBeNull();
+    expect(screen.queryByText(/not fetched/i)).toBeNull();
+  });
+
+  it("still shows the refresh row for the lazy builtin (openrouter)", () => {
+    render(<ProviderModelList provider="openrouter" customModels={[]} onRefresh={() => {}} />);
+    expect(screen.getByText(/refresh/i)).toBeTruthy();
+  });
+
   it("formats fetched time with the effective locale", async () => {
     await setConfig(STORAGE_KEY_UI_LOCALE, "pt-BR");
     const fetchedAt = Date.UTC(2026, 5, 12, 9, 30, 0);

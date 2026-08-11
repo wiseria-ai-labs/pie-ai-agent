@@ -143,23 +143,17 @@ export default function NewConfigWizard(props: Props) {
   }, [provider]);
 
   // Builtin providers listed alphabetically by their (localized) display name.
+  // Already-configured providers are NOT filtered out (#3): hiding them removed
+  // the only edit/delete entry for configured custom providers. The dropdown
+  // shows everything and marks configured refs as non-selectable instead.
   const sortedProviders = useMemo(
     () =>
       [...PROVIDER_REGISTRY].sort((a, b) =>
         providerDisplayName(a, t).localeCompare(providerDisplayName(b, t)),
       )
-        .filter((p) => !(props.existingProviderRefs ?? []).includes(p.id))
         // 排除 managed —— 它只通过顶部「官方订阅」切换进入，不进 BYOK 下拉。
         .filter((p) => p.id !== "managed"),
-    [props.existingProviderRefs, t],
-  );
-
-  const selectableCustomProviders = useMemo(
-    () =>
-      customProviders.filter(
-        (cp) => !(props.existingProviderRefs ?? []).includes(`${CUSTOM_PREFIX}${cp.id}`),
-      ),
-    [customProviders, props.existingProviderRefs],
+    [t],
   );
 
   // Selecting a builtin (or existing custom) provider via the dropdown.
@@ -177,6 +171,12 @@ export default function NewConfigWizard(props: Props) {
   const cpId = provider && provider !== DRAFT_CUSTOM_REF ? providerRefToId(provider) : null;
   // True while authoring a not-yet-saved custom provider: model edits stay local.
   const isDraft = provider === DRAFT_CUSTOM_REF;
+  // Editing a custom provider that already has a config (#3): provider-level
+  // edits (name/baseUrl/wire) are saved in place — no InstanceForm, since
+  // creating a second config for the same provider would throw. Instance-level
+  // fields (API key / RPM / models) are edited from the Settings config card.
+  const editingConfigured =
+    customMode === "edit" && !!provider && (props.existingProviderRefs ?? []).includes(provider);
   const builtinMeta =
     provider && !provider.startsWith(CUSTOM_PREFIX)
       ? getProviderMeta(provider as BuiltinProvider)
@@ -298,7 +298,8 @@ export default function NewConfigWizard(props: Props) {
       <ProviderDropdown
         value={provider}
         builtinProviders={sortedProviders}
-        customProviders={selectableCustomProviders}
+        customProviders={customProviders}
+        configuredRefs={props.existingProviderRefs ?? []}
         onSelect={handleSelect}
         onCreateCustom={() => {
           setCustomMode("new");
@@ -367,7 +368,34 @@ export default function NewConfigWizard(props: Props) {
         />
       )}
 
-      {provider && (
+      {editingConfigured && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-line pt-3">
+          <div className="flex-1" />
+          <Button variant="secondary" onClick={props.onCancel}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!draftName.trim() || !/^https?:\/\//.test(draftBaseUrl)}
+            onClick={async () => {
+              const id = providerRefToId(provider!);
+              if (id) {
+                await updateCustomProvider(id, {
+                  name: draftName.trim(),
+                  baseUrl: draftBaseUrl.trim(),
+                  wire: draftWire,
+                });
+                setCustomProviders(await listCustomProviders());
+              }
+              props.onCancel();
+            }}
+          >
+            {t("instanceForm.save")}
+          </Button>
+        </div>
+      )}
+
+      {provider && !editingConfigured && (
         <InstanceForm
           key={provider}
           hideProviderField
