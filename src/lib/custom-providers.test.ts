@@ -13,7 +13,7 @@ import {
   updateCustomProvider,
   getInstancesUsingCustomProvider,
   deleteCustomProvider,
-  backfillCustomProviderInstanceModels,
+  backfillCustomProviderInstances,
   CUSTOM_PREFIX,
   type CustomModelMeta,
 } from "./custom-providers";
@@ -232,12 +232,49 @@ describe("entity-model ↔ instance.customModels dual-write (#3)", () => {
       customModels: ["b", "legacy"],
     });
 
-    await backfillCustomProviderInstanceModels();
+    await backfillCustomProviderInstances();
 
     // Existing ids (incl. instance-only legacy ids) preserved, missing entity ids appended.
     expect((await getInstance(iid))!.customModels).toEqual(["b", "legacy", "a"]);
     // Idempotent: second run writes nothing new.
-    await backfillCustomProviderInstanceModels();
+    await backfillCustomProviderInstances();
     expect((await getInstance(iid))!.customModels).toEqual(["b", "legacy", "a"]);
+  });
+});
+
+describe("entity rename ↔ instance.nickname mirror", () => {
+  it("updateCustomProvider name change mirrors onto referencing instances' nickname", async () => {
+    const id = await saveCustomProvider({ name: "X", baseUrl: "https://x.ai/v1", models: [] });
+    const iid = await createInstance({ provider: `${CUSTOM_PREFIX}${id}`, nickname: "X", apiKey: "sk-1" });
+    const other = await createInstance({ provider: "openai", nickname: "o", apiKey: "sk-2" });
+
+    await updateCustomProvider(id, { name: "Y" });
+
+    expect((await getInstance(iid))!.nickname).toBe("Y");
+    // unrelated instance untouched
+    expect((await getInstance(other))!.nickname).toBe("o");
+  });
+
+  it("non-name patches (baseUrl/models) leave nicknames alone", async () => {
+    const id = await saveCustomProvider({ name: "X", baseUrl: "https://x.ai/v1", models: [] });
+    const iid = await createInstance({ provider: `${CUSTOM_PREFIX}${id}`, nickname: "nick", apiKey: "sk-1" });
+
+    await updateCustomProvider(id, { baseUrl: "https://y.ai/v1" });
+    await updateCustomProvider(id, { models: [meta("a")] });
+
+    expect((await getInstance(iid))!.nickname).toBe("nick");
+  });
+
+  it("backfill overwrites a drifted nickname with the entity name (startup repair)", async () => {
+    // Pre-mirror state: entity was renamed but the instance kept the frozen copy.
+    const id = await saveCustomProvider({ name: "New", baseUrl: "https://x.ai/v1", models: [] });
+    const iid = await createInstance({ provider: `${CUSTOM_PREFIX}${id}`, nickname: "Old", apiKey: "sk-1" });
+
+    await backfillCustomProviderInstances();
+
+    expect((await getInstance(iid))!.nickname).toBe("New");
+    // Idempotent second run.
+    await backfillCustomProviderInstances();
+    expect((await getInstance(iid))!.nickname).toBe("New");
   });
 });

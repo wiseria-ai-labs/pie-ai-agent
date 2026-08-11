@@ -9,6 +9,9 @@ interface Props {
   size: number;
   /** 颜色（如 "text-accent"）；默认 text-fg-2。单色 svg 随之着色。 */
   className?: string;
+  /** monogram 回退用的显示名。custom provider 必传（ref 里只有 uuid，
+   *  否则 monogram 显示 uuid 首字符）；builtin 缺省时用 registry name。 */
+  name?: string;
 }
 
 /**
@@ -16,7 +19,7 @@ interface Props {
  * 到首字母 monogram。单色 svg 通过 CSS mask + currentColor 着色，由 `color`
  * （className / 继承）控制主题色。
  */
-export default function ProviderIcon({ provider, size, className }: Props) {
+export default function ProviderIcon({ provider, size, className, name }: Props) {
   const isCustom = provider.startsWith(CUSTOM_PREFIX);
   const meta = isCustom ? undefined : getProviderMeta(provider as BuiltinProvider);
   const box = Math.round(size);
@@ -75,7 +78,7 @@ export default function ProviderIcon({ provider, size, className }: Props) {
   return (
     <span style={wrap} className={className ?? "text-fg-2"}>
       <span className="font-semibold leading-none" style={{ fontSize: Math.round(box * 0.7) }}>
-        {monogram(provider, meta?.name)}
+        {monogram(provider, name ?? meta?.name)}
       </span>
     </span>
   );

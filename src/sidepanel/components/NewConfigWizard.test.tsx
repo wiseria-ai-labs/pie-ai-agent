@@ -201,6 +201,30 @@ describe("NewConfigWizard (custom path)", () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
+  // #3 residue: editing an UNCONFIGURED custom provider (the wizard edit screen
+  // still shows the create-config InstanceForm) must render the entity's models
+  // as EDITABLE custom rows — they used to ride the read-only fetched slot, and
+  // dropping that slot must not leave this entry blank.
+  it("edit unconfigured custom: entity models render as editable rows", async () => {
+    vi.spyOn(cp, "listCustomProviders").mockResolvedValue([
+      {
+        id: "cp1", name: "Proxy", baseUrl: "https://p/v1",
+        models: [{ id: "m-1", vision: false, tools: true, maxContextTokens: 8_000 }],
+        createdAt: 0, updatedAt: 0,
+      },
+    ]);
+    vi.spyOn(cp, "getInstancesUsingCustomProvider").mockResolvedValue([]);
+    render(<NewConfigWizard onCreate={vi.fn()} onCancel={vi.fn()} onTest={vi.fn()} />);
+    await screen.findByRole("button", { name: /select provider/i });
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    await screen.findByText("Proxy");
+    fireEvent.click(screen.getByRole("button", { name: /edit provider/i }));
+    await screen.findByText("m-1");
+    expect(screen.getByLabelText("edit")).toBeTruthy();
+    expect(screen.getByLabelText("remove")).toBeTruthy();
+    expect(screen.getAllByText("m-1")).toHaveLength(1);
+  });
+
   it("delete custom: blocks when instances depend on it", async () => {
     vi.spyOn(cp, "listCustomProviders").mockResolvedValue([
       { id: "cp1", name: "Proxy", baseUrl: "https://p/v1", models: [], createdAt: 0, updatedAt: 0 },

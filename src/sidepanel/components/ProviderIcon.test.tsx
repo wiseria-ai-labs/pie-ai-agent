@@ -34,4 +34,12 @@ describe("ProviderIcon", () => {
     expect(screen.queryByTestId("provider-icon-img")).toBeNull();
     expect(screen.getByText("A")).toBeTruthy(); // "abc" → A
   });
+
+  // #3 family: custom refs are `custom:<uuid>` — without a display name the
+  // monogram showed the uuid's first hex char (a meaningless "5"/"0").
+  it("custom provider monogram uses the passed display name over the uuid", () => {
+    render(<ProviderIcon provider="custom:5f0c9a" size={22} name="proxy hub" />);
+    expect(screen.getByText("P")).toBeTruthy();
+    expect(screen.queryByText("5")).toBeNull();
+  });
 });

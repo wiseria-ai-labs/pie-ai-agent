@@ -171,6 +171,30 @@ export default function NewConfigWizard(props: Props) {
   const cpId = provider && provider !== DRAFT_CUSTOM_REF ? providerRefToId(provider) : null;
   // True while authoring a not-yet-saved custom provider: model edits stay local.
   const isDraft = provider === DRAFT_CUSTOM_REF;
+  // Existing custom provider: its entity models feed the EDITABLE custom
+  // section of the model list (ids + meta from the entity — pcmm is
+  // builtin-scoped and always empty here). Memoized on customProviders so the
+  // array identity only changes when the entity list actually refreshes; a
+  // fresh array per render would re-fire InstanceForm's merge effect with
+  // stale ids and resurrect a just-removed model.
+  const selectedCustom = useMemo(
+    () => (cpId ? customProviders.find((c) => c.id === cpId) : undefined),
+    [cpId, customProviders],
+  );
+  const entityModelIds = useMemo(
+    () => selectedCustom?.models.map((m) => m.id) ?? [],
+    [selectedCustom],
+  );
+  const entityModelMetas = useMemo<Record<string, StoredCustomModelMeta>>(
+    () =>
+      Object.fromEntries(
+        (selectedCustom?.models ?? []).map((m) => [
+          m.id,
+          { displayName: m.displayName, vision: m.vision, maxContextTokens: m.maxContextTokens },
+        ]),
+      ),
+    [selectedCustom],
+  );
   // Editing a custom provider that already has a config (#3): provider-level
   // edits (name/baseUrl/wire) are saved in place — no InstanceForm, since
   // creating a second config for the same provider would throw. Instance-level
@@ -403,8 +427,8 @@ export default function NewConfigWizard(props: Props) {
           mode="create"
           provider={provider}
           initialNickname={metaName}
-          initialCustomModels={isDraft ? draftModels : pool}
-          customModelMetas={isDraft ? draftMetas : metas}
+          initialCustomModels={isDraft ? draftModels : cpId ? entityModelIds : pool}
+          customModelMetas={isDraft ? draftMetas : cpId ? entityModelMetas : metas}
           fetchedModels={
             isDraft
               ? customFetched

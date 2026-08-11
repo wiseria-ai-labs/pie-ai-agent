@@ -20,9 +20,11 @@ import { getProviderMeta, resolveProviderMeta, resolveEndpointVariant } from "@/
 import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import {
   addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
-  CUSTOM_PREFIX, providerRefToId, listCustomProviders, getCustomProvider,
+  updateCustomProvider, CUSTOM_PREFIX, providerRefToId, listCustomProviders, getCustomProvider,
+  type StoredCustomProvider,
 } from "@/lib/custom-providers";
 import InstanceForm, { type InstanceFormPayload } from "../../InstanceForm";
+import CustomProviderFields from "../../CustomProviderFields";
 import InstancesList from "../../InstancesList";
 import NewConfigWizard from "../../NewConfigWizard";
 import type { ProviderTestOptions } from "../../NewConfigWizard";
@@ -42,7 +44,11 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
   const [providerPools, setProviderPools] = useState<Record<string, string[]>>({});
   // Per-provider custom model meta (vision, maxContextTokens) keyed by provider then modelId.
   const [providerMetas, setProviderMetas] = useState<Record<string, Record<string, StoredCustomModelMeta>>>({});
-  const [customProviderNames, setCustomProviderNames] = useState<Record<string, string>>({});
+  const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
+  // Draft of the expanded card's custom-provider entity fields (name/baseUrl/
+  // wire). Seeded on expand, saved via updateCustomProvider on the card's Save —
+  // baseUrl lives on the entity, never on the instance (invariant).
+  const [cpDraft, setCpDraft] = useState<{ name: string; baseUrl: string; wire?: "responses" } | null>(null);
 
   const reload = useCallback(async () => {
     const list = await listInstances();
@@ -56,11 +62,22 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
     const metas = await Promise.all(
       builtinProviders.map((p) => getProviderCustomModelMetas(p as BuiltinProvider).then((v) => [p, v] as const)),
     );
-    setProviderMetas(Object.fromEntries(metas));
     const customProviders = await listCustomProviders();
-    setCustomProviderNames(
-      Object.fromEntries(customProviders.map((cp) => [`${CUSTOM_PREFIX}${cp.id}`, cp.name])),
-    );
+    // Custom-provider model meta lives on the entity (pcmm stays builtin-only):
+    // it feeds the editable custom section of the edit card, refreshed on every
+    // reload so a just-edited model shows its new meta immediately.
+    setProviderMetas({
+      ...Object.fromEntries(metas),
+      ...Object.fromEntries(
+        customProviders.map((cp) => [
+          `${CUSTOM_PREFIX}${cp.id}`,
+          Object.fromEntries(
+            cp.models.map((m) => [m.id, { displayName: m.displayName, vision: m.vision, maxContextTokens: m.maxContextTokens }]),
+          ),
+        ]),
+      ),
+    });
+    setCustomProviders(customProviders);
   }, []);
 
   useEffect(() => {
@@ -94,6 +111,19 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
   }
 
   async function handleSaveEdit(id: string, payload: InstanceFormPayload) {
+    // Custom provider: persist the entity-level draft (name/baseUrl/wire) via
+    // updateCustomProvider — never as an instance field. canSaveGate already
+    // blocks Save while the draft is invalid; the trim/format check here is a
+    // belt against a stale gate.
+    const inst = instances.find((i) => i.id === id);
+    const cpId = inst ? providerRefToId(inst.provider) : null;
+    if (cpId && cpDraft && cpDraft.name.trim() && /^https?:\/\//.test(cpDraft.baseUrl.trim())) {
+      await updateCustomProvider(cpId, {
+        name: cpDraft.name.trim(),
+        baseUrl: cpDraft.baseUrl.trim(),
+        wire: cpDraft.wire,
+      });
+    }
     const patch: { apiKey?: string; endpointVariant: string | null; rpmLimit: number | null } = {
       // undefined = 用户选了默认端点 → null 显式清除存储字段
       endpointVariant: payload.endpointVariant ?? null,
@@ -223,31 +253,64 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
 
         <InstancesList
           instances={instances}
-          customProviderNames={customProviderNames}
+          customProviderNames={Object.fromEntries(customProviders.map((cp) => [`${CUSTOM_PREFIX}${cp.id}`, cp.name]))}
           expandedId={expandedId}
-          onToggleExpand={(id) => setExpandedId(expandedId === id ? null : id)}
+          onToggleExpand={(id) => {
+            const next = expandedId === id ? null : id;
+            setExpandedId(next);
+            // Seed the entity draft for the newly-expanded custom card (null
+            // for builtin / collapse) so edits start from the stored values.
+            const inst = next ? instances.find((i) => i.id === next) : undefined;
+            const cpId = inst ? providerRefToId(inst.provider) : null;
+            const cp = cpId ? customProviders.find((c) => c.id === cpId) : undefined;
+            setCpDraft(cp ? { name: cp.name, baseUrl: cp.baseUrl, wire: cp.wire } : null);
+          }}
           renderForm={(id) => {
             const inst = instances.find((i) => i.id === id)!;
             const result = testResult[id];
-            // Merge per-instance customModels (back-compat) with the
-            // per-provider sticky pool so newly-typed ids show up across
-            // instances of the same provider.
-            const pool = providerPools[inst.provider] ?? [];
-            const mergedCustomModels = Array.from(
-              new Set([...(inst.customModels ?? []), ...pool]),
-            );
             // Custom-provider models live on the provider entity; builtin
             // custom models live in the pcm pool + pcmm sidecar. The model
             // callbacks below route by provider type. `bp`/`cpId` are only
             // dereferenced on their matching branch, so the casts are safe.
             const isCustom = inst.provider.startsWith(CUSTOM_PREFIX);
+            // Merge per-instance customModels (back-compat) with the
+            // per-provider sticky pool so newly-typed ids show up across
+            // instances of the same provider. Custom providers also union the
+            // entity's model ids (= providerMetas keys) so an instance whose
+            // customModels drifted still shows every entity model as editable.
+            const pool = providerPools[inst.provider] ?? [];
+            const entityIds = isCustom ? Object.keys(providerMetas[inst.provider] ?? {}) : [];
+            const mergedCustomModels = Array.from(
+              new Set([...(inst.customModels ?? []), ...pool, ...entityIds]),
+            );
             const bp = inst.provider as BuiltinProvider;
             const cpId = providerRefToId(inst.provider);
+            // Entity fields (name/baseUrl/wire) are editable on the custom
+            // card, replacing the locked provider row — same semantics as the
+            // wizard's CustomProviderFields; saved with the card's Save button.
+            const cpDraftValid =
+              !!cpDraft && !!cpDraft.name.trim() && /^https?:\/\//.test(cpDraft.baseUrl.trim());
             return (
               <>
+                {isCustom && cpDraft && (
+                  <div className="px-3.5 pt-3.5">
+                    <CustomProviderFields
+                      name={cpDraft.name}
+                      baseUrl={cpDraft.baseUrl}
+                      wire={cpDraft.wire}
+                      onNameChange={(v) => setCpDraft((d) => (d ? { ...d, name: v } : d))}
+                      onBaseUrlChange={(v) => setCpDraft((d) => (d ? { ...d, baseUrl: v } : d))}
+                      onWireChange={(v) => setCpDraft((d) => (d ? { ...d, wire: v } : d))}
+                      onTest={() => {}}
+                      showTestButton={false}
+                    />
+                  </div>
+                )}
                 <InstanceForm
                   mode="edit"
                   provider={inst.provider}
+                  hideProviderField={isCustom && !!cpDraft}
+                  canSaveGate={!isCustom || !cpDraft || cpDraftValid}
                   initialNickname={inst.nickname}
                   initialEndpointVariant={inst.endpointVariant}
                   initialRpmLimit={inst.rpmLimit}
@@ -258,7 +321,15 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
                   maskedKey={maskKey(inst.apiKey)}
                   existingApiKey={inst.apiKey}
                   onSave={(p) => handleSaveEdit(id, p)}
-                  onTest={(p) => handleTest(id, inst.provider, p)}
+                  onTest={(p) =>
+                    // Probe rides the UNSAVED entity draft (baseUrl/name/wire)
+                    // like the wizard's test flow, so users can verify before Save.
+                    handleTest(id, inst.provider, p, isCustom && cpDraft ? {
+                      baseUrl: cpDraft.baseUrl.trim(),
+                      providerName: cpDraft.name.trim() || undefined,
+                      ...(cpDraft.wire && { wire: cpDraft.wire }),
+                    } : {})
+                  }
                   testing={!!testingIds[id]}
                   testStatus={result?.ok === true ? "success" : "idle"}
                   onDelete={() => handleDelete(id)}

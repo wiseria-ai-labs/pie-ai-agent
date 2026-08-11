@@ -44,7 +44,7 @@ export default function InstancesList(props: Props) {
               }}
               className="flex w-full cursor-pointer items-center gap-3 px-[15px] py-[15px] text-left hover:bg-field focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             >
-              <ProviderIcon provider={inst.provider} size={36} />
+              <ProviderIcon provider={inst.provider} size={36} name={displayName} />
               <div className="min-w-0 flex-1">
                 <div className="text-[14px] font-medium text-fg-1">
                   {displayName}
