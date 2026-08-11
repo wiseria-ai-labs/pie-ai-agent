@@ -17,10 +17,10 @@
     <a href="#安裝">安裝</a> ·
     <a href="#接入模型">接入模型</a> ·
     <a href="../../PRIVACY.md">隱私</a> ·
-    <a href="https://github.com/WiseriaAI/pie-ai-agent/releases">更新日誌</a> ·
+    <a href="https://github.com/wenkang-xie/pie-ai-agent/releases">更新日誌</a> ·
     <a href="../ROADMAP.md">路線圖</a> ·
     <a href="../ARCHITECTURE.md">架構</a> ·
-    <a href="https://wiseriaai.github.io/pie-ai-agent/">專案檔案</a>
+    <a href="https://wenkang-xie.github.io/pie-ai-agent/">專案檔案</a>
   </p>
 </div>
 
@@ -104,7 +104,7 @@ Pie**。這個選擇會被記住，之後點擊工具列圖示也會直接開啟
 
 適合離線或自管環境，裝的是同一份產物：
 
-1. 從 [Releases 頁面](https://github.com/WiseriaAI/pie-ai-agent/releases) 下載最新的 `pie-x.y.z.zip`
+1. 從 [Releases 頁面](https://github.com/wenkang-xie/pie-ai-agent/releases) 下載最新的 `pie-x.y.z.zip`
 2. 解壓到一個會長期保留的資料夾（Chrome 從這個資料夾載入 —— 別刪）
 3. 開啟 `chrome://extensions`，啟用 **開發人員模式**
 4. 點 **載入未封裝項目**，選擇該資料夾
@@ -117,7 +117,7 @@ Pie**。這個選擇會被記住，之後點擊工具列圖示也會直接開啟
 ### 方式三 —— 從原始碼建置
 
 ```bash
-git clone https://github.com/WiseriaAI/pie-ai-agent.git
+git clone https://github.com/wenkang-xie/pie-ai-agent.git
 cd Pie
 pnpm install
 pnpm build
@@ -132,7 +132,7 @@ pnpm build
 
 **在 Windows 上：**
 
-1. 從 [Releases 頁面](https://github.com/WiseriaAI/pie-ai-agent/releases) 下載最新的
+1. 從 [Releases 頁面](https://github.com/wenkang-xie/pie-ai-agent/releases) 下載最新的
    `pie-link-setup-<version>.exe`。
 2. 執行它。Windows SmartScreen 可能提示發行者無法辨識——首個版本未簽章，屬正常現象。
    點擊**其他資訊 → 仍要執行**。

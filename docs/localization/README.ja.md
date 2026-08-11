@@ -17,10 +17,10 @@
     <a href="#インストール">インストール</a> ·
     <a href="#モデルを接続する">モデルを接続</a> ·
     <a href="../../PRIVACY.md">プライバシー</a> ·
-    <a href="https://github.com/WiseriaAI/pie-ai-agent/releases">変更履歴</a> ·
+    <a href="https://github.com/wenkang-xie/pie-ai-agent/releases">変更履歴</a> ·
     <a href="../ROADMAP.md">ロードマップ</a> ·
     <a href="../ARCHITECTURE.md">アーキテクチャ</a> ·
-    <a href="https://wiseriaai.github.io/pie-ai-agent/">アーカイブ</a>
+    <a href="https://wenkang-xie.github.io/pie-ai-agent/">アーカイブ</a>
   </p>
 </div>
 
@@ -117,7 +117,7 @@ Brave など。
 
 オフラインや自己管理環境で、同じビルドをインストールする場合：
 
-1. [Releases ページ](https://github.com/WiseriaAI/pie-ai-agent/releases)から最新の `pie-x.y.z.zip` をダウンロード
+1. [Releases ページ](https://github.com/wenkang-xie/pie-ai-agent/releases)から最新の `pie-x.y.z.zip` をダウンロード
 2. 残しておくフォルダーに解凍します（Chrome はこのフォルダーから読み込みます —— 削除しないこと）
 3. `chrome://extensions` を開き、**デベロッパーモード**をオンにします
 4. **パッケージ化されていない拡張機能を読み込む**をクリックし、そのフォルダーを選びます
@@ -131,7 +131,7 @@ Brave など。
 ### 方法 3 —— ソースからビルド
 
 ```bash
-git clone https://github.com/WiseriaAI/pie-ai-agent.git
+git clone https://github.com/wenkang-xie/pie-ai-agent.git
 cd Pie
 pnpm install
 pnpm build
@@ -147,7 +147,7 @@ pnpm build
 
 **Windows の場合：**
 
-1. [Releases ページ](https://github.com/WiseriaAI/pie-ai-agent/releases) から最新の
+1. [Releases ページ](https://github.com/wenkang-xie/pie-ai-agent/releases) から最新の
    `pie-link-setup-<version>.exe` をダウンロードします。
 2. 実行します。Windows SmartScreen が発行元不明と警告することがあります——最初のリリースは
    未署名なので想定内です。**詳細情報 → 実行**をクリックします。
