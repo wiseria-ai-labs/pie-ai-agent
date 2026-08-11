@@ -1,6 +1,6 @@
 # Triage Labels（issue 状态机）
 
-`WiseriaAI/pie-ai-agent` 的 issue 用一套标签状态机管理任务推进。云端分诊 routine（claude.ai，cron 每 4h）按它归类、分级、定阶段；实现链（云端 Loop）只在下游状态上往前走。**它是「某任务现在走到哪」的唯一事实源** —— 只看 open issue，非 open 不管。
+`wenkang-xie/pie-ai-agent` 的 issue 用一套标签状态机管理任务推进。云端分诊 routine（claude.ai，cron 每 4h）按它归类、分级、定阶段；实现链（云端 Loop）只在下游状态上往前走。**它是「某任务现在走到哪」的唯一事实源** —— 只看 open issue，非 open 不管。
 
 ## 标签
 

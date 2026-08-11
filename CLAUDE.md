@@ -37,7 +37,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `pnpm test` / `pnpm test:watch` — vitest run
 - `pnpm typecheck` — `tsc --noEmit`（repo-wide 现已 0 错；任何新报错都是真实回归，必须修，别再当噪音忽略）
 - 提交前跑 `pnpm test`、`pnpm typecheck` 与 `pnpm build`（build-time invariants 在 `tool-names.ts`（每个 tool 必须声明 read/write class）/ `tools.ts`（R-iframe-1 write tool 必须 require frameId）会 throw）。注：`tsc` 能跑是靠 tsconfig 的 `ignoreDeprecations: "6.0"`（跨过 `baseUrl` TS5101 硬错）+ `src/global.d.ts` 引用 `chrome`/`vite/client` 类型；移除任一都会让 tsc 退回"哑门禁"
-- 远端 GH 操作前先 `gh auth switch --user WiseriaAI`；默认 active 账号 `wenkang-xie` 在 org 仓库无 admin scope（Pages API / repo settings 会 404）
+- 仓库住个人账号 `wenkang-xie/pie-ai-agent`（2026-08-10 WiseriaAI org 因滥用 Actions 被封后迁入）；默认 gh 账号 `wenkang-xie` 即 owner，远端 GH 操作无需切账号。GitHub Actions 只跑 CI/CD（build/test/release），**严禁挂业务定时任务**
 
 ## Development
 
@@ -122,7 +122,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 
 ### Issue tracker
 
-Issues live as GitHub issues in `WiseriaAI/pie-ai-agent`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues in `wenkang-xie/pie-ai-agent`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels（issue 状态机 = 任务的事实源）
 
@@ -170,6 +170,6 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 2. `prototype`（**可选**）— 仅当含状态机/数据模型/UI 方向这类不确定性时才造抛弃式原型，发现回流改 spec
 3. **落 issue（按 Issue 规范，不走 skill）** — 把定稿 spec 拆成 tracer-bullet 垂直切片，用 `gh` 手工建 issue（只写 what + 验收标准），照 Triage labels 打分类/分级。**设计已定，issue 直接打 `ready-for-implement`**：跳过 `need-design` / `need-confirm`（那两阶段是给未经设计的新需求分诊用的，不再过云端 routine）。实现 plan（→ `docs/plans/`）按需写，作为 issue 的实现参考。
 4. **交棒云端 Loop 实现** —— 链路到此为止，本地不接着一把梭：Loop 取 `ready-for-implement` → `agent-handling` → PR → 人 review/merge。
-   - 确需本地亲自实现时：逐 task TDD 实现 → 跑 `pnpm test` / `pnpm typecheck` / `pnpm build` 拿到证据再宣称完成 → `gh issue close`；收尾走 PR（main 受保护，`gh`，先 `gh auth switch --user WiseriaAI`）。⚠️ subagent cwd 不随 worktree 切换，派活 prompt 须强制 `cd <worktree 绝对路径>`。
+   - 确需本地亲自实现时：逐 task TDD 实现 → 跑 `pnpm test` / `pnpm typecheck` / `pnpm build` 拿到证据再宣称完成 → `gh issue close`；收尾走 PR（main 受保护，`gh`）。⚠️ subagent cwd 不随 worktree 切换，派活 prompt 须强制 `cd <worktree 绝对路径>`。
 
 **判据**：拿不准是不是「重点项目」→ 默认当轻量任务，落 issue 交云端。仪式是例外，不是 happy path。
