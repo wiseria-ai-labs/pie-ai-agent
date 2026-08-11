@@ -46,7 +46,10 @@ export default function ProviderModelList(props: Props) {
   );
   // Custom (editable): customModels not already shown as built-in.
   const custom = props.customModels.filter((id) => !seen.has(id));
-  const isLazy = registry.length === 0;
+  // Lazy fetch (未拉取/刷新 row) is a builtin-only affordance (openrouter):
+  // custom providers have no /v1/models refresh path wired, so rendering the
+  // row would show a dead button (#3).
+  const isLazy = !isCustomProvider && registry.length === 0;
 
   return (
     <div className="flex flex-col gap-1.5">

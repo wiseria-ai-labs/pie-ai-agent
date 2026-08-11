@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { _resetForTests } from "@/lib/idb/db";
 import { _resetKeyForTests } from "@/lib/crypto";
 import { getConfig } from "@/lib/idb/config-store";
-import { createInstance } from "@/lib/instances";
+import { createInstance, getInstance } from "@/lib/instances";
 import {
   saveCustomProvider,
   getCustomProvider,
@@ -13,6 +13,7 @@ import {
   updateCustomProvider,
   getInstancesUsingCustomProvider,
   deleteCustomProvider,
+  backfillCustomProviderInstanceModels,
   CUSTOM_PREFIX,
   type CustomModelMeta,
 } from "./custom-providers";
@@ -173,5 +174,70 @@ describe("instance reference checks (via listInstances)", () => {
     await expect(deleteCustomProvider(id)).rejects.toThrow(/still reference it/);
     // entity untouched
     expect(await getCustomProvider(id)).not.toBeNull();
+  });
+});
+
+// #3 — entity-model mutations must mirror the id list onto referencing
+// instances: ModelPicker/firstModelForProvider only read instance.customModels,
+// so an entity-only write left the model unselectable in the Composer.
+describe("entity-model ↔ instance.customModels dual-write (#3)", () => {
+  it("addCustomProviderModel appends the id to referencing instances", async () => {
+    const id = await saveCustomProvider({ name: "X", baseUrl: "https://x.ai/v1", models: [] });
+    const iid = await createInstance({ provider: `${CUSTOM_PREFIX}${id}`, nickname: "i", apiKey: "sk-1" });
+    const other = await createInstance({ provider: "openai", nickname: "o", apiKey: "sk-2" });
+
+    await addCustomProviderModel(id, meta("gpt-x"));
+
+    expect((await getInstance(iid))!.customModels).toEqual(["gpt-x"]);
+    // unrelated instance untouched
+    expect((await getInstance(other))!.customModels).toBeUndefined();
+  });
+
+  it("addCustomProviderModel heals an instance missing an id the entity already has", async () => {
+    // Pre-fix state: entity has the model, instance doesn't.
+    const id = await saveCustomProvider({ name: "X", baseUrl: "https://x.ai/v1", models: [meta("a")] });
+    const iid = await createInstance({ provider: `${CUSTOM_PREFIX}${id}`, nickname: "i", apiKey: "sk-1" });
+
+    await addCustomProviderModel(id, meta("a", { vision: true }));
+
+    // Entity meta not overwritten (idempotent), but the instance got the id.
+    expect((await getCustomProvider(id))!.models[0].vision).toBe(false);
+    expect((await getInstance(iid))!.customModels).toEqual(["a"]);
+  });
+
+  it("removeCustomProviderModel removes the id from referencing instances", async () => {
+    const id = await saveCustomProvider({ name: "X", baseUrl: "https://x.ai/v1", models: [] });
+    const iid = await createInstance({
+      provider: `${CUSTOM_PREFIX}${id}`,
+      nickname: "i",
+      apiKey: "sk-1",
+      customModels: ["a", "b"],
+    });
+
+    await removeCustomProviderModel(id, "a");
+
+    expect((await getInstance(iid))!.customModels).toEqual(["b"]);
+  });
+
+  it("backfill unions entity models into referencing instances (startup repair)", async () => {
+    const id = await saveCustomProvider({
+      name: "X",
+      baseUrl: "https://x.ai/v1",
+      models: [meta("a"), meta("b")],
+    });
+    const iid = await createInstance({
+      provider: `${CUSTOM_PREFIX}${id}`,
+      nickname: "i",
+      apiKey: "sk-1",
+      customModels: ["b", "legacy"],
+    });
+
+    await backfillCustomProviderInstanceModels();
+
+    // Existing ids (incl. instance-only legacy ids) preserved, missing entity ids appended.
+    expect((await getInstance(iid))!.customModels).toEqual(["b", "legacy", "a"]);
+    // Idempotent: second run writes nothing new.
+    await backfillCustomProviderInstanceModels();
+    expect((await getInstance(iid))!.customModels).toEqual(["b", "legacy", "a"]);
   });
 });

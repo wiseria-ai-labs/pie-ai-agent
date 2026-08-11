@@ -75,7 +75,20 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
   }, [openSubscribeNonce]);
 
   async function handleCreate(provider: ProviderRef, payload: InstanceFormPayload) {
-    await createInstance({ provider, ...payload });
+    // Custom provider: seed the instance's customModels from the entity's model
+    // list. ModelPicker / firstModelForProvider only read instance fields, so a
+    // config created for an entity that already has models (wizard edit mode, or
+    // re-configuring after forgetting a config) would otherwise start with an
+    // empty pick list (#3).
+    let customModels = payload.customModels;
+    const cpId = providerRefToId(provider);
+    if (cpId) {
+      const cp = await getCustomProvider(cpId);
+      if (cp) {
+        customModels = Array.from(new Set([...customModels, ...cp.models.map((m) => m.id)]));
+      }
+    }
+    await createInstance({ provider, ...payload, customModels });
     setShowWizard(false);
     await reload();
   }
@@ -192,7 +205,12 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
             existingProviderRefs={instances.map((i) => i.provider)}
             testing={!!testingIds["_new"]}
             testResult={testResult["_new"] ?? null}
-            onCancel={() => setShowWizard(false)}
+            onCancel={() => {
+              setShowWizard(false);
+              // 向导里可能就地编辑过自定义 provider（name/baseUrl）——关掉时
+              // 重读，让配置列表的 provider 名称即时同步。
+              void reload();
+            }}
             managedEntryNonce={openSubscribeNonce}
           />
         </Collapse>

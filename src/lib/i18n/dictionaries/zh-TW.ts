@@ -632,6 +632,7 @@ export const zhTWDict = {
     editProvider: "編輯 Provider",
     deleteProvider: "刪除 Provider",
     newCustomProvider: "+ 新建自訂 Provider",
+    configured: "已設定",
   },
   schedules: {
     // 頁面框架

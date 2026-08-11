@@ -11,6 +11,10 @@ interface Props {
   value: ProviderRef | null;
   builtinProviders: ProviderMeta[];
   customProviders: StoredCustomProvider[];
+  /** Refs that already have a config (#3): shown with a "configured" chip and
+   *  not selectable for a new config — but never hidden, so custom providers
+   *  keep their edit/delete entry after being configured. */
+  configuredRefs?: ProviderRef[];
   onSelect: (ref: ProviderRef) => void;
   onCreateCustom: () => void;
   onEditCustom: (cp: StoredCustomProvider) => void;
@@ -39,6 +43,8 @@ export default function ProviderDropdown(props: Props) {
     const found = props.builtinProviders.find((p) => p.id === props.value);
     return found ? providerDisplayName(found, t) : null;
   })();
+
+  const isConfigured = (ref: ProviderRef) => (props.configuredRefs ?? []).includes(ref);
 
   // Search filter — case-insensitive substring on name + baseUrl
   const q = query.trim().toLowerCase();
@@ -97,22 +103,28 @@ export default function ProviderDropdown(props: Props) {
                 <div className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
                   {t("providerDropdown.builtinGroup")}
                 </div>
-                {filteredBuiltins.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => {
-                      props.onSelect(p.id);
-                      setOpen(false);
-                    }}
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-field ${p.id === props.value ? "bg-accent-tint" : ""}`}
-                  >
-                    <ProviderIcon provider={p.id} size={18} className="text-fg-2" />
-                    <span className="text-fg-1">{providerDisplayName(p, t)}</span>
-                    <span className="ml-auto font-mono text-[10px] text-fg-3">
-                      {p.defaultBaseUrl.replace(/^https?:\/\//, "")}
-                    </span>
-                  </button>
-                ))}
+                {filteredBuiltins.map((p) => {
+                  const configured = isConfigured(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      disabled={configured}
+                      onClick={() => {
+                        if (configured) return;
+                        props.onSelect(p.id);
+                        setOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] ${configured ? "cursor-default opacity-60" : "hover:bg-field"} ${p.id === props.value ? "bg-accent-tint" : ""}`}
+                    >
+                      <ProviderIcon provider={p.id} size={18} className="text-fg-2" />
+                      <span className="text-fg-1">{providerDisplayName(p, t)}</span>
+                      {configured && <ConfiguredChip label={t("providerDropdown.configured")} />}
+                      <span className="ml-auto font-mono text-[10px] text-fg-3">
+                        {p.defaultBaseUrl.replace(/^https?:\/\//, "")}
+                      </span>
+                    </button>
+                  );
+                })}
               </>
             )}
 
@@ -124,20 +136,24 @@ export default function ProviderDropdown(props: Props) {
                 </div>
                 {filteredCustoms.map((cp) => {
                   const ref: ProviderRef = `${CUSTOM_PREFIX}${cp.id}`;
+                  const configured = isConfigured(ref);
                   return (
                     <div
                       key={cp.id}
                       className={`flex w-full items-center gap-2 px-3 py-2 text-[13px] hover:bg-field ${ref === props.value ? "bg-accent-tint" : ""}`}
                     >
                       <button
-                        className="flex flex-1 items-center gap-2 text-left"
+                        disabled={configured}
+                        className={`flex flex-1 items-center gap-2 text-left ${configured ? "cursor-default opacity-60" : ""}`}
                         onClick={() => {
+                          if (configured) return;
                           props.onSelect(ref);
                           setOpen(false);
                         }}
                       >
                         <ProviderIcon provider={ref} size={18} className="text-fg-2" />
                         <span className="text-fg-1">{cp.name}</span>
+                        {configured && <ConfiguredChip label={t("providerDropdown.configured")} />}
                         <span className="ml-auto font-mono text-[10px] text-fg-3">
                           {cp.baseUrl.replace(/^https?:\/\//, "")}
                         </span>
@@ -185,5 +201,13 @@ export default function ProviderDropdown(props: Props) {
           </div>
       </DropdownPanel>
     </div>
+  );
+}
+
+function ConfiguredChip({ label }: { label: string }) {
+  return (
+    <span className="shrink-0 rounded-[4px] border border-line px-[5px] py-px font-mono text-[9px] text-fg-3">
+      {label}
+    </span>
   );
 }

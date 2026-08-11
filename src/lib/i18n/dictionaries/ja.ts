@@ -631,6 +631,7 @@ export const jaDict = {
     editProvider: "プロバイダーを編集",
     deleteProvider: "プロバイダーを削除",
     newCustomProvider: "+ 新しいカスタムプロバイダー",
+    configured: "設定済み",
   },
   schedules: {
     // Page chrome

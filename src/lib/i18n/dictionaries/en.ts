@@ -636,6 +636,7 @@ export const enDict = {
     editProvider: "Edit provider",
     deleteProvider: "Delete provider",
     newCustomProvider: "+ New custom provider",
+    configured: "Configured",
   },
   schedules: {
     // Page chrome

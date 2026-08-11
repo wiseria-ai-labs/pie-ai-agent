@@ -632,6 +632,7 @@ export const zhCNDict = {
     editProvider: "编辑 Provider",
     deleteProvider: "删除 Provider",
     newCustomProvider: "+ 新建自定义 Provider",
+    configured: "已配置",
   },
   schedules: {
     // 页面框架
