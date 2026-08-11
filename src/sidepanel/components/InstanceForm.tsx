@@ -64,6 +64,10 @@ interface Props {
   /** When true, hides the built-in read-only provider field.
    *  Used by NewConfigWizard where provider is managed by ProviderDropdown above. */
   hideProviderField?: boolean;
+  /** Extra gate ANDed into canSave (default true). The Settings edit card uses
+   *  it to block Save/Test while the custom-provider entity fields rendered
+   *  above the form (name/baseUrl) are invalid. */
+  canSaveGate?: boolean;
   /** When true, drops the built-in px/py padding around the form fields.
    *  Used by NewConfigWizard whose container already pads — the default
    *  padding is for the Settings edit card (ModelsPage) host. */
@@ -126,7 +130,7 @@ export default function InstanceForm(props: Props) {
   const [replacing, setReplacing] = useState(props.mode === "create" || !props.existingApiKey);
 
   const requireApiKey = props.mode === "create" || replacing;
-  const canSave = !requireApiKey || apiKey.trim().length > 0;
+  const canSave = (!requireApiKey || apiKey.trim().length > 0) && (props.canSaveGate ?? true);
   const testing = props.testing === true;
   const testStatus = props.testStatus ?? "idle";
 
