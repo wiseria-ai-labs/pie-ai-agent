@@ -52,7 +52,7 @@ Pie 官方訂閱（可選）—— 不想折騰 key？用 Google 登入並訂閱
 • 唯一的例外是訂閱：聊天請求會經過 Pie 的服務（計費必需）—— 但仍然不收集任何產品埋點。
 • Pie 只在執行你交代的任務時才讀取頁面，並把頁面上的一切都當作不可信內容，這樣惡意頁面也無法騙它去做你沒要求的事。
 
-完整政策：https://github.com/wenkang-xie/pie-ai-agent/blob/main/PRIVACY.md
+完整政策：https://github.com/wiseria-ai-labs/pie-ai-agent/blob/main/PRIVACY.md
 
 ■ 怎麼開始
 
@@ -64,7 +64,7 @@ Pie 官方訂閱（可選）—— 不想折騰 key？用 Google 登入並訂閱
 
 ■ 開源
 
-Apache 2.0 授權，原始碼與問題回報：https://github.com/wenkang-xie/pie-ai-agent
+Apache 2.0 授權，原始碼與問題回報：https://github.com/wiseria-ai-labs/pie-ai-agent
 官方網站：https://www.pie.chat
 ```
 
@@ -105,7 +105,7 @@ Pie 公式サブスクリプション（任意）—— key の管理をした�
 • 唯一の例外がサブスクリプションです。チャットのリクエストは Pie のサービスを経由します（課金に必要なため）—— それでも製品テレメトリは一切収集しません。
 • Pie がページを読むのは、あなたが指示した作業を実行するときだけ。ページ上の内容はすべて信頼できないものとして扱うので、悪意のあるページに指示されて勝手な動作をすることはありません。
 
-プライバシーポリシー全文：https://github.com/wenkang-xie/pie-ai-agent/blob/main/PRIVACY.md
+プライバシーポリシー全文：https://github.com/wiseria-ai-labs/pie-ai-agent/blob/main/PRIVACY.md
 
 ■ 使い方
 
@@ -117,7 +117,7 @@ Pie 公式サブスクリプション（任意）—— key の管理をした�
 
 ■ オープンソース
 
-Apache 2.0 ライセンス。ソースコードと不具合報告：https://github.com/wenkang-xie/pie-ai-agent
+Apache 2.0 ライセンス。ソースコードと不具合報告：https://github.com/wiseria-ai-labs/pie-ai-agent
 公式サイト：https://www.pie.chat
 ```
 
@@ -158,7 +158,7 @@ Suscripción oficial de Pie (opcional). ¿No quieres lidiar con claves? Inicia s
 • La única excepción es la suscripción: las solicitudes del chat pasan por el servicio de Pie (es necesario para la facturación), pero aun así no se recopila telemetría del producto.
 • Pie solo lee la página cuando ejecuta la tarea que le pediste, y trata todo lo que hay en ella como contenido no confiable, de modo que una página maliciosa no pueda engañarlo para hacer algo que tú no pediste.
 
-Política completa: https://github.com/wenkang-xie/pie-ai-agent/blob/main/PRIVACY.md
+Política completa: https://github.com/wiseria-ai-labs/pie-ai-agent/blob/main/PRIVACY.md
 
 ■ Cómo empezar
 
@@ -170,7 +170,7 @@ Requiere un navegador con panel lateral. Si el tuyo acepta la API del panel late
 
 ■ Código abierto
 
-Licencia Apache 2.0. Código fuente y reporte de errores: https://github.com/wenkang-xie/pie-ai-agent
+Licencia Apache 2.0. Código fuente y reporte de errores: https://github.com/wiseria-ai-labs/pie-ai-agent
 Sitio oficial: https://www.pie.chat
 ```
 
@@ -211,7 +211,7 @@ Assinatura oficial do Pie (opcional). Não quer gerenciar chaves? Entre com o Go
 • A única exceção é a assinatura: as solicitações do chat passam pelo serviço do Pie (necessário para a cobrança), mas ainda assim nenhuma telemetria de produto é coletada.
 • O Pie só lê a página quando executa a tarefa que você pediu, e trata tudo o que está nela como conteúdo não confiável, para que uma página maliciosa não consiga enganá-lo e fazer algo que você não pediu.
 
-Política completa: https://github.com/wenkang-xie/pie-ai-agent/blob/main/PRIVACY.md
+Política completa: https://github.com/wiseria-ai-labs/pie-ai-agent/blob/main/PRIVACY.md
 
 ■ Como começar
 
@@ -223,7 +223,7 @@ Requer um navegador com painel lateral. Se o seu aceita a API do painel lateral 
 
 ■ Código aberto
 
-Licença Apache 2.0. Código-fonte e relato de bugs: https://github.com/wenkang-xie/pie-ai-agent
+Licença Apache 2.0. Código-fonte e relato de bugs: https://github.com/wiseria-ai-labs/pie-ai-agent
 Site oficial: https://www.pie.chat
 ```
 

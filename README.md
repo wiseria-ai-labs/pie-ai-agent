@@ -17,10 +17,10 @@
     <a href="#install">Install</a> ·
     <a href="#connect-a-model">Connect a model</a> ·
     <a href="PRIVACY.md">Privacy</a> ·
-    <a href="https://github.com/wenkang-xie/pie-ai-agent/releases">Changelog</a> ·
+    <a href="https://github.com/wiseria-ai-labs/pie-ai-agent/releases">Changelog</a> ·
     <a href="docs/ROADMAP.md">Roadmap</a> ·
     <a href="docs/ARCHITECTURE.md">Architecture</a> ·
-    <a href="https://wenkang-xie.github.io/pie-ai-agent/">Archive</a>
+    <a href="https://wiseria-ai-labs.github.io/pie-ai-agent/">Archive</a>
   </p>
 </div>
 
@@ -121,7 +121,7 @@ Install from the **[Chrome Web Store](https://chromewebstore.google.com/detail/p
 
 For an offline or self-managed install of the same build:
 
-1. Download the latest `pie-x.y.z.zip` from the [Releases page](https://github.com/wenkang-xie/pie-ai-agent/releases)
+1. Download the latest `pie-x.y.z.zip` from the [Releases page](https://github.com/wiseria-ai-labs/pie-ai-agent/releases)
 2. Unzip it to a folder you'll keep (Chrome loads from this folder — don't delete it)
 3. Open `chrome://extensions`, turn on **Developer mode**
 4. Click **Load unpacked** and select the folder
@@ -135,7 +135,7 @@ For an offline or self-managed install of the same build:
 ### Option 3 — Build from source
 
 ```bash
-git clone https://github.com/wenkang-xie/pie-ai-agent.git
+git clone https://github.com/wiseria-ai-labs/pie-ai-agent.git
 cd Pie
 pnpm install
 pnpm build
@@ -152,7 +152,7 @@ Claude Code, Codex, and Cursor.
 **On Windows:**
 
 1. Download the latest `pie-link-setup-<version>.exe` from the
-   [Releases page](https://github.com/wenkang-xie/pie-ai-agent/releases).
+   [Releases page](https://github.com/wiseria-ai-labs/pie-ai-agent/releases).
 2. Run it. Windows SmartScreen may warn that the publisher is unrecognized — the
    first release is unsigned, so this is expected. Click **More info → Run
    anyway**.
