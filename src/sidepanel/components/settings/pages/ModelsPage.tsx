@@ -56,8 +56,21 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
     const metas = await Promise.all(
       builtinProviders.map((p) => getProviderCustomModelMetas(p as BuiltinProvider).then((v) => [p, v] as const)),
     );
-    setProviderMetas(Object.fromEntries(metas));
     const customProviders = await listCustomProviders();
+    // Custom-provider model meta lives on the entity (pcmm stays builtin-only):
+    // it feeds the editable custom section of the edit card, refreshed on every
+    // reload so a just-edited model shows its new meta immediately.
+    setProviderMetas({
+      ...Object.fromEntries(metas),
+      ...Object.fromEntries(
+        customProviders.map((cp) => [
+          `${CUSTOM_PREFIX}${cp.id}`,
+          Object.fromEntries(
+            cp.models.map((m) => [m.id, { displayName: m.displayName, vision: m.vision, maxContextTokens: m.maxContextTokens }]),
+          ),
+        ]),
+      ),
+    });
     setCustomProviderNames(
       Object.fromEntries(customProviders.map((cp) => [`${CUSTOM_PREFIX}${cp.id}`, cp.name])),
     );
@@ -229,18 +242,21 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
           renderForm={(id) => {
             const inst = instances.find((i) => i.id === id)!;
             const result = testResult[id];
-            // Merge per-instance customModels (back-compat) with the
-            // per-provider sticky pool so newly-typed ids show up across
-            // instances of the same provider.
-            const pool = providerPools[inst.provider] ?? [];
-            const mergedCustomModels = Array.from(
-              new Set([...(inst.customModels ?? []), ...pool]),
-            );
             // Custom-provider models live on the provider entity; builtin
             // custom models live in the pcm pool + pcmm sidecar. The model
             // callbacks below route by provider type. `bp`/`cpId` are only
             // dereferenced on their matching branch, so the casts are safe.
             const isCustom = inst.provider.startsWith(CUSTOM_PREFIX);
+            // Merge per-instance customModels (back-compat) with the
+            // per-provider sticky pool so newly-typed ids show up across
+            // instances of the same provider. Custom providers also union the
+            // entity's model ids (= providerMetas keys) so an instance whose
+            // customModels drifted still shows every entity model as editable.
+            const pool = providerPools[inst.provider] ?? [];
+            const entityIds = isCustom ? Object.keys(providerMetas[inst.provider] ?? {}) : [];
+            const mergedCustomModels = Array.from(
+              new Set([...(inst.customModels ?? []), ...pool, ...entityIds]),
+            );
             const bp = inst.provider as BuiltinProvider;
             const cpId = providerRefToId(inst.provider);
             return (

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import type { ProviderRef, BuiltinProvider, ModelMeta } from "@/lib/model-router";
 import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { useProviderMeta } from "@/sidepanel/hooks/useProviderMeta";
@@ -78,10 +78,6 @@ export default function InstanceForm(props: Props) {
   const syncMeta = props.provider.startsWith(CUSTOM_PREFIX) ? undefined : getProviderMeta(props.provider as BuiltinProvider);
   const meta = resolvedMeta ?? syncMeta;
   const isCustomProvider = props.provider.startsWith(CUSTOM_PREFIX);
-  const effectiveFetchedModels = useMemo(() => {
-    if (isCustomProvider && meta?.models) return meta.models;
-    return props.fetchedModels;
-  }, [isCustomProvider, meta?.models, props.fetchedModels]);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   // Locally-tracked custom models. Initialised from initialCustomModels but
@@ -277,7 +273,7 @@ export default function InstanceForm(props: Props) {
           endpointVariant={endpointVariant}
           customModels={customModels}
           customModelMetas={props.customModelMetas}
-          fetchedModels={effectiveFetchedModels}
+          fetchedModels={props.fetchedModels}
           fetchedAt={props.fetchedAt}
           isFetching={props.isFetching}
           onAddCustom={(id, meta) => {

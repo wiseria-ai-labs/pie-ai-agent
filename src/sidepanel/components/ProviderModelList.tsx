@@ -39,10 +39,13 @@ export default function ProviderModelList(props: Props) {
   const fetched = variant?.models ? [] : (props.fetchedModels ?? []);
   const [editing, setEditing] = useState<Partial<ModelMetaDraft> | null>(null);
 
-  // Built-in (read-only): registry → fetched, dedup.
+  // Built-in (read-only): registry → fetched, dedup. For custom providers the
+  // editable custom rows win instead (#3): entity models must never be shadowed
+  // into the read-only section by a same-id /v1/models fetch result.
+  const customSet = isCustomProvider ? new Set(props.customModels) : null;
   const seen = new Set<string>();
   const builtin: ModelMeta[] = [...registry, ...fetched].filter((m) =>
-    seen.has(m.id) ? false : (seen.add(m.id), true),
+    seen.has(m.id) || customSet?.has(m.id) ? false : (seen.add(m.id), true),
   );
   // Custom (editable): customModels not already shown as built-in.
   const custom = props.customModels.filter((id) => !seen.has(id));

@@ -1,5 +1,7 @@
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { saveCustomProvider, CUSTOM_PREFIX } from "@/lib/custom-providers";
+import { _resetForTests } from "@/lib/idb/db";
 import InstanceForm from "./InstanceForm";
 
 // ManagedAccountPanel (rendered by the managed branch when existingApiKey is set)
@@ -324,6 +326,72 @@ describe("endpoint variant switch", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave.mock.calls[0]![0].endpointVariant).toBeUndefined();
+  });
+});
+
+// #3 residue: entity models of a custom provider used to be injected into the
+// read-only fetched slot once useProviderMeta resolved, occupying the dedup set
+// so the same ids in customModels never reached the editable section — the
+// ✎ edit / × remove buttons never rendered on the Settings edit card.
+describe("custom provider entity models are editable", () => {
+  beforeEach(async () => {
+    await _resetForTests();
+  });
+
+  async function renderEditCard(callbacks: {
+    onUpdate?: (id: string, meta: unknown) => void;
+    onRemove?: (id: string) => void;
+  } = {}) {
+    const cpId = await saveCustomProvider({
+      name: "Proxy",
+      baseUrl: "https://proxy.example/v1",
+      models: [{ id: "m-1", vision: true, tools: true, maxContextTokens: 128_000 }],
+    });
+    render(
+      <InstanceForm
+        mode="edit"
+        provider={`${CUSTOM_PREFIX}${cpId}`}
+        initialNickname="Proxy"
+        existingApiKey="sk-x"
+        initialCustomModels={["m-1"]}
+        customModelMetas={{ "m-1": { vision: true, maxContextTokens: 128_000 } }}
+        onSave={() => {}}
+        onTest={() => {}}
+        onUpdateCustomModelMeta={callbacks.onUpdate}
+        onRemoveCustomModel={callbacks.onRemove}
+      />,
+    );
+    // The pre-fix bug only manifested AFTER meta resolution flipped the row into
+    // the read-only section — wait for the provider field to show the entity name.
+    await screen.findByText("Proxy");
+  }
+
+  it("edit mode renders ✎/× on the entity model row, exactly once (not read-only)", async () => {
+    await renderEditCard({ onUpdate: () => {}, onRemove: () => {} });
+    expect(screen.getByLabelText("edit")).toBeTruthy();
+    expect(screen.getByLabelText("remove")).toBeTruthy();
+    // The entity model must not ALSO render as a duplicate read-only row.
+    expect(screen.getAllByText("m-1")).toHaveLength(1);
+  });
+
+  it("✎ opens the meta editor prefilled from entity meta; Save fires onUpdateCustomModelMeta", async () => {
+    const onUpdate = vi.fn();
+    await renderEditCard({ onUpdate });
+    fireEvent.click(screen.getByLabelText("edit"));
+    const overlay = screen.getByDisplayValue("m-1").closest(".fixed") as HTMLElement;
+    fireEvent.click(within(overlay).getByText("Save", { selector: "button" }));
+    expect(onUpdate).toHaveBeenCalledWith(
+      "m-1",
+      expect.objectContaining({ vision: true, maxContextTokens: 128_000 }),
+    );
+  });
+
+  it("× fires onRemoveCustomModel and drops the row", async () => {
+    const onRemove = vi.fn();
+    await renderEditCard({ onRemove });
+    fireEvent.click(screen.getByLabelText("remove"));
+    expect(onRemove).toHaveBeenCalledWith("m-1");
+    expect(screen.queryByText("m-1")).toBeNull();
   });
 });
 

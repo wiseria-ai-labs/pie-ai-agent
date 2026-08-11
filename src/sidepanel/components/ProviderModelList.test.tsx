@@ -76,6 +76,29 @@ describe("ProviderModelList", () => {
     expect(screen.queryByText(/not fetched/i)).toBeNull();
   });
 
+  // #3 residue: for custom providers the editable custom rows win — a fetched
+  // /v1/models listing with the same id must not shadow them into the
+  // read-only section (which would hide the ✎/× buttons).
+  it("custom provider: same-id fetched models do not shadow editable rows", () => {
+    render(
+      <ProviderModelList
+        provider="custom:cp1"
+        customModels={["m-1"]}
+        fetchedModels={[
+          { id: "m-1", vision: false, tools: true, maxContextTokens: 8_000 },
+          { id: "m-2", vision: false, tools: true, maxContextTokens: 8_000 },
+        ]}
+        onUpdateCustomMeta={() => {}}
+        onRemoveCustom={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("edit")).toBeTruthy();
+    expect(screen.getByLabelText("remove")).toBeTruthy();
+    expect(screen.getAllByText("m-1")).toHaveLength(1);
+    // Non-overlapping fetched entries still render (read-only).
+    expect(screen.getByText("m-2")).toBeTruthy();
+  });
+
   it("still shows the refresh row for the lazy builtin (openrouter)", () => {
     render(<ProviderModelList provider="openrouter" customModels={[]} onRefresh={() => {}} />);
     expect(screen.getByText(/refresh/i)).toBeTruthy();
