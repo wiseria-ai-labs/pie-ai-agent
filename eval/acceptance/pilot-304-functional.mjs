@@ -18,7 +18,7 @@ const TAG = process.env.PIE_ACCEPT_TAG || 'pr304';
 const PROFILE = `${BASE}/profile-${TAG}`;
 const REPORT = `${BASE}/report`;
 const NM_PATH = `${PROFILE}/NativeMessagingHosts/ai.wiseria.pie.json`;
-const PKG_URL = 'https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg';
+const PKG_URL = 'https://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest/download/pie-link.pkg';
 const results = [];
 let shot = 0;
 

@@ -7,8 +7,8 @@ import { queryBridgeStatus, type BridgeStatus } from "../bridge-status";
 // Pie Link 安装包稳定 URL（release latest）——升级卡下载按钮直链（升级用户已知 Pie Link 是什么，直链摩擦最小）。
 // #403：按平台分流——macOS 下 .pkg、Windows 下 setup.exe。旧代码只有 mac .pkg，Windows 用户点
 // 升级卡会下到错的包。两个都是 /releases/latest/download/ 稳定别名（release.yml 上传固定名 asset）。
-const MAC_PKG_URL = "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg";
-const WIN_SETUP_URL = "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link-setup.exe";
+const MAC_PKG_URL = "https://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest/download/pie-link.pkg";
+const WIN_SETUP_URL = "https://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest/download/pie-link-setup.exe";
 // 运行平台判定（同步，够用）：Windows 走 setup.exe，其余（mac）走 pkg。
 const IS_WINDOWS = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 const INSTALLER_URL = IS_WINDOWS ? WIN_SETUP_URL : MAC_PKG_URL;

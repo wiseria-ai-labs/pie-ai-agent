@@ -144,7 +144,7 @@ describe("LocalBridgeSection — daemon version handshake (Slice 3)", () => {
     render(<LocalBridgeSection />);
     const link = await screen.findByRole("link", { name: /update|升级|更新/i });
     expect(link.getAttribute("href")).toBe(
-      "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg",
+      "https://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest/download/pie-link.pkg",
     );
   });
 
@@ -165,7 +165,7 @@ describe("LocalBridgeSection — daemon version handshake (Slice 3)", () => {
     render(<LocalBridgeSection />);
     const link = await screen.findByRole("link", { name: /update|升级|更新/i });
     expect(link.getAttribute("href")).toBe(
-      "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link.pkg",
+      "https://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest/download/pie-link.pkg",
     );
     // 升级卡强文案（incompatible），区别于软提示
     expect(screen.getByText(/is incompatible with this extension/i)).toBeTruthy();

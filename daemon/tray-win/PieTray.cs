@@ -414,8 +414,8 @@ namespace PieLink
     {
         // 与 daemon/src/update.ts 同一固定 URL + 同一白名单前缀（下载物 URL 必须以它开头）。
         internal const string LatestJsonUrl =
-            "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link-latest.json";
-        internal const string ReleasesUrlPrefix = "https://github.com/WiseriaAI/pie-ai-agent/releases/";
+            "https://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest/download/pie-link-latest.json";
+        internal const string ReleasesUrlPrefix = "https://github.com/wiseria-ai-labs/pie-ai-agent/releases/";
 
         private static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
 

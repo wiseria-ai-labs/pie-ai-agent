@@ -27,7 +27,7 @@ describe("isRestrictedScheduleUrl", () => {
     // Ordinary https pages → NOT restricted
     ["https://example.com", false],
     ["https://news.ycombinator.com/news", false],
-    ["https://github.com/WiseriaAI/pie-ai-agent", false],
+    ["https://github.com/wiseria-ai-labs/pie-ai-agent", false],
     // chrome.google.com on a NON-webstore path is a normal Google page
     ["https://chrome.google.com/", false],
   ])("isRestrictedScheduleUrl(%s) === %s", (url, expected) => {
