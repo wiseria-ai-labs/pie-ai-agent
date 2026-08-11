@@ -26,10 +26,10 @@ import type { PieLinkLatest, CheckUpdateResult, ApplyUpdateResult } from "../../
 
 /** latest.json 固定 URL（release asset，靠 /releases/latest/download/ 稳定命中）。 */
 export const LATEST_JSON_URL =
-  "https://github.com/WiseriaAI/pie-ai-agent/releases/latest/download/pie-link-latest.json";
+  "https://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest/download/pie-link-latest.json";
 
 /** 更新物 URL 白名单前缀。json 里的 url 必须以此开头，否则拒绝下载（防篡改指向任意主机）。 */
-export const RELEASES_URL_PREFIX = "https://github.com/WiseriaAI/pie-ai-agent/releases/";
+export const RELEASES_URL_PREFIX = "https://github.com/wiseria-ai-labs/pie-ai-agent/releases/";
 
 /**
  * 期望的 Apple Developer Team ID —— **编译期由 `--define process.env.PIE_TEAM_ID` 注入**

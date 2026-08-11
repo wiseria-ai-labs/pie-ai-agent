@@ -41,8 +41,8 @@ test("parseLatest: 合法结构通过，畸形即抛", () => {
 test("isAllowedUpdateUrl: 只放行 releases 前缀", () => {
   expect(isAllowedUpdateUrl(goodUrl)).toBe(true);
   expect(isAllowedUpdateUrl("https://evil.example.com/pie.zip")).toBe(false);
-  expect(isAllowedUpdateUrl("https://github.com/WiseriaAI/pie-ai-agent/raw/main/x")).toBe(false);
-  expect(isAllowedUpdateUrl("http://github.com/WiseriaAI/pie-ai-agent/releases/x")).toBe(false); // 非 https
+  expect(isAllowedUpdateUrl("https://github.com/wiseria-ai-labs/pie-ai-agent/raw/main/x")).toBe(false);
+  expect(isAllowedUpdateUrl("http://github.com/wiseria-ai-labs/pie-ai-agent/releases/x")).toBe(false); // 非 https
 });
 
 test("parseTeamId: 从 codesign -dv 输出解 TeamIdentifier", () => {

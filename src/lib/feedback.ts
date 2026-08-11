@@ -5,7 +5,7 @@
 
 import type { DisplayMessage } from "@/types/messages";
 
-export const GITHUB_REPO = "WiseriaAI/pie-ai-agent";
+export const GITHUB_REPO = "wiseria-ai-labs/pie-ai-agent";
 
 export const FEEDBACK_EMAIL = "feedback@pie.chat";
 

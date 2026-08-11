@@ -4,7 +4,7 @@ import { useT, type DictKey } from "@/lib/i18n";
 // 「关于」子页：hero（大图标 + 版本徽章 + tagline）+ 外链分组。取代设置根页的
 // About footer；链接全部新开 tab。
 
-const REPO = "https://github.com/WiseriaAI/pie-ai-agent";
+const REPO = "https://github.com/wiseria-ai-labs/pie-ai-agent";
 
 const LINKS: { key: DictKey; href: string; trailing?: string }[] = [
   { key: "settings.about.website", href: "https://www.pie.chat/" },

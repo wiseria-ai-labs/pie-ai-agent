@@ -10,7 +10,7 @@ export async function* streamChat(
 ): AsyncGenerator<StreamEvent> {
   yield* streamChatOpenAICompat(config, messages, signal, tools, {
     customHeaders: () => ({
-      "HTTP-Referer": "https://github.com/WiseriaAI/pie-ai-agent",
+      "HTTP-Referer": "https://github.com/wiseria-ai-labs/pie-ai-agent",
       "X-OpenRouter-Title": "Pie",
     }),
     // OpenRouter 的 Usage Accounting 是 opt-in:不带这个字段时它只回
