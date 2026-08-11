@@ -1,6 +1,6 @@
 # Triage Labels（issue 状态机）
 
-`wenkang-xie/pie-ai-agent` 的 issue 用一套标签状态机管理任务推进。云端分诊 routine（claude.ai，cron 每 4h）按它归类、分级、定阶段；实现链（云端 Loop）只在下游状态上往前走。**它是「某任务现在走到哪」的唯一事实源** —— 只看 open issue，非 open 不管。
+`wiseria-ai-labs/pie-ai-agent` 的 issue 用一套标签状态机管理任务推进。云端分诊 routine（claude.ai，cron 每 4h）按它归类、分级、定阶段；实现链（云端 Loop）只在下游状态上往前走。**它是「某任务现在走到哪」的唯一事实源** —— 只看 open issue，非 open 不管。
 
 ## 标签
 
@@ -45,7 +45,7 @@ PR 提出 ─► Step4 复审（代码质量 / 设计符合 / 单测 + 跑 gate�
             └─ 过·无需真机    → Step4 直接合并 main（仅纯文档/注释/测试/CI，或纯重构且单测足够）
 ```
 
-- Reviewer 与 implementer 是**同一个云端身份**（`wenkang-xie`/write），GitHub 禁止自审自批，故 review 意见走普通评论、**状态机靠标签驱动**（不靠 GitHub 原生 review 状态）；main 分支保护已放宽为「需 PR、0 approve」，该身份遂可直接合并（squash）。详见下「云端执行约束」。
+- Reviewer 与 implementer 是**同一个云端身份**（`wenkang-xie`，org owner），GitHub 禁止自审自批，故 review 意见走普通评论、**状态机靠标签驱动**（不靠 GitHub 原生 review 状态）；main 分支保护已放宽为「需 PR、0 approve」，该身份遂可直接合并（squash）。详见下「云端执行约束」。
 - `need-to-solve` 的 PR 由 **implementer loop（Step3）优先接走**（先收尾在途 PR，再实现新 issue），不单设 PR Solver。
 - `human-approved` 只由**人**打（真机验收通过的信号），Reviewer 见到即合并。
 - 自动合并走**保守白名单**：仅纯文档 / 注释 / 纯测试 / CI 配置、或纯内部重构且单测充分才直接合；碰 `src/**` 运行时代码一律 `need-human-test`。
@@ -72,6 +72,6 @@ PR 提出 ─► Step4 复审（代码质量 / 设计符合 / 单测 + 跑 gate�
 云端 routine 环境**没有 `gh` CLI**，GitHub API 操作全部走 **github MCP**（`mcp__github__*`，deferred 工具，限本仓库）；git 本地操作（pull/branch/commit/push）走 Bash + git（local_proxy）。由此几条硬约束：
 
 - **不能创建标签**（MCP 无 create-label）→ 所有标签必须人工预建好，routine 只用不建。
-- **单一身份 `wenkang-xie`（write，非 admin）**——claude.ai 连接器是单 OAuth，无法多账号；同一身份不能自审自批自家 PR，故 review 走评论 + 标签驱动。
+- **单一身份 `wenkang-xie`（org owner）**——claude.ai 连接器是单 OAuth，无法多账号；同一身份不能自审自批自家 PR，故 review 走评论 + 标签驱动。
 - **main 分支保护已放宽** `required_approving_review_count` → 0（保留「需 PR」、`enforce_admins=false`），让该 write 身份能合并自己的 PR（Step4 `merge_pull_request` squash）。
 - 各 routine 的 `allowed_tools` 必须**显式列出**用到的 `mcp__github__*`，否则 cron 中无人批准会被拦。

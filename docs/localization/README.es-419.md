@@ -17,10 +17,10 @@
     <a href="#instalación">Instalación</a> ·
     <a href="#conectar-un-modelo">Conectar un modelo</a> ·
     <a href="../../PRIVACY.md">Privacidad</a> ·
-    <a href="https://github.com/wenkang-xie/pie-ai-agent/releases">Changelog</a> ·
+    <a href="https://github.com/wiseria-ai-labs/pie-ai-agent/releases">Changelog</a> ·
     <a href="../ROADMAP.md">Roadmap</a> ·
     <a href="../ARCHITECTURE.md">Arquitectura</a> ·
-    <a href="https://wenkang-xie.github.io/pie-ai-agent/">Archivo</a>
+    <a href="https://wiseria-ai-labs.github.io/pie-ai-agent/">Archivo</a>
   </p>
 </div>
 
@@ -122,7 +122,7 @@ Instala desde **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-
 
 Para una instalación offline o autogestionada de la misma versión:
 
-1. Descarga el `pie-x.y.z.zip` más reciente desde la [página de Releases](https://github.com/wenkang-xie/pie-ai-agent/releases)
+1. Descarga el `pie-x.y.z.zip` más reciente desde la [página de Releases](https://github.com/wiseria-ai-labs/pie-ai-agent/releases)
 2. Descomprímelo en una carpeta que vayas a conservar (Chrome carga desde ella — no la borres)
 3. Abre `chrome://extensions` y activa el **Modo de desarrollador**
 4. Haz clic en **Cargar descomprimida** y selecciona la carpeta
@@ -136,7 +136,7 @@ Para una instalación offline o autogestionada de la misma versión:
 ### Opción 3 — Compilar desde el código fuente
 
 ```bash
-git clone https://github.com/wenkang-xie/pie-ai-agent.git
+git clone https://github.com/wiseria-ai-labs/pie-ai-agent.git
 cd Pie
 pnpm install
 pnpm build
@@ -153,7 +153,7 @@ programación con IA como Claude Code, Codex y Cursor.
 **En Windows:**
 
 1. Descarga el `pie-link-setup-<version>.exe` más reciente desde la
-   [página de Releases](https://github.com/wenkang-xie/pie-ai-agent/releases).
+   [página de Releases](https://github.com/wiseria-ai-labs/pie-ai-agent/releases).
 2. Ejecútalo. Windows SmartScreen puede advertir que el editor no se reconoce —la
    primera versión no está firmada, así que es lo esperado—. Haz clic en **Más
    información → Ejecutar de todas formas**.

@@ -37,7 +37,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 - `pnpm test` / `pnpm test:watch` — vitest run
 - `pnpm typecheck` — `tsc --noEmit`（repo-wide 现已 0 错；任何新报错都是真实回归，必须修，别再当噪音忽略）
 - 提交前跑 `pnpm test`、`pnpm typecheck` 与 `pnpm build`（build-time invariants 在 `tool-names.ts`（每个 tool 必须声明 read/write class）/ `tools.ts`（R-iframe-1 write tool 必须 require frameId）会 throw）。注：`tsc` 能跑是靠 tsconfig 的 `ignoreDeprecations: "6.0"`（跨过 `baseUrl` TS5101 硬错）+ `src/global.d.ts` 引用 `chrome`/`vite/client` 类型；移除任一都会让 tsc 退回"哑门禁"
-- 仓库住个人账号 `wenkang-xie/pie-ai-agent`（2026-08-10 WiseriaAI org 因滥用 Actions 被封后迁入）；默认 gh 账号 `wenkang-xie` 即 owner，远端 GH 操作无需切账号。GitHub Actions 只跑 CI/CD（build/test/release），**严禁挂业务定时任务**
+- 仓库住 org `wiseria-ai-labs/pie-ai-agent`（2026-08-10 WiseriaAI org 因滥用 Actions 被封，经个人账号中转后于 2026-08-11 迁入新 org）；默认 gh 账号 `wenkang-xie` 是 org owner，远端 GH 操作无需切账号。GitHub Actions 只跑 CI/CD（build/test/release），**严禁挂业务定时任务**
 
 ## Development
 
@@ -109,7 +109,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - `docs/release-notes/` — 用户可见 changelog
 - `docs/localization/` — 本地化资产：README 多语言翻译（`README.<locale>.md`，如 `README.zh-CN.md` / `README.zh-TW.md` / `README.es-419.md` / `README.ja.md` / `README.pt-BR.md`）+ glossary / launch-pack / qa-checklist。**根目录只留英文 `README.md`**（GitHub 仓库首页只认根 README）；翻译版全部住这里。各翻译版顶部语言切换器互链：英文指 `../../README.md`，同目录兄弟用裸 `README.<locale>.md`，根目录文件（PRIVACY/CHANGELOG/LICENSE）用 `../../`，`docs/` 下文件用 `../`。新增一门语言 = 在此加一份 `README.<locale>.md` + 同步所有切换器（含根 README）
 - `docs/design.md` — 早期 Phase 0–3 设计构想（历史档案）
-- `docs/archive/index.html` — 项目档案知识库（单文件，vanilla JS / 零依赖）；编辑 `archiveData` 数组 → push 到 main → `.github/workflows/deploy-archive-pages.yml` 自动部署到 https://wenkang-xie.github.io/pie-ai-agent/ ；Pages source = GitHub Actions，仅上传 `docs/archive/`，其他 docs/ 不进 Pages
+- `docs/archive/index.html` — 项目档案知识库（单文件，vanilla JS / 零依赖）；编辑 `archiveData` 数组 → push 到 main → `.github/workflows/deploy-archive-pages.yml` 自动部署到 https://wiseria-ai-labs.github.io/pie-ai-agent/ ；Pages source = GitHub Actions，仅上传 `docs/archive/`，其他 docs/ 不进 Pages
 
 ### Convention：spec / plan 输出位置
 
@@ -122,7 +122,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 
 ### Issue tracker
 
-Issues live as GitHub issues in `wenkang-xie/pie-ai-agent`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues in `wiseria-ai-labs/pie-ai-agent`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels（issue 状态机 = 任务的事实源）
 

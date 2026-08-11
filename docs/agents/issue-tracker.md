@@ -13,7 +13,7 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
-> Repo-specific note: 仓库住个人账号 `wenkang-xie/pie-ai-agent`（2026-08 起，原 WiseriaAI org 已被封）；默认 gh 账号 `wenkang-xie` 即 owner，无需 `gh auth switch`。
+> Repo-specific note: 仓库住 org `wiseria-ai-labs/pie-ai-agent`（2026-08 起，原 WiseriaAI org 已被封）；默认 gh 账号 `wenkang-xie` 是 org owner，无需 `gh auth switch`。
 
 ## When a skill says "publish to the issue tracker"
 

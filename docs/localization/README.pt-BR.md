@@ -17,10 +17,10 @@
     <a href="#instalação">Instalação</a> ·
     <a href="#conectar-um-modelo">Conectar um modelo</a> ·
     <a href="../../PRIVACY.md">Privacidade</a> ·
-    <a href="https://github.com/wenkang-xie/pie-ai-agent/releases">Changelog</a> ·
+    <a href="https://github.com/wiseria-ai-labs/pie-ai-agent/releases">Changelog</a> ·
     <a href="../ROADMAP.md">Roadmap</a> ·
     <a href="../ARCHITECTURE.md">Arquitetura</a> ·
-    <a href="https://wenkang-xie.github.io/pie-ai-agent/">Arquivo</a>
+    <a href="https://wiseria-ai-labs.github.io/pie-ai-agent/">Arquivo</a>
   </p>
 </div>
 
@@ -124,7 +124,7 @@ Instale pela **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%
 
 Para uma instalação offline ou autogerenciada da mesma versão:
 
-1. Baixe o `pie-x.y.z.zip` mais recente na [página de Releases](https://github.com/wenkang-xie/pie-ai-agent/releases)
+1. Baixe o `pie-x.y.z.zip` mais recente na [página de Releases](https://github.com/wiseria-ai-labs/pie-ai-agent/releases)
 2. Descompacte em uma pasta que você vai manter (o Chrome carrega a partir dela — não apague)
 3. Abra `chrome://extensions` e ative o **Modo do desenvolvedor**
 4. Clique em **Carregar sem compactação** e selecione a pasta
@@ -138,7 +138,7 @@ Para uma instalação offline ou autogerenciada da mesma versão:
 ### Opção 3 — Compilar a partir do código-fonte
 
 ```bash
-git clone https://github.com/wenkang-xie/pie-ai-agent.git
+git clone https://github.com/wiseria-ai-labs/pie-ai-agent.git
 cd Pie
 pnpm install
 pnpm build
@@ -155,7 +155,7 @@ programação com IA como Claude Code, Codex e Cursor.
 **No Windows:**
 
 1. Baixe o `pie-link-setup-<version>.exe` mais recente na
-   [página de Releases](https://github.com/wenkang-xie/pie-ai-agent/releases).
+   [página de Releases](https://github.com/wiseria-ai-labs/pie-ai-agent/releases).
 2. Execute-o. O Windows SmartScreen pode avisar que o editor não é reconhecido — a
    primeira versão não é assinada, então isso é esperado. Clique em **Mais informações →
    Executar assim mesmo**.
