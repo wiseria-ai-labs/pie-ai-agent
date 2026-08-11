@@ -180,7 +180,7 @@ export default function ModelPicker(props: Props) {
         className="flex items-center gap-1.5 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
         aria-label={current ? `${providerName(current, t)} ${props.currentModel ?? ""}` : t("modelPicker.none")}
       >
-        {current && <ProviderIcon provider={current.provider} size={16} className="text-accent" />}
+        {current && <ProviderIcon provider={current.provider} size={16} className="text-accent" name={providerName(current, t)} />}
         <span className="font-mono">
           {current ? `${providerName(current, t)} · ${displayModel(current, props.currentModel)}` : t("modelPicker.none")}
         </span>
@@ -217,7 +217,7 @@ export default function ModelPicker(props: Props) {
                     onClick={() => toggleProvider(inst)}
                     className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-field"
                   >
-                    <ProviderIcon provider={inst.provider} size={22} className={isCurrentProvider ? "text-accent" : "text-fg-2"} />
+                    <ProviderIcon provider={inst.provider} size={22} className={isCurrentProvider ? "text-accent" : "text-fg-2"} name={providerName(inst, t)} />
                     <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-fg-1">{providerName(inst, t)}</span>
                     {!isExpanded && isCurrentProvider && props.currentModel && (
                       <span className="font-mono text-[10px] text-accent">{displayModel(inst, props.currentModel)}</span>

@@ -116,6 +116,24 @@ export async function updateCustomProvider(
     updatedAt: Date.now(),
   };
   await setConfig(ENTITY_KEY(id), next);
+  if (patch.name !== undefined && patch.name !== stored.name) {
+    await syncInstancesNickname(id, patch.name);
+  }
+}
+
+/** A custom-provider instance's nickname is seeded from the entity name at
+ *  create time and is not independently editable in the UI — but ModelPicker
+ *  renders it as the provider name. Renames must therefore mirror onto every
+ *  referencing instance or the picker shows the old name forever (#3 family).
+ *  Idempotent: only writes on drift. */
+async function syncInstancesNickname(cpId: string, name: string): Promise<void> {
+  const ref = `${CUSTOM_PREFIX}${cpId}`;
+  const insts = await listInstances();
+  for (const inst of insts) {
+    if (inst.provider !== ref) continue;
+    if (inst.nickname === name) continue;
+    await updateInstance(inst.id, { nickname: name });
+  }
 }
 
 /** ModelPicker / firstModelForProvider only read `instance.customModels` —
@@ -180,23 +198,26 @@ export async function removeCustomProviderModel(id: string, modelId: string): Pr
   await syncInstancesCustomModels(id, (models) => models.filter((m) => m !== modelId));
 }
 
-/** Startup repair (#3): union each custom provider's entity model ids into the
- *  customModels of every instance referencing it. Pre-dual-write versions
- *  persisted Settings-added models on the entity only, leaving existing
- *  instances with an empty pick list. Idempotent and cheap (writes only on
- *  drift), so it runs on every boot without a sentinel; errors are swallowed —
- *  a failed repair must not block startup. */
-export async function backfillCustomProviderInstanceModels(): Promise<void> {
+/** Startup repair (#3): reconcile every referencing instance with its custom
+ *  provider entity — union the entity model ids into instance.customModels
+ *  (pre-dual-write versions persisted Settings-added models on the entity
+ *  only) and overwrite drifted nicknames with the entity name (pre-mirror
+ *  renames froze the create-time copy that ModelPicker renders). Idempotent
+ *  and cheap (writes only on drift), so it runs on every boot without a
+ *  sentinel; errors are swallowed — a failed repair must not block startup. */
+export async function backfillCustomProviderInstances(): Promise<void> {
   try {
     const cps = await listCustomProviders();
     for (const cp of cps) {
-      if (cp.models.length === 0) continue;
-      const ids = cp.models.map((m) => m.id);
-      await syncInstancesCustomModels(cp.id, (models) => {
-        const merged = [...models];
-        for (const mid of ids) if (!merged.includes(mid)) merged.push(mid);
-        return merged;
-      });
+      if (cp.models.length > 0) {
+        const ids = cp.models.map((m) => m.id);
+        await syncInstancesCustomModels(cp.id, (models) => {
+          const merged = [...models];
+          for (const mid of ids) if (!merged.includes(mid)) merged.push(mid);
+          return merged;
+        });
+      }
+      await syncInstancesNickname(cp.id, cp.name);
     }
   } catch {
     // Non-fatal: the dual-write path still heals on the next model edit.

@@ -72,7 +72,7 @@ export default function ProviderDropdown(props: Props) {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 rounded-[10px] border border-line bg-field px-3 py-2.5 text-left text-[13px] text-fg-1"
       >
-        {props.value && <ProviderIcon provider={props.value} size={16} className="text-fg-1" />}
+        {props.value && <ProviderIcon provider={props.value} size={16} className="text-fg-1" name={selectedName ?? undefined} />}
         <span>{selectedName ?? t("providerDropdown.selectProvider")}</span>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="ml-auto text-fg-3" style={{ transform: open ? "rotate(180deg)" : "none" }}>
           <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
@@ -151,7 +151,7 @@ export default function ProviderDropdown(props: Props) {
                           setOpen(false);
                         }}
                       >
-                        <ProviderIcon provider={ref} size={18} className="text-fg-2" />
+                        <ProviderIcon provider={ref} size={18} className="text-fg-2" name={cp.name} />
                         <span className="text-fg-1">{cp.name}</span>
                         {configured && <ConfiguredChip label={t("providerDropdown.configured")} />}
                         <span className="ml-auto font-mono text-[10px] text-fg-3">
