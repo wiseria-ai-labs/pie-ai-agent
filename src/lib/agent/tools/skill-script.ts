@@ -24,6 +24,25 @@ export interface SkillRunConfirmRequest {
   args: string[];
 }
 
+/**
+ * per session × per skill 的运行确认闭包工厂（ADR 0007）。组合三件事：查本会话对该 skill
+ * 的批准记录（命中即短路放行、**不弹卡**）→ 未命中弹确认卡 → 仅批准时落 session 持久记录。
+ * 提出成纯函数是为了可单测（loop.ts 里以 `sessionId` + `requestFromPanel` 绑定注入）——
+ * 已批准 skill 的二次调用不得再触达 panel。
+ */
+export function makeSessionSkillConfirm(deps: {
+  isApproved: (skillId: string) => Promise<boolean>;
+  requestConfirm: (p: SkillRunConfirmRequest) => Promise<boolean>;
+  record: (skillId: string) => Promise<void>;
+}): (p: SkillRunConfirmRequest) => Promise<boolean> {
+  return async (p) => {
+    if (await deps.isApproved(p.skillId)) return true;
+    const approved = await deps.requestConfirm(p);
+    if (approved) await deps.record(p.skillId);
+    return approved;
+  };
+}
+
 export interface SkillScriptDeps {
   /** 真源查询：只有 disk 来源的 skill 有可执行脚本（走 daemon）；builtin/idb 无脚本。 */
   getSource: () => SkillSource;
@@ -245,8 +264,8 @@ export function buildReadSkillOutputTool(deps: ReadSkillOutputDeps): Tool {
       const a = (args ?? {}) as { path?: unknown; offset?: unknown };
       if (typeof a.path !== "string" || !a.path)
         return { success: false, error: "read_skill_output requires path" };
-      if (a.offset !== undefined && (typeof a.offset !== "number" || !Number.isFinite(a.offset) || a.offset < 0))
-        return { success: false, error: "read_skill_output offset must be a non-negative number" };
+      if (a.offset !== undefined && (typeof a.offset !== "number" || !Number.isInteger(a.offset) || a.offset < 0))
+        return { success: false, error: "read_skill_output offset must be a non-negative integer" };
       if (!ctx.sessionId)
         return { success: false, error: "read_skill_output requires an active session." };
       const offset = typeof a.offset === "number" ? a.offset : 0;

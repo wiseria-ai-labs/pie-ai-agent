@@ -312,7 +312,7 @@ USE WHEN:
   // SP-1 — Skill access tools: use_skill + read_skill_file (see tools/skill-access.ts)
   ...SKILL_ACCESS_TOOLS,
   // run_skill_script moved to per-run assembly in loop.ts (Slice 3 Task 5) —
-  // its disk branch needs sessionId to open a skill-grant panel-request, and
+  // its disk branch needs sessionId to open a skill-run-confirm panel-request, and
   // ToolHandlerContext carries no sessionId (same reason mouse/keyboard tools
   // are assembled per-run instead of living in this static array).
 

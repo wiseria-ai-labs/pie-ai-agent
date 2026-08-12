@@ -3,6 +3,7 @@ import {
   buildRunSkillScriptTool,
   buildReadSkillOutputTool,
   buildSkillOutputObservation,
+  makeSessionSkillConfirm,
   type SkillScriptDeps,
   type SkillRunConfirmRequest,
 } from "./skill-script";
@@ -282,6 +283,50 @@ describe("run_skill_script — 运行确认层（ADR 0007 skill-run-confirm）",
     expect(calls[0]).toEqual({ name: "disk-tool", entry: "scripts/run.sh", args: [], sessionId: SID });
     expect("grantApproved" in calls[0]).toBe(false);
     expect("approvedEnvelopeHash" in calls[0]).toBe(false);
+  });
+});
+
+// ── ADR 0007 — per session × per skill 运行确认闭包（loop.ts 用它绑定 sessionId）──
+describe("makeSessionSkillConfirm", () => {
+  const req: SkillRunConfirmRequest = {
+    skillId: "video-parser",
+    skillName: "Video Parser",
+    description: "d",
+    entry: "scripts/run.sh",
+    args: ["https://x/v"],
+  };
+
+  it("未批准 → 弹卡；批准 → 落记录并放行", async () => {
+    const isApproved = vi.fn(async () => false);
+    const requestConfirm = vi.fn(async () => true);
+    const record = vi.fn(async () => {});
+    const confirm = makeSessionSkillConfirm({ isApproved, requestConfirm, record });
+
+    expect(await confirm(req)).toBe(true);
+    expect(requestConfirm).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith("video-parser");
+  });
+
+  it("已批准 skill 的二次调用 → 直接放行，panel 不被触达、不重复落记录", async () => {
+    const isApproved = vi.fn(async () => true);
+    const requestConfirm = vi.fn(async () => true);
+    const record = vi.fn(async () => {});
+    const confirm = makeSessionSkillConfirm({ isApproved, requestConfirm, record });
+
+    expect(await confirm(req)).toBe(true);
+    expect(requestConfirm).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("确认被拒 → 返回 false，不落记录", async () => {
+    const isApproved = vi.fn(async () => false);
+    const requestConfirm = vi.fn(async () => false);
+    const record = vi.fn(async () => {});
+    const confirm = makeSessionSkillConfirm({ isApproved, requestConfirm, record });
+
+    expect(await confirm(req)).toBe(false);
+    expect(requestConfirm).toHaveBeenCalledTimes(1);
+    expect(record).not.toHaveBeenCalled();
   });
 });
 

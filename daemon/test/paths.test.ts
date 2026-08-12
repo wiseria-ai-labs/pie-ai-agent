@@ -5,7 +5,6 @@ import { paths, computePaths, assertSessionId, sessionWorkspace, PIPE_NAME } fro
 test("skill_fs paths sit under ~/.pie", () => {
   expect(paths.binDir).toBe(join(paths.pieDir, "bin"));
   expect(paths.skillsDir).toBe(join(paths.pieDir, "skills"));
-  expect(paths.grantsPath).toBe(join(paths.pieDir, "grants.json"));
   expect(paths.auditPath).toBe(join(paths.pieDir, "logs", "audit.jsonl"));
   expect(paths.sessionsDir).toBe(join(paths.pieDir, "sessions"));
 });
@@ -22,7 +21,6 @@ test("computePaths(darwin): ~/.pie + unix socket file, isPipe=false", () => {
   expect(p.skillsDir).toBe("/Users/me/.pie/skills");
   expect(p.agentsSkillsDir).toBe("/Users/me/.agents/skills");
   expect(p.sessionsDir).toBe("/Users/me/.pie/sessions");
-  expect(p.grantsPath).toBe("/Users/me/.pie/grants.json");
   expect(p.auditPath).toBe("/Users/me/.pie/logs/audit.jsonl");
   expect(p.logsDir).toBe("/Users/me/.pie/logs");
   expect(p.handoffsDir).toBe("/Users/me/pie-handoffs");
@@ -38,9 +36,8 @@ test("computePaths(win32): %USERPROFILE%\\.pie + named pipe, isPipe=true", () =>
   expect(p.skillsDir).toBe(win32.join("C:\\Users\\me", ".pie", "skills"));
   expect(p.agentsSkillsDir).toBe(win32.join("C:\\Users\\me", ".agents", "skills"));
   expect(p.sessionsDir).toBe(win32.join("C:\\Users\\me", ".pie", "sessions"));
-  expect(p.grantsPath).toBe(win32.join("C:\\Users\\me", ".pie", "grants.json"));
   expect(p.auditPath).toBe(win32.join("C:\\Users\\me", ".pie", "logs", "audit.jsonl"));
-  // 结构与 mac 同构，只是分隔符/根不同：目录名 sessions/skills/grants.json/logs 不变
+  // 结构与 mac 同构，只是分隔符/根不同：目录名 sessions/skills/logs 不变
   expect(p.pieDir.endsWith("\\.pie")).toBe(true);
   expect(p.ipcPath.startsWith("\\\\.\\pipe\\")).toBe(true);
 });

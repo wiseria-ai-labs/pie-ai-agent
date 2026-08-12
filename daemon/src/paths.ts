@@ -28,7 +28,6 @@ export interface Paths {
   agentsSkillsDir: string;
   /** per-session 产物根：脚本 cwd + 唯一可写区（除声明过的 extraWrites）住在这里下面。 */
   sessionsDir: string;
-  grantsPath: string;
   auditPath: string;
 }
 
@@ -37,7 +36,7 @@ export interface Paths {
  * - mac/linux：`~/.pie/...`，IPC = `~/.pie/daemon.sock`（unix domain socket 文件）。
  * - win32：`%USERPROFILE%\.pie\...`，IPC = `\\.\pipe\ai.wiseria.pie`（named pipe，无磁盘文件）。
  *
- * 目录结构（sessions/skills/grants.json/logs）跨平台不变，只是分隔符与根随平台切换。
+ * 目录结构（sessions/skills/logs）跨平台不变，只是分隔符与根随平台切换。
  * 测试可显式传 platform + home（+ 对应的 path 实现）在 mac 上覆盖 win32 形状。
  */
 export function computePaths(
@@ -59,7 +58,6 @@ export function computePaths(
     skillsDir: p.join(pieDir, "skills"),
     agentsSkillsDir: p.join(home, ".agents", "skills"),
     sessionsDir: p.join(pieDir, "sessions"),
-    grantsPath: p.join(pieDir, "grants.json"),
     auditPath: p.join(pieDir, "logs", "audit.jsonl"),
   };
 }

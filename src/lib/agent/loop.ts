@@ -52,7 +52,7 @@ import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
 import { createExtractRecordsTool } from "./tools/page-atlas";
-import { buildRunSkillScriptTool, buildReadSkillOutputTool } from "./tools/skill-script";
+import { buildRunSkillScriptTool, buildReadSkillOutputTool, makeSessionSkillConfirm } from "./tools/skill-script";
 import {
   saveRecords as svcSaveRecords,
   updateNotes as svcUpdateNotes,
@@ -1993,12 +1993,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // ADR 0007：运行确认（取代 grant 信封）。查本会话对该 skill 的批准记录，
         // 未批准则弹确认卡；批准后记进 session 持久状态（本会话内不再重弹）。批准信号
         // 由 panel 直达 SW，不进 tool schema——LLM 不能自批。
-        confirmSkillRun: async (p) => {
-          if (await isSkillApprovedInSession(sessionId, p.skillId)) return true;
-          const approved = await requestFromPanel(sessionId, "skill-run-confirm", p);
-          if (approved) await recordSkillApproval(sessionId, p.skillId);
-          return approved;
-        },
+        confirmSkillRun: makeSessionSkillConfirm({
+          isApproved: (skillId) => isSkillApprovedInSession(sessionId, skillId),
+          requestConfirm: (p) => requestFromPanel(sessionId, "skill-run-confirm", p),
+          record: (skillId) => recordSkillApproval(sessionId, skillId),
+        }),
         // #330 — daemon-off 时 declares-no-scripts 报错追加 Pie Link 开启引导。
         isBridgeReady,
       });

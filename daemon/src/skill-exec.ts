@@ -5,7 +5,7 @@ import { paths, sessionWorkspace } from "./paths";
 import { log } from "./log";
 import { assertSkillName, listSkills, resolveSkillRoot, defaultRoots } from "./skill-store";
 import type { SkillRoots } from "./skill-store";
-import { getUserPath } from "./agents";
+import { getCachedUserPath } from "./agents";
 import { appendAudit } from "./audit";
 import { beginSkillRun, endSkillRun } from "./status";
 import { realSkillSandbox, checkWindowsSandboxReady } from "./skill-sandbox";
@@ -41,7 +41,8 @@ const ENV_PASSTHROUGH_KEYS = ["HOME", "TMPDIR", "LANG", "USER", "SHELL"] as cons
  * 其余（各类 token / api key / 云厂商凭据）全擦。PATH 用 daemon 的 login-shell
  * 解析版（launchd 裸 PATH 看不见 homebrew 的 yt-dlp/ffmpeg）。extra 是调用方注入的
  * PIE_ 前缀变量与 BUN_BE_BUN，最后覆盖（不被白名单里的同名键顶掉）。
- * opts 供单测注入 path/env，产品调用走 getUserPath() + process.env。
+ * opts 供单测注入 path/env，产品调用走 getCachedUserPath() + process.env
+ * （热路径，login-shell PATH 探测在 daemon 生命周期内缓存一次）。
  */
 export function buildSandboxEnv(
   extra: Record<string, string>,
@@ -49,7 +50,7 @@ export function buildSandboxEnv(
 ): Record<string, string> {
   const src = opts.env ?? process.env;
   const out: Record<string, string> = {};
-  const path = opts.path ?? getUserPath();
+  const path = opts.path ?? getCachedUserPath();
   if (path) out.PATH = path;
   for (const k of ENV_PASSTHROUGH_KEYS) {
     const v = src[k];
