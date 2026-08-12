@@ -1,5 +1,7 @@
 # Local Daemon Bridge：授权账本归 daemon 持有，不归扩展
 
+> **⚠️ Superseded by [ADR 0007](0007-skill-confirm-in-agent-layer-supersedes-grant-ledger.md)**（2026-08-12）：grant 信封与授权账本整体废除，skill 脚本授权移回 agent 确认层（会话内记住，无持久层）。本文仅存档。
+
 分级授权（spec §6）里，用户批准一次本地动作后要「记住」以免重复弹卡。这个持久 grant 存哪：扩展的 IndexedDB，还是 daemon 的本地文件？批准动作发生在**扩展**（侧栏 HITL 卡，用户在浏览器里点「允许」），但**强制点**（该不该真跑这个 skill 脚本 / 调这个 MCP 工具）在 **daemon**——它才是有文件系统 / 网络 / 子进程可达的那一侧。
 
 **决定**：
