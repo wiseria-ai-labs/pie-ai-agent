@@ -10,14 +10,18 @@ import type {
   ReadSessionFileResult,
 } from "@/types/local-bridge";
 
-/** skill-grant 授权卡 payload：daemon SkillAuthPayload 的展开（卡片按行渲染）。 */
-export interface SkillGrantRequest {
+/** skill 运行确认卡 payload（ADR 0007）：用户看得到这次要跑哪个 skill 的哪个脚本、
+ *  带什么参数。批准粒度 = per session × per skill（同会话再调同一 skill 不重弹）。 */
+export interface SkillRunConfirmRequest {
+  /** skill id（= 目录名；确认记录以它为键） */
+  skillId: string;
+  /** 展示名（skill 的 frontmatter name / 目录名） */
   skillName: string;
-  displayName?: string;
   description: string;
-  scripts: string[];
-  network: string[];
-  write: string[];
+  /** 本次要执行的脚本入口 */
+  entry: string;
+  /** 本次的 CLI 参数全文（含视频 URL 等，用户看得到这次要干什么） */
+  args: string[];
 }
 
 export interface SkillScriptDeps {
@@ -25,8 +29,13 @@ export interface SkillScriptDeps {
   getSource: () => SkillSource;
   /** 磁盘 skill 特权脚本执行器：走本地 daemon 的 OS 沙箱。 */
   runOnDaemon: (p: RunSkillScriptParams) => Promise<RunSkillScriptOutcome>;
-  /** HITL 授权卡：展示信封原文，用户批/拒。panel 不在（headless/已关）时 reject。 */
-  requestGrant: (p: SkillGrantRequest) => Promise<boolean>;
+  /**
+   * 运行确认（ADR 0007，取代 grant 信封）：查本会话对该 skill 的批准记录，未批准则弹
+   * 确认卡；批准 → 记进 session 持久状态并返回 true，拒绝 → false。panel 不在
+   * （headless / 已关）时 reject。**LLM 不可自批**：批准信号由 panel 直达 SW，不进 tool
+   * schema，故 run_skill_script 的参数里没有任何「已批准」字段可被 LLM 注入。
+   */
+  confirmSkillRun: (p: SkillRunConfirmRequest) => Promise<boolean>;
   /**
    * #330 — 本地桥连接状态。daemon-off 时磁盘 skill 根本没加载（脚本执行链路断），
    * 「declares no scripts」报错要追加一句开启 Pie Link 的引导，把「本就无脚本」与
@@ -97,7 +106,7 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
       "script's process.argv, the script prints its result to stdout (returned to you), and any files it " +
       "writes into its working directory become session products that you can read back with " +
       "read_skill_output. A returned or exported value is discarded — only stdout and written files " +
-      "survive. The first run of an unapproved skill pauses for the user to approve it on an authorization " +
+      "survive. The first run of a skill in a session pauses for the user to approve it on a confirmation " +
       "card. You cannot supply code — only scripts declared by the installed skill package can run.",
     parameters: {
       type: "object",
@@ -168,55 +177,33 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
         };
       }
       const finalArgs = argv ?? [];
-      let outcome = await deps.runOnDaemon({ name: a.skillId, entry, args: finalArgs, sessionId });
-      if (!outcome.ok && outcome.needsAuth) {
-        const auth = outcome.auth;
-        if (!auth) {
-          return {
-            success: false,
-            error:
-              "authorization_required: this skill needs user approval, but the connected Pie " +
-              "daemon is too old to describe what it would grant. Ask the user to update the Pie daemon.",
-          };
-        }
-        let approved = false;
-        try {
-          approved = await deps.requestGrant({
-            skillName: auth.skillName,
-            displayName: auth.displayName,
-            description: auth.description,
-            scripts: auth.envelope.runnableScripts,
-            network: auth.envelope.allowedDomains,
-            write: auth.envelope.extraWrites,
-          });
-        } catch {
-          return {
-            success: false,
-            error:
-              "authorization_required: no user present to approve (sidepanel closed or headless run).",
-          };
-        }
-        if (!approved) return { success: false, error: "User declined skill authorization." };
-        outcome = await deps.runOnDaemon({
-          name: a.skillId,
+
+      // 运行确认（ADR 0007）先于执行：SW 查本会话对该 skill 的批准记录，未批准则弹确认卡。
+      // 批准信号由 panel 直达 SW，不进 tool schema——LLM 不能自批（旧的
+      // grantApproved/approvedEnvelopeHash 参数注入路径随信封一起删除）。
+      let approved = false;
+      try {
+        approved = await deps.confirmSkillRun({
+          skillId: a.skillId,
+          skillName: skillEntry.name,
+          description: skillEntry.description,
           entry,
           args: finalArgs,
-          sessionId,
-          grantApproved: true,
-          approvedEnvelopeHash: auth.envelopeHash,
         });
-        if (!outcome.ok && outcome.needsAuth) {
-          return {
-            success: false,
-            error:
-              "Skill declarations changed while awaiting approval — call run_skill_script again.",
-          };
-        }
+      } catch {
+        return {
+          success: false,
+          error:
+            "authorization_required: no user present to approve (sidepanel closed or headless run).",
+        };
       }
+      if (!approved) return { success: false, error: "User declined skill authorization." };
+
+      const outcome = await deps.runOnDaemon({ name: a.skillId, entry, args: finalArgs, sessionId });
       if (outcome.ok) {
         return { success: true, observation: buildSkillOutputObservation(outcome.result) };
       }
-      return { success: false, error: `run_skill_script failed: ${(outcome as { error: string }).error}` };
+      return { success: false, error: `run_skill_script failed: ${outcome.error}` };
     },
   };
 }
@@ -227,13 +214,16 @@ export interface ReadSkillOutputDeps {
 }
 
 /** read_skill_output：读回 run_skill_script 写进 session workspace 的产物文件。
- *  read-class（tool-names.ts）。内容是脚本产物 → 不可信，包 <untrusted_skill_content>。 */
+ *  read-class（tool-names.ts）。内容是脚本产物 → 不可信，包 <untrusted_skill_content>。
+ *  D8：单次上限 256K 字符（daemon 侧截断），超限时 observation 提示用 offset 续读。 */
 export function buildReadSkillOutputTool(deps: ReadSkillOutputDeps): Tool {
   return {
     name: "read_skill_output",
     description:
       "Read a file that a skill script wrote into the session workspace. The available paths are listed " +
-      "in the observation right after run_skill_script. Reads only the current session's products.",
+      "in the observation right after run_skill_script. Reads only the current session's products. " +
+      "At most 256K characters are returned per call; if the file is longer the result is truncated and " +
+      "you can pass `offset` (character offset) to continue reading from where it stopped.",
     parameters: {
       type: "object",
       properties: {
@@ -242,21 +232,35 @@ export function buildReadSkillOutputTool(deps: ReadSkillOutputDeps): Tool {
           description:
             "Workspace-relative path exactly as listed after run_skill_script (e.g. out.csv).",
         },
+        offset: {
+          type: "number",
+          description:
+            "Character offset to start reading from (default 0). Use the offset reported after a truncated read to continue.",
+        },
       },
       required: ["path"],
       additionalProperties: false,
     },
     handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = (args ?? {}) as { path?: unknown };
+      const a = (args ?? {}) as { path?: unknown; offset?: unknown };
       if (typeof a.path !== "string" || !a.path)
         return { success: false, error: "read_skill_output requires path" };
+      if (a.offset !== undefined && (typeof a.offset !== "number" || !Number.isFinite(a.offset) || a.offset < 0))
+        return { success: false, error: "read_skill_output offset must be a non-negative number" };
       if (!ctx.sessionId)
         return { success: false, error: "read_skill_output requires an active session." };
+      const offset = typeof a.offset === "number" ? a.offset : 0;
       try {
-        const r = await deps.readOutput({ sessionId: ctx.sessionId, path: a.path });
+        const r = await deps.readOutput({ sessionId: ctx.sessionId, path: a.path, offset });
+        // 截断时在闭合标签之外（框架句，我们写的）告知续读位置——不进不可信块。
+        const suffix = r.truncated
+          ? ` [truncated at ${offset + r.content.length} chars${
+              r.totalLength !== undefined ? ` of ${r.totalLength} total` : ""
+            }; call read_skill_output again with offset=${offset + r.content.length} to continue]`
+          : "";
         return {
           success: true,
-          observation: `<untrusted_skill_content>${escapeUntrustedWrappers(r.content)}</untrusted_skill_content>`,
+          observation: `<untrusted_skill_content>${escapeUntrustedWrappers(r.content)}</untrusted_skill_content>${suffix}`,
         };
       } catch (e) {
         return {

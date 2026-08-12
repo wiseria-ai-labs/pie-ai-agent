@@ -27,10 +27,8 @@ export function srtWinPath(): string {
 }
 
 export interface SandboxSettings {
-  /** 绝对路径白名单，只有这些子树可写（基线含 <skillDir>/workspace） */
+  /** 绝对路径白名单，只有这些子树可写（固定基线 = session workspace） */
   allowWrite: string[];
-  /** 允许出口的域名；空 = 全断 */
-  allowedDomains: string[];
   /** 拒读的绝对路径（敏感目录） */
   denyRead: string[];
 }
@@ -137,7 +135,11 @@ async function runViaSrt(
   settings: SandboxSettings,
 ): Promise<SandboxRunResult> {
   const runtimeConfig = {
-    network: { allowedDomains: settings.allowedDomains, deniedDomains: [] },
+    // 固定基线：网络全放（ADR 0007）。srt 的 allowedDomains 不接受 "*"（schema 只在
+    // deniedDomains 认通配），故走「无显式规则 → ask 回调」这条路：allowedDomains/
+    // deniedDomains 都留空，任何 host 落到下面注册的 alwaysAllow 回调 → 放行。外泄面
+    // 靠 env 白名单擦除 + denyRead 基线压制，不靠域名白名单。
+    network: { allowedDomains: [], deniedDomains: [] },
     filesystem: {
       denyRead: settings.denyRead,
       allowRead: [],
@@ -147,7 +149,8 @@ async function runViaSrt(
     // win32：srt-win.exe 无隐式回落，须显式给出伴随文件路径（spec §6.1）。
     ...(IS_WIN ? { windows: { srtWin: { path: srtWinPath() } } } : {}),
   };
-  await SandboxManager.initialize(runtimeConfig);
+  // ask 回调恒 true = 网络全放（任何未显式命中规则的 host 都放行）。
+  await SandboxManager.initialize(runtimeConfig, async () => true);
   try {
     await SandboxManager.waitForNetworkInitialization();
     // win32：cmd 引号语义 + env 内联 set 链（F3）；mac/linux：POSIX 引号，env 走 spawn。
@@ -161,13 +164,18 @@ async function runViaSrt(
       cwd,
     );
     // 异步 spawn（关键：绝不 spawnSync，见文件头注释）。
-    // win32 的 env 已内联进命令串（不穿透沙箱账户，见 F3），这里只带 process.env +
-    // wrapped.env（srt 代理注入，配置 srt-win 自身，必须保留）；mac/linux 才把 caller env
-    // 交给 spawn。
+    // env 白名单擦除（D7）：mac/linux 子进程只拿 caller 给的白名单 env（PIE_*/PATH/
+    // HOME/… 已由 skill-exec 的 buildSandboxEnv 收窄）+ wrapped.env（srt 代理注入，配置
+    // 出站代理，必须保留）——绝不整体透传 process.env，否则各类 *_TOKEN/AWS_* 凭据在
+    // 网络全放下会随子进程外泄。win32 走另一条路：env 已内联进 cmd 命令串（不穿透
+    // CreateProcessWithLogonW 换的沙箱账户，见 F3），broker 进程本身仍需 process.env +
+    // wrapped.env 来配置 srt-win 自己。
     const proc = Bun.spawn({
       cmd: wrapped.argv,
       cwd,
-      env: { ...process.env, ...(IS_WIN ? {} : env), ...(wrapped.env as Record<string, string>) },
+      env: IS_WIN
+        ? { ...process.env, ...(wrapped.env as Record<string, string>) }
+        : { ...env, ...(wrapped.env as Record<string, string>) },
       stdout: "pipe",
       stderr: "pipe",
     });

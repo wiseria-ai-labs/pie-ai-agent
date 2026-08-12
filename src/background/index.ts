@@ -155,8 +155,6 @@ import {
   bridgeLastDisconnectError,
   requestListAgents,
   bridgeHasSkillFs,
-  requestListGrants,
-  requestRevokeGrant,
   requestListAudit,
   requestDeleteSessionWorkspace,
   setBridgeReconnectAction,
@@ -810,29 +808,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // async response
   }
 
-  // Settings「本地打通」— 已授权 skill grants 列表（一次性查询，无轮询）。
-  if (message?.type === "local-grants:list") {
-    (async () => {
-      if (!bridgeHasSkillFs()) return { grants: [] };
-      const { grants } = await requestListGrants();
-      return { grants };
-    })()
-      .then(sendResponse)
-      .catch(() => sendResponse({ grants: [] }));
-    return true; // async response
-  }
-  // Settings「本地打通」— 撤销单条 grant。
-  if (message?.type === "local-grants:revoke") {
-    (async () => {
-      if (!bridgeHasSkillFs() || typeof message.key !== "string") return { ok: false };
-      const { revoked } = await requestRevokeGrant({ key: message.key });
-      return { ok: revoked };
-    })()
-      .then(sendResponse)
-      .catch(() => sendResponse({ ok: false }));
-    return true; // async response
-  }
   // Settings「本地打通」— 最近脚本执行审计。旧 daemon（无 list_audit）→ 空列表。
+  // ADR 0007：grant 信封整套下线（list_grants/revoke_grant 已从 wire 移除），
+  // 授权改由 agent 运行确认卡承担；这里只保留「最近执行」审计。
   if (message?.type === "local-audit:list") {
     (async () => {
       if (!bridgeHasSkillFs()) return { entries: [] };

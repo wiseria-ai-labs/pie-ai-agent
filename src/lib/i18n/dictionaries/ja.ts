@@ -182,7 +182,7 @@ export const jaDict = {
     },
   },
   hitl: {
-    caps: { skillGrant: "スキル承認", runLocalAgent: "ローカルエージェント", handoff: "ハンドオフ", localFile: "ローカルファイル", cdp: "入力シミュレーション" },
+    caps: { skillRunConfirm: "スキルスクリプトを実行", runLocalAgent: "ローカルエージェント", handoff: "ハンドオフ", localFile: "ローカルファイル", cdp: "入力シミュレーション" },
   },
   cdpOnboarding: {
     title: "Pie はブラウザー入力シミュレーション (CDP) を有効にする必要があります",
@@ -209,14 +209,13 @@ export const jaDict = {
     allow: "引き継ぐ",
     deny: "キャンセル",
   },
-  skillGrant: {
-    title: "{name} がスクリプトの実行を求めています",
-    scriptsLabel: "実行可能なスクリプト",
-    networkLabel: "ネットワークアクセス",
-    networkNone: "なし——デフォルトのサンドボックスが通信を遮断します",
-    writeLabel: "ワークスペース外の追加書き込み先",
+  skillRunConfirm: {
+    title: "{name} のスクリプトを実行しますか？",
+    entryLabel: "スクリプト",
+    argsLabel: "引数",
+    argsNone: "なし",
     disclosure:
-      "スクリプトはあなたのユーザー権限でデフォルトのサンドボックス内で実行されます。上記以外のドメインへの通信は遮断され、書き込みはこのスキルのワークスペースと記載のパスに限定され、機密フォルダの読み取りは拒否されます。承認はスキルの宣言が変わるまで有効です。",
+      "スクリプトはあなたのユーザー権限でサンドボックス内で実行されます。書き込みはこのセッションのワークスペースに限定され、機密フォルダの読み取りは拒否され、環境から秘密情報は取り除かれます。承認すると、このスキルはこのセッションの間スクリプトを実行できます。",
     allow: "許可して実行",
     deny: "拒否",
   },
@@ -425,7 +424,6 @@ export const jaDict = {
     screenshotUnavailable: "[スクリーンショットなし]",
   },
   skills: {
-    grant: { granted: "スクリプト承認済み", revoke: "承認を取り消す" },
     empty: {
       cta: "再利用できるワークフロー (スキル) を表示します。基盤ツールはプロンプトから自動解決されます。新しいものが必要ですか？Pie に作成を依頼し、何をするべきか説明してください。Pie が書いてくれます。",
     },
@@ -452,7 +450,6 @@ export const jaDict = {
     },
     authorTag: { builtIn: "組み込み", agent: "エージェント", user: "ユーザー" },
     sourceTag: { agents: "~/.agents" },
-    invalidNetwork: "無効なネットワークドメイン {count} 件を無視しました",
     agentsImport: {
       title: "ローカルスキルを {count} 件検出しました",
       body: "~/.agents/skills（エージェント間共有ディレクトリ）にあるスキルです。Pie で使うものを選んでください。後からこのリストでいつでも変更できます。",

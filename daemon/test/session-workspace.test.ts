@@ -16,7 +16,27 @@ test("readSessionFile reads a product from its own session workspace", () => {
   const ws = join(sessionsDir, SID_A, "workspace");
   mkdirSync(ws, { recursive: true });
   writeFileSync(join(ws, "out.csv"), "a,b,c");
-  expect(readSessionFile(SID_A, "out.csv", sessionsDir)).toBe("a,b,c");
+  const r = readSessionFile(SID_A, "out.csv", 0, sessionsDir);
+  expect(r.content).toBe("a,b,c");
+  expect(r.truncated).toBeUndefined();
+  rmSync(sessionsDir, { recursive: true, force: true });
+});
+
+test("readSessionFile caps at 256K chars with truncated + totalLength; offset continues (D8)", () => {
+  const sessionsDir = tmp();
+  const ws = join(sessionsDir, SID_A, "workspace");
+  mkdirSync(ws, { recursive: true });
+  const CAP = 256 * 1024;
+  const big = "x".repeat(CAP + 100);
+  writeFileSync(join(ws, "big.txt"), big);
+  const first = readSessionFile(SID_A, "big.txt", 0, sessionsDir);
+  expect(first.content.length).toBe(CAP);
+  expect(first.truncated).toBe(true);
+  expect(first.totalLength).toBe(CAP + 100);
+  // 续读：从 CAP 起拿剩余 100 个字符，不再截断。
+  const rest = readSessionFile(SID_A, "big.txt", CAP, sessionsDir);
+  expect(rest.content).toBe("x".repeat(100));
+  expect(rest.truncated).toBeUndefined();
   rmSync(sessionsDir, { recursive: true, force: true });
 });
 
@@ -25,8 +45,8 @@ test("readSessionFile rejects path traversal out of the workspace (I2)", () => {
   const ws = join(sessionsDir, SID_A, "workspace");
   mkdirSync(ws, { recursive: true });
   writeFileSync(join(sessionsDir, SID_A, "secret.txt"), "nope"); // 出 workspace 一层
-  expect(() => readSessionFile(SID_A, "../secret.txt", sessionsDir)).toThrow();
-  expect(() => readSessionFile(SID_A, "../../../etc/passwd", sessionsDir)).toThrow();
+  expect(() => readSessionFile(SID_A, "../secret.txt", 0, sessionsDir)).toThrow();
+  expect(() => readSessionFile(SID_A, "../../../etc/passwd", 0, sessionsDir)).toThrow();
   rmSync(sessionsDir, { recursive: true, force: true });
 });
 
@@ -36,12 +56,12 @@ test("readSessionFile cannot reach another session's file", () => {
   mkdirSync(wsA, { recursive: true });
   writeFileSync(join(wsA, "out.csv"), "A-data");
   // session B 请求 → B 的 workspace 不存在 → throw（拼不到 A 的路径）
-  expect(() => readSessionFile(SID_B, "out.csv", sessionsDir)).toThrow();
+  expect(() => readSessionFile(SID_B, "out.csv", 0, sessionsDir)).toThrow();
   rmSync(sessionsDir, { recursive: true, force: true });
 });
 
 test("readSessionFile rejects a non-uuid session id", () => {
-  expect(() => readSessionFile("../evil", "x", tmp())).toThrow();
+  expect(() => readSessionFile("../evil", "x", 0, tmp())).toThrow();
 });
 
 test("deleteSessionWorkspace removes the session dir, idempotent", () => {

@@ -15,7 +15,7 @@ test("fakeSkillSandbox forwards args to impl and returns its result", async () =
     ["node", "x.js"],
     "/tmp/skill",
     { A: "1" },
-    { allowWrite: ["/tmp/skill/workspace"], allowedDomains: [], denyRead: ["/Users/me/.ssh"] },
+    { allowWrite: ["/tmp/skill/workspace"], denyRead: ["/Users/me/.ssh"] },
   );
   expect(r.stdout).toBe("ok");
   expect(r.exitCode).toBe(0);

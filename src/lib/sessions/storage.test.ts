@@ -18,6 +18,8 @@ import {
   scrubPendingConfirm,
   setPendingConfirm,
   setSessionAgent,
+  isSkillApprovedInSession,
+  recordSkillApproval,
   setSessionMeta,
   updateLastAccessed,
   setLastTaskSynth,
@@ -438,6 +440,59 @@ describe("updateLastAccessed", () => {
 
   it("returns false for unknown ids", async () => {
     expect(await updateLastAccessed("not-a-real-id")).toBe(false);
+  });
+});
+
+describe("skill-run approvals — ADR 0007 (isSkillApprovedInSession / recordSkillApproval)", () => {
+  it("unapproved skill → false; after recordSkillApproval → true (per session × per skill)", async () => {
+    const meta = await createSession({ now: 1700000000000 });
+    expect(await isSkillApprovedInSession(meta.id, "video-parser")).toBe(false);
+    await recordSkillApproval(meta.id, "video-parser");
+    expect(await isSkillApprovedInSession(meta.id, "video-parser")).toBe(true);
+    // 不同 skill 仍未批准（per-skill 粒度）
+    expect(await isSkillApprovedInSession(meta.id, "other")).toBe(false);
+  });
+
+  it("approval is idempotent and does not duplicate ids", async () => {
+    const meta = await createSession({ now: 1700000000000 });
+    await recordSkillApproval(meta.id, "s");
+    await recordSkillApproval(meta.id, "s");
+    const agent = await getSessionAgent(meta.id);
+    expect(agent?.approvedSkillIds).toEqual(["s"]);
+  });
+
+  it("a different session does not inherit approvals (new session re-confirms)", async () => {
+    const a = await createSession({ now: 1 });
+    const b = await createSession({ now: 2 });
+    await recordSkillApproval(a.id, "s");
+    expect(await isSkillApprovedInSession(a.id, "s")).toBe(true);
+    expect(await isSkillApprovedInSession(b.id, "s")).toBe(false);
+  });
+
+  it("recordSkillApproval seeds a minimal agent record when none exists yet (first run before first snapshot)", async () => {
+    // 直接用一个未 createSession 的 id：模拟首步执行早于首个 step-end 快照落盘。
+    const id = "ffffffff-1111-4222-8333-444444444444";
+    expect(await getSessionAgent(id)).toBeNull();
+    await recordSkillApproval(id, "s");
+    const agent = await getSessionAgent(id);
+    expect(agent?.approvedSkillIds).toEqual(["s"]);
+    expect(agent?.stepIndex).toBe(0);
+  });
+
+  it("preserves existing agent fields (spreads, does not clobber)", async () => {
+    const meta = await createSession({ now: 1700000000000 });
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 3,
+      hasImageContent: false,
+      currentFocusTabId: 42,
+    });
+    await recordSkillApproval(meta.id, "s");
+    const agent = await getSessionAgent(meta.id);
+    expect(agent?.stepIndex).toBe(3);
+    expect(agent?.currentFocusTabId).toBe(42);
+    expect(agent?.approvedSkillIds).toEqual(["s"]);
   });
 });
 

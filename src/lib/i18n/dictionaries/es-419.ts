@@ -183,7 +183,7 @@ export const es419Dict = {
     },
   },
   hitl: {
-    caps: { skillGrant: "Autorización de skill", runLocalAgent: "Agente local", handoff: "Traspaso", localFile: "Archivo local", cdp: "Simulación de entrada" },
+    caps: { skillRunConfirm: "Ejecutar script de skill", runLocalAgent: "Agente local", handoff: "Traspaso", localFile: "Archivo local", cdp: "Simulación de entrada" },
   },
   cdpOnboarding: {
     title: "Pie necesita activar la simulación de entrada del navegador (CDP)",
@@ -210,14 +210,13 @@ export const es419Dict = {
     allow: "Delegar",
     deny: "Cancelar",
   },
-  skillGrant: {
-    title: "{name} solicita ejecutar scripts en tu computadora",
-    scriptsLabel: "Scripts que puede ejecutar",
-    networkLabel: "Acceso a la red",
-    networkNone: "Ninguno: el sandbox predeterminado bloquea la red",
-    writeLabel: "Rutas de escritura adicionales (fuera de su espacio de trabajo)",
+  skillRunConfirm: {
+    title: "¿Ejecutar un script de {name}?",
+    entryLabel: "Script",
+    argsLabel: "Argumentos",
+    argsNone: "Ninguno",
     disclosure:
-      "Los scripts se ejecutan con tus permisos de usuario dentro de un sandbox predeterminado: sin red salvo los dominios listados, escritura limitada al espacio de trabajo de la skill y a las rutas listadas, y lectura bloqueada en carpetas sensibles. La aprobación dura hasta que cambien las declaraciones de la skill.",
+      "El script se ejecuta con tus permisos de usuario dentro de un sandbox: la escritura se limita al espacio de trabajo de esta sesión, la lectura de carpetas sensibles está bloqueada y los secretos se eliminan de su entorno. Al aprobar, esta skill podrá ejecutar scripts durante el resto de esta sesión.",
     allow: "Permitir y ejecutar",
     deny: "Rechazar",
   },
@@ -426,7 +425,6 @@ export const es419Dict = {
     screenshotUnavailable: "[Captura no disponible]",
   },
   skills: {
-    grant: { granted: "Scripts autorizados", revoke: "Revocar" },
     empty: {
       cta: "Muestra flujos reutilizables (habilidades). Las herramientas subyacentes se resuelven automáticamente desde el prompt. ¿Quieres una nueva? Pídele a Pie que cree una habilidad y describe qué debe hacer; Pie la escribirá por ti.",
     },
@@ -453,7 +451,6 @@ export const es419Dict = {
     },
     authorTag: { builtIn: "INTEGRADA", agent: "AGENTE", user: "USUARIO" },
     sourceTag: { agents: "~/.agents" },
-    invalidNetwork: "{count} dominio(s) de red no válido(s) ignorado(s)",
     agentsImport: {
       title: "Se encontraron {count} skills locales",
       body: "Provienen de ~/.agents/skills (directorio compartido entre agentes). Elige cuáles puede usar Pie; puedes cambiarlo en esta lista cuando quieras.",

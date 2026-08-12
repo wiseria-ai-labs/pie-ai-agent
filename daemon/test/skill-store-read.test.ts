@@ -15,7 +15,7 @@ function makeSkill(root: string, name: string, md: string, scripts: string[] = [
   for (const s of scripts) writeFileSync(join(dir, "scripts", s), "// " + s);
 }
 
-test("listSkills returns summary with runnableScripts and declaredCaps", () => {
+test("listSkills returns summary with runnableScripts (no declaredCaps — ADR 0007)", () => {
   const root = tmpRoot();
   makeSkill(
     root,
@@ -27,7 +27,9 @@ test("listSkills returns summary with runnableScripts and declaredCaps", () => {
   expect(skills).toHaveLength(1);
   expect(skills[0].name).toBe("web-fetch");
   expect(skills[0].runnableScripts.sort()).toEqual(["fetch.ts", "helper.ts"]);
-  expect(skills[0].declaredCaps.network).toEqual(["example.com"]);
+  // metadata.pie 不再解析——summary 无能力字段（沙箱是固定基线）。
+  expect("declaredCaps" in skills[0]).toBe(false);
+  expect("invalidNetwork" in skills[0]).toBe(false);
   rmSync(root, { recursive: true, force: true });
 });
 

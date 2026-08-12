@@ -1,7 +1,10 @@
 // 扩展 ↔ daemon 桥协议。此文件是唯一权威源；daemon 相对 import，不复制。
 // 加字段只增不改语义；破坏性变更才 bump PROTOCOL_VERSION（spec §7）。
 
-export const PROTOCOL_VERSION = 1;
+// v1→v2（ADR 0007）：授权模型从 grant 信封换成 agent 确认层。破坏点 = run_skill_script
+// 不再收 grantApproved/approvedEnvelopeHash、daemon 不再回 needs_authorization、
+// list_grants/revoke_grant 下线。daemon 对声明 v1 的客户端拒绝 run_skill_script 并引导升级。
+export const PROTOCOL_VERSION = 2;
 
 /** daemon 声明它能处理的方法。扩展按此决定装配哪些本地工具。 */
 export const BRIDGE_CAPABILITIES = [
@@ -89,14 +92,9 @@ export interface HandoffResult {
 }
 
 // ── skill_fs ──────────────────────────────────────────────────────────
-/** skill 声明的高危能力（来自 SKILL.md metadata.pie）。 */
-export interface SkillCaps {
-  /** 允许出口的域名 */
-  network: string[];
-  /** 工作区外额外可写路径（可含 ~） */
-  write: string[];
-}
-/** list_skills 每项：catalog 呈现 + 授权卡渲染所需的结构化摘要。 */
+/** list_skills 每项：catalog 呈现所需的结构化摘要。
+ *  ADR 0007：SKILL.md metadata.pie.* 能力声明整套下线——沙箱降为固定基线（网络全放
+ *  + 写限 workspace + env 白名单），不再有 per-skill 声明的 network/write 能力。 */
 export interface SkillSummary {
   name: string;
   /** 展示名 = frontmatter.name（目录名产不出 ASCII slug 时两者不同，如中文名
@@ -105,16 +103,11 @@ export interface SkillSummary {
   description: string;
   /** scripts/ 下可执行文件的相对名（如 "fetch.ts"）；run_skill_script 的 allowlist */
   runnableScripts: string[];
-  declaredCaps: SkillCaps;
   /** 包内文件相对路径（POSIX 分隔；排除 workspace/ 与 .runs/ 及点文件；上限 200） */
   files: string[];
   /** 来源根：主根 ~/.pie/skills = "pie"，只读副根 ~/.agents/skills = "agents"。
    *  optional 加法字段：旧 daemon 不给 → 扩展按 "pie" 处理（无 badge）。 */
   source?: "pie" | "agents";
-  /** metadata.pie.network 里解析不出合法域名、被安全丢弃的原始声明（作者信号）。
-   *  安全语义不变：这些条目不进 declaredCaps.network，只用来在面板出「N 个域名无效已忽略」
-   *  badge。optional 加法字段：旧 daemon 不给 / 全合法时省略（PROTOCOL_VERSION 不动）。 */
-  invalidNetwork?: string[];
 }
 export interface ListSkillsResult {
   skills: SkillSummary[];
@@ -138,12 +131,6 @@ export interface RunSkillScriptParams {
   /** 调用会话 id（不可信输入，daemon 侧 assertSessionId 做 uuid 形状校验防路径穿越）。
    *  脚本 cwd = ~/.pie/sessions/<sessionId>/workspace/，产物按 session 隔离。 */
   sessionId: string;
-  /** 用户在授权卡批准后置 true；缺省首跑 ungranted skill 会回 needs_authorization */
-  grantApproved?: boolean;
-  /** 授权卡批准的信封 hash（grantApproved=true 时必带）；daemon 校验它等于
-   *  当前磁盘信封的 hash，不等 → 重新 needs_authorization（堵卡片挂起期间
-   *  skill 声明被改的 TOCTOU）。 */
-  approvedEnvelopeHash?: string;
 }
 export interface RunSkillScriptResult {
   /** 脚本 stdout，调用方包 <untrusted_skill_content> */
@@ -161,10 +148,20 @@ export interface ReadSessionFileParams {
   sessionId: string;
   /** session workspace 内相对路径（如 "out.csv"） */
   path: string;
+  /** 字符偏移续读（D8）：从第 offset 个字符起返回，缺省 0。 */
+  offset?: number;
 }
 export interface ReadSessionFileResult {
   content: string;
+  /** content 被单次上限（READ_OUTPUT_CAP，256K 字符）截断——还有更多可用 offset 续读。 */
+  truncated?: boolean;
+  /** 文件总字符数（truncated 时供 LLM 判断还剩多少）。加法字段：旧 daemon 不给。 */
+  totalLength?: number;
 }
+
+/** read_session_file 单次返回上限（D8）：256K 字符。超限截断 + truncated 标记，
+ *  LLM 用 offset 续读。既防大转写文本直灌 LLM context，也守住 native messaging 单帧上限。 */
+export const READ_OUTPUT_CAP = 256 * 1024;
 
 /** delete_session_workspace：硬删 session / 归档时清 workspace（幂等）。 */
 export interface DeleteSessionWorkspaceParams {
@@ -195,36 +192,13 @@ export interface DeleteSkillResult {
   deleted: boolean;
 }
 
-/** grant 信封：三者规范化后哈希即 grant 身份。 */
-export interface GrantEnvelope {
-  allowedDomains: string[];
-  extraWrites: string[];
-  runnableScripts: string[];
-}
-export interface GrantRecord {
-  key: string;
-  skillName: string;
-  envelope: GrantEnvelope;
-  grantedAt: number;
-}
-/** needs_authorization 错误随带的结构化 payload：授权卡的唯一渲染源（daemon 权威给出）。 */
-export interface SkillAuthPayload {
-  skillName: string;
-  displayName?: string;
-  description: string;
-  /** canonical 化后的信封（卡上原文展示） */
-  envelope: GrantEnvelope;
-  /** 批准后随 run 回传（approvedEnvelopeHash） */
-  envelopeHash: string;
-}
-export interface ListGrantsResult {
-  grants: GrantRecord[];
-}
-export interface RevokeGrantParams {
-  key: string;
-}
-export interface RevokeGrantResult {
-  revoked: boolean;
+/** 固定基线沙箱摘要（ADR 0007）：授权已移到 agent 确认层，沙箱不可声明不可配。
+ *  audit 每条记这份摘要作为「这次是在什么隔离基线下跑的」的知情权凭据。 */
+export interface SandboxBaseline {
+  /** 网络维度：固定全放（"open"）。 */
+  network: "open";
+  /** env 白名单版本号（擦除策略变更时递增，audit 可追溯当时的擦除口径）。 */
+  envAllowlist: string;
 }
 
 /** audit.jsonl 单行（daemon 每次脚本执行追加）。 */
@@ -232,11 +206,12 @@ export interface AuditEntry {
   ts: number;
   skillName: string;
   entry: string;
-  envelope: GrantEnvelope;
   exitCode: number;
   timedOut: boolean;
   truncated: boolean;
   ms: number;
+  /** 固定基线沙箱摘要（加法字段：旧行无此字段，list_audit 契约过滤只认 skillName/entry）。 */
+  sandbox?: SandboxBaseline;
 }
 export interface ListAuditParams {
   /** 返回最近 N 条（默认 20，上限 200） */
@@ -310,8 +285,6 @@ export interface BridgeRequest {
     | "delete_session_workspace"
     | "write_skill"
     | "delete_skill"
-    | "list_grants"
-    | "revoke_grant"
     | "list_audit"
     | "status"
     | "check_update"

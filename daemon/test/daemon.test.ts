@@ -50,6 +50,46 @@ test("apply_update is a known method (aborts with structured error, not unknown_
   expect(res.error.code).toBe("apply_update_failed");
 });
 
+// ── D10 版本闸：v1 客户端拒 run_skill_script（授权模型破坏，引导升级扩展）───────
+test("run_skill_script from a v1 client is rejected with protocol_too_old", async () => {
+  const out = await handleMessage(
+    JSON.stringify({ id: "p1", method: "run_skill_script", params: { name: "x", entry: "y.ts", sessionId: "s" } }),
+    { clientProtocol: 1 },
+  );
+  const res = JSON.parse(out);
+  expect(res.ok).toBe(false);
+  expect(res.error.code).toBe("protocol_too_old");
+  expect(res.error.message).toMatch(/update/i);
+});
+
+test("run_skill_script from a current client passes the version gate (falls through to real dispatch)", async () => {
+  // clientProtocol = 当前版本 → 不被版本闸拦；skill 不存在 → 走到真实执行报 unknown_skill
+  // （证明闸放行了、错误来自下游而非版本判定）。
+  const out = await handleMessage(
+    JSON.stringify({ id: "p2", method: "run_skill_script", params: { name: "nope-skill", entry: "y.ts", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" } }),
+    { clientProtocol: PROTOCOL_VERSION },
+  );
+  const res = JSON.parse(out);
+  expect(res.ok).toBe(false);
+  expect(res.error.code).not.toBe("protocol_too_old");
+});
+
+test("processSocketChunk threads the hello protocolVersion into subsequent run_skill_script (v1 → rejected)", async () => {
+  const written: string[] = [];
+  // hello(v1) + run_skill_script in one chunk; the run must see clientProtocol=1 and be rejected.
+  const chunk =
+    JSON.stringify({ id: "h", method: "hello", params: { protocolVersion: 1 } }) +
+    "\n" +
+    JSON.stringify({ id: "r", method: "run_skill_script", params: { name: "x", entry: "y.ts", sessionId: "s" } }) +
+    "\n";
+  const { pending, clientProtocol } = processSocketChunk("", chunk, (out) => written.push(out));
+  await pending;
+  expect(clientProtocol).toBe(1);
+  const runResp = written.map((w) => JSON.parse(w)).find((r) => r.id === "r");
+  expect(runResp.ok).toBe(false);
+  expect(runResp.error.code).toBe("protocol_too_old");
+});
+
 // Finding 2: Unix STREAM socket doesn't preserve message boundaries — a
 // request's JSON can be split across two `data` events. Without per-connection
 // carry buffering, each half-line fails JSON.parse independently and the
