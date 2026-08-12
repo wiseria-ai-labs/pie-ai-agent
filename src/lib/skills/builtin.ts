@@ -229,12 +229,19 @@ shifts across site redesigns, so find controls by what they DO or how
 they're labelled — never by a hardcoded selector.
 
 ## YouTube (desktop)
-1. The transcript usually sits behind a collapsed panel:
-   - Look for a "Show transcript" control. It's typically in the
-     description area (you may need to expand "...more" / "Show more" first)
-     or inside the "..." more-actions menu next to the like / share row.
-   - search_page with query ["Show transcript","Transcript","显示转写稿",
-     "转写稿"] to locate it, then click the returned match's index.
+1. Start with search_page — NOT read_page. Call search_page with query
+   ["Show transcript","Transcript","显示转写稿","转写稿"] and click the
+   returned match's index. search_page scans the whole DOM and is the only
+   viewport-independent way to find this control.
+   - Trap: the "Show transcript" control is usually BELOW the fold. read_page's
+     interactive atlas is viewport-first and truncates off-screen elements
+     (you will see an "<omitted controls=N ... />" marker) — not seeing it
+     in a read_page result does NOT mean the page lacks it. Never conclude
+     "no transcript" from a read_page result alone.
+   - If search_page returns no match, the control may be inside a collapsed
+     region: expand "...more" / "Show more" in the description, or open the
+     "..." more-actions menu next to the like / share row, then run
+     search_page again.
 2. Once the panel is open, read its full text — prefer search_page (no
    50KB truncation) or read_page over the transcript region. The panel is a
    scrollable list of timestamped caption lines; scroll if it is long.
@@ -248,16 +255,23 @@ they're labelled — never by a hardcoded selector.
    separate transcript list. Hover the player controls and find the CC /
    字幕 toggle; turn captions on if they are off.
 2. Where the video exposes a caption / 字幕 list panel, open it and read it
-   the same way as YouTube's transcript. search_page with query
-   ["字幕","CC","transcript"] to find the control.
+   the same way as YouTube's transcript. Start with search_page (query
+   ["字幕","CC","transcript"]) to find the control — it is viewport-independent,
+   whereas read_page can omit off-screen controls.
 3. If only per-frame overlay captions are available (no full list), tell
    the user you can read what is currently shown but cannot pull the whole
    transcript at once, and ask whether to proceed section by section.
 
 ## No captions available
-If you cannot find any transcript or caption control after genuinely
-looking (expanded the description, checked the more-actions menu, searched
-for the labels above), do NOT guess or hallucinate the video's content.
+Only take this path when ALL of the following are true — search_page is
+mandatory, the others are supporting:
+- you ran search_page for the labels above and it returned no match, AND
+- you expanded the description ("...more" / "Show more") and re-ran
+  search_page, AND
+- you checked the "..." more-actions menu.
+If you have not run search_page, you have NOT looked — go back and look.
+Once you have genuinely looked and still found nothing, do NOT guess or
+hallucinate the video's content.
 Tell the user plainly: this video has no captions / transcript available,
 so you can't read what it says from the page right now. Offer what you can
 still legitimately do (e.g. summarize from the title / description /

@@ -62,6 +62,19 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
     expect(md).not.toMatch(/querySelector|data-pie-idx/);
     // untrusted 页面内容防注入提醒
     expect(md).toMatch(/untrusted/i);
+    // #20 加固：YouTube 段第一步必须 search_page-first（视口无关定位），
+    // 排在 read_page 之前
+    const yt = md.slice(md.indexOf("## YouTube"), md.indexOf("## Bilibili"));
+    const ytSearch = yt.indexOf("search_page");
+    const ytRead = yt.indexOf("read_page");
+    expect(ytSearch).toBeGreaterThanOrEqual(0);
+    expect(ytSearch).toBeLessThan(ytRead === -1 ? Number.MAX_SAFE_INTEGER : ytRead);
+    // 显式的视口省略陷阱说明（read_page 会按视口省略；没看到 ≠ 页面没有）
+    expect(md).toMatch(/omitted|viewport/i);
+    expect(md).toMatch(/does NOT mean|≠|not mean the page lacks/i);
+    // no-captions 失败路径把 search_page 列为必要条件
+    const noCap = md.slice(md.indexOf("## No captions available"));
+    expect(noCap).toMatch(/search_page/);
   });
 
   it("create_skill_from_recording instructs preserving cross-tab steps", () => {
