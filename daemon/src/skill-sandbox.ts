@@ -54,6 +54,24 @@ export function fakeSkillSandbox(impl: SkillSandbox["run"]): SkillSandbox {
   return { run: impl };
 }
 
+/**
+ * spawn env 合成（D7 env 白名单擦除的核心判定，抽成纯函数供单测——spawn 层不被
+ * `fakeSkillSandbox` 短路）：
+ *  - mac/linux：**只用** caller 白名单 `env`。srt 0.0.67 的 `wrapped.env` 是全量
+ *    process.env（不是代理注入的少量变量），出站代理 env 已内联进 wrapped 命令串，故
+ *    绝不展开 `wrapped.env`，否则各类 *_TOKEN/AWS_* 凭据在网络全放下随子进程外泄。
+ *  - win32：process.env + `wrapped.env`（broker 进程需 srt-win 自己的代理/CA 配置；沙箱
+ *    子进程的 env 另经 cmd 内联 `set` 链，不从 spawn env 继承）。
+ */
+export function buildSpawnEnv(
+  isWin: boolean,
+  whitelistEnv: Record<string, string>,
+  procEnv: Record<string, string | undefined>,
+  wrappedEnv: Record<string, string>,
+): Record<string, string | undefined> {
+  return isWin ? { ...procEnv, ...wrappedEnv } : whitelistEnv;
+}
+
 /** POSIX 单引号包每个 arg：'\'' 转义单引号。argv → 可交给 srt 的 shell 命令串。 */
 function shellQuote(argv: string[]): string {
   return argv.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ");
@@ -165,17 +183,22 @@ async function runViaSrt(
     );
     // 异步 spawn（关键：绝不 spawnSync，见文件头注释）。
     // env 白名单擦除（D7）：mac/linux 子进程只拿 caller 给的白名单 env（PIE_*/PATH/
-    // HOME/… 已由 skill-exec 的 buildSandboxEnv 收窄）+ wrapped.env（srt 代理注入，配置
-    // 出站代理，必须保留）——绝不整体透传 process.env，否则各类 *_TOKEN/AWS_* 凭据在
-    // 网络全放下会随子进程外泄。win32 走另一条路：env 已内联进 cmd 命令串（不穿透
-    // CreateProcessWithLogonW 换的沙箱账户，见 F3），broker 进程本身仍需 process.env +
-    // wrapped.env 来配置 srt-win 自己。
+    // HOME/… 已由 skill-exec 的 buildSandboxEnv 收窄）——绝不整体透传 process.env，否则
+    // 各类 *_TOKEN/AWS_* 凭据在网络全放下会随子进程外泄。
+    //   ⚠️ 关键坑（PR #19 真机验收 FAIL）：srt 0.0.67 的 `wrapWithSandboxArgv` 在
+    //   mac/linux 分支返回的 `wrapped.env` **就是全量 process.env**（见 sandbox-manager.js
+    //   `return { argv: [shell, '-c', wrapped], env: process.env }`）——它不是「代理注入的
+    //   少量变量」。出站代理 env（HTTP_PROXY / NODE_EXTRA_CA_CERTS…）由 srt **内联进
+    //   wrapped 命令串**（macos-sandbox-utils.js `env <proxyEnvArgs> sandbox-exec …`），
+    //   不依赖 spawn env。所以 mac/linux **绝不能**再展开 `wrapped.env`，否则白名单被整个
+    //   process.env 覆盖回去、擦除失效。只传白名单 `env`。
+    // win32 走另一条路：子进程 env 已内联进 cmd 命令串（不穿透 CreateProcessWithLogonW
+    // 换的沙箱账户，见 F3），broker 进程本身仍需 process.env + wrapped.env（srt-win 自己的
+    // 代理/CA 配置）来把请求路由到围栏，故 win32 分支保留 `wrapped.env` 展开。
     const proc = Bun.spawn({
       cmd: wrapped.argv,
       cwd,
-      env: IS_WIN
-        ? { ...process.env, ...(wrapped.env as Record<string, string>) }
-        : { ...env, ...(wrapped.env as Record<string, string>) },
+      env: buildSpawnEnv(IS_WIN, env, process.env, wrapped.env as Record<string, string>),
       stdout: "pipe",
       stderr: "pipe",
     });
