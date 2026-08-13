@@ -126,9 +126,19 @@ export async function detectAndMarkPaused(
         const ok = await markPaused(entry.id);
         if (ok) stats.paused += 1;
       }
+    } else if (agent && agent.taskActive) {
+      // Issue #21 — task interrupted at its first step when the SW died: the
+      // loop wrote taskActive=true before the first ReAct iteration but no
+      // per-step snapshot exists (stepIndex still 0). Zero history =
+      // unresumable, so mark failed rather than leaving the session `active`
+      // (which strands it without any resume affordance).
+      const ok = await markFailed(entry.id);
+      if (ok) stats.failed += 1;
     }
-    // stepIndex === 0 is the tombstone state (M1-U3) — no in-flight task,
-    // leave the session as `active`.
+    // stepIndex === 0 && !taskActive is the tombstone state (M1-U3) — no
+    // in-flight task, leave the session as `active`. (Cold-start has no
+    // in-flight set, so a missing agent record stays active: it may be a
+    // freshly-created session the user never ran.)
   }
 
   // Step 3 — bump guard so re-entrant triggers within 30s skip.
@@ -185,10 +195,14 @@ export async function markOrphanRunsInterrupted(): Promise<{ interrupted: number
  * port running its own tasks must not be touched when this port closes.
  *
  * Step ordering matches detectAndMarkPaused (SEC-PLAN-002):
+ *   0. no agent record but sid in this port's in-flight set (Issue #21) →
+ *      markFailed (task started, interrupted before any snapshot; unresumable).
  *   1. pendingConfirm present → markFailedAndScrub (resolver gone with
  *      the closing port; the request is unhonorable post-disconnect).
  *   2. else stepIndex > 0 → markPaused (in-flight, user-resumable via R10).
- *   3. else (tombstone, stepIndex===0) → no-op (task finished cleanly).
+ *   3. else taskActive (Issue #21) → markFailed (interrupted at first step,
+ *      zero history, unresumable — e.g. a first-step HITL card).
+ *   4. else (tombstone, stepIndex===0 && !taskActive) → no-op (finished cleanly).
  *
  * No 30s guard: this is a user-driven event, not an idempotent SW wake-up
  * trigger; multiple panel close+reopen cycles must always re-mark.
@@ -203,7 +217,15 @@ export async function transitionPortInFlightSessionsToPaused(
   for (const sid of sessionIds) {
     try {
       const agent = await getSessionAgent(sid);
-      if (!agent) continue;
+      // Issue #21 — no agent record at all, yet this sid is in the port's
+      // in-flight set (chat-start/resume-task ran). A task started but was
+      // interrupted before any snapshot (including the taskActive entry write)
+      // landed. Can't be resumed (zero history) → mark failed, not left active.
+      if (!agent) {
+        const ok = await markFailed(sid);
+        if (ok) stats.failed += 1;
+        continue;
+      }
       if (agent.pendingConfirm) {
         const ok = await markFailedAndScrub(sid);
         if (ok) stats.failed += 1;
@@ -220,8 +242,17 @@ export async function transitionPortInFlightSessionsToPaused(
           const ok = await markPaused(sid);
           if (ok) stats.paused += 1;
         }
+      } else if (agent.taskActive) {
+        // Issue #21 — task in flight but interrupted at its first step: the
+        // loop wrote taskActive=true before the first ReAct iteration but no
+        // per-step snapshot exists yet (stepIndex still 0), typically because
+        // a first-step HITL card suspended it. Zero history = unresumable, so
+        // fail rather than paused (a Resume button here would error).
+        const ok = await markFailed(sid);
+        if (ok) stats.failed += 1;
       }
-      // stepIndex === 0 → tombstone, task finished cleanly; leave it alone.
+      // stepIndex === 0 && !taskActive → tombstone, task finished cleanly;
+      // leave it alone.
     } catch (e) {
       console.warn(
         `[sw] panel-disconnect transition failed for session=${sid}:`,

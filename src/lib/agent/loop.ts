@@ -747,6 +747,12 @@ export function buildSessionAgentTombstone(
     pendingInstructions: [],
     stepIndex: 0,
     hasImageContent: false,
+    // Issue #21 — clear explicitly (not by omission): the tombstone is written
+    // via mergeSessionAgentSnapshot's tombstone branch which spreads the
+    // snapshot as-is; omitting the field would let a stale `taskActive: true`
+    // from a per-step merge survive and mislead recovery into marking a
+    // cleanly-finished session `failed`.
+    taskActive: false,
   };
   if (lastTaskSynth != null) {
     base.lastTaskSynth = lastTaskSynth;
@@ -1589,6 +1595,23 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   let lastNoticeKey: string | null = null;
 
   try {
+    // Issue #21 — mark the task active BEFORE the first ReAct iteration. This
+    // is the single chokepoint both chat-start and resume pass through. A
+    // first-step HITL card (skill-confirm / CDP consent) can suspend the loop
+    // here before any per-step snapshot is written (stepIndex still 0); the
+    // flag lets recovery tell that interrupted-first-step case apart from a
+    // clean tombstone. RMW-preserve so the resume path keeps its stepIndex and
+    // history; buildSessionAgentTombstone clears it back to false at task end.
+    try {
+      const cur = await getSessionAgent(sessionId);
+      await setSessionAgent(sessionId, {
+        ...(cur ?? buildSessionAgentTombstone()),
+        taskActive: true,
+      });
+    } catch (e) {
+      console.warn(`[agent] taskActive mark failed for session=${sessionId}:`, e);
+    }
+
     // M1-U5 — resume path starts the counter at the next step beyond
     // what was persisted.
     const startStepIndex = (ctx.resumedFromStep ?? 0) + 1;

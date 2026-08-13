@@ -214,6 +214,19 @@ export interface SessionAgentState {
    *  SW startup before any other recovery work. */
   pendingConfirm?: PendingConfirmRecord | null;
   /**
+   * Issue #21 — task has started but may not have persisted a first-step
+   * snapshot yet. `runAgentLoop` sets this true before entering the first
+   * ReAct iteration; `buildSessionAgentTombstone` explicitly clears it to
+   * false. Recovery uses it to distinguish "first-step HITL card interrupted"
+   * from "task ended cleanly (tombstone)" — both have `stepIndex === 0`.
+   *
+   * A task interrupted at its first step carries zero history, so it can't be
+   * resumed (handleResumeRequest / planAbortResumeSeed both require
+   * stepIndex > 0); recovery therefore transitions `taskActive && stepIndex === 0`
+   * sessions to `failed`, not `paused`.
+   */
+  taskActive?: boolean;
+  /**
    * v1.5 — task-scoped pointer to the currently-focused tab among
    * `SessionMeta.pinnedTabs[]`. Snapshot is taken on this tab each
    * iteration. Mutated by `focus_tab` tool; reset to pinnedTabs[0].tabId
