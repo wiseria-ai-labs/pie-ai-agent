@@ -234,3 +234,50 @@ async function runViaSrt(
 export const realSkillSandbox: SkillSandbox = {
   run: (argv, cwd, env, settings) => serialize(() => runViaSrt(argv, cwd, env, settings)),
 };
+
+/**
+ * Windows passthrough 后端（产品决策 2026-08-13）：**放弃 srt-win，Windows 上 skill 脚本
+ * 不进沙箱**，以用户账户权限直接执行——可读写用户文件、访问网络。原因：srt-win Windows
+ * 后端 alpha 且踩了不可用的坑（W-4 沙箱账户读不到 profile 下脚本 EPERM；W-6 每次调用 ~30s
+ * WFP verify 单线程阻塞；上游 #402 写围栏本就可绕过）。与其交付一个有洞、还极慢的假沙箱，
+ * 不如**显式风险披露 + 用户知情同意**（grant 卡承载，payload.unsandboxed 标记）——功能可用
+ * 且诚实。settings 在此仅作 grant 记录，不做任何强制。
+ *
+ * 仍走 **async Bun.spawn**（绝不 spawnSync）；env 直接注入（无 srt 账户切换，无 F3 穿透问题）；
+ * 60s 超时 + drainCapped 封顶，与 srt 后端对齐。
+ */
+async function runPassthrough(
+  argv: string[],
+  cwd: string,
+  env: Record<string, string>,
+): Promise<SandboxRunResult> {
+  const proc = Bun.spawn({
+    cmd: argv,
+    cwd,
+    env: { ...process.env, ...env },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill();
+  }, TIMEOUT_MS);
+  try {
+    const [out, err, exitCode] = await Promise.all([
+      drainCapped(proc.stdout),
+      drainCapped(proc.stderr),
+      proc.exited,
+    ]);
+    return { stdout: out.text, stderr: err.text, exitCode, timedOut, truncated: out.truncated };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export const passthroughSkillSandbox: SkillSandbox = { run: (argv, cwd, env) => runPassthrough(argv, cwd, env) };
+
+/** 平台后端选择：win32 → passthrough（无沙箱 + 风险披露）；mac/linux → srt。纯函数供测试。 */
+export function selectSkillSandbox(platform: NodeJS.Platform = process.platform): SkillSandbox {
+  return platform === "win32" ? passthroughSkillSandbox : realSkillSandbox;
+}
