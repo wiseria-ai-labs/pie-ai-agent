@@ -2690,6 +2690,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                 filename: result.fileOutput.filename,
                 mime: result.fileOutput.mime,
                 size: result.fileOutput.size,
+                preview: result.fileOutput.preview,
+                totalLines: result.fileOutput.totalLines,
               },
               sessionId,
             ),

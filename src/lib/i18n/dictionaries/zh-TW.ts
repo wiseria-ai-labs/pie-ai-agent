@@ -247,7 +247,7 @@ export const zhTWDict = {
       imageProcessingFailed: "圖片處理失敗。",
     },
     files: { attachFile: "附加檔案", truncated: "已截斷", remove: "移除檔案", fileAttachments: "檔案附件", tooLarge: "{name} 超過 5MB 上限", unsupported: "{name}：不支援的檔案類型", processingFailed: "無法讀取此檔案", requestTitle: "Pie 想讀取一個本機文字或 PDF 檔案", requestBody: "選擇一個文字或 PDF 檔案，把內容交給 agent。圖片請改用 + 選單。", requestChoose: "選擇檔案", requestCancel: "取消" },
-    output: { download: "下載", expired: "已過期 · 請讓助理重新產生" },
+    output: { save: "儲存", previewMore: "共 {total} 行", expired: "已過期 · 請讓助理重新產生" },
     stepCount: { one: "步", other: "步" },
     noApiKey: "沒有 API Key",
     noApiKeyDescription: "從任一支援的 provider 新增 API key 即可開始使用 Agent。",

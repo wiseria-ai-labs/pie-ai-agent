@@ -252,7 +252,7 @@ export const ptBRDict = {
       imageProcessingFailed: "Falha ao processar imagem.",
     },
     files: { attachFile: "Anexar arquivo", truncated: "truncado", remove: "Remover arquivo", fileAttachments: "Anexos de arquivo", tooLarge: "{name} excede o limite de 5 MB", unsupported: "{name}: tipo de arquivo não suportado", processingFailed: "Não foi possível ler esse arquivo", requestTitle: "Pie quer ler um arquivo local de texto ou PDF", requestBody: "Escolha um arquivo de texto ou PDF para compartilhar seu conteúdo com o agente. Para imagens, use o menu +.", requestChoose: "Escolher arquivo", requestCancel: "Cancelar" },
-    output: { download: "Baixar", expired: "Expirado; peça ao agente para gerar novamente" },
+    output: { save: "Salvar", previewMore: "{total} linhas no total", expired: "Expirado; peça ao agente para gerar novamente" },
     stepCount: { one: "etapa", other: "etapas" },
     noApiKey: "SEM API KEY",
     noApiKeyDescription: "Adicione uma chave API de qualquer provedor compatível para começar a usar o agente.",

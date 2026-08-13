@@ -1185,6 +1185,8 @@ After the skill completes, briefly summarize what was created (the user will see
                       filename={msg.filename}
                       mime={msg.mime}
                       size={msg.size}
+                      preview={msg.preview}
+                      totalLines={msg.totalLines}
                       onDownload={session.downloadOutput}
                       onProbe={artifactExists}
                     />

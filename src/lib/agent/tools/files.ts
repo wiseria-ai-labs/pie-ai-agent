@@ -19,6 +19,10 @@ const SAFE_MIME = /^(text\/(?!html|xhtml)|application\/(json|xml|csv|x-ndjson))/
 
 const MAX_CONTENT_BYTES = 5 * 1024 * 1024;
 
+// 卡片头部预览的截断口径（行 + 字符双保险）
+const PREVIEW_LINES = 5;
+const PREVIEW_CHARS = 400;
+
 export interface OutputFileDeps {
   sessionId: string;
   store: (a: FileArtifact) => void | Promise<void>;
@@ -51,9 +55,10 @@ USE WHEN:
 - You're exporting scraped rows — pass \`collection\` with a .csv (or .json) filename.
 - The output is too long or too file-shaped to sit inline in the chat.
 
+The card shows a preview and lets the user save the file (to their Downloads folder, or anywhere via a Save As dialog). You do NOT save to disk yourself and must not assume the file was saved.
+
 **DO NOT USE WHEN:**
-- You expect the file written to disk yourself — this only shows a download card; you do NOT save to disk and must not assume it was saved.
-- You need a specific absolute path — names are always under pie/, arbitrary paths aren't allowed.
+- You need the file at a specific absolute path — you can't choose the destination; the user does.
 - The content is a short answer that belongs inline in your reply.`,
     parameters: {
       type: "object",
@@ -98,19 +103,24 @@ USE WHEN:
       const filename = sanitizeDownloadName(rawFilename);
       const mime = typeof a.mime === "string" && SAFE_MIME.test(a.mime) ? a.mime : defaultMime;
       const id = crypto.randomUUID();
-      await deps.store({ id, sessionId: deps.sessionId, filename, mime, content, byteLength, addedAt: Date.now() });
       const renameNote =
         filename === "pie/untitled.txt" && rawFilename !== "pie/untitled.txt"
           ? " (filename was sanitized to untitled.txt)"
           : "";
+      await deps.store({ id, sessionId: deps.sessionId, filename, mime, content, byteLength, addedAt: Date.now() });
+      // 卡片上的头部预览：让用户在保存前就看清楚产出的是什么。截断双保险
+      // （行数 + 字符数），避免超长单行把卡片撑爆。
+      const lines = content.split("\n");
+      const previewLines = Math.min(lines.length, PREVIEW_LINES);
+      const preview = lines.slice(0, previewLines).join("\n").slice(0, PREVIEW_CHARS);
       return {
         success: true,
         observation:
           exportNote +
-          `Presented "${filename}" to the user as a downloadable card in the side panel. ` +
-          `The user will choose whether to download it and where to save it. ` +
+          `Presented "${filename}" to the user as a file card in the side panel. ` +
+          `The user will choose whether to save it and where. ` +
           `Do not assume it has been saved.${renameNote}`,
-        fileOutput: { id, filename, mime, size: byteLength },
+        fileOutput: { id, filename, mime, size: byteLength, preview, totalLines: lines.length },
       };
     },
   };
