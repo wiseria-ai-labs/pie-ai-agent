@@ -8,5 +8,5 @@ export interface ActionResult {
    * loop.ts turns this into a `file-output` port message. Full content lives
    * in the persistent output-store (IndexedDB), NOT here.
    */
-  fileOutput?: { id: string; filename: string; mime: string; size: number };
+  fileOutput?: { id: string; filename: string; mime: string; size: number; preview?: string; totalLines?: number };
 }

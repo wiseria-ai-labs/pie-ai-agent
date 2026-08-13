@@ -251,7 +251,7 @@ export const jaDict = {
       imageProcessingFailed: "画像処理に失敗しました。",
     },
     files: { attachFile: "ファイルを添付", truncated: "切り詰め済み", remove: "ファイルを削除", fileAttachments: "ファイル添付", tooLarge: "{name} は 5MB 制限を超えています", unsupported: "{name}: 対応していないファイル形式", processingFailed: "そのファイルを読み取れませんでした", requestTitle: "Pie がローカルのテキストまたは PDF ファイルを読み取ろうとしています", requestBody: "内容をエージェントと共有するテキストまたは PDF ファイルを選択してください。画像には + メニューを使ってください。", requestChoose: "ファイルを選択", requestCancel: "キャンセル" },
-    output: { download: "ダウンロード", expired: "期限切れです。エージェントに再生成を依頼してください" },
+    output: { save: "保存", previewMore: "全 {total} 行", expired: "期限切れです。エージェントに再生成を依頼してください" },
     stepCount: { one: "ステップ", other: "ステップ" },
     noApiKey: "API KEY なし",
     noApiKeyDescription: "エージェントの利用を開始するには、対応プロバイダーの API キーを追加してください。",

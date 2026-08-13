@@ -64,69 +64,28 @@ describe("output_file tool", () => {
   });
 });
 
-describe("output_file collection export", () => {
+describe("output_file preview", () => {
   const ctx = { tabId: 1 } as Parameters<ReturnType<typeof buildOutputFileTool>["handler"]>[1];
-  const rows = [{ name: "a", price: 1 }, { name: "b", price: 2 }];
-  function build(readCollection = vi.fn(async () => ({ records: rows, fields: ["name", "price"] }))) {
-    const stored: FileArtifact[] = [];
-    const tool = buildOutputFileTool({ sessionId: "s1", store: (a) => { stored.push(a); }, readCollection });
-    return { tool, stored, readCollection };
-  }
 
-  it("serializes the collection to CSV without any content arg", async () => {
-    const { tool, stored } = build();
-    const r = await tool.handler({ filename: "products.csv", collection: "products" }, ctx);
-    expect(r.success).toBe(true);
-    expect(stored[0].content).toBe("name,price\na,1\nb,2");
-    expect(stored[0].mime).toBe("text/csv");
-    expect(r.observation).toContain("Exported 2 row(s)");
-  });
-
-  it("serializes to JSON when the filename ends in .json", async () => {
-    const { tool, stored } = build();
-    await tool.handler({ filename: "products.json", collection: "products" }, ctx);
-    expect(JSON.parse(stored[0].content)).toEqual(rows);
-    expect(stored[0].mime).toBe("application/json");
-  });
-
-  it("surfaces the store's error for an unknown collection", async () => {
-    const { tool, stored } = build(vi.fn(async () => ({ error: 'unknown collection "nope"' })) as never);
-    const r = await tool.handler({ filename: "a.csv", collection: "nope" }, ctx);
-    expect(r.success).toBe(false);
-    expect(r.error).toContain("unknown collection");
-    expect(stored).toHaveLength(0);
-  });
-
-  it("rejects an empty collection instead of writing an empty file", async () => {
-    const { tool, stored } = build(vi.fn(async () => ({ records: [] })) as never);
-    const r = await tool.handler({ filename: "a.csv", collection: "empty" }, ctx);
-    expect(r.success).toBe(false);
-    expect(r.error).toMatch(/empty/);
-    expect(stored).toHaveLength(0);
-  });
-
-  it("hints at query_scratchpad when the export exceeds the size cap", async () => {
-    const big = [{ blob: "x".repeat(5 * 1024 * 1024 + 1) }];
-    const { tool, stored } = build(vi.fn(async () => ({ records: big })) as never);
-    const r = await tool.handler({ filename: "big.csv", collection: "big" }, ctx);
-    expect(r.success).toBe(false);
-    expect(r.error).toMatch(/content_too_large.*query_scratchpad/);
-    expect(stored).toHaveLength(0);
-  });
-
-  it("errors when no scratchpad is wired up", async () => {
+  it("returns a head preview + total line count for the card", async () => {
     const tool = buildOutputFileTool({ sessionId: "s1", store: () => {} });
-    const r = await tool.handler({ filename: "a.csv", collection: "products" }, ctx);
-    expect(r.success).toBe(false);
-    expect(r.error).toMatch(/unavailable/);
+    const content = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n");
+    const r = await tool.handler({ filename: "a.txt", content }, ctx);
+    expect(r.fileOutput?.totalLines).toBe(40);
+    expect(r.fileOutput?.preview).toBe("line 1\nline 2\nline 3\nline 4\nline 5"); // 前 5 行
   });
 
-  it("still takes plain content (collection is optional)", async () => {
-    const { tool, stored, readCollection } = build();
+  it("caps the preview by characters too (one very long line can't blow up the card)", async () => {
+    const tool = buildOutputFileTool({ sessionId: "s1", store: () => {} });
+    const r = await tool.handler({ filename: "a.txt", content: "x".repeat(5000) }, ctx);
+    expect(r.fileOutput?.preview?.length).toBe(400);
+    expect(r.fileOutput?.totalLines).toBe(1);
+  });
+
+  it("never claims the file was saved (the user saves from the card)", async () => {
+    const tool = buildOutputFileTool({ sessionId: "s1", store: () => {} });
     const r = await tool.handler({ filename: "a.txt", content: "hi" }, ctx);
-    expect(r.success).toBe(true);
-    expect(stored[0].content).toBe("hi");
-    expect(readCollection).not.toHaveBeenCalled();
+    expect(r.observation).toContain("Do not assume it has been saved");
   });
 });
 

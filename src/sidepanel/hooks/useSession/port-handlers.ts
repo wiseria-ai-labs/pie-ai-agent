@@ -337,6 +337,8 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         filename: msg.filename,
         mime: msg.mime,
         size: msg.size,
+        preview: msg.preview,
+        totalLines: msg.totalLines,
       };
       patchSlot(msg.sessionId, { messages: [...baseMessages, entry] });
       return;

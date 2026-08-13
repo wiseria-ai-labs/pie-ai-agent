@@ -12,6 +12,10 @@ interface Props {
   filename: string;
   mime: string;
   size: number;
+  /** 头部内容预览（前几行，SW 侧已截断）+ 总行数 */
+  preview?: string;
+  totalLines?: number;
+  /** 点保存 → SW 弹原生保存对话框，用户自己选位置 */
   onDownload: (artifactId: string) => Promise<DownloadResult>;
   /** Optional existence probe run on mount — if it resolves false (artifact
    *  evicted / session archived), the card shows the expired state without the
@@ -67,10 +71,14 @@ const DownloadIcon = () => (
   </svg>
 );
 
+
+
 export function FileOutputCard({
   artifactId,
   filename,
   size,
+  preview,
+  totalLines,
   onDownload,
   onProbe,
 }: Props) {
@@ -102,42 +110,58 @@ export function FileOutputCard({
     setStatus(r.status === "expired" ? "expired" : "idle");
   }
 
+  const previewLines = preview ? preview.split("\n").length : 0;
+  const showMore = !!totalLines && totalLines > previewLines;
+
   return (
     <div
       className={[
-        "flex items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5",
+        "flex flex-col gap-2.5 rounded-xl border border-line bg-surface px-3 py-2.5",
         dimmed ? "opacity-50" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      {/* 40×40 icon slot — tinted with accent-tint, accent-coloured glyph */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-tint text-accent">
-        <DocIcon />
+      <div className="flex items-center gap-3">
+        {/* 40×40 icon slot — tinted with accent-tint, accent-coloured glyph */}
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-tint text-accent">
+          <DocIcon />
+        </div>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="truncate text-[14px] font-medium text-fg-1">
+            {displayName(filename)}
+          </div>
+          <div className="font-mono text-[11px] text-fg-3">
+            {dimmed ? t("chat.output.expired") : `${fileTypeLabel(filename)} · ${humanSize(size)}`}
+          </div>
+        </div>
+
+        {/* 保存 = 原生保存对话框，用户自己选位置 */}
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={handleClick}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-accent-line bg-accent-strong px-3 py-1.5 text-[12px] font-medium text-surface hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <DownloadIcon />
+          {t("chat.output.save")}
+        </button>
       </div>
 
-      {/* filename + meta */}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="truncate text-[14px] font-medium text-fg-1">
-          {displayName(filename)}
+      {/* 头部内容预览：保存前先让用户看清产出的是什么 */}
+      {preview && !dimmed && (
+        <div className="flex flex-col gap-1 rounded-lg border border-line bg-surface-deep px-2.5 py-2">
+          <pre className="m-0 max-h-28 overflow-hidden whitespace-pre-wrap break-words font-mono text-[11px] leading-[17px] text-fg-2">
+            {preview}
+          </pre>
+          {showMore && (
+            <span className="font-mono text-[10px] text-fg-3">
+              ⋯ {t("chat.output.previewMore").replace("{total}", String(totalLines))}
+            </span>
+          )}
         </div>
-        <div className="font-mono text-[11px] text-fg-3">
-          {dimmed
-            ? t("chat.output.expired")
-            : `${fileTypeLabel(filename)} · ${humanSize(size)}`}
-        </div>
-      </div>
-
-      {/* download button — uses accent as primary fill, adapts light/dark */}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={handleClick}
-        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-accent-line bg-accent-strong px-3 py-1.5 text-[12px] font-medium text-surface hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <DownloadIcon />
-        {t("chat.output.download")}
-      </button>
+      )}
     </div>
   );
 }

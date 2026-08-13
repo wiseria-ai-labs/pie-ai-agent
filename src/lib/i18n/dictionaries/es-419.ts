@@ -252,7 +252,7 @@ export const es419Dict = {
       imageProcessingFailed: "Falló el procesamiento de la imagen.",
     },
     files: { attachFile: "Adjuntar archivo", truncated: "truncado", remove: "Quitar archivo", fileAttachments: "Adjuntos de archivo", tooLarge: "{name} supera el límite de 5 MB", unsupported: "{name}: tipo de archivo no compatible", processingFailed: "No se pudo leer ese archivo", requestTitle: "Pie quiere leer un archivo local de texto o PDF", requestBody: "Elige un archivo de texto o PDF para compartir su contenido con el agente. Para imágenes, usa el menú +.", requestChoose: "Elegir archivo", requestCancel: "Cancelar" },
-    output: { download: "Descargar", expired: "Vencido; pídele al agente que lo regenere" },
+    output: { save: "Guardar", previewMore: "{total} líneas en total", expired: "Vencido; pídele al agente que lo regenere" },
     stepCount: { one: "paso", other: "pasos" },
     noApiKey: "SIN API KEY",
     noApiKeyDescription: "Agrega una clave API de cualquier proveedor compatible para empezar a usar el agente.",
