@@ -229,23 +229,24 @@ shifts across site redesigns, so find controls by what they DO or how
 they're labelled — never by a hardcoded selector.
 
 ## YouTube (desktop)
-1. Start with search_page — NOT read_page. Call search_page with query
-   ["Show transcript","Transcript","显示转写稿","转写稿"] and click the
-   returned match's index. search_page scans the whole DOM and is the only
-   viewport-independent way to find this control.
-   - Trap: the "Show transcript" control is usually BELOW the fold. read_page's
-     interactive atlas is viewport-first and truncates off-screen elements
-     (you will see an "<omitted controls=N ... />" marker) — not seeing it
-     in a read_page result does NOT mean the page lacks it. Never conclude
-     "no transcript" from a read_page result alone.
-   - If search_page returns no match, the control may be inside a collapsed
-     region: expand "...more" / "Show more" in the description, or open the
-     "..." more-actions menu next to the like / share row, then run
-     search_page again.
-2. Once the panel is open, read its full text — prefer search_page (no
-   50KB truncation) or read_page over the transcript region. The panel is a
-   scrollable list of timestamped caption lines; scroll if it is long.
-3. Timestamps are noise for summarizing: each line is prefixed by an
+1. The "Show transcript" control is usually BELOW the fold, and read_page's
+   interactive atlas is viewport-first: off-screen controls are summarized as
+   an "<omitted controls=N ... />" marker instead of being listed one by one.
+   Not seeing "Show transcript" in a read_page result does NOT mean the page
+   lacks it — never conclude "no transcript" from a single read_page.
+2. Reveal the control, then click it:
+   - Run read_page({mode:"interactive"}) and, if it is not yet listed, expand
+     the description: find and click the "...more" / "Show more" control under
+     the video title (clicking also scrolls the element into view), then re-run
+     read_page({mode:"interactive"}) to pick up the newly-revealed controls.
+   - If it is still not listed, open the "..." more-actions menu next to the
+     like / share row and re-run read_page({mode:"interactive"}).
+   - Look for a control labelled "Show transcript" / "Transcript" /
+     "显示转写稿" / "转写稿" and click it.
+3. Once the panel is open, read its full text with read_page({mode:"content"})
+   (or read_page over the transcript region). The panel is a scrollable list
+   of timestamped caption lines; re-run read_page to page through it if long.
+4. Timestamps are noise for summarizing: each line is prefixed by an
    "m:ss" stamp. If the panel offers a "Toggle timestamps" option, use it
    to hide them; otherwise just ignore the leading stamp and read the
    caption text. Keep a stamp only when the user asked "when did they say X".
@@ -255,21 +256,23 @@ they're labelled — never by a hardcoded selector.
    separate transcript list. Hover the player controls and find the CC /
    字幕 toggle; turn captions on if they are off.
 2. Where the video exposes a caption / 字幕 list panel, open it and read it
-   the same way as YouTube's transcript. Start with search_page (query
-   ["字幕","CC","transcript"]) to find the control — it is viewport-independent,
-   whereas read_page can omit off-screen controls.
+   the same way as YouTube's transcript. The toggle may be off-screen or in a
+   collapsed control group — remember read_page's interactive atlas omits
+   off-screen controls, so reveal them (hover the player controls / expand)
+   and re-run read_page({mode:"interactive"}) rather than assuming it is absent.
 3. If only per-frame overlay captions are available (no full list), tell
    the user you can read what is currently shown but cannot pull the whole
    transcript at once, and ask whether to proceed section by section.
 
 ## No captions available
-Only take this path when ALL of the following are true — search_page is
-mandatory, the others are supporting:
-- you ran search_page for the labels above and it returned no match, AND
+Only take this path when you have genuinely looked and found nothing:
 - you expanded the description ("...more" / "Show more") and re-ran
-  search_page, AND
-- you checked the "..." more-actions menu.
-If you have not run search_page, you have NOT looked — go back and look.
+  read_page({mode:"interactive"}), AND
+- you checked the "..." more-actions menu, AND
+- no "Show transcript" / caption control appeared in any read_page result.
+Remember read_page's interactive atlas omits off-screen controls
+("<omitted controls=N ... />"): a single read_page that did not list the
+control is NOT enough — you must have expanded and re-read as above.
 Once you have genuinely looked and still found nothing, do NOT guess or
 hallucinate the video's content.
 Tell the user plainly: this video has no captions / transcript available,
