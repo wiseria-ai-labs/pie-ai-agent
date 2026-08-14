@@ -359,10 +359,12 @@ function winCursorApp() {
   };
 }
 
-test("windowsOpenApp: cmd /c start \"\" <quoted-exe> <quoted-dir>", () => {
+test("windowsOpenApp: cmd /c start \"\" <exe> <dir> (bare argv, no batQuote)", () => {
   const s = windowsOpenApp(CURSOR_EXE, "C:\\h\\d");
   expect(s.cmd).toBe("cmd.exe");
-  expect(s.args).toEqual(["/c", "start", "", batQuote(CURSOR_EXE), batQuote("C:\\h\\d")]);
+  expect(s.args).toEqual(["/c", "start", "", CURSOR_EXE, "C:\\h\\d"]);
+  expect(s.args).not.toContain(batQuote(CURSOR_EXE));
+  expect(s.args).not.toContain(batQuote("C:\\h\\d"));
   expect(s.args).not.toContain("osascript");
   expect(s.args).not.toContain("-a");
 });
@@ -381,7 +383,7 @@ test("win32 app: start \"\" <exe> <dir>，写 AGENTS.md，mode=app", async () =>
   expect(h.writes.some((w) => w.path.endsWith("start.command") || w.path.endsWith("start.bat"))).toBe(false);
   expect(h.spawns).toHaveLength(1);
   expect(h.spawns[0].cmd).toBe("cmd.exe");
-  expect(h.spawns[0].args).toEqual(["/c", "start", "", batQuote(CURSOR_EXE), batQuote(r.dir)]);
+  expect(h.spawns[0].args).toEqual(["/c", "start", "", CURSOR_EXE, r.dir]);
   expect(h.spawns.some((s) => s.cmd === "open" || s.cmd === "osascript")).toBe(false);
 });
 
