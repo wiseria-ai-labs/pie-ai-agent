@@ -214,6 +214,19 @@ export interface SessionAgentState {
    *  SW startup before any other recovery work. */
   pendingConfirm?: PendingConfirmRecord | null;
   /**
+   * Issue #21 — task has started but may not have persisted a first-step
+   * snapshot yet. `runAgentLoop` sets this true before entering the first
+   * ReAct iteration; `buildSessionAgentTombstone` explicitly clears it to
+   * false. Recovery uses it to distinguish "first-step HITL card interrupted"
+   * from "task ended cleanly (tombstone)" — both have `stepIndex === 0`.
+   *
+   * A task interrupted at its first step carries zero history, so it can't be
+   * resumed (handleResumeRequest / planAbortResumeSeed both require
+   * stepIndex > 0); recovery therefore transitions `taskActive && stepIndex === 0`
+   * sessions to `failed`, not `paused`.
+   */
+  taskActive?: boolean;
+  /**
    * ADR 0007 — per-session skill-run approvals. Skill ids the user has
    * approved to run scripts for in THIS session (the confirmation-card
    * decision, granularity = per session × per skill). Once a skill id is

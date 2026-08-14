@@ -193,7 +193,29 @@ describe("buildSessionAgentSnapshot", () => {
       pendingInstructions: [],
       stepIndex: 0,
       hasImageContent: false,
+      // Issue #21 — cleared explicitly so a stale taskActive=true from a
+      // per-step merge cannot survive the tombstone write and mislead recovery.
+      taskActive: false,
     });
+  });
+
+  it("Issue #21 — tombstone explicitly sets taskActive=false (not omitted)", () => {
+    // Explicit false (not undefined) matters: the tombstone lands via
+    // mergeSessionAgentSnapshot's tombstone branch which spreads the snapshot
+    // as-is. Omitting the field would let a lingering taskActive=true survive.
+    const tombstone = buildSessionAgentTombstone();
+    expect(tombstone.taskActive).toBe(false);
+    expect("taskActive" in tombstone).toBe(true);
+    // Same for the synth / carryUsage overloads.
+    expect(buildSessionAgentTombstone("synth").taskActive).toBe(false);
+    expect(
+      buildSessionAgentTombstone(undefined, {
+        totalInputTokens: 1,
+        totalOutputTokens: 2,
+        lastInputTokens: 1,
+        lastOutputTokens: 2,
+      }).taskActive,
+    ).toBe(false);
   });
 
   it("M1-U3 v2 tombstone — independent calls return independent objects", () => {

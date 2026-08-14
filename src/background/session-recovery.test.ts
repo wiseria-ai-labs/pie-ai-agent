@@ -167,6 +167,65 @@ describe("detectAndMarkPaused — R14 image-bearing sessions", () => {
   });
 });
 
+// Issue #21 — a task interrupted at its FIRST step (typically a first-step HITL
+// card: skill-confirm / CDP consent) writes taskActive=true before the first
+// ReAct iteration but never reaches a per-step snapshot, so stepIndex stays 0.
+// Recovery must transition these active→failed (zero history = unresumable),
+// NOT leave them stuck `active`, while a genuine tombstone (taskActive=false)
+// still stays put.
+describe("detectAndMarkPaused — Issue #21 first-step interrupt (taskActive)", () => {
+  it("stepIndex=0 && taskActive=true → failed (first-step HITL interrupt)", async () => {
+    const meta = await createSession();
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+    });
+
+    const stats = await detectAndMarkPaused({ skipGuard: true });
+
+    expect(stats.failed).toBe(1);
+    expect(stats.paused).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("failed");
+  });
+
+  it("stepIndex=0 && taskActive=false → no-op (real tombstone, regression guard)", async () => {
+    const meta = await createSession();
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: false,
+    });
+
+    const stats = await detectAndMarkPaused({ skipGuard: true });
+
+    expect(stats.failed).toBe(0);
+    expect(stats.paused).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("active");
+  });
+
+  it("stepIndex>0 still paused even when taskActive lingers true (existing path unchanged)", async () => {
+    const meta = await createSession();
+    await setSessionAgent(meta.id, {
+      agentMessages: [{ role: "user", content: "task" }],
+      pendingInstructions: [],
+      stepIndex: 4,
+      hasImageContent: false,
+      taskActive: true,
+    });
+
+    const stats = await detectAndMarkPaused({ skipGuard: true });
+
+    expect(stats.paused).toBe(1);
+    expect(stats.failed).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("paused");
+  });
+});
+
 describe("detectAndMarkPaused — recoveryGuard", () => {
   it("skips re-entry within the 30s guard window", async () => {
     const meta = await createSession();
@@ -392,6 +451,57 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
     expect(stats.paused).toBe(1);
     expect(stats.failed).toBe(0);
     expect((await getSessionMeta(meta.id))!.status).toBe("paused");
+  });
+
+  // Issue #21 — first-step interrupt on panel disconnect.
+  it("Issue #21 — stepIndex=0 && taskActive=true → failed (first-step HITL interrupt)", async () => {
+    const meta = await createSession();
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+    });
+
+    const stats = await transitionPortInFlightSessionsToPaused([meta.id]);
+
+    expect(stats.failed).toBe(1);
+    expect(stats.paused).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("failed");
+  });
+
+  it("Issue #21 — stepIndex=0 && taskActive=false → no-op (real tombstone, regression guard)", async () => {
+    const meta = await createSession();
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: false,
+    });
+
+    const stats = await transitionPortInFlightSessionsToPaused([meta.id]);
+
+    expect(stats.failed).toBe(0);
+    expect(stats.paused).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("active");
+  });
+
+  it("Issue #21 — no agent record but sid in the port's in-flight set → failed", async () => {
+    // A brand-new session's first task was interrupted before even the
+    // taskActive entry write landed: the agent key is absent, but the port's
+    // in-flight set proves chat-start/resume ran. Unresumable → failed.
+    const meta = await createSession();
+    // Wipe the default agent record createSession wrote to simulate the
+    // pre-entry-write window (no snapshot of any kind persisted yet).
+    await setSessionAgent(meta.id, undefined as never);
+
+    const stats = await transitionPortInFlightSessionsToPaused([meta.id]);
+
+    expect(stats.failed).toBe(1);
+    expect(stats.paused).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("failed");
   });
 });
 
