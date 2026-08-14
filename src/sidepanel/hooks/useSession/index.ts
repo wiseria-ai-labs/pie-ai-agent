@@ -1029,7 +1029,8 @@ export function useSession(): UseSession {
         resolveDownload(artifactId, { status: "error" });
         return;
       }
-      window.setTimeout(() => resolveDownload(artifactId, { status: "error" }), 30_000);
+      // 用户要在原生保存对话框里选位置，给足时间再兜底解锁按钮。
+      window.setTimeout(() => resolveDownload(artifactId, { status: "error" }), 5 * 60_000);
     });
   }, []);
 

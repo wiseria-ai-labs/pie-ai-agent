@@ -183,7 +183,7 @@ export const ptBRDict = {
     },
   },
   hitl: {
-    caps: { skillGrant: "Autorização de skill", runLocalAgent: "Agente local", handoff: "Transferência", localFile: "Arquivo local", cdp: "Simulação de entrada" },
+    caps: { skillRunConfirm: "Executar script de skill", runLocalAgent: "Agente local", handoff: "Transferência", localFile: "Arquivo local", cdp: "Simulação de entrada" },
   },
   cdpOnboarding: {
     title: "Pie precisa ativar a simulação de entrada do navegador (CDP)",
@@ -210,14 +210,13 @@ export const ptBRDict = {
     allow: "Repassar",
     deny: "Cancelar",
   },
-  skillGrant: {
-    title: "{name} solicita executar scripts no seu computador",
-    scriptsLabel: "Scripts que ela pode executar",
-    networkLabel: "Acesso à rede",
-    networkNone: "Nenhum — a sandbox padrão bloqueia a rede",
-    writeLabel: "Locais extras de escrita (fora do espaço de trabalho dela)",
+  skillRunConfirm: {
+    title: "Executar um script de {name}?",
+    entryLabel: "Script",
+    argsLabel: "Argumentos",
+    argsNone: "Nenhum",
     disclosure:
-      "Os scripts rodam com as suas permissões de usuário dentro de uma sandbox padrão: sem rede além dos domínios listados, escrita limitada ao espaço de trabalho da skill e aos caminhos listados, e leitura bloqueada em pastas sensíveis. A aprovação vale até as declarações da skill mudarem.",
+      "O script roda com as suas permissões de usuário dentro de uma sandbox: a escrita é limitada ao espaço de trabalho desta sessão, a leitura de pastas sensíveis é bloqueada e os segredos são removidos do seu ambiente. Ao aprovar, esta skill poderá executar scripts pelo resto desta sessão.",
     allow: "Permitir e executar",
     deny: "Recusar",
   },
@@ -252,7 +251,7 @@ export const ptBRDict = {
       imageProcessingFailed: "Falha ao processar imagem.",
     },
     files: { attachFile: "Anexar arquivo", truncated: "truncado", remove: "Remover arquivo", fileAttachments: "Anexos de arquivo", tooLarge: "{name} excede o limite de 5 MB", unsupported: "{name}: tipo de arquivo não suportado", processingFailed: "Não foi possível ler esse arquivo", requestTitle: "Pie quer ler um arquivo local de texto ou PDF", requestBody: "Escolha um arquivo de texto ou PDF para compartilhar seu conteúdo com o agente. Para imagens, use o menu +.", requestChoose: "Escolher arquivo", requestCancel: "Cancelar" },
-    output: { download: "Baixar", expired: "Expirado; peça ao agente para gerar novamente" },
+    output: { save: "Salvar", previewMore: "{total} linhas no total", expired: "Expirado; peça ao agente para gerar novamente" },
     stepCount: { one: "etapa", other: "etapas" },
     noApiKey: "SEM API KEY",
     noApiKeyDescription: "Adicione uma chave API de qualquer provedor compatível para começar a usar o agente.",
@@ -426,7 +425,6 @@ export const ptBRDict = {
     screenshotUnavailable: "[Captura indisponível]",
   },
   skills: {
-    grant: { granted: "Scripts autorizados", revoke: "Revogar" },
     empty: {
       cta: "Exibe fluxos reutilizáveis (habilidades). As ferramentas subjacentes são resolvidas automaticamente a partir do prompt. Quer uma nova? Peça ao Pie para criar uma habilidade e descreva o que ela deve fazer; o Pie escreverá para você.",
     },
@@ -453,7 +451,6 @@ export const ptBRDict = {
     },
     authorTag: { builtIn: "INTEGRADO", agent: "AGENTE", user: "USUÁRIO" },
     sourceTag: { agents: "~/.agents" },
-    invalidNetwork: "{count} domínio(s) de rede inválido(s) ignorado(s)",
     agentsImport: {
       title: "Encontramos {count} skills locais",
       body: "Elas vêm de ~/.agents/skills (diretório compartilhado entre agentes). Escolha quais o Pie pode usar — você pode mudar isso nesta lista a qualquer momento.",

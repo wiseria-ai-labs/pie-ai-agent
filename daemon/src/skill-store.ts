@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync, lstatSync, realpathSync, mkdirSy
 import { join, resolve, relative, isAbsolute, sep, dirname, posix } from "path";
 import { paths, sessionWorkspace, assertSessionId } from "./paths";
 import { parseSkillMd } from "./skill-md";
-import type { SkillSummary, WriteSkillFile } from "../../src/types/local-bridge";
+import type { SkillSummary, WriteSkillFile, ReadSessionFileResult } from "../../src/types/local-bridge";
+import { READ_OUTPUT_CAP } from "../../src/types/local-bridge";
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -127,16 +128,12 @@ export function listSkills(root: string = paths.skillsDir): SkillSummary[] {
     try {
       const parsed = parseSkillMd(readFileSync(mdPath, "utf8"));
       const summary: SkillSummary = {
-        name: e.name, // 目录名即身份（调用/grant 一律用它，以目录为准）
+        name: e.name, // 目录名即身份（调用一律用它，以目录为准）
         displayName: parsed.name, // 展示名 = frontmatter.name（中文名 skill 迁到 hash 目录时两者不同）
         description: parsed.description,
         runnableScripts: runnableScripts(dir),
-        declaredCaps: parsed.declaredCaps,
         files: packageFiles(dir),
       };
-      // optional 加法字段：全合法时省略（多数 skill），仅在有被丢弃的域名声明时带上
-      // 作者信号，让面板出 badge / doctor 列出。
-      if (parsed.invalidNetwork.length > 0) summary.invalidNetwork = parsed.invalidNetwork;
       out.push(summary);
     } catch {
       // 坏 skill 跳过、不让整个 list 挂（韧性；坏 skill 在 authoring 期暴露）
@@ -228,14 +225,26 @@ export function deleteSkillGuarded(name: string, roots: SkillRoots = defaultRoot
 // 脚本产物住在 ~/.pie/sessions/<sid>/workspace/（按 session 隔离，不在 skill 目录）。
 // read_session_file 通过 safeRelPath 锁死在 workspace 内（I2：跨 session/穿越 throw）。
 
-/** 读 session workspace 内产物；safeRelPath 锁在该 session 的 workspace 内。 */
+/** 读 session workspace 内产物；safeRelPath 锁在该 session 的 workspace 内。
+ *  D8：单次返回上限 READ_OUTPUT_CAP（256K 字符），从 offset 起切；超限置 truncated
+ *  + 回总长度，LLM 用 offset 续读。既防大转写文本直灌 context，也守住 native
+ *  messaging 单帧上限。 */
 export function readSessionFile(
   sessionId: string,
   rel: string,
+  offset = 0,
   sessionsDir: string = paths.sessionsDir,
-): string {
+): ReadSessionFileResult {
   const ws = sessionWorkspace(sessionId, sessionsDir); // 内含 assertSessionId
-  return readFileSync(safeRelPath(ws, rel), "utf8");
+  const full = readFileSync(safeRelPath(ws, rel), "utf8");
+  const start = Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
+  const content = full.slice(start, start + READ_OUTPUT_CAP);
+  const result: ReadSessionFileResult = { content };
+  if (start + content.length < full.length) {
+    result.truncated = true;
+    result.totalLength = full.length;
+  }
+  return result;
 }
 
 /** 删整个 session 目录（workspace 的父）；幂等（不存在 → false）。 */

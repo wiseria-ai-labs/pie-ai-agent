@@ -34,7 +34,6 @@ beforeEach(async () => {
         name: DAEMON_ENTRY_NAME,
         description: "daemon 提供的 skill",
         runnableScripts: [],
-        declaredCaps: { network: [], write: [] },
         files: ["SKILL.md"],
       },
     ],

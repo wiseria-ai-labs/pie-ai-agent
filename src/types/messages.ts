@@ -98,6 +98,7 @@ export interface DownloadOutputMessage {
   artifactId: string;
 }
 
+
 /**
  * HITL — panel → SW: answer a `panel-request`. The body is the union from
  * usePanelRequest's PanelResponseBody (ok+data | reason). Routed over the
@@ -318,6 +319,9 @@ export type DisplayMessage =
       filename: string;
       mime: string;
       size: number;
+      /** 头部内容预览（前几行，已截断） */
+      preview?: string;
+      totalLines?: number;
     };
 
 // --- Agent: resolved element info (from snapshot, not LLM) ---
@@ -588,6 +592,9 @@ export interface FileOutputMessage {
   filename: string;
   mime: string;
   size: number;
+  /** 卡片头部内容预览（前几行，已截断）+ 总行数，用于「⋯ 共 N 行」 */
+  preview?: string;
+  totalLines?: number;
   /** M2-U2 — session routing. */
   sessionId: string;
 }

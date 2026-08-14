@@ -2,13 +2,14 @@ import { test, expect } from "bun:test";
 import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { interpreterFor, pickWindowsPython, runSkillScript } from "../src/skill-exec";
+import type { SkillExecDeps } from "../src/skill-exec";
 import { fakeSkillSandbox } from "../src/skill-sandbox";
-import { envelopeHash } from "../src/grants";
 import { setLogEnabled } from "../src/log";
 
 setLogEnabled(false);
 
 const SID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const identityEnv: SkillExecDeps["buildEnv"] = (extra) => ({ ...extra });
 
 function fixture() {
   const base = join(import.meta.dir, ".tmp-win-" + Math.random().toString(36).slice(2));
@@ -16,19 +17,10 @@ function fixture() {
   const sessionsDir = join(base, "sessions");
   const dir = join(skillsRoot, "web-fetch");
   mkdirSync(join(dir, "scripts"), { recursive: true });
-  writeFileSync(
-    join(dir, "SKILL.md"),
-    `---\nname: web-fetch\ndescription: d\nmetadata:\n  pie:\n    network: [example.com]\n    write: [~/out]\n---\nb\n`,
-  );
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: web-fetch\ndescription: d\n---\nb\n`);
   writeFileSync(join(dir, "scripts", "fetch.ts"), "export default () => 1;");
-  return { base, skillsRoot, sessionsDir, grantsPath: join(base, "grants.json"), auditPath: join(base, "audit.jsonl") };
+  return { base, skillsRoot, sessionsDir, auditPath: join(base, "audit.jsonl") };
 }
-
-const WEB_FETCH_ENVELOPE_HASH = envelopeHash({
-  allowedDomains: ["example.com"],
-  extraWrites: ["~/out"],
-  runnableScripts: ["fetch.ts"],
-});
 
 // interpreterFor 的 Windows 分支 + python 探测的纯逻辑（spec §4.8，实测发现 F4）。
 // 真机沙箱行为走 need-human-test；此处只测可在 mac/linux 上判定的平台分支与解析规则。
@@ -107,7 +99,7 @@ test("pickWindowsPython: empty input → null", () => {
 });
 
 // ── 沙箱设施就绪检查（spec §3.2 / F6，fail-closed）──────────────────────────
-test("readinessCheck not ready → sandbox_not_ready, before auth, no run", async () => {
+test("readinessCheck not ready → sandbox_not_ready, before run", async () => {
   const f = fixture();
   let ran = false;
   const sandbox = fakeSkillSandbox(async () => {
@@ -116,9 +108,8 @@ test("readinessCheck not ready → sandbox_not_ready, before auth, no run", asyn
   });
   try {
     await runSkillScript(
-      // 已授权（grantApproved + 正确 hash），证明就绪检查在授权之前拦截
-      { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: WEB_FETCH_ENVELOPE_HASH },
-      { sandbox, now: () => 1, ...f, readinessCheck: async () => ({ ready: false, reason: "WFP fence absent" }) },
+      { name: "web-fetch", entry: "fetch.ts", sessionId: SID },
+      { sandbox, now: () => 1, buildEnv: identityEnv, ...f, readinessCheck: async () => ({ ready: false, reason: "WFP fence absent" }) },
     );
     throw new Error("should have thrown");
   } catch (e) {
@@ -129,25 +120,12 @@ test("readinessCheck not ready → sandbox_not_ready, before auth, no run", asyn
   rmSync(f.base, { recursive: true, force: true });
 });
 
-test("readinessCheck not ready → blocks even before authorization prompt", async () => {
-  const f = fixture();
-  const sandbox = fakeSkillSandbox(async () => ({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
-  // 未授权时，就绪检查应先于 needs_authorization 触发（fail-closed 优先）
-  await expect(
-    runSkillScript(
-      { name: "web-fetch", entry: "fetch.ts", sessionId: SID },
-      { sandbox, now: () => 1, ...f, readinessCheck: async () => ({ ready: false, reason: "not provisioned" }) },
-    ),
-  ).rejects.toMatchObject({ code: "sandbox_not_ready" });
-  rmSync(f.base, { recursive: true, force: true });
-});
-
 test("readinessCheck ready → run proceeds normally", async () => {
   const f = fixture();
   const sandbox = fakeSkillSandbox(async () => ({ stdout: "OK", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
   const r = await runSkillScript(
-    { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: WEB_FETCH_ENVELOPE_HASH },
-    { sandbox, now: () => 1, ...f, readinessCheck: async () => ({ ready: true }) },
+    { name: "web-fetch", entry: "fetch.ts", sessionId: SID },
+    { sandbox, now: () => 1, buildEnv: identityEnv, ...f, readinessCheck: async () => ({ ready: true }) },
   );
   expect(r.output).toBe("OK");
   rmSync(f.base, { recursive: true, force: true });
@@ -158,8 +136,8 @@ test("default readinessCheck (non-Windows host) → ready, run proceeds without 
   const sandbox = fakeSkillSandbox(async () => ({ stdout: "OK", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
   // 不注入 readinessCheck：默认走 checkWindowsSandboxReady，在非 win32 宿主上恒 ready
   const r = await runSkillScript(
-    { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: WEB_FETCH_ENVELOPE_HASH },
-    { sandbox, now: () => 1, ...f },
+    { name: "web-fetch", entry: "fetch.ts", sessionId: SID },
+    { sandbox, now: () => 1, buildEnv: identityEnv, ...f },
   );
   expect(r.output).toBe("OK");
   rmSync(f.base, { recursive: true, force: true });

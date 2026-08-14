@@ -12,14 +12,14 @@ describe("HitlInlineCards", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("skill-grant kind renders SkillGrantCard and resolves via respond", () => {
+  it("skill-run-confirm kind renders SkillRunConfirmCard and resolves via respond", () => {
     const respond = vi.fn();
     render(
       <HitlInlineCards
         request={{
           requestId: "r1",
-          kind: "skill-grant",
-          payload: { skillName: "s1", description: "d", scripts: ["a.ts"], network: [], write: [] },
+          kind: "skill-run-confirm",
+          payload: { skillId: "s1", skillName: "s1", description: "d", entry: "run.sh", args: ["--x"] },
         }}
         respond={respond}
         {...base}

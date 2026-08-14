@@ -227,6 +227,19 @@ export interface SessionAgentState {
    */
   taskActive?: boolean;
   /**
+   * ADR 0007 — per-session skill-run approvals. Skill ids the user has
+   * approved to run scripts for in THIS session (the confirmation-card
+   * decision, granularity = per session × per skill). Once a skill id is
+   * here, `run_skill_script` for it skips the card for the rest of the
+   * session. Persisted (survives SW death + task boundaries) so the card
+   * does not re-pop mid-session; a new session starts with an empty set,
+   * re-confirming. SW-only writer; carried across the task-end tombstone
+   * (a session outlives its individual tasks). The approval signal reaches
+   * this field only via the panel-request round-trip — never from tool
+   * args — so the LLM cannot self-approve.
+   */
+  approvedSkillIds?: string[];
+  /**
    * v1.5 — task-scoped pointer to the currently-focused tab among
    * `SessionMeta.pinnedTabs[]`. Snapshot is taken on this tab each
    * iteration. Mutated by `focus_tab` tool; reset to pinnedTabs[0].tabId

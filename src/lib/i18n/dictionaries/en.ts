@@ -182,7 +182,7 @@ export const enDict = {
   },
   hitl: {
     caps: {
-      skillGrant: "Skill authorization",
+      skillRunConfirm: "Run skill script",
       runLocalAgent: "Local agent",
       handoff: "Hand-off",
       localFile: "Local file",
@@ -214,14 +214,13 @@ export const enDict = {
     allow: "Hand off",
     deny: "Cancel",
   },
-  skillGrant: {
-    title: "{name} asks to run scripts on your computer",
-    scriptsLabel: "Scripts it can run",
-    networkLabel: "Network access",
-    networkNone: "None — network is blocked by the default sandbox",
-    writeLabel: "Extra write locations (outside its workspace)",
+  skillRunConfirm: {
+    title: "Run a script from {name}?",
+    entryLabel: "Script",
+    argsLabel: "Arguments",
+    argsNone: "None",
     disclosure:
-      "Scripts run with your user permissions inside a default sandbox: no network unless listed above, writes limited to the skill's workspace plus the listed paths, sensitive folders blocked from reading. Approval lasts until the skill's declarations change.",
+      "The script runs with your user permissions inside a sandbox: writes limited to this session's workspace, sensitive folders blocked from reading, and secrets stripped from its environment. Approving lets this skill run scripts for the rest of this session.",
     allow: "Allow & run",
     deny: "Deny",
   },
@@ -256,7 +255,7 @@ export const enDict = {
       imageProcessingFailed: "Image processing failed.",
     },
     files: { attachFile: "Attach file", truncated: "truncated", remove: "Remove file", fileAttachments: "File attachments", tooLarge: "{name} exceeds the 5MB limit", unsupported: "{name}: unsupported file type", processingFailed: "Could not read that file", requestTitle: "Pie wants to read a local text or PDF file", requestBody: "Choose a text or PDF file to share its contents with the agent. For images, use the + menu instead.", requestChoose: "Choose file", requestCancel: "Cancel" },
-    output: { download: "Download", expired: "Expired — ask the agent to regenerate" },
+    output: { save: "Save", previewMore: "{total} lines total", expired: "Expired — ask the agent to regenerate" },
     stepCount: { one: "step", other: "steps" },
     noApiKey: "NO API KEY",
     noApiKeyDescription: "Add an API key from any supported provider to start using the agent.",
@@ -430,7 +429,6 @@ export const enDict = {
     screenshotUnavailable: "[Screenshot unavailable]",
   },
   skills: {
-    grant: { granted: "Scripts authorized", revoke: "Revoke" },
     empty: {
       cta: "Displays reusable workflows (skills). Underlying tools auto-resolve from the prompt. Want a new one? Just ask Pie to create a skill and describe what it should do — Pie will write it for you.",
     },
@@ -457,7 +455,6 @@ export const enDict = {
     },
     authorTag: { builtIn: "BUILT-IN", agent: "AGENT", user: "USER" },
     sourceTag: { agents: "~/.agents" },
-    invalidNetwork: "{count} invalid network domain(s) ignored",
     agentsImport: {
       title: "Found {count} local skills",
       body: "These live in ~/.agents/skills (shared across agents). Choose which ones Pie can use — you can change this anytime in this list.",

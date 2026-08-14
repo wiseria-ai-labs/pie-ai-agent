@@ -52,7 +52,7 @@ import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
 import { buildScratchpadTools } from "./tools/scratchpad";
 import { createExtractRecordsTool } from "./tools/page-atlas";
-import { buildRunSkillScriptTool, buildReadSkillOutputTool } from "./tools/skill-script";
+import { buildRunSkillScriptTool, buildReadSkillOutputTool, makeSessionSkillConfirm } from "./tools/skill-script";
 import {
   saveRecords as svcSaveRecords,
   updateNotes as svcUpdateNotes,
@@ -86,6 +86,8 @@ import {
   updateSessionMeta,
   getSessionAgent,
   setSessionAgent,
+  isSkillApprovedInSession,
+  recordSkillApproval,
 } from "../sessions/storage";
 import { addPinToMeta, removePinFromMeta } from "../sessions/pin-state";
 import { drainPending } from "../sessions/pending-instructions";
@@ -828,7 +830,14 @@ export function mergeSessionAgentSnapshot(
     // an instruction during the last step's execution window (T2 < task-end T3).
     // buildSessionAgentTombstone initialises the field to [] but the storage
     // value (written by addPending) is the authoritative one.
-    return { ...snapshot, pendingInstructions: existing.pendingInstructions };
+    // ADR 0007: approvedSkillIds are session-scoped, not task-scoped — a session
+    // outlives its tasks, so skill approvals must survive the task-end tombstone
+    // (else the confirm card re-pops on the next task within the same session).
+    return {
+      ...snapshot,
+      pendingInstructions: existing.pendingInstructions,
+      ...(existing.approvedSkillIds ? { approvedSkillIds: existing.approvedSkillIds } : {}),
+    };
   }
   return { ...existing, ...snapshot };
 }
@@ -1999,12 +2008,19 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         getActiveGroups: () => activeToolGroups,
         headless: isHeadless,
       });
-      // run_skill_script 需要 sessionId（skill-grant 授权卡走 panel-request）——
+      // run_skill_script 需要 sessionId（运行确认卡走 panel-request）——
       // 与 mouse/keyboard 同模式 per-run 装配，不进 BUILT_IN_TOOLS 静态表。
       const runSkillScriptTool = buildRunSkillScriptTool({
         getSource: getActiveSkillSource,
         runOnDaemon: requestRunSkillScript,
-        requestGrant: (p) => requestFromPanel(sessionId, "skill-grant", p),
+        // ADR 0007：运行确认（取代 grant 信封）。查本会话对该 skill 的批准记录，
+        // 未批准则弹确认卡；批准后记进 session 持久状态（本会话内不再重弹）。批准信号
+        // 由 panel 直达 SW，不进 tool schema——LLM 不能自批。
+        confirmSkillRun: makeSessionSkillConfirm({
+          isApproved: (skillId) => isSkillApprovedInSession(sessionId, skillId),
+          requestConfirm: (p) => requestFromPanel(sessionId, "skill-run-confirm", p),
+          record: (skillId) => recordSkillApproval(sessionId, skillId),
+        }),
         // #330 — daemon-off 时 declares-no-scripts 报错追加 Pie Link 开启引导。
         isBridgeReady,
       });
@@ -2713,6 +2729,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                 filename: result.fileOutput.filename,
                 mime: result.fileOutput.mime,
                 size: result.fileOutput.size,
+                preview: result.fileOutput.preview,
+                totalLines: result.fileOutput.totalLines,
               },
               sessionId,
             ),

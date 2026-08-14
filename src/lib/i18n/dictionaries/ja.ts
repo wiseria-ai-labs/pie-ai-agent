@@ -182,7 +182,7 @@ export const jaDict = {
     },
   },
   hitl: {
-    caps: { skillGrant: "スキル承認", runLocalAgent: "ローカルエージェント", handoff: "ハンドオフ", localFile: "ローカルファイル", cdp: "入力シミュレーション" },
+    caps: { skillRunConfirm: "スキルスクリプトを実行", runLocalAgent: "ローカルエージェント", handoff: "ハンドオフ", localFile: "ローカルファイル", cdp: "入力シミュレーション" },
   },
   cdpOnboarding: {
     title: "Pie はブラウザー入力シミュレーション (CDP) を有効にする必要があります",
@@ -209,14 +209,13 @@ export const jaDict = {
     allow: "引き継ぐ",
     deny: "キャンセル",
   },
-  skillGrant: {
-    title: "{name} がスクリプトの実行を求めています",
-    scriptsLabel: "実行可能なスクリプト",
-    networkLabel: "ネットワークアクセス",
-    networkNone: "なし——デフォルトのサンドボックスが通信を遮断します",
-    writeLabel: "ワークスペース外の追加書き込み先",
+  skillRunConfirm: {
+    title: "{name} のスクリプトを実行しますか？",
+    entryLabel: "スクリプト",
+    argsLabel: "引数",
+    argsNone: "なし",
     disclosure:
-      "スクリプトはあなたのユーザー権限でデフォルトのサンドボックス内で実行されます。上記以外のドメインへの通信は遮断され、書き込みはこのスキルのワークスペースと記載のパスに限定され、機密フォルダの読み取りは拒否されます。承認はスキルの宣言が変わるまで有効です。",
+      "スクリプトはあなたのユーザー権限でサンドボックス内で実行されます。書き込みはこのセッションのワークスペースに限定され、機密フォルダの読み取りは拒否され、環境から秘密情報は取り除かれます。承認すると、このスキルはこのセッションの間スクリプトを実行できます。",
     allow: "許可して実行",
     deny: "拒否",
   },
@@ -251,7 +250,7 @@ export const jaDict = {
       imageProcessingFailed: "画像処理に失敗しました。",
     },
     files: { attachFile: "ファイルを添付", truncated: "切り詰め済み", remove: "ファイルを削除", fileAttachments: "ファイル添付", tooLarge: "{name} は 5MB 制限を超えています", unsupported: "{name}: 対応していないファイル形式", processingFailed: "そのファイルを読み取れませんでした", requestTitle: "Pie がローカルのテキストまたは PDF ファイルを読み取ろうとしています", requestBody: "内容をエージェントと共有するテキストまたは PDF ファイルを選択してください。画像には + メニューを使ってください。", requestChoose: "ファイルを選択", requestCancel: "キャンセル" },
-    output: { download: "ダウンロード", expired: "期限切れです。エージェントに再生成を依頼してください" },
+    output: { save: "保存", previewMore: "全 {total} 行", expired: "期限切れです。エージェントに再生成を依頼してください" },
     stepCount: { one: "ステップ", other: "ステップ" },
     noApiKey: "API KEY なし",
     noApiKeyDescription: "エージェントの利用を開始するには、対応プロバイダーの API キーを追加してください。",
@@ -425,7 +424,6 @@ export const jaDict = {
     screenshotUnavailable: "[スクリーンショットなし]",
   },
   skills: {
-    grant: { granted: "スクリプト承認済み", revoke: "承認を取り消す" },
     empty: {
       cta: "再利用できるワークフロー (スキル) を表示します。基盤ツールはプロンプトから自動解決されます。新しいものが必要ですか？Pie に作成を依頼し、何をするべきか説明してください。Pie が書いてくれます。",
     },
@@ -452,7 +450,6 @@ export const jaDict = {
     },
     authorTag: { builtIn: "組み込み", agent: "エージェント", user: "ユーザー" },
     sourceTag: { agents: "~/.agents" },
-    invalidNetwork: "無効なネットワークドメイン {count} 件を無視しました",
     agentsImport: {
       title: "ローカルスキルを {count} 件検出しました",
       body: "~/.agents/skills（エージェント間共有ディレクトリ）にあるスキルです。Pie で使うものを選んでください。後からこのリストでいつでも変更できます。",
