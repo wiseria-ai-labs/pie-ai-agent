@@ -58,7 +58,6 @@ const daemonEntry = (name: string) => ({
   name,
   description: "",
   runnableScripts: [],
-  declaredCaps: { network: [], write: [] },
   files: [] as string[],
 });
 

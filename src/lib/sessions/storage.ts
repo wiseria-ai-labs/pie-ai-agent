@@ -464,6 +464,35 @@ export async function setSessionAgent(
 }
 
 /**
+ * ADR 0007 — has the user approved running scripts for `skillId` in this
+ * session? Reads the persisted per-session approval set (survives SW death).
+ */
+export async function isSkillApprovedInSession(id: string, skillId: string): Promise<boolean> {
+  const agent = await getSessionAgent(id);
+  return agent?.approvedSkillIds?.includes(skillId) ?? false;
+}
+
+/**
+ * ADR 0007 — record a per-session skill-run approval (idempotent). RMW on the
+ * agent record, spreading existing first (bare setSessionAgent is a full-key
+ * replace). If no agent record exists yet — the first skill run of a session
+ * can precede the first step-end snapshot — seed a minimal record carrying the
+ * approval; the next step-end snapshot merges it forward (spread-existing-first).
+ */
+export async function recordSkillApproval(id: string, skillId: string): Promise<void> {
+  const agent = await getSessionAgent(id);
+  const existing = agent?.approvedSkillIds ?? [];
+  if (existing.includes(skillId)) return;
+  const approvedSkillIds = [...existing, skillId];
+  await setSessionAgent(
+    id,
+    agent
+      ? { ...agent, approvedSkillIds }
+      : { agentMessages: [], pendingInstructions: [], stepIndex: 0, hasImageContent: false, approvedSkillIds },
+  );
+}
+
+/**
  * List sessions in `lastAccessedAt` desc order. Reads only the session index
  * store entry — does not touch per-session meta/agent records.
  */

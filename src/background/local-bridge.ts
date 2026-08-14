@@ -20,10 +20,6 @@ import {
   type WriteSkillResult,
   type DeleteSkillParams,
   type DeleteSkillResult,
-  type ListGrantsResult,
-  type RevokeGrantParams,
-  type RevokeGrantResult,
-  type SkillAuthPayload,
   type ListAuditParams,
   type ListAuditResult,
 } from "@/types/local-bridge";
@@ -39,7 +35,9 @@ let capabilities: string[] = [];
 // 降级继续用）。旧 daemon 不带 daemonVersion → daemonVersion=null → 视为过旧。
 // #403：抬到 0.2.0 —— 落点迁移（daemon 真身挪进 ~/.pie/bin）必须让存量用户装一次新
 // pkg 才能进入零提权自更新通道，升级卡正是那个入口。装过一次后此后更新不再走 pkg。
-export const MIN_DAEMON_VERSION = "0.2.0";
+// ADR 0007：抬到 0.3.0 —— 授权模型换成 agent 确认层是 wire 破坏（PROTOCOL_VERSION 1→2）；
+// 存量用户的旧 daemon 会拒绝 run_skill_script，升级卡引导他们装新 pkg。
+export const MIN_DAEMON_VERSION = "0.3.0";
 let daemonVersion: string | null = null;
 let protocolMismatch = false;
 
@@ -322,19 +320,16 @@ export async function requestListSkills(): Promise<ListSkillsResult> {
 export async function requestReadSkillFile(p: ReadSkillFileParams): Promise<ReadSkillFileResult> {
   return (await send("read_skill_file", p)) as ReadSkillFileResult;
 }
+// ADR 0007：daemon 不再回 needs_authorization（授权移到 SW 确认层），outcome 退化为
+// 二态。确认发生在扩展侧、发 run_skill_script 之前——到这里已是「批准过、直接执行」。
 export type RunSkillScriptOutcome =
   | { ok: true; result: RunSkillScriptResult }
-  | { ok: false; needsAuth: true; auth?: SkillAuthPayload }
-  | { ok: false; needsAuth: false; error: string };
+  | { ok: false; error: string };
 export async function requestRunSkillScript(p: RunSkillScriptParams): Promise<RunSkillScriptOutcome> {
   try {
     return { ok: true, result: (await send("run_skill_script", p)) as RunSkillScriptResult };
   } catch (e) {
-    const code = (e as { code?: string }).code;
-    if (code === "needs_authorization") {
-      return { ok: false, needsAuth: true, auth: (e as { data?: SkillAuthPayload }).data };
-    }
-    return { ok: false, needsAuth: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 /** 读回 session workspace 内产物（read_skill_output tool → 此 RPC）。 */
@@ -352,12 +347,6 @@ export async function requestWriteSkill(p: WriteSkillParams): Promise<WriteSkill
 }
 export async function requestDeleteSkill(p: DeleteSkillParams): Promise<DeleteSkillResult> {
   return (await send("delete_skill", p)) as DeleteSkillResult;
-}
-export async function requestListGrants(): Promise<ListGrantsResult> {
-  return (await send("list_grants", {})) as ListGrantsResult;
-}
-export async function requestRevokeGrant(p: RevokeGrantParams): Promise<RevokeGrantResult> {
-  return (await send("revoke_grant", p)) as RevokeGrantResult;
 }
 export async function requestListAudit(p: ListAuditParams = {}): Promise<ListAuditResult> {
   return (await send("list_audit", p)) as ListAuditResult;

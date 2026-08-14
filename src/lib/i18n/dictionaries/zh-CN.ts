@@ -178,7 +178,7 @@ export const zhCNDict = {
     },
   },
   hitl: {
-    caps: { skillGrant: "SKILL 授权", runLocalAgent: "本地 AGENT", handoff: "交棒授权", localFile: "本地文件", cdp: "输入模拟" },
+    caps: { skillRunConfirm: "运行 skill 脚本", runLocalAgent: "本地 AGENT", handoff: "交棒授权", localFile: "本地文件", cdp: "输入模拟" },
   },
   cdpOnboarding: {
     title: "Pie 需要启用浏览器输入模拟（CDP）",
@@ -205,14 +205,13 @@ export const zhCNDict = {
     allow: "交棒",
     deny: "取消",
   },
-  skillGrant: {
-    title: "{name} 请求在你的电脑上运行脚本",
-    scriptsLabel: "可执行脚本",
-    networkLabel: "网络访问",
-    networkNone: "无——默认沙箱已断网",
-    writeLabel: "工作区外额外写入路径",
+  skillRunConfirm: {
+    title: "运行来自 {name} 的脚本？",
+    entryLabel: "脚本",
+    argsLabel: "参数",
+    argsNone: "无",
     disclosure:
-      "脚本将以你的本机权限在默认沙箱内运行：未列出的域名一律断网，写入仅限该 skill 的工作区与上列路径，敏感目录拒绝读取。批准后免再确认，直到该 skill 的声明发生变化。",
+      "脚本将以你的本机权限在沙箱内运行：写入仅限本次会话的工作区，敏感目录拒绝读取，环境变量中的密钥已剥离。批准后本次会话内该 skill 均可运行脚本。",
     allow: "允许运行",
     deny: "拒绝",
   },
@@ -421,7 +420,6 @@ export const zhCNDict = {
     screenshotUnavailable: "[截图不可用]",
   },
   skills: {
-    grant: { granted: "脚本已授权", revoke: "撤销授权" },
     empty: {
       cta: "显示可复用工作流（skill）。底层工具按 prompt 自动 resolve。想新建?直接跟 Pie 说「帮我创建一个 skill」并说明要做的事,让 Pie 帮你写好它。",
     },
@@ -448,7 +446,6 @@ export const zhCNDict = {
     },
     authorTag: { builtIn: "内置", agent: "Agent", user: "用户" },
     sourceTag: { agents: "~/.agents" },
-    invalidNetwork: "{count} 个网络域名声明无效，已忽略",
     agentsImport: {
       title: "发现 {count} 个本地 skill",
       body: "它们来自 ~/.agents/skills（跨 agent 共享目录）。勾选允许 Pie 使用的条目——之后随时可在本列表中开关。",

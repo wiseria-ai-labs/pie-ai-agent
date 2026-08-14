@@ -27,10 +27,8 @@ export function srtWinPath(): string {
 }
 
 export interface SandboxSettings {
-  /** 绝对路径白名单，只有这些子树可写（基线含 <skillDir>/workspace） */
+  /** 绝对路径白名单，只有这些子树可写（固定基线 = session workspace） */
   allowWrite: string[];
-  /** 允许出口的域名；空 = 全断 */
-  allowedDomains: string[];
   /** 拒读的绝对路径（敏感目录） */
   denyRead: string[];
 }
@@ -54,6 +52,24 @@ export interface SkillSandbox {
 /** 测试注入：直接把 impl 当 run，不碰真 srt/OS。 */
 export function fakeSkillSandbox(impl: SkillSandbox["run"]): SkillSandbox {
   return { run: impl };
+}
+
+/**
+ * spawn env 合成（D7 env 白名单擦除的核心判定，抽成纯函数供单测——spawn 层不被
+ * `fakeSkillSandbox` 短路）：
+ *  - mac/linux：**只用** caller 白名单 `env`。srt 0.0.67 的 `wrapped.env` 是全量
+ *    process.env（不是代理注入的少量变量），出站代理 env 已内联进 wrapped 命令串，故
+ *    绝不展开 `wrapped.env`，否则各类 *_TOKEN/AWS_* 凭据在网络全放下随子进程外泄。
+ *  - win32：process.env + `wrapped.env`（broker 进程需 srt-win 自己的代理/CA 配置；沙箱
+ *    子进程的 env 另经 cmd 内联 `set` 链，不从 spawn env 继承）。
+ */
+export function buildSpawnEnv(
+  isWin: boolean,
+  whitelistEnv: Record<string, string>,
+  procEnv: Record<string, string | undefined>,
+  wrappedEnv: Record<string, string>,
+): Record<string, string | undefined> {
+  return isWin ? { ...procEnv, ...wrappedEnv } : whitelistEnv;
 }
 
 /** POSIX 单引号包每个 arg：'\'' 转义单引号。argv → 可交给 srt 的 shell 命令串。 */
@@ -137,7 +153,11 @@ async function runViaSrt(
   settings: SandboxSettings,
 ): Promise<SandboxRunResult> {
   const runtimeConfig = {
-    network: { allowedDomains: settings.allowedDomains, deniedDomains: [] },
+    // 固定基线：网络全放（ADR 0007）。srt 的 allowedDomains 不接受 "*"（schema 只在
+    // deniedDomains 认通配），故走「无显式规则 → ask 回调」这条路：allowedDomains/
+    // deniedDomains 都留空，任何 host 落到下面注册的 alwaysAllow 回调 → 放行。外泄面
+    // 靠 env 白名单擦除 + denyRead 基线压制，不靠域名白名单。
+    network: { allowedDomains: [], deniedDomains: [] },
     filesystem: {
       denyRead: settings.denyRead,
       allowRead: [],
@@ -147,7 +167,8 @@ async function runViaSrt(
     // win32：srt-win.exe 无隐式回落，须显式给出伴随文件路径（spec §6.1）。
     ...(IS_WIN ? { windows: { srtWin: { path: srtWinPath() } } } : {}),
   };
-  await SandboxManager.initialize(runtimeConfig);
+  // ask 回调恒 true = 网络全放（任何未显式命中规则的 host 都放行）。
+  await SandboxManager.initialize(runtimeConfig, async () => true);
   try {
     await SandboxManager.waitForNetworkInitialization();
     // win32：cmd 引号语义 + env 内联 set 链（F3）；mac/linux：POSIX 引号，env 走 spawn。
@@ -161,13 +182,23 @@ async function runViaSrt(
       cwd,
     );
     // 异步 spawn（关键：绝不 spawnSync，见文件头注释）。
-    // win32 的 env 已内联进命令串（不穿透沙箱账户，见 F3），这里只带 process.env +
-    // wrapped.env（srt 代理注入，配置 srt-win 自身，必须保留）；mac/linux 才把 caller env
-    // 交给 spawn。
+    // env 白名单擦除（D7）：mac/linux 子进程只拿 caller 给的白名单 env（PIE_*/PATH/
+    // HOME/… 已由 skill-exec 的 buildSandboxEnv 收窄）——绝不整体透传 process.env，否则
+    // 各类 *_TOKEN/AWS_* 凭据在网络全放下会随子进程外泄。
+    //   ⚠️ 关键坑（PR #19 真机验收 FAIL）：srt 0.0.67 的 `wrapWithSandboxArgv` 在
+    //   mac/linux 分支返回的 `wrapped.env` **就是全量 process.env**（见 sandbox-manager.js
+    //   `return { argv: [shell, '-c', wrapped], env: process.env }`）——它不是「代理注入的
+    //   少量变量」。出站代理 env（HTTP_PROXY / NODE_EXTRA_CA_CERTS…）由 srt **内联进
+    //   wrapped 命令串**（macos-sandbox-utils.js `env <proxyEnvArgs> sandbox-exec …`），
+    //   不依赖 spawn env。所以 mac/linux **绝不能**再展开 `wrapped.env`，否则白名单被整个
+    //   process.env 覆盖回去、擦除失效。只传白名单 `env`。
+    // win32 走另一条路：子进程 env 已内联进 cmd 命令串（不穿透 CreateProcessWithLogonW
+    // 换的沙箱账户，见 F3），broker 进程本身仍需 process.env + wrapped.env（srt-win 自己的
+    // 代理/CA 配置）来把请求路由到围栏，故 win32 分支保留 `wrapped.env` 展开。
     const proc = Bun.spawn({
       cmd: wrapped.argv,
       cwd,
-      env: { ...process.env, ...(IS_WIN ? {} : env), ...(wrapped.env as Record<string, string>) },
+      env: buildSpawnEnv(IS_WIN, env, process.env, wrapped.env as Record<string, string>),
       stdout: "pipe",
       stderr: "pipe",
     });

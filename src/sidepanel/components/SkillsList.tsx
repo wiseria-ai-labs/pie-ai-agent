@@ -16,9 +16,7 @@ import {
   type ImportPlan,
   type ImportRawFile,
 } from "@/lib/skills/import-skill";
-import { queryGrants, revokeGrant } from "@/lib/local-grants";
 import { useBridgeStatus } from "./settings/bridge-status";
-import type { GrantRecord } from "@/types/local-bridge";
 import { getConfig, setConfig } from "@/lib/idb/config-store";
 import { useT } from "@/lib/i18n";
 
@@ -133,8 +131,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
   const [editRawMd, setEditRawMd] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  // skill.name → grant（daemon 桥 ready 时查；daemon-off / IDB 模式恒空 Map）。
-  const [grants, setGrants] = useState<Map<string, GrantRecord>>(new Map());
   // 首连导入向导：null=标记加载中（不闪卡），false=未提示过，true=已提示
   const [importPrompted, setImportPrompted] = useState<boolean | null>(null);
   // 外部 skill 文件夹导入（#321）：选好待确认的 plan / 报错 / 成功提示 / 写入中。
@@ -167,17 +163,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
     const sorted = [...all].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     setSkills(sorted);
     setEnabledIds(new Set(filterEnabled(all, markers).map((e) => e.id)));
-    const grantList = await queryGrants();
-    setGrants(new Map(grantList.map((g) => [g.skillName, g])));
-  }
-
-  // 撤销授权：撤销后仅重查 grants（无需重拉 skills）。失败则 UI 不变，下次进入重查。
-  async function handleRevoke(key: string) {
-    const ok = await revokeGrant(key);
-    if (ok) {
-      const grantList = await queryGrants();
-      setGrants(new Map(grantList.map((g) => [g.skillName, g])));
-    }
   }
 
   function isEffectivelyEnabled(skill: SkillEntry): boolean {
@@ -467,8 +452,6 @@ export default function SkillsList({ onRunSkill }: SkillsListProps) {
             <SkillRow
               key={skill.id}
               skill={skill}
-              grant={grants.get(skill.name) ?? null}
-              onRevoke={handleRevoke}
               enabled={isEffectivelyEnabled(skill)}
               onToggle={() => handleToggle(skill)}
               onRun={() => onRunSkill(skill.id, skill.name)}
@@ -680,8 +663,6 @@ function SkillsSection({
 
 function SkillRow({
   skill,
-  grant,
-  onRevoke,
   enabled,
   onToggle,
   onRun,
@@ -692,8 +673,6 @@ function SkillRow({
   onDelete,
 }: {
   skill: SkillEntry;
-  grant: GrantRecord | null;
-  onRevoke: (key: string) => void;
   enabled: boolean;
   onToggle: () => void;
   onRun: () => void;
@@ -737,34 +716,8 @@ function SkillRow({
 
       <p className="text-[12px] leading-[18px] text-fg-2">{skill.description}</p>
 
-      {skill.invalidNetwork && skill.invalidNetwork.length > 0 && (
-        <span
-          title={skill.invalidNetwork.join(", ")}
-          className="self-start rounded-full border border-warning-line bg-warning-tint px-2 py-0.5 text-[10px] leading-[16px] text-warning"
-        >
-          {t("skills.invalidNetwork", { count: skill.invalidNetwork.length })}
-        </span>
-      )}
-
       <div className="flex items-center gap-2 pt-1.5">
-        {grant && (
-          <span className="flex items-center gap-[5px] rounded-full border border-line bg-surface-deep px-2 py-0.5">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="text-success">
-              <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" />
-              <path d="m9 12 2 2 4-4" />
-            </svg>
-            <span className="text-[11px] text-fg-2">{t("skills.grant.granted")}</span>
-          </span>
-        )}
         <div className="flex-1" />
-        {grant && (
-          <button
-            onClick={() => onRevoke(grant.key)}
-            className="rounded-[10px] border border-line bg-transparent px-2.5 py-1 text-[11px] text-fg-2 hover:border-fg-3 hover:text-fg-1"
-          >
-            {t("skills.grant.revoke")}
-          </button>
-        )}
         <button
           onClick={onRun}
           disabled={!enabled}

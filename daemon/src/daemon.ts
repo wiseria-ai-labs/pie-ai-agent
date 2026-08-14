@@ -10,17 +10,19 @@ import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded, readSessionFile, deleteSessionWorkspace, sweepSessions } from "./skill-store";
 import { runSkillScript } from "./skill-exec";
-import { listGrants, revokeGrant, sweepGrants } from "./grants";
 import { readAuditTail } from "./audit";
 import { getStatus, markExtensionSocket, dropSocket } from "./status";
 import { checkUpdate, applyUpdate } from "./update";
 import { isAddrInUseError } from "./daemon-launcher";
 import type {
-  ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams, RevokeGrantParams,
+  ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams,
   ListAuditParams, ListAuditResult, ReadSessionFileParams, DeleteSessionWorkspaceParams,
 } from "../../src/types/local-bridge";
 
-export async function handleMessage(line: string): Promise<string> {
+export async function handleMessage(
+  line: string,
+  ctx: { clientProtocol?: number } = {},
+): Promise<string> {
   let msg: { id?: string; method?: string; params?: unknown };
   try {
     msg = JSON.parse(line);
@@ -82,13 +84,6 @@ export async function handleMessage(line: string): Promise<string> {
     case "list_skills": {
       try {
         const skills = listSkillsMerged();
-        // 作者信号：某个 skill 的 metadata.pie.network 里有归一化不出合法域名的条目
-        // （被安全丢弃、srt 运行时会断这些网），打一行 warn 让作者能查到原因。
-        for (const s of skills) {
-          if (s.invalidNetwork && s.invalidNetwork.length > 0) {
-            log("warn", "skill.invalid_network", { skill: s.name, invalid: s.invalidNetwork });
-          }
-        }
         return respond({ ok: true, result: { skills } });
       } catch (e) {
         log("error", "list_skills.failed", { id, error: String(e) });
@@ -108,25 +103,34 @@ export async function handleMessage(line: string): Promise<string> {
       }
     }
     case "run_skill_script": {
+      // 版本闸（D10）：授权模型迁到 agent 确认层是 wire 语义破坏——v1 客户端没有 SW
+      // 确认卡，若放它跑就等于无确认执行脚本。声明 v1 的客户端一律拒绝并引导升级扩展。
+      if (ctx.clientProtocol !== undefined && ctx.clientProtocol < PROTOCOL_VERSION) {
+        log("warn", "run_skill_script.protocol_too_old", { id, clientProtocol: ctx.clientProtocol });
+        return respond({
+          ok: false,
+          error: {
+            code: "protocol_too_old",
+            message:
+              "This Pie daemon requires a newer extension: skill script authorization moved to an " +
+              "in-session confirmation card. Please update the Pie extension.",
+          },
+        });
+      }
       try {
         const result = await runSkillScript(msg.params as RunSkillScriptParams);
         return respond({ ok: true, result });
       } catch (e) {
-        // 保留业务错误码（needs_authorization / unknown_skill / unknown_entry / timeout / script_error）
+        // 保留业务错误码（unknown_skill / unknown_entry / timeout / script_error / no_python …）
         const code = (e as { code?: string }).code ?? "run_skill_script_failed";
-        const data = (e as { data?: unknown }).data;
         log("error", "run_skill_script.failed", { id, code, error: String(e) });
-        return respond({
-          ok: false,
-          error: { code, message: String(e), ...(data !== undefined ? { data } : {}) },
-        });
+        return respond({ ok: false, error: { code, message: String(e) } });
       }
     }
     case "read_session_file": {
       try {
         const p = msg.params as ReadSessionFileParams;
-        const content = readSessionFile(p.sessionId, p.path);
-        return respond({ ok: true, result: { content } });
+        return respond({ ok: true, result: readSessionFile(p.sessionId, p.path, p.offset) });
       } catch (e) {
         log("error", "read_session_file.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "read_session_file_failed", message: String(e) } });
@@ -158,23 +162,6 @@ export async function handleMessage(line: string): Promise<string> {
         const code = (e as { code?: string }).code ?? "delete_skill_failed";
         log("error", "delete_skill.failed", { id, code, error: String(e) });
         return respond({ ok: false, error: { code, message: String(e) } });
-      }
-    }
-    case "list_grants": {
-      try {
-        return respond({ ok: true, result: { grants: listGrants() } });
-      } catch (e) {
-        log("error", "list_grants.failed", { id, error: String(e) });
-        return respond({ ok: false, error: { code: "list_grants_failed", message: String(e) } });
-      }
-    }
-    case "revoke_grant": {
-      try {
-        const p = msg.params as RevokeGrantParams;
-        return respond({ ok: true, result: { revoked: revokeGrant(p.key) } });
-      } catch (e) {
-        log("error", "revoke_grant.failed", { id, error: String(e) });
-        return respond({ ok: false, error: { code: "revoke_grant_failed", message: String(e) } });
       }
     }
     case "list_audit": {
@@ -230,21 +217,29 @@ export function processSocketChunk(
   carry: string,
   chunk: string,
   write: (out: string) => void,
-): { carry: string; pending: Promise<void>; sawHello: boolean } {
+  clientProtocol?: number,
+): { carry: string; pending: Promise<void>; sawHello: boolean; clientProtocol?: number } {
   const { lines, carry: nextCarry } = decodeNdjsonLines(carry, chunk);
   // 扩展 host 连接会发 hello，顶栏 app 不发 → 发过 hello 的 socket 记为扩展连接。
-  // 双 parse 只在含 hello 的这一次 chunk 发生，代价可忽略。
-  const sawHello = lines.some((l) => {
+  // 从 hello 抽出客户端声明的 protocolVersion，随 socket 记住——run_skill_script 的
+  // 版本闸（D10）据此拒绝 v1 客户端。双 parse 只在含 hello 的这一次 chunk 发生，代价可忽略。
+  let sawHello = false;
+  let nextProtocol = clientProtocol;
+  for (const l of lines) {
     try {
-      return (JSON.parse(l) as { method?: string }).method === "hello";
+      const parsed = JSON.parse(l) as { method?: string; params?: { protocolVersion?: number } };
+      if (parsed.method === "hello") {
+        sawHello = true;
+        if (typeof parsed.params?.protocolVersion === "number") nextProtocol = parsed.params.protocolVersion;
+      }
     } catch {
-      return false;
+      /* 半行/坏行：handleMessage 里会回 bad_json，这里跳过版本探测 */
     }
-  });
-  const pending = Promise.all(lines.map((line) => handleMessage(line).then((out) => write(out + "\n")))).then(
-    () => undefined,
-  );
-  return { carry: nextCarry, pending, sawHello };
+  }
+  const pending = Promise.all(
+    lines.map((line) => handleMessage(line, { clientProtocol: nextProtocol }).then((out) => write(out + "\n"))),
+  ).then(() => undefined);
+  return { carry: nextCarry, pending, sawHello, clientProtocol: nextProtocol };
 }
 
 // socket.write 在内核缓冲满时只写入部分字节（真机案例：32 个 ~/.agents skill
@@ -306,7 +301,6 @@ export async function pipeAlreadyServed(ipcPath: string): Promise<boolean> {
 
 export async function startDaemon(): Promise<void> {
   if (!existsSync(paths.pieDir)) mkdirSync(paths.pieDir, { recursive: true });
-  sweepGrants(); // 一次性幂等清扫 2b 旧格式死记录，保持授权账本干净
   // 启动 GC：清超 30 天的孤儿 session workspace（桥断/卸载遗留）。best-effort，不阻塞启动。
   try {
     const swept = sweepSessions();
@@ -323,7 +317,7 @@ export async function startDaemon(): Promise<void> {
   // socket 文件残留清理仅对 unix domain socket 有意义；Windows named pipe 无磁盘文件。
   if (!paths.isPipe && existsSync(paths.ipcPath)) unlinkSync(paths.ipcPath); // 清残留
   try {
-    Bun.listen<{ carry: string; writer: BackpressureWriter }>({
+    Bun.listen<{ carry: string; writer: BackpressureWriter; clientProtocol?: number }>({
       unix: paths.ipcPath,
       socket: {
         open(socket) {
@@ -337,11 +331,15 @@ export async function startDaemon(): Promise<void> {
           log("info", "client.disconnect");
         },
         data(socket, data) {
-          const { carry, pending, sawHello } = processSocketChunk(socket.data.carry, data.toString(), (out) =>
-            socket.data.writer.write(out),
+          const { carry, pending, sawHello, clientProtocol } = processSocketChunk(
+            socket.data.carry,
+            data.toString(),
+            (out) => socket.data.writer.write(out),
+            socket.data.clientProtocol,
           );
           if (sawHello) markExtensionSocket(socket);
           socket.data.carry = carry;
+          socket.data.clientProtocol = clientProtocol;
           pending.catch((err) => log("error", "socket.error", { err: String(err) }));
         },
         drain(socket) {

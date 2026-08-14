@@ -1019,6 +1019,26 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
     expect(merged.pendingInstructions).toEqual(pending);
   });
 
+  it("tombstone preserves approvedSkillIds (ADR 0007: session-scoped, survives task end)", () => {
+    // A session outlives its tasks; skill-run approvals are per session × per
+    // skill, so they must survive the task-end tombstone (else the confirm card
+    // re-pops on the next task in the same session).
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "prev" }],
+      pendingInstructions: [],
+      stepIndex: 4,
+      hasImageContent: false,
+      currentFocusTabId: 13,
+      approvedSkillIds: ["video-parser", "csv-utils"],
+    };
+    const merged = mergeSessionAgentSnapshot(existing, buildSessionAgentTombstone());
+    // Task-scoped carry-over is cleared…
+    expect(merged.currentFocusTabId).toBeUndefined();
+    expect(merged.stepIndex).toBe(0);
+    // …but session-scoped approvals survive.
+    expect(merged.approvedSkillIds).toEqual(["video-parser", "csv-utils"]);
+  });
+
   it("tombstone with lastTaskSynth payload (folded by builder) still clears carry-over", () => {
     // buildSessionAgentTombstone(synth) folds lastTaskSynth into the
     // tombstone payload. The merge must still detect it as a tombstone

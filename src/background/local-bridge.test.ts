@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { PROTOCOL_VERSION, type SkillAuthPayload } from "@/types/local-bridge";
+import { PROTOCOL_VERSION } from "@/types/local-bridge";
 
 // 一个可编程的假 native port
 function makeFakePort() {
@@ -169,7 +169,7 @@ describe("local-bridge", () => {
     expect(fakePort.postMessage.mock.calls).toHaveLength(1); // 没有第二个 wire 请求
   });
 
-  it("requestRunSkillScript maps needs_authorization to { needsAuth: true }", async () => {
+  it("requestRunSkillScript ok → { ok:true, result }", async () => {
     const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
     initLocalBridge();
     const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
@@ -182,14 +182,11 @@ describe("local-bridge", () => {
     const p = requestRunSkillScript({ name: "demo", entry: "fetch.ts", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" });
     const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
     expect(req.method).toBe("run_skill_script");
-    fakePort._emit({
-      id: req.id, ok: false,
-      error: { code: "needs_authorization", message: "authorization required" },
-    });
-    await expect(p).resolves.toEqual({ ok: false, needsAuth: true });
+    fakePort._emit({ id: req.id, ok: true, result: { output: "hi" } });
+    await expect(p).resolves.toEqual({ ok: true, result: { output: "hi" } });
   });
 
-  it("requestRunSkillScript maps other errors to { needsAuth:false, error }", async () => {
+  it("requestRunSkillScript maps any daemon error to { ok:false, error } (二态，无 needsAuth)", async () => {
     const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
     initLocalBridge();
     const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
@@ -205,38 +202,10 @@ describe("local-bridge", () => {
       id: req.id, ok: false,
       error: { code: "script_error", message: "script threw: boom" },
     });
-    await expect(p).resolves.toEqual({ ok: false, needsAuth: false, error: "script threw: boom" });
+    await expect(p).resolves.toEqual({ ok: false, error: "script threw: boom" });
   });
 
-  it("requestRunSkillScript surfaces needs_authorization data as outcome.auth", async () => {
-    const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
-    initLocalBridge();
-    const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
-    fakePort._emit({
-      id: helloReq.id, ok: true,
-      result: { protocolVersion: PROTOCOL_VERSION, capabilities: ["skill_fs"] },
-    });
-    await Promise.resolve();
-
-    const PAYLOAD: SkillAuthPayload = {
-      skillName: "demo",
-      description: "demo skill",
-      envelope: { allowedDomains: [], extraWrites: [], runnableScripts: ["fetch.ts"] },
-      envelopeHash: "abc123",
-    };
-
-    const p = requestRunSkillScript({ name: "s", entry: "e.ts", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" });
-    const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
-    fakePort._emit({
-      id: req.id, ok: false,
-      error: { code: "needs_authorization", message: "authorization required", data: PAYLOAD },
-    });
-    const outcome = await p;
-    expect(outcome).toMatchObject({ ok: false, needsAuth: true });
-    expect((outcome as { auth?: SkillAuthPayload }).auth?.envelopeHash).toBe(PAYLOAD.envelopeHash);
-  });
-
-  it("needs_authorization without data (old daemon) → auth undefined", async () => {
+  it("requestRunSkillScript maps a v1-rejected protocol_too_old error to { ok:false, error }", async () => {
     const { initLocalBridge, requestRunSkillScript } = await import("./local-bridge");
     initLocalBridge();
     const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
@@ -250,10 +219,9 @@ describe("local-bridge", () => {
     const req = fakePort.postMessage.mock.calls[1][0] as { id: string; method: string };
     fakePort._emit({
       id: req.id, ok: false,
-      error: { code: "needs_authorization", message: "authorization required" },
+      error: { code: "protocol_too_old", message: "Please update the Pie extension." },
     });
-    const outcome = await p;
-    expect(outcome).toEqual({ ok: false, needsAuth: true, auth: undefined });
+    await expect(p).resolves.toEqual({ ok: false, error: "Please update the Pie extension." });
   });
 
   it("requestListAudit round-trips entries", async () => {
@@ -274,11 +242,11 @@ describe("local-bridge", () => {
         ts: 1720000000000,
         skillName: "demo",
         entry: "fetch.ts",
-        envelope: { allowedDomains: [], extraWrites: [], runnableScripts: ["fetch.ts"] },
         exitCode: 0,
         timedOut: false,
         truncated: false,
         ms: 42,
+        sandbox: { network: "open", envAllowlist: "1" },
       },
     ];
     fakePort._emit({ id: req.id, ok: true, result: { entries } });
@@ -303,7 +271,6 @@ describe("local-bridge", () => {
         name: "demo",
         description: "demo skill",
         runnableScripts: ["fetch.ts"],
-        declaredCaps: { network: [], write: [] },
         files: ["SKILL.md"],
       },
     ];
@@ -583,16 +550,16 @@ describe("local-bridge", () => {
     }
 
     it("current daemon version tracked, no upgrade needed", async () => {
-      const mod = await handshake("0.2.0");
-      expect(mod.bridgeDaemonVersion()).toBe("0.2.0");
+      const mod = await handshake("0.3.0");
+      expect(mod.bridgeDaemonVersion()).toBe("0.3.0");
       expect(mod.bridgeNeedsUpgrade()).toBe(false);
       expect(mod.bridgeProtocolMismatch()).toBe(false);
     });
 
     it("daemonVersion below MIN → needsUpgrade", async () => {
-      // 0.1.x（落点迁移前）低于 MIN 0.2.0 → 升级卡引导装一次新 pkg 完成迁移（#403）
-      const mod = await handshake("0.1.9");
-      expect(mod.bridgeDaemonVersion()).toBe("0.1.9");
+      // 0.2.x（ADR 0007 前，仍带 grant 信封）低于 MIN 0.3.0 → 升级卡引导装新 pkg
+      const mod = await handshake("0.2.9");
+      expect(mod.bridgeDaemonVersion()).toBe("0.2.9");
       expect(mod.bridgeNeedsUpgrade()).toBe(true);
     });
 

@@ -27,15 +27,6 @@ vi.mock("@/lib/skills/panel-actions", () => ({
   deleteSkillRpc: vi.fn(),
 }));
 
-// queryGrants/revokeGrant hit chrome.runtime.sendMessage's callback form,
-// which the test-setup mock never invokes (the promise would hang). Stub them
-// so loadSkills() fully resolves — needed by the import tests that assert on
-// post-loadSkills state (success notice). Harmless for the pre-existing tests.
-vi.mock("@/lib/local-grants", () => ({
-  queryGrants: vi.fn().mockResolvedValue([]),
-  revokeGrant: vi.fn().mockResolvedValue(true),
-}));
-
 // Partial mock — only override the enabled-marker functions; leave
 // generateUserSkillId etc. as the real (pure, crypto.randomUUID-based) impl.
 vi.mock("@/lib/skills/storage", async (importOriginal) => {
@@ -218,31 +209,6 @@ describe("SkillsList", () => {
     expect(written).toContain("network: [api.example.com]"); // 能力声明存活
     expect(written).toContain("Do it better.");
     expect(written).not.toContain("Do the thing.");
-  });
-
-  it("renders an invalid-network warning badge for a disk entry carrying invalidNetwork", async () => {
-    vi.mocked(listSkillEntries).mockResolvedValue({
-      ok: true,
-      skills: [{ ...DISK_ENTRY, invalidNetwork: ["not a domain!", "例え.テスト"] }],
-    });
-
-    render(<SkillsList onRunSkill={vi.fn()} />);
-    await screen.findByRole("switch", { name: "Disable Disk Skill" });
-
-    // count 插值到 badge 文案
-    const badge = screen.getByText(/2 invalid network domain/i);
-    expect(badge).toBeTruthy();
-    // 被丢弃的原始条目挂在 title 上供作者排查
-    expect(badge.getAttribute("title")).toBe("not a domain!, 例え.テスト");
-  });
-
-  it("no badge when a skill has no invalidNetwork", async () => {
-    vi.mocked(listSkillEntries).mockResolvedValue({ ok: true, skills: [DISK_ENTRY] });
-
-    render(<SkillsList onRunSkill={vi.fn()} />);
-    await screen.findByRole("switch", { name: "Disable Disk Skill" });
-
-    expect(screen.queryByText(/invalid network domain/i)).toBeNull();
   });
 
   it("a listSkillEntries RPC failure renders an empty list instead of throwing", async () => {

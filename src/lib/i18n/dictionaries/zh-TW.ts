@@ -178,7 +178,7 @@ export const zhTWDict = {
     },
   },
   hitl: {
-    caps: { skillGrant: "SKILL 授權", runLocalAgent: "本地 AGENT", handoff: "交棒授權", localFile: "本機檔案", cdp: "輸入模擬" },
+    caps: { skillRunConfirm: "執行 skill 腳本", runLocalAgent: "本地 AGENT", handoff: "交棒授權", localFile: "本機檔案", cdp: "輸入模擬" },
   },
   cdpOnboarding: {
     title: "Pie 需要啟用瀏覽器輸入模擬（CDP）",
@@ -205,14 +205,13 @@ export const zhTWDict = {
     allow: "交棒",
     deny: "取消",
   },
-  skillGrant: {
-    title: "{name} 請求在你的電腦上執行腳本",
-    scriptsLabel: "可執行指令碼",
-    networkLabel: "網路存取",
-    networkNone: "無——預設沙箱已斷網",
-    writeLabel: "工作區外額外寫入路徑",
+  skillRunConfirm: {
+    title: "執行來自 {name} 的腳本？",
+    entryLabel: "腳本",
+    argsLabel: "參數",
+    argsNone: "無",
     disclosure:
-      "指令碼將以你的本機權限在預設沙箱內執行：未列出的網域一律斷網，寫入僅限該 skill 的工作區與上列路徑，敏感目錄拒絕讀取。核准後免再確認，直到該 skill 的宣告發生變化。",
+      "腳本將以你的本機權限在沙箱內執行：寫入僅限本次工作階段的工作區，敏感目錄拒絕讀取，環境變數中的密鑰已剝離。核准後本次工作階段內該 skill 皆可執行腳本。",
     allow: "允許執行",
     deny: "拒絕",
   },
@@ -421,7 +420,6 @@ export const zhTWDict = {
     screenshotUnavailable: "[螢幕截圖無法使用]",
   },
   skills: {
-    grant: { granted: "腳本已授權", revoke: "撤銷授權" },
     empty: {
       cta: "顯示可重複使用的工作流程（skill）。底層工具會依 prompt 自動解析。想新建？直接跟 Pie 說「幫我建立一個 skill」並說明要做的事，讓 Pie 幫你寫好它。",
     },
@@ -448,7 +446,6 @@ export const zhTWDict = {
     },
     authorTag: { builtIn: "內建", agent: "Agent", user: "使用者" },
     sourceTag: { agents: "~/.agents" },
-    invalidNetwork: "{count} 個網路網域宣告無效，已忽略",
     agentsImport: {
       title: "發現 {count} 個本地 skill",
       body: "它們來自 ~/.agents/skills（跨 agent 共享目錄）。勾選允許 Pie 使用的條目——之後隨時可在本列表中開關。",

@@ -2,7 +2,7 @@ import { AnimatePresence } from "../ui/motion";
 import type { ActivePanelRequest, PanelResponseBody } from "../../hooks/usePanelRequest";
 import type { DecryptedInstance } from "@/lib/instances";
 import { ScheduleDraftCard } from "../ScheduleDraftCard";
-import { SkillGrantCard } from "../SkillGrantCard";
+import { SkillRunConfirmCard } from "../SkillRunConfirmCard";
 import { RunLocalAgentCard } from "../RunLocalAgentCard";
 import { HandoffCard } from "../HandoffCard";
 import { LocalFileRequestCard } from "../LocalFileRequestCard";
@@ -35,10 +35,10 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
           onCancel={() => respond(request.requestId, { ok: false, reason: "cancelled by user" })}
         />
       )}
-      {request?.kind === "skill-grant" && (
-        <SkillGrantCard
+      {request?.kind === "skill-run-confirm" && (
+        <SkillRunConfirmCard
           key={request.requestId}
-          payload={request.payload as import("@/lib/agent/tools/skill-script").SkillGrantRequest}
+          payload={request.payload as import("@/lib/agent/tools/skill-script").SkillRunConfirmRequest}
           onDecision={(approved) => respond(request.requestId, { ok: true, data: approved })}
         />
       )}

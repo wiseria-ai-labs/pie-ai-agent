@@ -217,9 +217,10 @@ function getWindowsPath(): string {
  * （"Dock 启动的 app 找不到 node/brew" 同款坑）。问用户自己的 login shell 要真相。
  * Windows 无 login shell，改走 env + 注册表合并（getWindowsPath）。
  *
- * 不缓存：实测 0.10–0.16s，而 detect 只在「弹授权卡」「打开设置页」两个点被调用，
- * 无感。不缓存换来的是：用户装完新 agent 立刻可见，不需要重启 daemon，也不需要
- * 教用户什么叫「刷新」。
+ * 每次探测实测 0.10–0.16s。**detect 路径不缓存**（弹授权卡 / 开设置页两个点调用，
+ * 低频；不缓存换来「用户装完新 agent 立刻可见」，不需重启 daemon 或教用户「刷新」）。
+ * **skill 脚本执行热路径**（`run_skill_script` 每次都要 env 白名单版的 PATH）改走
+ * `getCachedUserPath()`——见下——避免 agent 循环里反复叠加 login-shell 启动开销。
  *
  * stdin: "ignore" —— 防 zsh 启动期读 stdin 的东西（oh-my-zsh 升级提示的 read -k）
  * 把探测挂死；与 handoff.ts 的 LAUNCH_PAD 是同一个坑的两面。
@@ -237,6 +238,20 @@ export function getUserPath(platform: NodeJS.Platform = process.platform): strin
   } catch {
     return fallback;
   }
+}
+
+let cachedUserPath: string | undefined;
+
+/**
+ * 缓存版 `getUserPath`：daemon 生命周期内只探一次 login-shell PATH。给 skill 脚本执行
+ * 热路径用——每次 `run_skill_script` 都要一份 env 白名单版的 PATH，若走 `getUserPath()`
+ * 会给 agent 循环里的反复调用叠加 login-interactive shell 启动（~0.1s+ 延迟 + 重复触发
+ * rc 副作用）。PATH 在 daemon 存活期内不变（用户装新工具的即时可见性只有 detect 路径需要），
+ * 故缓存一次即可。`resetCachedUserPath` 供单测清缓存。
+ */
+export function getCachedUserPath(platform: NodeJS.Platform = process.platform): string {
+  if (cachedUserPath === undefined) cachedUserPath = getUserPath(platform);
+  return cachedUserPath;
 }
 
 /** 检测结果 = 候选 + 解析出的绝对路径。spawn 只许用 path（裸命令名依赖运行时 PATH，真机上会 not found）。 */

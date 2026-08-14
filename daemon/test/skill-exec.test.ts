@@ -1,17 +1,21 @@
 import { test, expect } from "bun:test";
 import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, utimesSync } from "fs";
 import { join } from "path";
-import { runSkillScript, expandTilde, scanOutputs } from "../src/skill-exec";
+import { runSkillScript, scanOutputs, buildSandboxEnv, ENV_ALLOWLIST_VERSION } from "../src/skill-exec";
 import { fakeSkillSandbox } from "../src/skill-sandbox";
-import { hasGrant, listGrants, envelopeHash } from "../src/grants";
 import type { SandboxSettings } from "../src/skill-sandbox";
+import type { SkillExecDeps } from "../src/skill-exec";
 import { setLogEnabled } from "../src/log";
-import type { SkillAuthPayload } from "../../src/types/local-bridge";
 
 setLogEnabled(false);
 
 // 固定 UUID 形状 sessionId（assertSessionId 要求）。
 const SID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+// 测试注入的 env 构建：跳过 buildSandboxEnv 的 login-shell PATH 探测（会 spawn 真 shell，
+// 慢且不确定），只把调用方注入的 extra（PIE_*/BUN_BE_BUN）原样透出——env 白名单擦除
+// 本身在下面的 buildSandboxEnv 纯函数用例里单测。
+const identityEnv: SkillExecDeps["buildEnv"] = (extra) => ({ ...extra });
 
 function fixture() {
   const base = join(import.meta.dir, ".tmp-exec-" + Math.random().toString(36).slice(2));
@@ -21,38 +25,15 @@ function fixture() {
   mkdirSync(join(dir, "scripts"), { recursive: true });
   writeFileSync(
     join(dir, "SKILL.md"),
+    // metadata.pie 存在也不再被解析（ADR 0007）——沙箱是固定基线，与声明无关。
     `---\nname: web-fetch\ndescription: d\nmetadata:\n  pie:\n    network: [example.com]\n    write: [~/out]\n---\nb\n`,
   );
   writeFileSync(join(dir, "scripts", "fetch.ts"), "export default () => 1;");
-  return {
-    base,
-    skillsRoot,
-    sessionsDir,
-    grantsPath: join(base, "grants.json"),
-    auditPath: join(base, "audit.jsonl"),
-  };
+  return { base, skillsRoot, sessionsDir, auditPath: join(base, "audit.jsonl") };
 }
 
-// web-fetch 声明的 envelope hash（固定 fixture，跨用例复用而非每次现算）。
-const WEB_FETCH_ENVELOPE_HASH = envelopeHash({
-  allowedDomains: ["example.com"],
-  extraWrites: ["~/out"],
-  runnableScripts: ["fetch.ts"],
-});
-
-test("ungranted + no approval → needs_authorization, no grant written, no run", async () => {
-  const f = fixture();
-  let ran = false;
-  const sandbox = fakeSkillSandbox(async () => { ran = true; return { stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false }; });
-  await expect(
-    runSkillScript({ name: "web-fetch", entry: "fetch.ts", sessionId: SID }, { sandbox, now: () => 1, ...f }),
-  ).rejects.toMatchObject({ code: "needs_authorization" });
-  expect(ran).toBe(false);
-  expect(hasGrant("web-fetch", { allowedDomains: ["example.com"], extraWrites: ["~/out"], runnableScripts: ["fetch.ts"] }, f.grantsPath)).toBe(false);
-  rmSync(f.base, { recursive: true, force: true });
-});
-
-test("approved → writes grant, runs with baseline+declared settings, returns stdout", async () => {
+// ADR 0007：无授权判定——runSkillScript 收到即执行（确认在扩展 SW 层，daemon 前）。
+test("runs directly with fixed-baseline sandbox settings; returns stdout", async () => {
   const f = fixture();
   let seen: SandboxSettings | undefined;
   let seenCwd: string | undefined;
@@ -64,18 +45,18 @@ test("approved → writes grant, runs with baseline+declared settings, returns s
     return { stdout: "RESULT", stderr: "", exitCode: 0, timedOut: false, truncated: false };
   });
   const r = await runSkillScript(
-    { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: WEB_FETCH_ENVELOPE_HASH },
-    { sandbox, now: () => 1, ...f },
+    { name: "web-fetch", entry: "fetch.ts", sessionId: SID },
+    { sandbox, now: () => 1, buildEnv: identityEnv, ...f },
   );
   expect(r.output).toBe("RESULT");
-  expect(seen!.allowedDomains).toEqual(["example.com"]);
-  // 可写区 = session workspace（迁出 skill 目录，按 session 隔离）
+  // 固定基线：无 allowedDomains 维度（网络全放走 sandbox 内 ask 回调，不经 settings）。
+  expect("allowedDomains" in (seen as object)).toBe(false);
+  // 可写区 = 仅 session workspace（迁出 skill 目录，按 session 隔离）；不含声明的 ~/out。
   expect(seen!.allowWrite.some((w) => w.endsWith(join(SID, "workspace")))).toBe(true);
-  // 不再往 skill 目录写
   expect(seen!.allowWrite.some((w) => w.endsWith("/web-fetch/workspace"))).toBe(false);
-  expect(seen!.allowWrite).toContain(expandTilde("~/out"));
+  expect(seen!.allowWrite.some((w) => w.endsWith("/out"))).toBe(false);
   expect(seen!.denyRead.some((d) => d.endsWith("/.ssh"))).toBe(true);
-  // cwd = workspace；env 注入 PIE_SKILL_DIR / PIE_WORKSPACE
+  // cwd = workspace；env 注入 PIE_SKILL_DIR / PIE_WORKSPACE / BUN_BE_BUN
   expect(seenCwd!.endsWith(join(SID, "workspace"))).toBe(true);
   expect(seenEnv!.PIE_WORKSPACE).toBe(seenCwd!);
   expect(seenEnv!.PIE_SKILL_DIR!.endsWith("/web-fetch")).toBe(true);
@@ -83,23 +64,36 @@ test("approved → writes grant, runs with baseline+declared settings, returns s
   rmSync(f.base, { recursive: true, force: true });
 });
 
-test("second run after grant → no re-prompt", async () => {
+test("no authorization gate — never throws needs_authorization", async () => {
   const f = fixture();
-  const sandbox = fakeSkillSandbox(async () => ({ stdout: "x", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
-  await runSkillScript(
-    { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: WEB_FETCH_ENVELOPE_HASH },
-    { sandbox, now: () => 1, ...f },
-  );
-  const r = await runSkillScript({ name: "web-fetch", entry: "fetch.ts", sessionId: SID }, { sandbox, now: () => 2, ...f }); // 无 grantApproved 也不弹
+  let runs = 0;
+  const sandbox = fakeSkillSandbox(async () => {
+    runs++;
+    return { stdout: "x", stderr: "", exitCode: 0, timedOut: false, truncated: false };
+  });
+  // 连跑两次都直接执行（无「首跑弹卡」概念了）。
+  await runSkillScript({ name: "web-fetch", entry: "fetch.ts", sessionId: SID }, { sandbox, now: () => 1, buildEnv: identityEnv, ...f });
+  const r = await runSkillScript({ name: "web-fetch", entry: "fetch.ts", sessionId: SID }, { sandbox, now: () => 2, buildEnv: identityEnv, ...f });
   expect(r.output).toBe("x");
+  expect(runs).toBe(2);
   rmSync(f.base, { recursive: true, force: true });
 });
 
-test("entry not in scripts/ → unknown_entry (before any grant/run)", async () => {
+test("audit records the fixed sandbox baseline summary", async () => {
+  const f = fixture();
+  const sandbox = fakeSkillSandbox(async () => ({ stdout: "ok", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
+  await runSkillScript({ name: "web-fetch", entry: "fetch.ts", sessionId: SID }, { sandbox, now: () => 5, buildEnv: identityEnv, ...f });
+  const audit = JSON.parse((await Bun.file(f.auditPath).text()).trim());
+  expect(audit.sandbox).toEqual({ network: "open", envAllowlist: ENV_ALLOWLIST_VERSION });
+  expect("envelope" in audit).toBe(false);
+  rmSync(f.base, { recursive: true, force: true });
+});
+
+test("entry not in scripts/ → unknown_entry", async () => {
   const f = fixture();
   const sandbox = fakeSkillSandbox(async () => ({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
   await expect(
-    runSkillScript({ name: "web-fetch", entry: "../../etc/passwd", sessionId: SID, grantApproved: true }, { sandbox, now: () => 1, ...f }),
+    runSkillScript({ name: "web-fetch", entry: "../../etc/passwd", sessionId: SID }, { sandbox, now: () => 1, buildEnv: identityEnv, ...f }),
   ).rejects.toMatchObject({ code: "unknown_entry" });
   rmSync(f.base, { recursive: true, force: true });
 });
@@ -108,60 +102,54 @@ test("script non-zero exit → script_error with stderr tail", async () => {
   const f = fixture();
   const sandbox = fakeSkillSandbox(async () => ({ stdout: "", stderr: "boom", exitCode: 2, timedOut: false, truncated: false }));
   await expect(
-    runSkillScript(
-      { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: WEB_FETCH_ENVELOPE_HASH },
-      { sandbox, now: () => 1, ...f },
-    ),
+    runSkillScript({ name: "web-fetch", entry: "fetch.ts", sessionId: SID }, { sandbox, now: () => 1, buildEnv: identityEnv, ...f }),
   ).rejects.toMatchObject({ code: "script_error" });
   rmSync(f.base, { recursive: true, force: true });
 });
 
-test("needs_authorization error carries SkillAuthPayload with canonical envelope + hash", async () => {
-  const f = fixture();
-  const sandbox = fakeSkillSandbox(async () => ({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
-  try {
-    await runSkillScript({ name: "web-fetch", entry: "fetch.ts", sessionId: SID }, { sandbox, now: () => 1, ...f });
-    throw new Error("should have thrown");
-  } catch (e) {
-    expect((e as { code?: string }).code).toBe("needs_authorization");
-    const data = (e as { data?: SkillAuthPayload }).data;
-    expect(data?.skillName).toBe("web-fetch");
-    expect(data?.description).toBeTruthy();
-    expect(data?.envelope.runnableScripts).toContain("fetch.ts");
-    expect(data?.envelopeHash).toMatch(/^[0-9a-f]{32}$/);
-  }
-  rmSync(f.base, { recursive: true, force: true });
+// ── env 白名单擦除（D7）─────────────────────────────────────────────────────
+test("buildSandboxEnv: only whitelisted keys pass through; secrets are erased", () => {
+  const env = buildSandboxEnv(
+    { BUN_BE_BUN: "1", PIE_SKILL_DIR: "/s", PIE_WORKSPACE: "/w" },
+    {
+      path: "/opt/homebrew/bin:/usr/bin",
+      env: {
+        HOME: "/home/u",
+        TMPDIR: "/tmp",
+        LANG: "en_US.UTF-8",
+        LC_ALL: "en_US.UTF-8",
+        USER: "u",
+        SHELL: "/bin/zsh",
+        // 以下必须被擦除
+        AWS_SECRET_ACCESS_KEY: "shhh",
+        GITHUB_TOKEN: "ghp_x",
+        OPENAI_API_KEY: "sk-x",
+        PATH: "/should/be/overridden/by/login-shell",
+      },
+    },
+  );
+  // login-shell PATH 覆盖了继承的 PATH
+  expect(env.PATH).toBe("/opt/homebrew/bin:/usr/bin");
+  // 白名单键放行
+  expect(env.HOME).toBe("/home/u");
+  expect(env.TMPDIR).toBe("/tmp");
+  expect(env.LANG).toBe("en_US.UTF-8");
+  expect(env.LC_ALL).toBe("en_US.UTF-8");
+  expect(env.USER).toBe("u");
+  expect(env.SHELL).toBe("/bin/zsh");
+  // 注入的 extra 放行
+  expect(env.BUN_BE_BUN).toBe("1");
+  expect(env.PIE_SKILL_DIR).toBe("/s");
+  expect(env.PIE_WORKSPACE).toBe("/w");
+  // 凭据全擦
+  expect("AWS_SECRET_ACCESS_KEY" in env).toBe(false);
+  expect("GITHUB_TOKEN" in env).toBe(false);
+  expect("OPENAI_API_KEY" in env).toBe(false);
 });
 
-test("grantApproved without matching approvedEnvelopeHash → needs_authorization again, no grant written", async () => {
-  const f = fixture();
-  const sandbox = fakeSkillSandbox(async () => ({ stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
-  await expect(
-    runSkillScript({ name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true }, { sandbox, now: () => 1, ...f }),
-  ).rejects.toMatchObject({ code: "needs_authorization" });
-  await expect(
-    runSkillScript(
-      { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: "0".repeat(32) },
-      { sandbox, now: () => 1, ...f },
-    ),
-  ).rejects.toMatchObject({ code: "needs_authorization" });
-  expect(listGrants(f.grantsPath)).toHaveLength(0);
-  rmSync(f.base, { recursive: true, force: true });
-});
-
-test("grantApproved with correct hash writes grant and runs", async () => {
-  const f = fixture();
-  const sandbox = fakeSkillSandbox(async () => ({ stdout: "RESULT", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
-  const payload = await runSkillScript({ name: "web-fetch", entry: "fetch.ts", sessionId: SID }, { sandbox, now: () => 1, ...f }).catch(
-    (e) => (e as { data?: SkillAuthPayload }).data,
-  );
-  const res = await runSkillScript(
-    { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: payload!.envelopeHash },
-    { sandbox, now: () => 1, ...f },
-  );
-  expect(res.output).toBeDefined();
-  expect(listGrants(f.grantsPath)).toHaveLength(1);
-  rmSync(f.base, { recursive: true, force: true });
+test("buildSandboxEnv: extra overrides collide-named whitelist keys", () => {
+  const env = buildSandboxEnv({ HOME: "/injected" }, { path: "/usr/bin", env: { HOME: "/real" } });
+  expect(env.HOME).toBe("/injected");
 });
 
 // ── 副根污染修复（spec §1.2 / I1）：跑副根 skill 脚本 → 副根目录零写入 ──────────
@@ -172,10 +160,7 @@ test("secondary-root skill run → zero writes into the secondary skill dir", as
   const sessionsDir = join(base, "sessions");
   const skillDir = join(secondary, "web-fetch");
   mkdirSync(join(skillDir, "scripts"), { recursive: true });
-  writeFileSync(
-    join(skillDir, "SKILL.md"),
-    `---\nname: web-fetch\ndescription: d\nmetadata:\n  pie:\n    network: [example.com]\n    write: [~/out]\n---\nb\n`,
-  );
+  writeFileSync(join(skillDir, "SKILL.md"), `---\nname: web-fetch\ndescription: d\n---\nb\n`);
   writeFileSync(join(skillDir, "scripts", "fetch.ts"), "export default () => 1;");
   const before = readdirSync(skillDir).sort();
 
@@ -185,8 +170,8 @@ test("secondary-root skill run → zero writes into the secondary skill dir", as
     return { stdout: "ok", stderr: "", exitCode: 0, timedOut: false, truncated: false };
   });
   await runSkillScript(
-    { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: WEB_FETCH_ENVELOPE_HASH },
-    { sandbox, now: () => 1, roots: { primary, secondary }, sessionsDir, grantsPath: join(base, "g.json"), auditPath: join(base, "a.jsonl") },
+    { name: "web-fetch", entry: "fetch.ts", sessionId: SID },
+    { sandbox, now: () => 1, buildEnv: identityEnv, roots: { primary, secondary }, sessionsDir, auditPath: join(base, "a.jsonl") },
   );
 
   // 副根 skill 目录内容完全不变；尤其没有 workspace/
@@ -207,8 +192,8 @@ test("run returns outputs manifest for files written this run", async () => {
     return { stdout: "", stderr: "", exitCode: 0, timedOut: false, truncated: false };
   });
   const r = await runSkillScript(
-    { name: "web-fetch", entry: "fetch.ts", sessionId: SID, grantApproved: true, approvedEnvelopeHash: WEB_FETCH_ENVELOPE_HASH },
-    { sandbox, now: () => 1, ...f },
+    { name: "web-fetch", entry: "fetch.ts", sessionId: SID },
+    { sandbox, now: () => 1, buildEnv: identityEnv, ...f },
   );
   const byPath = Object.fromEntries((r.outputs ?? []).map((o) => [o.path, o.bytes]));
   expect(byPath["out.csv"]).toBe(5);

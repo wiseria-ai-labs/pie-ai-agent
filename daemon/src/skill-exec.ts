@@ -5,12 +5,12 @@ import { paths, sessionWorkspace } from "./paths";
 import { log } from "./log";
 import { assertSkillName, listSkills, resolveSkillRoot, defaultRoots } from "./skill-store";
 import type { SkillRoots } from "./skill-store";
-import { hasGrant, putGrant, grantKey, canonicalEnvelope, envelopeHash } from "./grants";
+import { getCachedUserPath } from "./agents";
 import { appendAudit } from "./audit";
 import { beginSkillRun, endSkillRun } from "./status";
 import { realSkillSandbox, checkWindowsSandboxReady } from "./skill-sandbox";
 import type { SkillSandbox } from "./skill-sandbox";
-import type { GrantEnvelope, RunSkillScriptParams, RunSkillScriptResult, SkillAuthPayload } from "../../src/types/local-bridge";
+import type { RunSkillScriptParams, RunSkillScriptResult, SandboxBaseline } from "../../src/types/local-bridge";
 
 export interface SkillExecDeps {
   sandbox?: SkillSandbox;
@@ -22,8 +22,45 @@ export interface SkillExecDeps {
   roots?: SkillRoots;
   /** session workspace 根覆盖（测试隔离真实 ~/.pie/sessions） */
   sessionsDir?: string;
-  grantsPath?: string;
   auditPath?: string;
+  /** env 白名单构建注入（测试用）：缺省走 buildSandboxEnv（login-shell PATH + 白名单擦除）。 */
+  buildEnv?: (extra: Record<string, string>) => Record<string, string>;
+}
+
+/**
+ * env 白名单版本号（ADR 0007 / D7）。网络全放后 env 擦除是强制项，这个号码记进 audit，
+ * 擦除口径变更（增删白名单键）时递增，事后审计能对上「那次是在什么擦除策略下跑的」。
+ */
+export const ENV_ALLOWLIST_VERSION = "1";
+
+/** 原样透传的 env 键（spec D7）。PATH 单列（用 login-shell 解析版）；LC_* 前缀匹配另处理。 */
+const ENV_PASSTHROUGH_KEYS = ["HOME", "TMPDIR", "LANG", "USER", "SHELL"] as const;
+
+/**
+ * 固定基线沙箱的 env 白名单擦除（D7）：网络全放后，子进程只拿受控的一小撮 env，
+ * 其余（各类 token / api key / 云厂商凭据）全擦。PATH 用 daemon 的 login-shell
+ * 解析版（launchd 裸 PATH 看不见 homebrew 的 yt-dlp/ffmpeg）。extra 是调用方注入的
+ * PIE_ 前缀变量与 BUN_BE_BUN，最后覆盖（不被白名单里的同名键顶掉）。
+ * opts 供单测注入 path/env，产品调用走 getCachedUserPath() + process.env
+ * （热路径，login-shell PATH 探测在 daemon 生命周期内缓存一次）。
+ */
+export function buildSandboxEnv(
+  extra: Record<string, string>,
+  opts: { path?: string; env?: NodeJS.ProcessEnv } = {},
+): Record<string, string> {
+  const src = opts.env ?? process.env;
+  const out: Record<string, string> = {};
+  const path = opts.path ?? getCachedUserPath();
+  if (path) out.PATH = path;
+  for (const k of ENV_PASSTHROUGH_KEYS) {
+    const v = src[k];
+    if (typeof v === "string") out[k] = v;
+  }
+  // LC_*（LC_ALL / LC_CTYPE / …）整族放行——本地化，无外泄价值。
+  for (const [k, v] of Object.entries(src)) {
+    if (k.startsWith("LC_") && typeof v === "string") out[k] = v;
+  }
+  return { ...out, ...extra };
 }
 
 /** 本次产物清单上限：脚本可能生成上千分片，无上限会撑爆 observation。 */
@@ -71,18 +108,13 @@ export function scanOutputs(
   return { outputs, truncated };
 }
 
-export function expandTilde(p: string): string {
-  return p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p;
-}
-
-/** 敏感目录默认拒读（write 类外泄面靠默认断网压制，这里挡直接读密钥）。 */
+/** 敏感目录默认拒读（网络全放后的纵深防御：env 擦除挡环境凭据，这里挡直接读磁盘密钥）。 */
 export function baselineDenyRead(): string[] {
   const h = homedir();
   return [
     join(h, ".ssh"),
     join(h, ".aws"),
     join(h, ".gnupg"),
-    paths.grantsPath,
     paths.logsDir,
   ];
 }
@@ -146,11 +178,11 @@ export async function runSkillScript(
 ): Promise<RunSkillScriptResult> {
   const now = deps.now ?? Date.now;
   const roots: SkillRoots = deps.roots ?? (deps.skillsRoot ? { primary: deps.skillsRoot } : defaultRoots);
-  const grantsPath = deps.grantsPath ?? paths.grantsPath;
   const auditPath = deps.auditPath ?? paths.auditPath;
   const sessionsDir = deps.sessionsDir ?? paths.sessionsDir;
   const sandbox = deps.sandbox ?? realSkillSandbox;
   const readinessCheck = deps.readinessCheck ?? checkWindowsSandboxReady;
+  const buildEnv = deps.buildEnv ?? ((extra: Record<string, string>) => buildSandboxEnv(extra));
 
   const name = assertSkillName(params.name);
   const located = resolveSkillRoot(name, roots);
@@ -175,29 +207,9 @@ export async function runSkillScript(
     );
   }
 
-  const envelope: GrantEnvelope = canonicalEnvelope({
-    allowedDomains: summary.declaredCaps.network,
-    extraWrites: summary.declaredCaps.write,
-    runnableScripts: summary.runnableScripts,
-  });
-
-  if (!hasGrant(name, envelope, grantsPath)) {
-    const hash = envelopeHash(envelope);
-    if (!params.grantApproved || params.approvedEnvelopeHash !== hash) {
-      const data: SkillAuthPayload = {
-        skillName: name,
-        displayName: summary.displayName,
-        description: summary.description,
-        envelope,
-        envelopeHash: hash,
-      };
-      throw Object.assign(new Error("authorization required"), {
-        code: "needs_authorization",
-        data,
-      });
-    }
-    putGrant({ key: grantKey(name, envelope), skillName: name, envelope, grantedAt: now() }, grantsPath);
-  }
+  // ADR 0007：daemon 不再做任何授权判定——能连 daemon.sock 的本地进程本就是用户权限
+  // 进程，信封 hash / TOCTOU 重调防的是不存在的攻击者。唯一的信任边界「LLM 不能自批」
+  // 由扩展 SW 层的确认卡保证；daemon 收到 run_skill_script 即按固定基线沙箱执行。
 
   const skillDir = join(located.root, name);
   // 产物区按 session 隔离，且搬出 skill 目录——脚本进程永不写入任何 skill 目录（主根或
@@ -205,14 +217,16 @@ export async function runSkillScript(
   const workspace = sessionWorkspace(params.sessionId, sessionsDir);
   mkdirSync(workspace, { recursive: true });
 
+  // 固定基线沙箱（不可声明不可配，ADR 0007）：写限 workspace（skill 目录含只读副根永不
+  // 可写），denyRead 基线挡磁盘密钥，网络全放（外泄面靠 env 擦除 + denyRead 压制）。
   const settings = {
-    allowWrite: [workspace, ...summary.declaredCaps.write.map(expandTilde)],
-    allowedDomains: summary.declaredCaps.network,
+    allowWrite: [workspace],
     denyRead: baselineDenyRead(),
   };
   const argv = [...interp, join(skillDir, "scripts", params.entry), ...(params.args ?? [])];
   // cwd = workspace（可写区），skillDir 通过 PIE_SKILL_DIR 供脚本读自身资源。
-  const env = { BUN_BE_BUN: "1", PIE_SKILL_DIR: skillDir, PIE_WORKSPACE: workspace };
+  // env 走白名单擦除（D7）：只有 PIE_*/BUN_BE_BUN + 一小撮受控系统 env + login-shell PATH。
+  const env = buildEnv({ BUN_BE_BUN: "1", PIE_SKILL_DIR: skillDir, PIE_WORKSPACE: workspace });
 
   const startedAt = now();
   log("info", "skill.run", { name, entry: params.entry });
@@ -225,8 +239,9 @@ export async function runSkillScript(
     endSkillRun(runId);
   }
 
+  const sandboxBaseline: SandboxBaseline = { network: "open", envAllowlist: ENV_ALLOWLIST_VERSION };
   appendAudit(
-    { ts: now(), skillName: name, entry: params.entry, envelope, exitCode: res.exitCode, timedOut: res.timedOut, truncated: res.truncated, ms: now() - startedAt },
+    { ts: now(), skillName: name, entry: params.entry, exitCode: res.exitCode, timedOut: res.timedOut, truncated: res.truncated, ms: now() - startedAt, sandbox: sandboxBaseline },
     auditPath,
   );
 
