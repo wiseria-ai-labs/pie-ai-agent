@@ -207,6 +207,7 @@ export const es419Dict = {
     targetLabel: "Destinatario",
     contextLabel: "Contexto",
     filesLabel: "Archivos a preparar",
+    appContinueHint: "La app solo abre el espacio de trabajo; envía un continue en la app para empezar.",
     allow: "Delegar",
     deny: "Cancelar",
   },

@@ -206,6 +206,7 @@ export const jaDict = {
     targetLabel: "宛先",
     contextLabel: "コンテキスト",
     filesLabel: "引き継ぐファイル",
+    appContinueHint: "アプリはワークスペースを開くだけです。続行するにはアプリ内で一言送ってください。",
     allow: "引き継ぐ",
     deny: "キャンセル",
   },

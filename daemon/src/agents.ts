@@ -108,18 +108,26 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
 ];
 
 /**
- * Windows 候选表。terminal 四条（claude / codex / cursor-agent / opencode）与 mac 同形 CLI，
- * #12 真机确认 `where` + 注册表 PATH 合并能命中官方安装器落点后默认启用
- * （`verified: true`；装完不用重启 daemon，下次 list_agents / 授权卡会重探）。
- * app 形态的 Windows bundle 落点仍未点亮，不编造路径。handoff launch
- * （osascript / `start.command`）仍是 mac-only（W-2）；检测与 run_local_agent
- * 的 headless spawn 不依赖那一层。
+ * Windows 候选表。顺序与 mac 同构：品牌分组、每组 app 在前、terminal 随后
+ * （HandoffCard 预选 = 表序里第一个已装且启用的）。
+ *
+ * terminal 四条（#12）真机确认后默认启用。app 两条（#23）只认官方安装器绝对
+ * `.exe`，落地时 `verified: false`——未在 Windows 真机确认 exists 命中且交棒
+ * 能打开前不得默认启用。不加 claude-app：官方 Windows `.exe` 落点未确认。
  */
 export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
   { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude",
     argv: ["{prompt}"],
     binPaths: ["~/.local/bin/claude.exe", "~/.local/bin/claude", "~/AppData/Roaming/npm/claude.cmd"],
     headlessArgv: ["-p", "--dangerously-skip-permissions", "{prompt}"], verified: true },
+
+  { id: "codex-app", label: "Codex / ChatGPT (App)", kind: "app",
+    appPaths: [
+      "~/AppData/Local/Programs/chat-gpt/ChatGPT.exe",
+      "~/AppData/Local/Programs/ChatGPT/ChatGPT.exe",
+      "~/AppData/Local/Programs/OpenAI/ChatGPT/ChatGPT.exe",
+    ],
+    convention: "AGENTS.md", verified: false },
   { id: "codex-terminal", label: "Codex (Terminal)", kind: "terminal", bin: "codex",
     argv: ["--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
     binPaths: [
@@ -129,6 +137,10 @@ export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
     ],
     headlessArgv: ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"],
     verified: true },
+
+  { id: "cursor-app", label: "Cursor (App)", kind: "app",
+    appPaths: ["~/AppData/Local/Programs/cursor/Cursor.exe"],
+    convention: "AGENTS.md", verified: false },
   { id: "cursor-terminal", label: "Cursor (Terminal)", kind: "terminal", bin: "cursor-agent",
     argv: ["{prompt}"],
     binPaths: [
@@ -137,6 +149,7 @@ export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
       "~/AppData/Roaming/npm/cursor-agent.cmd",
     ],
     headlessArgv: ["-p", "--force", "{prompt}"], verified: true },
+
   { id: "opencode-terminal", label: "OpenCode (Terminal)", kind: "terminal", bin: "opencode",
     argv: ["--prompt", "{prompt}"],
     binPaths: [
@@ -350,7 +363,7 @@ export function detectAgents(opts?: DetectOpts): DetectedAgent[] {
   for (const c of candidates) {
     const path =
       c.kind === "app"
-        ? (c.appPaths!.find((p) => exists(p)) ?? null)
+        ? (c.appPaths!.map((p) => p.replace(/^~/, homedir())).find((p) => exists(p)) ?? null)
         : (which(c.bin!) ??
           c.binPaths?.map((p) => p.replace(/^~/, homedir())).find((p) => exists(p)) ??
           null);

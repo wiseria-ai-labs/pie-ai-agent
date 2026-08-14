@@ -209,14 +209,24 @@ test("agentCandidatesFor: win32 → Windows 表；其余 → mac 8 条", () => {
   expect(agentCandidatesFor("linux")).toBe(AGENT_CANDIDATES);
 });
 
-test("Windows 表默认启用（#12 全翻开）；不含 mac app 条目", () => {
+test("Windows 表品牌分组、app 在前；不含 claude-app / 不含 mac 路径", () => {
   expect(WINDOWS_AGENT_CANDIDATES.map((c) => c.id)).toEqual([
     "claude-terminal",
+    "codex-app",
     "codex-terminal",
+    "cursor-app",
     "cursor-terminal",
     "opencode-terminal",
   ]);
-  for (const c of WINDOWS_AGENT_CANDIDATES) expect(c.verified).not.toBe(false);
+  expect(WINDOWS_AGENT_CANDIDATES.some((c) => c.id === "claude-app")).toBe(false);
+  for (const c of WINDOWS_AGENT_CANDIDATES) {
+    if (c.kind === "terminal") expect(c.verified).not.toBe(false);
+    if (c.kind === "app") {
+      expect(c.verified).toBe(false);
+      expect(c.appPaths?.every((p) => !p.startsWith("/Applications/"))).toBe(true);
+      expect(c.appPaths?.every((p) => p.endsWith(".exe"))).toBe(true);
+    }
+  }
 });
 
 test("detectAgents(win32): where 命中即纳入", () => {
@@ -278,4 +288,35 @@ test("detectAgents(darwin): mac 表不受 verified 过滤影响（历史条目�
     exists: () => false,
   });
   expect(detected.map((a) => a.id)).toContain("claude-terminal");
+});
+
+test("detectAgents(win32): ~ 展开后的 Cursor.exe 算已装；/Applications/Cursor.app 不算", () => {
+  const home = homedir();
+  const cursorExe = `${home}/AppData/Local/Programs/cursor/Cursor.exe`;
+  const detected = detectAgents({
+    platform: "win32",
+    includeUnverified: true,
+    which: () => null,
+    exists: (p) => p === cursorExe || p === "/Applications/Cursor.app",
+  });
+  expect(detected.find((a) => a.id === "cursor-app")?.path).toBe(cursorExe);
+  expect(detected.some((a) => a.path.includes("/Applications/"))).toBe(false);
+});
+
+test("detectAgents(win32): 默认排除 verified:false 的 app；includeUnverified 才纳入", () => {
+  const home = homedir();
+  const cursorExe = `${home}/AppData/Local/Programs/cursor/Cursor.exe`;
+  const exists = (p: string) => p === cursorExe;
+  const hidden = detectAgents({ platform: "win32", which: () => null, exists });
+  expect(hidden.map((a) => a.id)).not.toContain("cursor-app");
+  expect(hidden.map((a) => a.id)).not.toContain("codex-app");
+
+  const shown = detectAgents({
+    platform: "win32",
+    includeUnverified: true,
+    which: () => null,
+    exists,
+  });
+  expect(shown.map((a) => a.id)).toEqual(["cursor-app"]);
+  expect(shown[0].path).toBe(cursorExe);
 });

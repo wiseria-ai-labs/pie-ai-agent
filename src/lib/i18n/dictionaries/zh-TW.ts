@@ -202,6 +202,7 @@ export const zhTWDict = {
     targetLabel: "收件人",
     contextLabel: "上下文",
     filesLabel: "隨交棒檔案",
+    appContinueHint: "App 只會開啟工作區，需要你在 App 裡發一句繼續。",
     allow: "交棒",
     deny: "取消",
   },

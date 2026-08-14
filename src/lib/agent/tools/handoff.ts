@@ -88,7 +88,7 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
       const label = agents.find((x) => x.id === target)?.label ?? target;
       const started =
         result.mode === "app"
-          ? `The app was opened rooted at that folder; the user must send a message there to start the local agent.`
+          ? `The app was opened rooted at that folder; send a continue message in the opened app to start the local agent.`
           : `An interactive terminal session was opened there and is already running.`;
       return {
         success: true,

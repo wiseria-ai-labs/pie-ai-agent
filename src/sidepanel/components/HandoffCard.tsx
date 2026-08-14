@@ -57,6 +57,9 @@ export function HandoffCard({ payload, onDecision }: Props) {
         selected={selected}
         onSelect={setSelected}
       />
+      {selected.endsWith("-app") && (
+        <p className="text-[11px] leading-[16px] text-fg-3">{t("handoff.appContinueHint")}</p>
+      )}
       <HitlDetailBlock>
         <HitlDetailGroup label={t("handoff.contextLabel")}>
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[17px] text-fg-2">

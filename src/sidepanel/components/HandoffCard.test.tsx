@@ -63,4 +63,17 @@ describe("HandoffCard", () => {
     expect(screen.getByText("Hand-off").className).toContain("text-warning");
     expect(container.textContent).not.toContain("handoff_to_agent");
   });
+
+  it("shows appContinueHint when the preselected recipient is an app", () => {
+    renderCard({ payload: PAYLOAD, onDecision: vi.fn() });
+    expect(screen.getByText(/send a continue message/i)).toBeTruthy();
+  });
+
+  it("hides appContinueHint after switching to a terminal recipient", () => {
+    renderCard({ payload: { context: "x", fileCount: 0, agents: AGENTS }, onDecision: vi.fn() });
+    expect(screen.getByText(/send a continue message/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Claude Code/ }));
+    fireEvent.click(screen.getByRole("option", { name: /Codex/ }));
+    expect(screen.queryByText(/send a continue message/i)).toBeNull();
+  });
 });

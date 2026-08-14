@@ -42,6 +42,15 @@ export function buildWindowsStartBat(dir: string, agentPath: string, argv: strin
  * 外层 `cmd /c start` 可以 windowsHide——`start` 会另开可见窗。
  * 有 wt 则 `start "" wt -d dir cmd /c start.bat`，否则 `start "" /D dir cmd /c start.bat`。
  */
+/**
+ * Windows 版 `open -a`：`cmd /c start "" <quoted-exe> <quoted-dir>`。
+ * 必须走 `start` 再 detach——realSpawn 带 windowsHide，直接 spawn .exe 会把 GUI 藏掉。
+ * 引号规则复用 batQuote（路径常含空格：Local\\Programs\\cursor\\Cursor.exe）。
+ */
+export function windowsOpenApp(exe: string, dir: string): { cmd: string; args: string[] } {
+  return { cmd: "cmd.exe", args: ["/c", "start", "", batQuote(exe), batQuote(dir)] };
+}
+
 export function windowsHandoffSpawn(
   dir: string,
   scriptPath: string,
@@ -160,16 +169,22 @@ export async function runHandoff(
 
   if (agent.kind === "app") {
     writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${HANDOFF_PROMPT}\n`);
+    log("info", "handoff.open_app", { dir, target: agent.id, files: (params.files ?? []).length });
     if (platform === "win32") {
-      throw new Error(
-        `handoff: ${agent.label} app form is not supported on Windows yet — open the folder manually: ${dir}`,
-      );
+      const launch = windowsOpenApp(agent.path, dir);
+      const r = await spawn(launch.cmd, launch.args, dir);
+      if (r.exitCode !== 0) {
+        throw new Error(
+          `failed to open ${agent.label} (start exit ${r.exitCode}): ${(r.stderr ?? "").trim().slice(0, 300)} — ` +
+            `open the folder manually in the app: ${dir}`,
+        );
+      }
+      return { dir, mode: "app" };
     }
     // app 直开：`open -a <bundle 路径> <dir>` → 会话根在该目录。无 prompt 注入面
     // → 目录内的约定文件引导（Claude 系读 CLAUDE.md，Codex/Cursor 读 AGENTS.md）。
     // 人到场发一句即开跑（mode 回传给扩展，observation 明示需发一句）。
     // 无 shell、无 TCC，launch 比 Terminal 稳，但不自动开跑。
-    log("info", "handoff.open_app", { dir, target: agent.id, files: (params.files ?? []).length });
     const r = await spawn("open", ["-a", agent.path, dir], dir);
     if (r.exitCode !== 0) {
       throw new Error(

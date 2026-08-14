@@ -211,6 +211,7 @@ export const enDict = {
     targetLabel: "Recipient",
     contextLabel: "Context",
     filesLabel: "Files to stage",
+    appContinueHint: "The app only opens the workspace — send a continue message there to start.",
     allow: "Hand off",
     deny: "Cancel",
   },

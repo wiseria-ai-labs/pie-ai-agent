@@ -207,6 +207,7 @@ export const ptBRDict = {
     targetLabel: "Destinatário",
     contextLabel: "Contexto",
     filesLabel: "Arquivos a preparar",
+    appContinueHint: "O app só abre o espaço de trabalho; envie um continue no app para começar.",
     allow: "Repassar",
     deny: "Cancelar",
   },

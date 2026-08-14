@@ -5,6 +5,7 @@ import {
   batQuote,
   buildWindowsStartBat,
   windowsHandoffSpawn,
+  windowsOpenApp,
   resolveWindowsTerminal,
 } from "../src/handoff";
 import { AGENT_CANDIDATES } from "../src/agents";
@@ -344,10 +345,56 @@ test("win32 launch failure includes start.bat self-rescue path", async () => {
   ).rejects.toThrow(/start\.bat/);
 });
 
-test("win32 app form refuses with manual folder path (no open -a)", async () => {
+const CURSOR_EXE = "C:\\Users\\x\\AppData\\Local\\Programs\\cursor\\Cursor.exe";
+
+function winCursorApp() {
+  return {
+    id: "cursor-app" as const,
+    label: "Cursor (App)",
+    kind: "app" as const,
+    appPaths: [CURSOR_EXE],
+    convention: "AGENTS.md" as const,
+    path: CURSOR_EXE,
+    verified: false as const,
+  };
+}
+
+test("windowsOpenApp: cmd /c start \"\" <quoted-exe> <quoted-dir>", () => {
+  const s = windowsOpenApp(CURSOR_EXE, "C:\\h\\d");
+  expect(s.cmd).toBe("cmd.exe");
+  expect(s.args).toEqual(["/c", "start", "", batQuote(CURSOR_EXE), batQuote("C:\\h\\d")]);
+  expect(s.args).not.toContain("osascript");
+  expect(s.args).not.toContain("-a");
+});
+
+test("win32 app: start \"\" <exe> <dir>，写 AGENTS.md，mode=app", async () => {
   const h = harness();
+  h.opts.detect = () => [winCursorApp()];
+  const r = await runHandoff(
+    { target: "cursor-app", context: "Continue the report" },
+    { ...h.opts, platform: "win32" },
+  );
+  expect(r.mode).toBe("app");
+  expect(h.writes.some((w) => w.path.endsWith("context.md") && w.content === "Continue the report")).toBe(true);
+  const guide = h.writes.find((w) => w.path.endsWith("AGENTS.md"));
+  expect(guide?.content).toContain("Read context.md");
+  expect(h.writes.some((w) => w.path.endsWith("start.command") || w.path.endsWith("start.bat"))).toBe(false);
+  expect(h.spawns).toHaveLength(1);
+  expect(h.spawns[0].cmd).toBe("cmd.exe");
+  expect(h.spawns[0].args).toEqual(["/c", "start", "", batQuote(CURSOR_EXE), batQuote(r.dir)]);
+  expect(h.spawns.some((s) => s.cmd === "open" || s.cmd === "osascript")).toBe(false);
+});
+
+test("win32 app start 失败：文件已落盘，错误含手动打开路径", async () => {
+  const h = harness();
+  h.opts.detect = () => [winCursorApp()];
+  h.opts.spawn = async (cmd, args, cwd) => {
+    h.spawns.push({ cmd, args, cwd });
+    return { stdout: "", exitCode: 1, stderr: "start failed" };
+  };
   await expect(
-    runHandoff({ target: "claude-app", context: "x" }, { ...h.opts, platform: "win32" }),
-  ).rejects.toThrow(/not supported on Windows yet/);
-  expect(h.spawns).toHaveLength(0);
+    runHandoff({ target: "cursor-app", context: "x" }, { ...h.opts, platform: "win32" }),
+  ).rejects.toThrow(/open the folder manually[\s\S]*pie-handoffs/);
+  expect(h.writes.some((w) => w.path.endsWith("context.md"))).toBe(true);
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(true);
 });

@@ -32,7 +32,8 @@ describe("handoff_to_agent tool", () => {
     const tool = buildHandoffTool({ run, listAgents: async () => AGENTS, requestConsent: async () => "claude-app" });
     const r = await tool.handler({ context: "do it" }, {} as never);
     expect(r.success).toBe(true);
-    expect(r.observation).toMatch(/send a message/i);
+    expect(r.observation).toMatch(/continue/i);
+    expect(r.observation).toMatch(/opened app/i);
   });
 
   it("empty detection: structured error, no consent card, no run", async () => {
