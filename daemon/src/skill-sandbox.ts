@@ -201,6 +201,7 @@ async function runViaSrt(
       env: buildSpawnEnv(IS_WIN, env, process.env, wrapped.env as Record<string, string>),
       stdout: "pipe",
       stderr: "pipe",
+      windowsHide: true,
     });
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -257,6 +258,7 @@ async function runPassthrough(
     env: { ...process.env, ...env },
     stdout: "pipe",
     stderr: "pipe",
+    windowsHide: true,
   });
   let timedOut = false;
   const timer = setTimeout(() => {

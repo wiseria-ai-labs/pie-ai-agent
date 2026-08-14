@@ -403,7 +403,7 @@ export function defaultWindowsDoctorDeps(): WindowsDoctorDeps {
 
 function defaultRegQueryDefault(key: string): string | null {
   try {
-    const r = Bun.spawnSync(["reg", "query", key, "/ve"], { stdin: "ignore", timeout: 3000 });
+    const r = Bun.spawnSync(["reg", "query", key, "/ve"], { stdin: "ignore", timeout: 3000, windowsHide: true });
     if (r.exitCode !== 0) return null;
     return parseRegQueryDefault(r.stdout.toString());
   } catch {
@@ -413,7 +413,7 @@ function defaultRegQueryDefault(key: string): string | null {
 
 function defaultMappedDrives(): Set<string> {
   try {
-    const r = Bun.spawnSync(["net", "use"], { stdin: "ignore", timeout: 3000 });
+    const r = Bun.spawnSync(["net", "use"], { stdin: "ignore", timeout: 3000, windowsHide: true });
     return parseMappedDrives(r.stdout.toString());
   } catch {
     return new Set();

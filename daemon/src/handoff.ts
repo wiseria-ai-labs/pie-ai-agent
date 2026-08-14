@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
 import type { HandoffParams, HandoffResult } from "../../src/types/local-bridge";
 import type { SpawnFn } from "./spawn";
@@ -9,7 +10,7 @@ import { paths } from "./paths";
 import { log } from "./log";
 
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
-const RESERVED = new Set(["context.md", "start.command", "claude.md", "agents.md"]);
+const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md", "agents.md"]);
 
 /** 交棒引导语：terminal 直接注入 argv，app 写进 convention 文件。 */
 const HANDOFF_PROMPT =
@@ -21,6 +22,73 @@ const HANDOFF_PROMPT =
  */
 function shq(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/** cmd.exe 双引号转义：`"` → `""`。 */
+export function batQuote(s: string): string {
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+export function buildWindowsStartBat(dir: string, agentPath: string, argv: string[]): string {
+  return [
+    "@echo off",
+    `cd /d ${batQuote(dir)} || exit /b 1`,
+    [batQuote(agentPath), ...argv.map(batQuote)].join(" "),
+    "",
+  ].join("\r\n");
+}
+
+/**
+ * 外层 `cmd /c start` 可以 windowsHide——`start` 会另开可见窗。
+ * 有 wt 则 `start "" wt -d dir cmd /c start.bat`，否则 `start "" /D dir cmd /c start.bat`。
+ */
+export function windowsHandoffSpawn(
+  dir: string,
+  scriptPath: string,
+  wtPath: string | null,
+): { cmd: string; args: string[] } {
+  if (wtPath) {
+    return { cmd: "cmd.exe", args: ["/c", "start", "", wtPath, "-d", dir, "cmd.exe", "/c", scriptPath] };
+  }
+  return { cmd: "cmd.exe", args: ["/c", "start", "", "/D", dir, "cmd.exe", "/c", scriptPath] };
+}
+
+const WT_WELL_KNOWN = ["AppData/Local/Microsoft/WindowsApps/wt.exe", "AppData/Local/Microsoft/Windows Terminal/wt.exe"];
+
+/** 给 wt 用：WindowsApps 别名算命中（与 detectAgents 的 stub 过滤相反）。 */
+function defaultWhere(bin: string): string | null {
+  try {
+    const r = Bun.spawnSync(["where", bin], {
+      stdin: "ignore",
+      timeout: 3000,
+      windowsHide: true,
+    });
+    for (const line of r.stdout.toString().split(/\r?\n/)) {
+      const t = line.trim();
+      if (t) return t;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** wt 的 WindowsApps 别名是真入口（不像 Store python stub），允许命中。 */
+export function resolveWindowsTerminal(opts?: {
+  which?: (bin: string) => string | null;
+  exists?: (path: string) => boolean;
+  home?: string;
+}): string | null {
+  const which = opts?.which;
+  const exists = opts?.exists ?? existsSync;
+  const home = opts?.home ?? homedir();
+  const fromWhere = which?.("wt.exe") ?? which?.("wt");
+  if (fromWhere) return fromWhere;
+  for (const rel of WT_WELL_KNOWN) {
+    const p = join(home, ...rel.split("/"));
+    if (exists(p)) return p;
+  }
+  return null;
 }
 
 /**
@@ -59,6 +127,9 @@ export async function runHandoff(
     writeFile?: (path: string, content: string, mode?: number) => void;
     now?: () => string;
     detect?: () => DetectedAgent[];
+    platform?: NodeJS.Platform;
+    which?: (bin: string) => string | null;
+    exists?: (path: string) => boolean;
   },
 ): Promise<HandoffResult> {
   const spawn = opts?.spawn ?? realSpawn;
@@ -67,6 +138,7 @@ export async function runHandoff(
     opts?.writeFile ?? ((p, c, m) => writeFileSync(p, c, m != null ? { mode: m } : undefined));
   const now = opts?.now ?? (() => new Date().toISOString().slice(0, 10));
   const detect = opts?.detect ?? detectAgents;
+  const platform = opts?.platform ?? process.platform;
 
   // params 是 JSON 解析自 socket 的运行时值（daemon.ts 里只是 `as HandoffParams`
   // 断言，编译期类型在运行时不提供任何保证）。target 决定 spawn 什么：闸 =
@@ -87,11 +159,16 @@ export async function runHandoff(
   }
 
   if (agent.kind === "app") {
+    writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${HANDOFF_PROMPT}\n`);
+    if (platform === "win32") {
+      throw new Error(
+        `handoff: ${agent.label} app form is not supported on Windows yet — open the folder manually: ${dir}`,
+      );
+    }
     // app 直开：`open -a <bundle 路径> <dir>` → 会话根在该目录。无 prompt 注入面
     // → 目录内的约定文件引导（Claude 系读 CLAUDE.md，Codex/Cursor 读 AGENTS.md）。
     // 人到场发一句即开跑（mode 回传给扩展，observation 明示需发一句）。
     // 无 shell、无 TCC，launch 比 Terminal 稳，但不自动开跑。
-    writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${HANDOFF_PROMPT}\n`);
     log("info", "handoff.open_app", { dir, target: agent.id, files: (params.files ?? []).length });
     const r = await spawn("open", ["-a", agent.path, dir], dir);
     if (r.exitCode !== 0) {
@@ -113,6 +190,25 @@ export async function runHandoff(
   // 双引号转义规则不同）——这里安全性来自 dir 本身不含双引号/反引号/`$`
   // 等元字符，JSON.stringify 只是顺手拿来加一层引号。
   const args = (agent.argv ?? ["{prompt}"]).map((a) => a.replace("{prompt}", HANDOFF_PROMPT));
+  if (platform === "win32") {
+    const scriptPath = join(dir, "start.bat");
+    writeFile(scriptPath, buildWindowsStartBat(dir, agent.path, args));
+    log("info", "handoff.open", { dir, target: agent.id, files: (params.files ?? []).length, launcher: "windows" });
+    const wtPath = resolveWindowsTerminal({
+      which: opts?.which ?? defaultWhere,
+      exists: opts?.exists,
+    });
+    const launch = windowsHandoffSpawn(dir, scriptPath, wtPath);
+    const r = await spawn(launch.cmd, launch.args, dir);
+    if (r.exitCode !== 0) {
+      throw new Error(
+        `failed to open a terminal (exit ${r.exitCode}): ${(r.stderr ?? "").trim().slice(0, 300)} — ` +
+          `run it manually: ${scriptPath}`,
+      );
+    }
+    return { dir, mode: "terminal" };
+  }
+
   const script =
     `#!/bin/bash\n` +
     `cd ${JSON.stringify(dir)} || exit 1\n` +

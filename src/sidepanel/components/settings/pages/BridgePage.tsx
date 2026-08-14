@@ -271,7 +271,10 @@ export function LocalBridgeSection() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setView("agents")}
+                  onClick={() => {
+                    queryLocalAgents(setAgents);
+                    setView("agents");
+                  }}
                   className="flex items-center justify-center gap-1.5 rounded-lg border border-line px-2.5 py-[7px] text-[12px] font-medium text-fg-2 hover:text-fg-1"
                 >
                   {t("settings.localBridge.manageAgents")}

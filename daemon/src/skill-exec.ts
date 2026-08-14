@@ -140,7 +140,7 @@ export function pickWindowsPython(candidates: string[]): string | null {
  *  排除 WindowsApps stub 后返回绝对路径，探测不到返回 null。 */
 function findWindowsPython(): string | null {
   try {
-    const r = Bun.spawnSync(["where.exe", "python"]);
+    const r = Bun.spawnSync(["where.exe", "python"], { windowsHide: true });
     if (r.exitCode !== 0) return null;
     return pickWindowsPython(r.stdout.toString().split(/\r?\n/));
   } catch {

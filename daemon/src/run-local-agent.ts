@@ -6,7 +6,7 @@ import { log } from "./log";
 import type { SpawnFn } from "./spawn";
 import { realSpawn } from "./spawn";
 import type { DetectedAgent } from "./agents";
-import { AGENT_CANDIDATES, detectAgents } from "./agents";
+import { agentCandidatesFor, detectAgents } from "./agents";
 
 /** 非零退出时给诊断用的 stderr 尾巴：截断避免把整段日志灌进 observation。 */
 const STDERR_TAIL_MAX = 2000;
@@ -25,7 +25,7 @@ function slugify(prompt: string): string {
 }
 
 /** 候选表里可作 headless 后端（声明了 headlessArgv）的 bin 名，仅用于「一个都没装」的报错提示。 */
-const HEADLESS_BINS = AGENT_CANDIDATES.filter((c) => c.headlessArgv?.length).map((c) => c.bin);
+const HEADLESS_BINS = agentCandidatesFor().filter((c) => c.headlessArgv?.length).map((c) => c.bin);
 
 /** 旧 Slice-0 扩展在 wire 上传的裸 "claude" = claude-terminal 的 alias（与 HandoffParams 同）。 */
 const LEGACY_TARGET_ALIAS: Record<string, string> = { claude: "claude-terminal" };

@@ -12,9 +12,11 @@ Windows 全链路真机验收跑到 skill/沙箱环节，坐实 **srt-win 沙箱
 |---|---|
 | **A 安装** | ✅ 全绿。HKLM NM 键 ×2 / manifest json / 开始菜单 / Run key / 沙箱账户 provision / vc_redist / 托盘自启都在位；HKCU 遮蔽键被安装器清掉。SmartScreen 摩擦源于未签名（spec decision 9 已接受，非缺陷）。 |
 | **B 连接** | ✅ Chrome + Edge 都连上，进程 `ExecutablePath` 实证 = `C:\Program Files\Pie Link\pie.exe`；doctor 分项全绿。 |
-| **C agent/handoff** | 部分。host 兜底拉起 ✓、单实例互斥 ✓（无 Bun panic）、逃逸浏览器 job object ✓。detectAgents=none（候选表全 `verified:false` 草案，W-1）。handoff launch 层 mac-only 未实现（W-2）。 |
-| **D skill** | 起初 srt 下**全线阻断**（见 W-4）；改 passthrough 后 **✅ 全绿**（下文）。 |
+| **C agent/handoff** | ✅ 检测 + `run_local_agent` + **Codex 交棒**绿。W-2 launch = `start.bat` + wt/cmd。OpenCode 交互式 TUI 在本 ARM64 VM 上游崩（launch 已过）。App 形态另开 #23。 |
+| **D skill** | 起初 srt 下**全线阻断**（见 W-4）；改 passthrough 后 **✅ 全绿**（RPC + UI 全链路，下文）。 |
 | **E 沙箱围栏** | Windows 改为**不承诺沙箱 + 披露**，不再是发版阻断项。 |
+| **F 升级** | ✅ 0.2.1→0.2.2 覆盖升：grants SHA 不变、skills 仍在、`.old` rename 成功、无 rollback。 |
+| **G 卸载** | ✅ NM/Run/开始菜单/进程清掉；`~/.pie` 留存。PF 曾残留 `pie.exe`+`.stale`（锁 / 热替换未跟踪），进程死后可删。 |
 
 ## 关键发现
 
@@ -42,6 +44,7 @@ srt-win 交付的是一个**有洞（#402）、读不到脚本（W-4）、还每
   - `write-fence` `ok:true`：workspace/skill目录/家目录写 ALLOWED（无围栏，以用户权限），Program Files 写 BLOCKED（普通 NTFS 权限拒，非沙箱）；outputs 扫到 `inside.txt`。
   - `read_skill_output(inside.txt)` → 回读文件内容成功。
   - `list_audit` 前后对比：srt 旧跑 3 条 exit=1 + 22–30s；passthrough 新跑 **exit=0 + 6.5s**。
+  - **UI 全链路（2026-08-14，现有授权卡，未接 `unsandboxed` 披露）**：Edge 侧栏 LLM → `use_skill` / `run_skill_script` `net-probe`/`net-allow.ts` → 现有 grant 卡批准 → 执行。daemon：`grants` 新增 `skill:net-probe:75adcdf3e429a9ed6325e57fdf3c50c4`（`grantedAt` 2026-08-14T09:49:49Z）；`list_audit` 一条 `net-allow.ts` **exit=0 / 4844ms** / 未超时。stdout：`example.com` 与 `www.google.com` 均为 `REACHABLE status=200`——信封 `allowedDomains: [example.com]` **未强制**（passthrough 预期；现有卡仍按「有围栏」文案披露，产品面未闭环）。
 
 ## 尚余跟进（非阻断，落 issue）
 
