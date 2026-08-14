@@ -126,11 +126,11 @@ Issues live as GitHub issues in `wiseria-ai-labs/pie-ai-agent`, managed via the 
 
 ### Triage labels（issue 状态机 = 任务的事实源）
 
-云端分诊 routine 与实现链共用一套标签状态机；它就是「某个任务现在走到哪了」的唯一事实源，权威清单见 `docs/agents/triage-labels.md`。
+分诊 automation 与实现链共用一套标签状态机；它就是「某个任务现在走到哪了」的唯一事实源，权威清单见 `docs/agents/triage-labels.md`。
 - **阶段（分诊产出 + 流转）**：`need-design`（待人牵头产品化设计）/ `need-confirm`（方案已出，待人拍板选项）/ `ready-for-implement`（已充分指定，可交 Loop 实现）。
 - **人工信号**：`confirmed` —— 人对 `need-confirm` 拍板后打上，routine 据此补最终方案并推进到 `ready-for-implement`。这是唯一的「人→机」放行闸，不靠机器猜评论。
 - **下游状态（实现链产出，分诊只识别、跳过、绝不回退）**：`agent-handling`（Loop 处理中）/ `PR`（已提 PR 等合入）。
-- **PR 复审（Step4 Reviewer loop 产出 + 人工信号）**：`need-to-solve`（Reviewer 要求改）/ `solved`（implementer 改完待复审）/ `need-human-test`（过 review 待人真机）/ `human-approved`（人真机过、可合，**由人打**）。Reviewer 与 implementer 同一身份故 review 走普通评论、状态靠标签；无需真机的 PR 由 Reviewer 直合 main（main 保护已放宽 0 approve），`need-to-solve` 由 implementer loop 优先接走（不单设 PR Solver）。**云端无 `gh`，4 条 routine 全走 github MCP（`mcp__github__*`）；git 本地操作走 Bash。详见 `docs/agents/triage-labels.md`「云端执行约束」。**
+- **PR 复审（Step3 / Step4 产出 + 人工信号）**：`need-to-solve`（Reviewer 要求改）/ `solved`（implementer 改完待复审）/ `need-human-test`（过 review 待真机）/ `human-approved`（可合：人打，或验收 automation / `skip-human-test` 放行）/ `skip-human-test`（人显式跳过真机）。Reviewer 必须执行 `/code-review` skill（`~/.grok/bundled/skills/code-review/SKILL.md`），Approval Bar 未过不得放行。Reviewer 与 implementer 同一身份故 review 走普通评论、状态靠标签；无需真机的 PR 由 Reviewer 直合 main（main 保护已放宽 0 approve），`need-to-solve` 由 implementer loop 优先接走（不单设 PR Solver）。**4 条 loop 自 2026-08-14 起跑在本机 Orca automation（默认 agent = grok，每次 run 新建 worktree，`gh` 可直接用）；旧的 claude.ai 云端 routine 已停用但保留可回滚。详见 `docs/agents/triage-labels.md`「本地执行环境」。**
 - **分类 / 分级**：`bug` | `feature` ＋ `P0` | `P1` | `P2`。
 
 ### Domain docs
@@ -142,34 +142,34 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 **superpowers 整套暂时停用**（`.claude/settings.json` 里 plugin 已置 false）。TDD / 调试 / brainstorm / 写 skill 一律按常规做法直接做，不套流程仪式，也不要主动去调同名 skill。
 
 - 重点项目要产出 spec 时**我会明确说「用 grilling」**，没说就别开。
-- 分诊已固化进云端 routine（见上方 Triage labels）；建 issue 按 Issue 规范手工走，不走 `triage` / `to-issues`。
+- 分诊已固化进本地 Orca automation（见上方 Triage labels）；建 issue 按 Issue 规范手工走，不走 `triage` / `to-issues`。
 - 其余 skill（`prototype` 等）按需人工点名调用。
 
-### 开发范式（2026-06 起：云端 Loop 为主，实验期）
+### 开发范式（2026-06 起：自动 Loop 为主，实验期）
 
-> 这份 `CLAUDE.md` 本地与云端共读（云端只读仓库内 `.claude/` + `CLAUDE.md`，不读 `~/.claude/`），**没有单独的 cloud.md**。下面就是两端共同遵守的工作方式 —— 默认**不再跑**旧的 spec-driven 全流程仪式。
+> 这份 `CLAUDE.md` 是人和 automation 共读的唯一工作方式说明，**没有单独的 cloud.md**。下面就是两端共同遵守的工作方式 —— 默认**不再跑**旧的 spec-driven 全流程仪式。
 
-**任务源 = GitHub issue + 标签状态机**（见上方 Triage labels）。多数轻量 / 无须人为决策的工作由云端 routine / Loop 经标签流转推进，Loop 之间靠 issue/PR 上的标签与评论交接：
+**任务源 = GitHub issue + 标签状态机**（见上方 Triage labels）。多数轻量 / 无须人为决策的工作由本地 Orca automation 经标签流转推进，Loop 之间靠 issue/PR 上的标签与评论交接：
 
 ```
-新需求 → issue（Step1 分诊 routine 自动归类/分级/定阶段）
-       → ready-for-implement → Step3 implementer 实现 → agent-handling → PR
-            → Step4 Reviewer 复审：需改→need-to-solve（implementer 接回修→solved→复审↺）
+新需求 → issue（Step1 分诊自动归类/分级/定阶段）
+       → ready-for-implement → Step2 implementer 实现 → agent-handling → PR
+            → Step3 Reviewer 复审：需改→need-to-solve（implementer 接回修→solved→复审↺）
                                   过·无需真机→admin 直合 main
-                                  过·需真机→need-human-test→人验收打 human-approved→Reviewer 合
-       └ need-confirm → 人打 confirmed 拍板 → Step1 routine 补方案 → ready-for-implement
+                                  过·需真机→need-human-test→Step4 验收（或人打 skip-human-test / human-approved）→Reviewer 合
+       └ need-confirm → 人打 confirmed 拍板 → Step1 补方案 → ready-for-implement
 ```
 
-人在这条链上的人工闸有两处：`need-confirm` 处拍板（打 `confirmed`）、与 PR 的真机验收（`need-human-test` → 打 `human-approved`）；其余交给云端。真机验收可先跑自动化预检吃掉大部分清单项（见 `docs/agents/auto-acceptance.md`），人只看报告 + 抽查报告列出的结构性盲区（品牌 Chrome 差异 / 权限弹框流等）。
+人在这条链上的人工闸有两处：`need-confirm` 处拍板（打 `confirmed`）、与 PR 真机验收里验收 automation 标出的盲区（看报告后打 `human-approved`，或整单跳过打 `skip-human-test`）；其余交给 automation。验收细节见 `docs/agents/auto-acceptance.md`。
 
-**默认路径**：不开 brainstorm/grill/plan 仪式。把需求写成 issue（或让分诊 routine 接住），让云端 Loop 实现。本地 session 多做的是「把工作落成清晰的 issue」与「review/merge PR」，**不是亲自实现**。
+**默认路径**：不开 brainstorm/grill/plan 仪式。把需求写成 issue（或让分诊 automation 接住），让 implementer automation 实现。本地 session 多做的是「把工作落成清晰的 issue」与「review/merge PR」，**不是亲自实现**。
 
 **重点项目才人为发起设计（opt-in 链，仅当我明确说要走时才走）**：
 文档三层 **spec**(`docs/specs/`) → **issue**(GitHub) → **plan**(`docs/plans/`)；不单出 PRD（spec 即「设计＋需求」权威源）。
 1. `grilling` — 质询收敛需求与方案，产出 spec → `docs/specs/<date>-<slug>.md`；锐化出的术语/决策写进 `CONTEXT.md` 与 `docs/adr/`
 2. `prototype`（**可选**）— 仅当含状态机/数据模型/UI 方向这类不确定性时才造抛弃式原型，发现回流改 spec
-3. **落 issue（按 Issue 规范，不走 skill）** — 把定稿 spec 拆成 tracer-bullet 垂直切片，用 `gh` 手工建 issue（只写 what + 验收标准），照 Triage labels 打分类/分级。**设计已定，issue 直接打 `ready-for-implement`**：跳过 `need-design` / `need-confirm`（那两阶段是给未经设计的新需求分诊用的，不再过云端 routine）。实现 plan（→ `docs/plans/`）按需写，作为 issue 的实现参考。
-4. **交棒云端 Loop 实现** —— 链路到此为止，本地不接着一把梭：Loop 取 `ready-for-implement` → `agent-handling` → PR → 人 review/merge。
+3. **落 issue（按 Issue 规范，不走 skill）** — 把定稿 spec 拆成 tracer-bullet 垂直切片，用 `gh` 手工建 issue（只写 what + 验收标准），照 Triage labels 打分类/分级。**设计已定，issue 直接打 `ready-for-implement`**：跳过 `need-design` / `need-confirm`（那两阶段是给未经设计的新需求分诊用的，不再过分诊 automation）。实现 plan（→ `docs/plans/`）按需写，作为 issue 的实现参考。
+4. **交棒 implementer automation 实现** —— 链路到此为止，本地不接着一把梭：Loop 取 `ready-for-implement` → `agent-handling` → PR → 人 review/merge。
    - 确需本地亲自实现时：逐 task TDD 实现 → 跑 `pnpm test` / `pnpm typecheck` / `pnpm build` 拿到证据再宣称完成 → `gh issue close`；收尾走 PR（main 受保护，`gh`）。⚠️ subagent cwd 不随 worktree 切换，派活 prompt 须强制 `cd <worktree 绝对路径>`。
 
-**判据**：拿不准是不是「重点项目」→ 默认当轻量任务，落 issue 交云端。仪式是例外，不是 happy path。
+**判据**：拿不准是不是「重点项目」→ 默认当轻量任务，落 issue 交 automation。仪式是例外，不是 happy path。
