@@ -165,6 +165,18 @@ test("parseWherePath: 空输出（where exit 1，未装）→ null", () => {
   expect(parseWherePath("\r\n  \r\n")).toBeNull();
 });
 
+test("parseWherePath: 跳过 .ps1，同组优先 .cmd（npm 全局三件套）", () => {
+  const stdout =
+    "C:\\Users\\x\\AppData\\Roaming\\npm\\opencode\r\n" +
+    "C:\\Users\\x\\AppData\\Roaming\\npm\\opencode.cmd\r\n" +
+    "C:\\Users\\x\\AppData\\Roaming\\npm\\opencode.ps1\r\n";
+  expect(parseWherePath(stdout)).toBe("C:\\Users\\x\\AppData\\Roaming\\npm\\opencode.cmd");
+});
+
+test("parseWherePath: 只有 .ps1 → 视为不可用", () => {
+  expect(parseWherePath("C:\\Users\\x\\AppData\\Roaming\\npm\\opencode.ps1\r\n")).toBeNull();
+});
+
 test("parseRegQueryPath: 从 reg query 输出取 Path 值（REG_EXPAND_SZ / REG_SZ 都认）", () => {
   const expand =
     "\r\nHKEY_CURRENT_USER\\Environment\r\n" +
@@ -191,27 +203,64 @@ test("mergeWindowsPath: 全空来源 → 空串", () => {
   expect(mergeWindowsPath("", ["", ""])).toBe("");
 });
 
-test("agentCandidatesFor: win32 → Windows 草案表；其余 → mac 8 条", () => {
+test("agentCandidatesFor: win32 → Windows 表；其余 → mac 8 条", () => {
   expect(agentCandidatesFor("win32")).toBe(WINDOWS_AGENT_CANDIDATES);
   expect(agentCandidatesFor("darwin")).toBe(AGENT_CANDIDATES);
   expect(agentCandidatesFor("linux")).toBe(AGENT_CANDIDATES);
 });
 
-test("Windows 草案表全部 verified:false（铁律：未真机验证不得默认启用）", () => {
-  expect(WINDOWS_AGENT_CANDIDATES.length).toBeGreaterThan(0);
-  for (const c of WINDOWS_AGENT_CANDIDATES) expect(c.verified).toBe(false);
+test("Windows 表默认启用（#12 全翻开）；不含 mac app 条目", () => {
+  expect(WINDOWS_AGENT_CANDIDATES.map((c) => c.id)).toEqual([
+    "claude-terminal",
+    "codex-terminal",
+    "cursor-terminal",
+    "opencode-terminal",
+  ]);
+  for (const c of WINDOWS_AGENT_CANDIDATES) expect(c.verified).not.toBe(false);
 });
 
-test("detectAgents(win32): 默认排除未验证草案（哪怕 where 命中也不启用）", () => {
+test("detectAgents(win32): where 命中即纳入", () => {
   const detected = detectAgents({
     platform: "win32",
-    which: () => "C:\\Program Files\\nodejs\\claude.cmd",
-    exists: () => true,
+    which: (bin) =>
+      bin === "codex" ? "C:\\Users\\x\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe" : null,
+    exists: () => false,
   });
-  expect(detected).toEqual([]);
+  expect(detected.map((a) => a.id)).toEqual(["codex-terminal"]);
+  expect(detected[0].path).toBe("C:\\Users\\x\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe");
 });
 
-test("detectAgents(win32, includeUnverified): 纳入草案 + where 解出的绝对路径", () => {
+test("detectAgents(win32): where 命中 opencode", () => {
+  const detected = detectAgents({
+    platform: "win32",
+    which: (bin) => (bin === "opencode" ? "C:\\Users\\x\\scoop\\shims\\opencode.exe" : null),
+    exists: () => false,
+  });
+  expect(detected.map((a) => a.id)).toEqual(["opencode-terminal"]);
+  expect(detected[0].path).toBe("C:\\Users\\x\\scoop\\shims\\opencode.exe");
+});
+
+test("detectAgents(win32): which miss 回落 npm 全局 .cmd（PATHEXT 缺失时 where 会漏）", () => {
+  const detected = detectAgents({
+    platform: "win32",
+    which: () => null,
+    exists: (p) => p.replace(/\\/g, "/").endsWith("AppData/Roaming/npm/opencode.cmd"),
+  });
+  expect(detected.map((a) => a.id)).toEqual(["opencode-terminal"]);
+  expect(detected[0].path.replace(/\\/g, "/")).toMatch(/AppData\/Roaming\/npm\/opencode\.cmd$/);
+});
+
+test("detectAgents(win32): which miss 回落官方安装器 binPaths", () => {
+  const detected = detectAgents({
+    platform: "win32",
+    which: () => null,
+    exists: (p) => p.replace(/\\/g, "/").endsWith("OpenAI/Codex/bin/codex.exe"),
+  });
+  expect(detected.map((a) => a.id)).toEqual(["codex-terminal"]);
+  expect(detected[0].path.replace(/\\/g, "/")).toMatch(/OpenAI\/Codex\/bin\/codex\.exe$/);
+});
+
+test("detectAgents(win32, includeUnverified): 仍按 where 解绝对路径", () => {
   const detected = detectAgents({
     platform: "win32",
     includeUnverified: true,

@@ -5,7 +5,7 @@ import type { BridgeResponse, RunLocalAgentParams, HandoffParams, ListAgentsResu
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
 import { runHandoff } from "./handoff";
-import { detectAgents, AGENT_CANDIDATES } from "./agents";
+import { detectAgents, agentCandidatesFor } from "./agents";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded, readSessionFile, deleteSessionWorkspace, sweepSessions } from "./skill-store";
@@ -66,7 +66,7 @@ export async function handleMessage(
       try {
         const detected = new Set(detectAgents().map((a) => a.id));
         const result: ListAgentsResult = {
-          agents: AGENT_CANDIDATES.map(({ id, label, kind, headlessArgv }) => ({
+          agents: agentCandidatesFor().map(({ id, label, kind, headlessArgv }) => ({
             id,
             label,
             kind,

@@ -108,29 +108,47 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
 ];
 
 /**
- * Windows 候选表（spec §4.7）。**从零点亮**：mac 8 条不平移，每条 Windows 命令必须
- * 真机验证过才 `verified: true`——在此之前一律 `verified: false`，detectAgents 默认排除
- * （不会 spawn、不进 handoff 可选集）。首期只落码 terminal 草案：bin 名与 CLI flag 是
- * 跨平台已知语义（claude/codex/cursor-agent 都是 node CLI，`-p` / `--dangerously-*` /
- * `exec` 子命令在 Windows 上同形），故可安全草案化并靠 `where` 解绝对路径；app 形态的
- * Windows bundle 落点尚未真机确认，遵「命令必须真机验证过才进表」铁律暂不编造，留待
- * need-human-test 逐条补入。launch 层（handoff.ts 的 osascript/open 仍 mac-only）的
- * Windows 化是另一片，不在本检测片范围。
+ * Windows 候选表。terminal 四条（claude / codex / cursor-agent / opencode）与 mac 同形 CLI，
+ * #12 真机确认 `where` + 注册表 PATH 合并能命中官方安装器落点后默认启用
+ * （`verified: true`；装完不用重启 daemon，下次 list_agents / 授权卡会重探）。
+ * app 形态的 Windows bundle 落点仍未点亮，不编造路径。handoff launch
+ * （osascript / `start.command`）仍是 mac-only（W-2）；检测与 run_local_agent
+ * 的 headless spawn 不依赖那一层。
  */
 export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
   { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude",
     argv: ["{prompt}"],
-    headlessArgv: ["-p", "--dangerously-skip-permissions", "{prompt}"], verified: false },
+    binPaths: ["~/.local/bin/claude.exe", "~/.local/bin/claude", "~/AppData/Roaming/npm/claude.cmd"],
+    headlessArgv: ["-p", "--dangerously-skip-permissions", "{prompt}"], verified: true },
   { id: "codex-terminal", label: "Codex (Terminal)", kind: "terminal", bin: "codex",
     argv: ["--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
+    binPaths: [
+      "~/AppData/Local/Programs/OpenAI/Codex/bin/codex.exe",
+      "~/.local/bin/codex.exe",
+      "~/AppData/Roaming/npm/codex.cmd",
+    ],
     headlessArgv: ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"],
-    verified: false },
+    verified: true },
   { id: "cursor-terminal", label: "Cursor (Terminal)", kind: "terminal", bin: "cursor-agent",
     argv: ["{prompt}"],
-    headlessArgv: ["-p", "--force", "{prompt}"], verified: false },
+    binPaths: [
+      "~/.local/bin/cursor-agent.exe",
+      "~/.local/bin/cursor-agent",
+      "~/AppData/Roaming/npm/cursor-agent.cmd",
+    ],
+    headlessArgv: ["-p", "--force", "{prompt}"], verified: true },
+  { id: "opencode-terminal", label: "OpenCode (Terminal)", kind: "terminal", bin: "opencode",
+    argv: ["--prompt", "{prompt}"],
+    binPaths: [
+      "~/.opencode/bin/opencode.exe",
+      "~/.opencode/bin/opencode",
+      "~/scoop/shims/opencode.exe",
+      "~/AppData/Roaming/npm/opencode.cmd",
+    ],
+    headlessArgv: ["run", "--auto", "{prompt}"], verified: true },
 ];
 
-/** 平台分支的候选表（纯函数，可测）：win32 → Windows 草案表；其余 → mac 8 条。 */
+/** 平台分支的候选表（纯函数，可测）：win32 → Windows 表；其余 → mac 8 条。 */
 export function agentCandidatesFor(
   platform: NodeJS.Platform = process.platform,
 ): readonly AgentCandidate[] {
@@ -202,6 +220,7 @@ function getWindowsPath(): string {
       const r = Bun.spawnSync(["reg", "query", key, "/v", "Path"], {
         stdin: "ignore",
         timeout: 3000,
+        windowsHide: true,
       });
       registryPaths.push(parseRegQueryPath(r.stdout.toString()));
     } catch {
@@ -233,6 +252,7 @@ export function getUserPath(platform: NodeJS.Platform = process.platform): strin
     const r = Bun.spawnSync([process.env.SHELL ?? "/bin/zsh", "-lic", "echo $PATH"], {
       stdin: "ignore",
       timeout: 3000,
+      windowsHide: true,
     });
     return parseShellPath(r.stdout.toString(), fallback);
   } catch {
@@ -267,16 +287,18 @@ export function isWindowsAppsStub(p: string): boolean {
 }
 
 /**
- * `where <bin>` 的 stdout 解析（纯函数，可测）：每行一个绝对路径命中，取**第一个非
- * WindowsApps stub** 的路径。全是 stub / 空输出（未装，where exit 1）→ null。
+ * `where <bin>` 的 stdout 解析（纯函数，可测）：跳过 WindowsApps stub 和 `.ps1`
+ * （spawn 会拉起可见 PowerShell）。同一次输出里优先 `.cmd`/`.exe`/`.bat`
+ * （npm 全局常同时放下无扩展 shim + `.cmd` + `.ps1`）。
  */
 export function parseWherePath(stdout: string): string | null {
+  const hits: string[] = [];
   for (const line of stdout.split(/\r?\n/)) {
     const t = line.trim();
-    if (!t || isWindowsAppsStub(t)) continue;
-    return t;
+    if (!t || isWindowsAppsStub(t) || /\.ps1$/i.test(t)) continue;
+    hits.push(t);
   }
-  return null;
+  return hits.find((p) => /\.(cmd|exe|bat)$/i.test(p)) ?? hits[0] ?? null;
 }
 
 export interface DetectOpts {
@@ -287,15 +309,24 @@ export interface DetectOpts {
   includeUnverified?: boolean;
 }
 
+/** native host / 托盘拉起的进程经常不带 PATHEXT；`where opencode` 就找不到 npm 的 `.cmd`。 */
+const WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.JS";
+
 /** 平台对应的 which：win32 走 `where`（排 WindowsApps stub），其余走 Bun.which。 */
 function makeWhich(platform: NodeJS.Platform, userPath: string): (bin: string) => string | null {
   if (platform === "win32") {
     return (bin: string) => {
       try {
         const r = Bun.spawnSync(["where", bin], {
-          env: { ...process.env, PATH: userPath, Path: userPath },
+          env: {
+            ...process.env,
+            PATH: userPath,
+            Path: userPath,
+            PATHEXT: process.env.PATHEXT || WINDOWS_PATHEXT,
+          },
           stdin: "ignore",
           timeout: 3000,
+          windowsHide: true,
         });
         return parseWherePath(r.stdout.toString());
       } catch {

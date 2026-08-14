@@ -134,7 +134,7 @@ test("readinessCheck ready → run proceeds normally", async () => {
 test("default readinessCheck (non-Windows host) → ready, run proceeds without injection", async () => {
   const f = fixture();
   const sandbox = fakeSkillSandbox(async () => ({ stdout: "OK", stderr: "", exitCode: 0, timedOut: false, truncated: false }));
-  // 不注入 readinessCheck：默认走 checkWindowsSandboxReady，在非 win32 宿主上恒 ready
+  // 不注入 readinessCheck：默认恒 ready（Windows 改 passthrough 后已无就绪门）
   const r = await runSkillScript(
     { name: "web-fetch", entry: "fetch.ts", sessionId: SID },
     { sandbox, now: () => 1, buildEnv: identityEnv, ...f },

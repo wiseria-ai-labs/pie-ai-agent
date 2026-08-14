@@ -1,5 +1,12 @@
 import { test, expect } from "bun:test";
-import { runHandoff, safeFileName } from "../src/handoff";
+import {
+  runHandoff,
+  safeFileName,
+  batQuote,
+  buildWindowsStartBat,
+  windowsHandoffSpawn,
+  resolveWindowsTerminal,
+} from "../src/handoff";
 import { AGENT_CANDIDATES } from "../src/agents";
 import { setLogEnabled } from "../src/log";
 
@@ -69,6 +76,7 @@ test("stages files with basename, neutralizing path traversal", async () => {
 test("safeFileName rejects reserved / empty / dot names", () => {
   expect(() => safeFileName("context.md")).toThrow();
   expect(() => safeFileName("start.command")).toThrow();
+  expect(() => safeFileName("start.bat")).toThrow();
   expect(() => safeFileName("")).toThrow();
   expect(() => safeFileName("..")).toThrow();
   expect(safeFileName("notes.md")).toBe("notes.md");
@@ -224,4 +232,122 @@ test("app 模式按 convention 写引导文件：Codex → AGENTS.md", async () 
 test("RESERVED 挡掉 agents.md（大小写不敏感）", () => {
   expect(() => safeFileName("AGENTS.md")).toThrow();
   expect(() => safeFileName("agents.md")).toThrow();
+});
+
+test("RESERVED 挡掉 start.bat（大小写不敏感）", () => {
+  expect(() => safeFileName("START.BAT")).toThrow();
+});
+
+test("batQuote doubles embedded quotes", () => {
+  expect(batQuote(`C:\\na me\\opencode.cmd`)).toBe(`"C:\\na me\\opencode.cmd"`);
+  expect(batQuote(`say "hi"`)).toBe(`"say ""hi"""`);
+});
+
+test("buildWindowsStartBat: cd /d + quoted absolute path, no bash shebang", () => {
+  const bat = buildWindowsStartBat(
+    "C:\\Users\\x\\pie-handoffs\\d",
+    "C:\\Users\\x\\AppData\\Roaming\\npm\\opencode.cmd",
+    ["--prompt", "Read context.md"],
+  );
+  expect(bat).not.toContain("#!/bin/bash");
+  expect(bat).toContain("cd /d \"C:\\Users\\x\\pie-handoffs\\d\"");
+  expect(bat).toContain("\"C:\\Users\\x\\AppData\\Roaming\\npm\\opencode.cmd\" \"--prompt\" \"Read context.md\"");
+});
+
+test("windowsHandoffSpawn: wt present → start wt -d dir cmd /c start.bat", () => {
+  const s = windowsHandoffSpawn("C:\\h\\d", "C:\\h\\d\\start.bat", "C:\\WindowsApps\\wt.exe");
+  expect(s.cmd).toBe("cmd.exe");
+  expect(s.args).toEqual([
+    "/c", "start", "", "C:\\WindowsApps\\wt.exe", "-d", "C:\\h\\d", "cmd.exe", "/c", "C:\\h\\d\\start.bat",
+  ]);
+  expect(s.args).not.toContain("osascript");
+});
+
+test("windowsHandoffSpawn: no wt → start /D dir cmd /c start.bat", () => {
+  const s = windowsHandoffSpawn("C:\\h\\d", "C:\\h\\d\\start.bat", null);
+  expect(s.args).toEqual(["/c", "start", "", "/D", "C:\\h\\d", "cmd.exe", "/c", "C:\\h\\d\\start.bat"]);
+});
+
+test("resolveWindowsTerminal: which 命中优先于 well-known", () => {
+  expect(
+    resolveWindowsTerminal({
+      which: (b) => (b === "wt.exe" ? "D:\\wt.exe" : null),
+      exists: () => true,
+      home: "C:\\Users\\x",
+    }),
+  ).toBe("D:\\wt.exe");
+});
+
+test("resolveWindowsTerminal: which miss 回落 WindowsApps", () => {
+  const p = resolveWindowsTerminal({
+    which: () => null,
+    exists: (path) => path.replace(/\\/g, "/").endsWith("WindowsApps/wt.exe"),
+    home: "C:\\Users\\x",
+  });
+  expect(p?.replace(/\\/g, "/")).toMatch(/WindowsApps\/wt\.exe$/);
+});
+
+test("win32 terminal: writes start.bat, never osascript / start.command", async () => {
+  const h = harness();
+  h.opts.detect = () => [{
+    id: "opencode-terminal" as const, label: "OpenCode (Terminal)", kind: "terminal" as const,
+    bin: "opencode", argv: ["--prompt", "{prompt}"],
+    path: "C:\\Users\\x\\AppData\\Roaming\\npm\\opencode.cmd",
+  }];
+  const r = await runHandoff(
+    { target: "opencode-terminal", context: "x" },
+    { ...h.opts, platform: "win32", which: () => null, exists: () => false },
+  );
+  expect(r.mode).toBe("terminal");
+  expect(h.writes.some((w) => w.path.endsWith("start.command"))).toBe(false);
+  const bat = h.writes.find((w) => w.path.endsWith("start.bat"));
+  expect(bat?.content).toContain("@echo off");
+  expect(bat?.content).toContain("opencode.cmd");
+  expect(bat?.content).not.toContain("#!/bin/bash");
+  expect(h.spawns).toHaveLength(1);
+  expect(h.spawns[0].cmd).toBe("cmd.exe");
+  expect(h.spawns[0].args[0]).toBe("/c");
+  expect(h.spawns[0].args).toContain("start");
+  expect(h.spawns.some((s) => s.cmd === "osascript")).toBe(false);
+});
+
+test("win32 terminal: wt 命中时 start 的参数带 wt -d", async () => {
+  const h = harness();
+  h.opts.detect = () => [{
+    id: "codex-terminal" as const, label: "Codex (Terminal)", kind: "terminal" as const,
+    bin: "codex", argv: ["{prompt}"],
+    path: "C:\\Users\\x\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+  }];
+  await runHandoff(
+    { target: "codex-terminal", context: "x" },
+    { ...h.opts, platform: "win32", which: (b) => (b === "wt.exe" ? "C:\\wt.exe" : null) },
+  );
+  expect(h.spawns[0].args).toContain("C:\\wt.exe");
+  expect(h.spawns[0].args).toContain("-d");
+});
+
+test("win32 launch failure includes start.bat self-rescue path", async () => {
+  const h = harness();
+  h.opts.detect = () => [{
+    id: "codex-terminal" as const, label: "Codex (Terminal)", kind: "terminal" as const,
+    bin: "codex", argv: ["{prompt}"], path: "C:\\codex.exe",
+  }];
+  h.opts.spawn = async (cmd, args, cwd) => {
+    h.spawns.push({ cmd, args, cwd });
+    return { stdout: "", exitCode: 1, stderr: "start failed" };
+  };
+  await expect(
+    runHandoff(
+      { target: "codex-terminal", context: "x" },
+      { ...h.opts, platform: "win32", which: () => null, exists: () => false },
+    ),
+  ).rejects.toThrow(/start\.bat/);
+});
+
+test("win32 app form refuses with manual folder path (no open -a)", async () => {
+  const h = harness();
+  await expect(
+    runHandoff({ target: "claude-app", context: "x" }, { ...h.opts, platform: "win32" }),
+  ).rejects.toThrow(/not supported on Windows yet/);
+  expect(h.spawns).toHaveLength(0);
 });

@@ -8,7 +8,7 @@ import type { SkillRoots } from "./skill-store";
 import { getCachedUserPath } from "./agents";
 import { appendAudit } from "./audit";
 import { beginSkillRun, endSkillRun } from "./status";
-import { realSkillSandbox, checkWindowsSandboxReady } from "./skill-sandbox";
+import { selectSkillSandbox } from "./skill-sandbox";
 import type { SkillSandbox } from "./skill-sandbox";
 import type { RunSkillScriptParams, RunSkillScriptResult, SandboxBaseline } from "../../src/types/local-bridge";
 
@@ -140,7 +140,7 @@ export function pickWindowsPython(candidates: string[]): string | null {
  *  排除 WindowsApps stub 后返回绝对路径，探测不到返回 null。 */
 function findWindowsPython(): string | null {
   try {
-    const r = Bun.spawnSync(["where.exe", "python"]);
+    const r = Bun.spawnSync(["where.exe", "python"], { windowsHide: true });
     if (r.exitCode !== 0) return null;
     return pickWindowsPython(r.stdout.toString().split(/\r?\n/));
   } catch {
@@ -180,8 +180,10 @@ export async function runSkillScript(
   const roots: SkillRoots = deps.roots ?? (deps.skillsRoot ? { primary: deps.skillsRoot } : defaultRoots);
   const auditPath = deps.auditPath ?? paths.auditPath;
   const sessionsDir = deps.sessionsDir ?? paths.sessionsDir;
-  const sandbox = deps.sandbox ?? realSkillSandbox;
-  const readinessCheck = deps.readinessCheck ?? checkWindowsSandboxReady;
+  const sandbox = deps.sandbox ?? selectSkillSandbox();
+  // Windows 改 passthrough（无 srt 沙箱设施可查），mac/linux srt 就绪由 srt 运行时保证——
+  // 两端都无需前置就绪门，默认恒 ready；保留注入 seam 供测试与未来后端用。
+  const readinessCheck = deps.readinessCheck ?? (async () => ({ ready: true }));
   const buildEnv = deps.buildEnv ?? ((extra: Record<string, string>) => buildSandboxEnv(extra));
 
   const name = assertSkillName(params.name);
@@ -197,12 +199,13 @@ export async function runSkillScript(
   // interpreterFor 在 Windows 上可能 throw（unsupported_script / no_python），随 code 透传。
   const interp = interpreterFor(params.entry);
 
-  // 沙箱设施就绪检查（F6，fail-closed）：设施未就绪 → 明确报错引导重装，且先于授权卡与执行。
-  // 非 win32 宿主上 checkWindowsSandboxReady 恒 ready，既有 mac 行为不变。
+  // 就绪门（注入 seam 保留）：默认恒 ready。历史上这里跑 Windows srt 的 WFP verify，
+  // 但 Windows 已改 passthrough（无沙箱设施），且该 verify 每次 ~30s 单线程阻塞（W-6）——
+  // 一并移除。测试仍可注入 not-ready 覆盖该分支。
   const readiness = await readinessCheck();
   if (!readiness.ready) {
     throw Object.assign(
-      new Error(`Windows 脚本沙箱未就绪${readiness.reason ? `：${readiness.reason}` : ""}。请重装 Pie Link 以修复沙箱设施。`),
+      new Error(`脚本沙箱未就绪${readiness.reason ? `：${readiness.reason}` : ""}。`),
       { code: "sandbox_not_ready" },
     );
   }
@@ -210,6 +213,7 @@ export async function runSkillScript(
   // ADR 0007：daemon 不再做任何授权判定——能连 daemon.sock 的本地进程本就是用户权限
   // 进程，信封 hash / TOCTOU 重调防的是不存在的攻击者。唯一的信任边界「LLM 不能自批」
   // 由扩展 SW 层的确认卡保证；daemon 收到 run_skill_script 即按固定基线沙箱执行。
+  // Windows 上 sandbox 是 passthrough（selectSkillSandbox），确认卡应披露无沙箱风险。
 
   const skillDir = join(located.root, name);
   // 产物区按 session 隔离，且搬出 skill 目录——脚本进程永不写入任何 skill 目录（主根或
@@ -239,7 +243,11 @@ export async function runSkillScript(
     endSkillRun(runId);
   }
 
-  const sandboxBaseline: SandboxBaseline = { network: "open", envAllowlist: ENV_ALLOWLIST_VERSION };
+  const sandboxBaseline: SandboxBaseline = {
+    network: "open",
+    envAllowlist: ENV_ALLOWLIST_VERSION,
+    ...(process.platform === "win32" ? { unsandboxed: true } : {}),
+  };
   appendAudit(
     { ts: now(), skillName: name, entry: params.entry, exitCode: res.exitCode, timedOut: res.timedOut, truncated: res.truncated, ms: now() - startedAt, sandbox: sandboxBaseline },
     auditPath,

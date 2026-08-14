@@ -1,5 +1,11 @@
 import { test, expect } from "bun:test";
-import { fakeSkillSandbox, buildSpawnEnv } from "../src/skill-sandbox";
+import {
+  fakeSkillSandbox,
+  buildSpawnEnv,
+  selectSkillSandbox,
+  passthroughSkillSandbox,
+  realSkillSandbox,
+} from "../src/skill-sandbox";
 import type { SandboxSettings } from "../src/skill-sandbox";
 
 // 只测接口契约 + fakeSkillSandbox。真 OS 强制（写限/敏感读拒/断网/按域名放行）走
@@ -66,4 +72,36 @@ test("buildSpawnEnv (win32) keeps process.env + wrapped.env for the broker (srt-
   expect(env.SOME_HOST_VAR).toBe("keep");
   expect(env.HTTP_PROXY).toBe("http://127.0.0.1:9");
   expect(env.NODE_EXTRA_CA_CERTS).toBe("C:\\ca.pem");
+});
+
+// 平台后端选择：Windows 放弃 srt 改 passthrough（无沙箱 + 风险披露），mac/linux 保留 srt。
+test("selectSkillSandbox: win32 → passthrough, others → srt", () => {
+  expect(selectSkillSandbox("win32")).toBe(passthroughSkillSandbox);
+  expect(selectSkillSandbox("darwin")).toBe(realSkillSandbox);
+  expect(selectSkillSandbox("linux")).toBe(realSkillSandbox);
+});
+
+// passthrough 真跑一个进程、捕获 stdout + exitCode（无沙箱，直 spawn）。
+test("passthroughSkillSandbox actually spawns and captures stdout", async () => {
+  const r = await passthroughSkillSandbox.run(
+    [process.execPath, "-e", "console.log('PASSTHROUGH_OK')"],
+    process.cwd(),
+    {},
+    { allowWrite: [], allowedDomains: [], denyRead: [] },
+  );
+  expect(r.exitCode).toBe(0);
+  expect(r.stdout).toContain("PASSTHROUGH_OK");
+  expect(r.timedOut).toBe(false);
+});
+
+// passthrough 非零退出如实透传（skill-exec 据此报 script_error）。
+test("passthroughSkillSandbox surfaces non-zero exit + stderr", async () => {
+  const r = await passthroughSkillSandbox.run(
+    [process.execPath, "-e", "console.error('boom'); process.exit(3)"],
+    process.cwd(),
+    {},
+    { allowWrite: [], allowedDomains: [], denyRead: [] },
+  );
+  expect(r.exitCode).toBe(3);
+  expect(r.stderr).toContain("boom");
 });

@@ -4,6 +4,9 @@ export type SpawnFn = (
   cwd: string,
 ) => Promise<{ stdout: string; exitCode: number; stderr?: string }>;
 
+/** Win11 会把 console 子系统子进程弹成 Windows Terminal / PowerShell 窗。所有 spawn 必须带。 */
+export const HIDE_CONSOLE = { windowsHide: true } as const;
+
 export const realSpawn: SpawnFn = async (cmd, args, cwd) => {
   // 必须同时用 env 覆写 PWD=cwd：Bun.spawn 的 `cwd` 只改子进程的 getcwd，但子进程
   // 继承 daemon 进程的 `PWD` 环境变量（= daemon 启动目录）。opencode 等工具链信
@@ -15,6 +18,7 @@ export const realSpawn: SpawnFn = async (cmd, args, cwd) => {
     env: { ...process.env, PWD: cwd },
     stdout: "pipe",
     stderr: "pipe",
+    ...HIDE_CONSOLE,
   });
   // 必须并发排空 stdout 和 stderr：只 await stdout 会让 stderr 管道（OS 缓冲区
   // ~64KB）写满后阻塞子进程，子进程卡住不退出 → await proc.exited 永久挂起，

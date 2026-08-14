@@ -3,6 +3,7 @@ import { unlinkSync } from "node:fs";
 import { handleMessage, pipeAlreadyServed, processSocketChunk } from "../src/daemon";
 import { PROTOCOL_VERSION } from "../../src/types/local-bridge";
 import { setLogEnabled } from "../src/log";
+import { agentCandidatesFor } from "../src/agents";
 
 setLogEnabled(false); // hermetic：不让 handleMessage 的 log 写真实 ~/.pie/logs
 
@@ -173,33 +174,22 @@ test("list_agents returns ALL candidates with installed flag (shape only — det
     await handleMessage(JSON.stringify({ id: "la1", method: "list_agents", params: {} })),
   );
   expect(out.ok).toBe(true);
-  // 全部候选恒定返回（未安装的也在，settings 页靠它渲染"未安装"态）
-  expect(out.result.agents.map((a: { id: string }) => a.id)).toEqual([
-    "claude-app",
-    "claude-terminal",
-    "codex-app",
-    "codex-terminal",
-    "cursor-app",
-    "cursor-terminal",
-    "opencode-terminal",
-    "pi-terminal",
-  ]);
+  const candidates = agentCandidatesFor();
+  // 本平台候选恒定返回（未安装的也在，settings 页靠它渲染"未安装"态）
+  expect(out.result.agents.map((a: { id: string }) => a.id)).toEqual(candidates.map((c) => c.id));
   for (const a of out.result.agents) {
     expect(typeof a.label).toBe("string");
     expect(typeof a.installed).toBe("boolean");
     expect(["app", "terminal"]).toContain(a.kind); // #270: wire 加法字段
     expect(typeof a.headless).toBe("boolean"); // #307: run_local_agent 后端可选性
   }
-  // headless 恰为「terminal 候选」（app 无 CLI）——run_local_agent 卡片据此选后端。
+  // headless 与候选表 headlessArgv 对齐——run_local_agent 卡片据此选后端。
   const byId = Object.fromEntries(
     out.result.agents.map((a: { id: string; headless: boolean }) => [a.id, a.headless]),
   );
-  expect(byId["claude-terminal"]).toBe(true);
-  expect(byId["opencode-terminal"]).toBe(true);
-  expect(byId["pi-terminal"]).toBe(true);
-  expect(byId["claude-app"]).toBe(false);
-  expect(byId["codex-app"]).toBe(false);
-  expect(byId["cursor-app"]).toBe(false);
+  for (const c of candidates) {
+    expect(byId[c.id]).toBe(!!c.headlessArgv?.length);
+  }
 });
 
 // ── makeBackpressureWriter ──────────────────────────────────────────────────

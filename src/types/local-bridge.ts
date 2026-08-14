@@ -199,6 +199,8 @@ export interface SandboxBaseline {
   network: "open";
   /** env 白名单版本号（擦除策略变更时递增，audit 可追溯当时的擦除口径）。 */
   envAllowlist: string;
+  /** Windows passthrough：无 srt 围栏，以用户账户直跑。确认卡应据此披露。 */
+  unsandboxed?: boolean;
 }
 
 /** audit.jsonl 单行（daemon 每次脚本执行追加）。 */
