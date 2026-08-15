@@ -12,7 +12,7 @@ describe("status", () => {
     expect(getStatus().extensionConnected).toBe(false);
   });
 
-  test("pid = 当前进程 pid（顶栏/托盘 app「退出 daemon」定位进程用）", () => {
+  test("pid = 当前进程 pid（旧客户端回落；退出合同是 shutdown）", () => {
     expect(getStatus().pid).toBe(process.pid);
     expect(getStatus().pid).toBeGreaterThan(0);
   });

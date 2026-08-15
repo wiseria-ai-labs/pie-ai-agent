@@ -12,6 +12,7 @@ import { AgentSelect } from "./hitl/AgentSelect";
 interface AgentOption {
   id: string;
   label: string;
+  kind?: "app" | "terminal";
 }
 interface Props {
   payload: { context: string; fileCount: number; agents: AgentOption[] };
@@ -33,6 +34,7 @@ const HandoffIcon = () => (
 export function HandoffCard({ payload, onDecision }: Props) {
   const t = useT();
   const [selected, setSelected] = useState(payload.agents[0]?.id ?? "");
+  const selectedKind = payload.agents.find((a) => a.id === selected)?.kind;
   return (
     <HitlCardShell
       register="local"
@@ -57,6 +59,9 @@ export function HandoffCard({ payload, onDecision }: Props) {
         selected={selected}
         onSelect={setSelected}
       />
+      {selectedKind === "app" && (
+        <p className="text-[11px] leading-[16px] text-fg-3">{t("handoff.appContinueHint")}</p>
+      )}
       <HitlDetailBlock>
         <HitlDetailGroup label={t("handoff.contextLabel")}>
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[17px] text-fg-2">

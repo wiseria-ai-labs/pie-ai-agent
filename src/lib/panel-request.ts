@@ -21,7 +21,11 @@ export interface PanelRequestMap {
     res: string | null; // 用户选中的后端 agent id；null = 拒绝
   };
   "handoff-to-agent": {
-    req: { context: string; fileCount: number; agents: { id: string; label: string }[] };
+    req: {
+      context: string;
+      fileCount: number;
+      agents: { id: string; label: string; kind?: "app" | "terminal" }[];
+    };
     res: string | null; // 用户选中的 agent id；null = 拒绝
   };
   "skill-run-confirm": { req: SkillRunConfirmRequest; res: boolean };

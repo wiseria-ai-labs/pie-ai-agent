@@ -1,10 +1,24 @@
 import { existsSync } from "fs";
-import { homedir } from "os";
+import { listWindowsUninstall, type UninstallEntry } from "./windows-uninstall";
+import { listWindowsAppx, type AppxPackage } from "./windows-appx";
+import { detectDarwinAgents } from "./detect-darwin";
+import { detectWindowsAgents } from "./detect-win32";
+import { getDarwinUserPath, makeDarwinWhich } from "./user-path-darwin";
+import { getWindowsUserPath, makeWindowsWhich } from "./user-path-win32";
+
+export { parseShellPath } from "./user-path-darwin";
+export {
+  parseRegQueryPath,
+  mergeWindowsPath,
+  isWindowsAppsStub,
+  parseWherePath,
+} from "./user-path-win32";
 
 /**
  * 静态候选表 = 唯一 launch 权威：spawn 的命令 / app 路径只住在这里，绝不来自 wire 或
- * LLM 参数（wire 上只传 id，daemon 用 id 查表）。加新 agent = 加一行，**但必须先在真机上
- * 验证过那条命令**——绝不凭空编 spawn 命令。
+ * LLM 参数（wire 上只传 id，daemon 用 id 查表）。加新 agent = 在对应平台表加一行，
+ * **必须先在该平台真机上调研安装落点并验证命令**——mac 与 Windows 安装信息不可互推。
+ * 检测实现分 `detect-darwin.ts` / `detect-win32.ts`，互不调用（ADR 0011）。
  *
  * 顺序即 HandoffCard 的预选顺序：品牌分组，每组 app 在前（app 无 shell、无 TCC，launch 最稳）。
  *
@@ -42,6 +56,21 @@ export interface AgentCandidate {
   binPaths?: string[];
   /** app：按优先级探，命中第一个存在的；spawn 用命中的绝对路径。 */
   appPaths?: string[];
+  /**
+   * Windows app：Uninstall 注册表 DisplayName 精确匹配（大小写不敏感）。
+   * 用户级 NSIS（`~\AppData\Local\Programs\...`）和整机 NSIS（`C:\Program Files\...`）
+   * 都写卸载项；比写死 appPaths 准。开始菜单 / Parallels 共享 Mac App 不进这张表。
+   */
+  uninstallNames?: readonly string[];
+  /** Windows app：DisplayIcon / InstallLocation 下可接受的 exe 文件名。 */
+  uninstallExes?: readonly string[];
+  /**
+   * Windows Store / MSIX：AppModel 包名前缀（如 `OpenAI.Codex`）。
+   * 命中 `...\Packages\<prefix>_*` 后拼 `appxRelExes`。
+   */
+  appxPackagePrefix?: string;
+  /** 相对 PackageRootFolder 的 exe（正斜杠或反斜杠均可）。 */
+  appxRelExes?: readonly string[];
   /** app：目录内的约定引导文件名（app 无 prompt 注入面，靠它引导）。 */
   convention?: "CLAUDE.md" | "AGENTS.md";
   /**
@@ -108,18 +137,31 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
 ];
 
 /**
- * Windows 候选表。terminal 四条（claude / codex / cursor-agent / opencode）与 mac 同形 CLI，
- * #12 真机确认 `where` + 注册表 PATH 合并能命中官方安装器落点后默认启用
- * （`verified: true`；装完不用重启 daemon，下次 list_agents / 授权卡会重探）。
- * app 形态的 Windows bundle 落点仍未点亮，不编造路径。handoff launch
- * （osascript / `start.command`）仍是 mac-only（W-2）；检测与 run_local_agent
- * 的 headless spawn 不依赖那一层。
+ * Windows 候选表。顺序与 mac 同构：品牌分组、每组 app 在前、terminal 随后
+ * （HandoffCard 预选 = 表序里第一个已装且启用的）。
+ *
+ * terminal 四条（#12）真机确认后默认启用。app 两条（#23）先查 Uninstall
+ * 注册表（DisplayName → DisplayIcon / InstallLocation），再回落 appPaths。
+ * app 两条已在本机 Windows 11 真机点亮（Cursor = Uninstall 注册表；
+ * Codex/ChatGPT = AppModel Store 包）。不加 claude-app：官方 Windows `.exe` 落点未确认。
  */
 export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
   { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude",
     argv: ["{prompt}"],
     binPaths: ["~/.local/bin/claude.exe", "~/.local/bin/claude", "~/AppData/Roaming/npm/claude.cmd"],
     headlessArgv: ["-p", "--dangerously-skip-permissions", "{prompt}"], verified: true },
+
+  { id: "codex-app", label: "Codex / ChatGPT (App)", kind: "app",
+    uninstallNames: ["ChatGPT", "ChatGPT Desktop", "Codex"],
+    uninstallExes: ["ChatGPT.exe", "Codex.exe"],
+    appxPackagePrefix: "OpenAI.Codex",
+    appxRelExes: ["app\\ChatGPT.exe", "app\\Codex.exe"],
+    appPaths: [
+      "~/AppData/Local/Programs/chat-gpt/ChatGPT.exe",
+      "~/AppData/Local/Programs/ChatGPT/ChatGPT.exe",
+      "~/AppData/Local/Programs/OpenAI/ChatGPT/ChatGPT.exe",
+    ],
+    convention: "AGENTS.md", verified: true },
   { id: "codex-terminal", label: "Codex (Terminal)", kind: "terminal", bin: "codex",
     argv: ["--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
     binPaths: [
@@ -129,6 +171,12 @@ export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
     ],
     headlessArgv: ["exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"],
     verified: true },
+
+  { id: "cursor-app", label: "Cursor (App)", kind: "app",
+    uninstallNames: ["Cursor"],
+    uninstallExes: ["Cursor.exe"],
+    appPaths: ["~/AppData/Local/Programs/cursor/Cursor.exe"],
+    convention: "AGENTS.md", verified: true },
   { id: "cursor-terminal", label: "Cursor (Terminal)", kind: "terminal", bin: "cursor-agent",
     argv: ["{prompt}"],
     binPaths: [
@@ -137,6 +185,7 @@ export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
       "~/AppData/Roaming/npm/cursor-agent.cmd",
     ],
     headlessArgv: ["-p", "--force", "{prompt}"], verified: true },
+
   { id: "opencode-terminal", label: "OpenCode (Terminal)", kind: "terminal", bin: "opencode",
     argv: ["--prompt", "{prompt}"],
     binPaths: [
@@ -156,150 +205,28 @@ export function agentCandidatesFor(
 }
 
 /**
- * shell 输出里取 PATH：只认最后一个非空行。rc 里的 banner / 提示会先打出来，
- * 真正的 `echo $PATH` 永远在最后。空输出（shell 挂了 / 超时）回落 fallback。
- */
-export function parseShellPath(stdout: string, fallback: string): string {
-  const last = stdout
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l !== "")
-    .pop();
-  return last || fallback;
-}
-
-/**
- * `reg query "<key>" /v Path` 的 stdout 里取 Path 值：命中形如
- * `    Path    REG_EXPAND_SZ    C:\...;C:\...` 的行，取第三列（值）。找不到 → 空串。
- * `REG_SZ` 与 `REG_EXPAND_SZ` 都认（用户 Path 通常 EXPAND，system 视配置而定）。
- */
-export function parseRegQueryPath(stdout: string): string {
-  for (const line of stdout.split(/\r?\n/)) {
-    const m = line.match(/^\s*Path\s+REG_(?:SZ|EXPAND_SZ)\s+(.*)$/i);
-    if (m) return m[1].trim();
-  }
-  return "";
-}
-
-/**
- * Windows PATH 合并（纯函数，可测）：进程 env PATH 打头，再拼注册表 user/system Path，
- * 按 `;` 切段、去空、大小写不敏感去重（Windows 路径大小写不敏感），`;` 重连。
- * 进程 env 优先（当前会话已解析的 PATH 最贴近用户意图），注册表补上未继承进 env 的段。
- */
-export function mergeWindowsPath(processPath: string, registryPaths: string[]): string {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const src of [processPath, ...registryPaths]) {
-    for (const seg of (src ?? "").split(";")) {
-      const t = seg.trim();
-      if (!t) continue;
-      const key = t.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(t);
-    }
-  }
-  return out.join(";");
-}
-
-/**
- * Windows 无 login shell 概念，PATH 真相 = 进程继承的 env PATH ＋ 注册表两处 Path：
- * HKCU\Environment（user）与 HKLM\...\Session Manager\Environment（system）。
- * 注册表读走 `reg query`（Windows 自带）；任一失败/超时只丢那一段，不影响其余。
- * stdin: "ignore" / timeout 3000：对齐 mac 分支的挂死防护。
- */
-function getWindowsPath(): string {
-  const processPath = process.env.PATH ?? process.env.Path ?? "";
-  const regKeys: string[] = [
-    "HKCU\\Environment",
-    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-  ];
-  const registryPaths: string[] = [];
-  for (const key of regKeys) {
-    try {
-      const r = Bun.spawnSync(["reg", "query", key, "/v", "Path"], {
-        stdin: "ignore",
-        timeout: 3000,
-        windowsHide: true,
-      });
-      registryPaths.push(parseRegQueryPath(r.stdout.toString()));
-    } catch {
-      /* 该注册表段读不到就跳过，靠其余来源兜底 */
-    }
-  }
-  return mergeWindowsPath(processPath, registryPaths);
-}
-
-/**
- * daemon 跑在 launchd 下，PATH 是裸的 /usr/bin:/bin:/usr/sbin:/sbin ——
- * 看不见 ~/.local/bin、/opt/homebrew/bin、~/.opencode/bin 里的任何 agent CLI
- * （"Dock 启动的 app 找不到 node/brew" 同款坑）。问用户自己的 login shell 要真相。
- * Windows 无 login shell，改走 env + 注册表合并（getWindowsPath）。
- *
- * 每次探测实测 0.10–0.16s。**detect 路径不缓存**（弹授权卡 / 开设置页两个点调用，
- * 低频；不缓存换来「用户装完新 agent 立刻可见」，不需重启 daemon 或教用户「刷新」）。
- * **skill 脚本执行热路径**（`run_skill_script` 每次都要 env 白名单版的 PATH）改走
- * `getCachedUserPath()`——见下——避免 agent 循环里反复叠加 login-shell 启动开销。
- *
- * stdin: "ignore" —— 防 zsh 启动期读 stdin 的东西（oh-my-zsh 升级提示的 read -k）
- * 把探测挂死；与 handoff.ts 的 LAUNCH_PAD 是同一个坑的两面。
- * timeout 3000 —— rc 重度定制的用户可能要一两秒；超时宁可检测不到，也不能卡住授权卡。
+ * 本机用户 PATH。detect 每次现探（装完新 agent 立刻可见）；skill 热路径走缓存版。
  */
 export function getUserPath(platform: NodeJS.Platform = process.platform): string {
-  if (platform === "win32") return getWindowsPath();
-  const fallback = process.env.PATH ?? "";
-  try {
-    const r = Bun.spawnSync([process.env.SHELL ?? "/bin/zsh", "-lic", "echo $PATH"], {
-      stdin: "ignore",
-      timeout: 3000,
-      windowsHide: true,
-    });
-    return parseShellPath(r.stdout.toString(), fallback);
-  } catch {
-    return fallback;
-  }
+  return platform === "win32" ? getWindowsUserPath() : getDarwinUserPath();
 }
 
 let cachedUserPath: string | undefined;
 
 /**
- * 缓存版 `getUserPath`：daemon 生命周期内只探一次 login-shell PATH。给 skill 脚本执行
- * 热路径用——每次 `run_skill_script` 都要一份 env 白名单版的 PATH，若走 `getUserPath()`
- * 会给 agent 循环里的反复调用叠加 login-interactive shell 启动（~0.1s+ 延迟 + 重复触发
- * rc 副作用）。PATH 在 daemon 存活期内不变（用户装新工具的即时可见性只有 detect 路径需要），
- * 故缓存一次即可。`resetCachedUserPath` 供单测清缓存。
+ * 缓存版 `getUserPath`：daemon 生命周期内只探一次。给 skill 脚本执行热路径用。
  */
 export function getCachedUserPath(platform: NodeJS.Platform = process.platform): string {
   if (cachedUserPath === undefined) cachedUserPath = getUserPath(platform);
   return cachedUserPath;
 }
 
+export function resetCachedUserPath(): void {
+  cachedUserPath = undefined;
+}
+
 /** 检测结果 = 候选 + 解析出的绝对路径。spawn 只许用 path（裸命令名依赖运行时 PATH，真机上会 not found）。 */
 export type DetectedAgent = AgentCandidate & { path: string };
-
-/**
- * Store 执行别名 stub：`%LOCALAPPDATA%\Microsoft\WindowsApps\<name>.exe` 下的 0 字节
- * reparse 占位（App Installer 装的「别名」）。`where python` 会把它列在最前，但 spawn
- * 它行为诡异（Gate 0 F4 实测：要么弹 Store 页要么 exit 9009），一律当没装。
- */
-export function isWindowsAppsStub(p: string): boolean {
-  return /[\\/]WindowsApps[\\/]/i.test(p);
-}
-
-/**
- * `where <bin>` 的 stdout 解析（纯函数，可测）：跳过 WindowsApps stub 和 `.ps1`
- * （spawn 会拉起可见 PowerShell）。同一次输出里优先 `.cmd`/`.exe`/`.bat`
- * （npm 全局常同时放下无扩展 shim + `.cmd` + `.ps1`）。
- */
-export function parseWherePath(stdout: string): string | null {
-  const hits: string[] = [];
-  for (const line of stdout.split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || isWindowsAppsStub(t) || /\.ps1$/i.test(t)) continue;
-    hits.push(t);
-  }
-  return hits.find((p) => /\.(cmd|exe|bat)$/i.test(p)) ?? hits[0] ?? null;
-}
 
 export interface DetectOpts {
   which?: (bin: string) => string | null;
@@ -307,34 +234,15 @@ export interface DetectOpts {
   platform?: NodeJS.Platform;
   /** true = 连 `verified:false` 的草案条目也纳入（供 need-human-test 逐条点亮用）；默认排除。 */
   includeUnverified?: boolean;
+  /** Windows app：注入 Uninstall 表。测试传入；生产 win32 现读注册表。 */
+  uninstall?: UninstallEntry[];
+  /** Windows Store 包：注入 AppModel 表。测试传入。 */
+  appx?: AppxPackage[];
 }
 
-/** native host / 托盘拉起的进程经常不带 PATHEXT；`where opencode` 就找不到 npm 的 `.cmd`。 */
-const WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.JS";
-
-/** 平台对应的 which：win32 走 `where`（排 WindowsApps stub），其余走 Bun.which。 */
+/** 平台对应的 which：win32 走 `where`，其余走 Bun.which。 */
 function makeWhich(platform: NodeJS.Platform, userPath: string): (bin: string) => string | null {
-  if (platform === "win32") {
-    return (bin: string) => {
-      try {
-        const r = Bun.spawnSync(["where", bin], {
-          env: {
-            ...process.env,
-            PATH: userPath,
-            Path: userPath,
-            PATHEXT: process.env.PATHEXT || WINDOWS_PATHEXT,
-          },
-          stdin: "ignore",
-          timeout: 3000,
-          windowsHide: true,
-        });
-        return parseWherePath(r.stdout.toString());
-      } catch {
-        return null;
-      }
-    };
-  }
-  return (b: string) => Bun.which(b, { PATH: userPath });
+  return platform === "win32" ? makeWindowsWhich(userPath) : makeDarwinWhich(userPath);
 }
 
 /** 每次调用现检测（which/exists 都便宜，PATH 探测 0.1s 级，无缓存必要）；保持表顺序。 */
@@ -346,15 +254,14 @@ export function detectAgents(opts?: DetectOpts): DetectedAgent[] {
   const candidates = agentCandidatesFor(platform).filter(
     (c) => opts?.includeUnverified || c.verified !== false,
   );
-  const out: DetectedAgent[] = [];
-  for (const c of candidates) {
-    const path =
-      c.kind === "app"
-        ? (c.appPaths!.find((p) => exists(p)) ?? null)
-        : (which(c.bin!) ??
-          c.binPaths?.map((p) => p.replace(/^~/, homedir())).find((p) => exists(p)) ??
-          null);
-    if (path) out.push({ ...c, path });
+  if (platform === "win32") {
+    const injected = !!(opts?.exists || opts?.which);
+    const uninstall = opts?.uninstall ?? (injected ? [] : listWindowsUninstall());
+    const prefixes = agentCandidatesFor("win32")
+      .map((c) => c.appxPackagePrefix)
+      .filter((p): p is string => !!p);
+    const appx = opts?.appx ?? (injected ? [] : listWindowsAppx(prefixes));
+    return detectWindowsAgents(candidates, exists, which, uninstall, appx);
   }
-  return out;
+  return detectDarwinAgents(candidates, exists, which);
 }

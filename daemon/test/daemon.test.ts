@@ -17,6 +17,20 @@ test("hello returns protocolVersion + capabilities", async () => {
   expect(res.result.protocolVersion).toBe(PROTOCOL_VERSION);
   expect(res.result.capabilities).toContain("run_local_agent");
   expect(res.result.capabilities).toContain("handoff_to_agent");
+  expect(["srt", "none"]).toContain(res.result.skillIsolation);
+  expect(typeof res.result.selfUpdate).toBe("boolean");
+});
+
+test("shutdown replies stopping then invokes scheduleStop", async () => {
+  let stopped = false;
+  const out = await handleMessage(
+    JSON.stringify({ id: "s1", method: "shutdown", params: {} }),
+    { scheduleStop: () => { stopped = true; } },
+  );
+  const res = JSON.parse(out);
+  expect(res.ok).toBe(true);
+  expect(res.result.stopping).toBe(true);
+  expect(stopped).toBe(true);
 });
 
 test("unknown method returns structured error", async () => {

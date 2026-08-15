@@ -207,6 +207,7 @@ export const ptBRDict = {
     targetLabel: "Destinatário",
     contextLabel: "Contexto",
     filesLabel: "Arquivos a preparar",
+    appContinueHint: "O app só abre o espaço de trabalho; envie um continue no app para começar.",
     allow: "Repassar",
     deny: "Cancelar",
   },
@@ -217,6 +218,8 @@ export const ptBRDict = {
     argsNone: "Nenhum",
     disclosure:
       "O script roda com as suas permissões de usuário dentro de uma sandbox: a escrita é limitada ao espaço de trabalho desta sessão, a leitura de pastas sensíveis é bloqueada e os segredos são removidos do seu ambiente. Ao aprovar, esta skill poderá executar scripts pelo resto desta sessão.",
+    disclosureNone:
+      "Este script vai rodar com a sua conta de usuário, sem sandbox extra. Ele pode ler e escrever tudo o que a sua conta puder. Ao aprovar, esta skill poderá executar scripts pelo resto desta sessão.",
     allow: "Permitir e executar",
     deny: "Recusar",
   },
