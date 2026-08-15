@@ -5,6 +5,7 @@ import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
 import { putArtifact } from "../files/output-store";
 import { resetTaskBudget, dispatchCaptureVisibleTab, dispatchCaptureFullPageTab, type CdpAcquirer } from "./tools/screenshot";
+import { dispatchCaptureVideoFrame } from "./tools/video-frame";
 import { hydrateAttachments } from "./image-hydration";
 import {
   BUILT_IN_TOOLS,
@@ -45,6 +46,8 @@ import {
   requestHandoff,
   requestListAgents,
   requestRunSkillScript,
+  requestPollSkillRun,
+  requestKillSkillRun,
   requestReadSessionFile,
 } from "@/background/local-bridge";
 import { filterUsableAgents, filterHeadlessBackends, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
@@ -2011,6 +2014,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       });
       // run_skill_script 需要 sessionId（运行确认卡走 panel-request）——
       // 与 mouse/keyboard 同模式 per-run 装配，不进 BUILT_IN_TOOLS 静态表。
+      // Live step cursor so a long-running run_skill_script can re-emit the
+      // same pending agent-step with poll progress (elapsed + stdout tail).
+      let liveStepMeta: { stepIndex: number; tool: string; args: unknown } | null = null;
       const runSkillScriptTool = buildRunSkillScriptTool({
         getSource: getActiveSkillSource,
         runOnDaemon: requestRunSkillScript,
@@ -2028,6 +2034,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }),
         // #330 — daemon-off 时 declares-no-scripts 报错追加 Pie Link 开启引导。
         isBridgeReady,
+        pollRun: async (runId) => requestPollSkillRun({ runId }),
+        killRun: async (runId) => {
+          await requestKillSkillRun({ runId });
+        },
+        onProgress: (p) => {
+          if (!liveStepMeta || liveStepMeta.tool !== "run_skill_script") return;
+          emitStep({
+            type: "agent-step",
+            stepIndex: liveStepMeta.stepIndex,
+            tool: liveStepMeta.tool,
+            args: liveStepMeta.args,
+            status: "pending",
+            progress: p,
+          });
+        },
       });
       // #296 — read_skill_output：读回脚本写进 session workspace 的产物（走 daemon）。
       const readSkillOutputTool = buildReadSkillOutputTool({
@@ -2545,7 +2566,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // Screenshot tool dispatch (R5/R6) — direct capture without confirm.
         if (
           tc.name === "capture_visible_tab" ||
-          tc.name === "capture_fullpage_tab"
+          tc.name === "capture_fullpage_tab" ||
+          tc.name === "capture_video_frame"
         ) {
           if (modelConfig.vision === false) {
             const noVisionObs = `screenshot ${tc.name} unavailable: current model (${modelConfig.model}) does not support vision. Switch to a vision-capable model or remove the screenshot tool.`;
@@ -2568,14 +2590,18 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           }
 
           const captureCtx = { sessionId, taskId: ctx.taskId ?? sessionId, pinnedTabId };
-          const outcome = tc.name === "capture_visible_tab"
+          const outcome = tc.name === "capture_video_frame"
+            ? await dispatchCaptureVideoFrame(captureCtx, (tc.args ?? {}) as { timeSeconds?: unknown })
+            : tc.name === "capture_visible_tab"
             ? await dispatchCaptureVisibleTab(captureCtx)
             : await dispatchCaptureFullPageTab(captureCtx, {
                 acquireSession: async ({ tabId }) => acquireSessionForTask(tabId),
               });
 
           if (!outcome.ok) {
-            const rejectObs = `screenshot failed: ${outcome.reason}`;
+            const rejectObs = tc.name === "capture_video_frame"
+              ? `video frame failed: ${outcome.reason}`
+              : `screenshot failed: ${outcome.reason}`;
             toolResultBlocks.push({
               type: "tool_result",
               toolUseId: tc.id,
@@ -2607,7 +2633,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           });
           hasImageContent = true;
 
-          const screenshotObs = `screenshot captured: ${img.width}x${img.height} jpeg`;
+          const frameMeta =
+            tc.name === "capture_video_frame" && "meta" in outcome
+              ? (outcome as { meta: { currentTime: number; duration: number | null } }).meta
+              : undefined;
+          const screenshotObs = frameMeta
+            ? `video frame at ${frameMeta.currentTime.toFixed(1)}s` +
+              (frameMeta.duration != null ? ` / ${frameMeta.duration.toFixed(1)}s` : "") +
+              `: ${img.width}x${img.height} jpeg`
+            : `screenshot captured: ${img.width}x${img.height} jpeg`;
           toolResultBlocks.push({
             type: "tool_result",
             toolUseId: tc.id,
@@ -2634,6 +2668,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }
 
         // Execute tool
+        liveStepMeta = {
+          stepIndex,
+          tool: tc.name,
+          args: redactArgsForPanel(tc.name, tc.args),
+        };
         let result;
         try {
           result = await tool.handler(tc.args, {
@@ -2713,6 +2752,30 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           isError: !result.success,
         });
 
+        if (result.image) {
+          const img = result.image;
+          const imgId = img.id ?? `img_skill_${crypto.randomUUID()}`;
+          addImage(ctx.sessionId, {
+            id: imgId,
+            userTurnId: `turn_skill_image_${stepIndex}`,
+            mediaType: img.mediaType,
+            data: img.data,
+            width: img.width,
+            height: img.height,
+            byteLength: img.byteLength,
+            addedAt: Date.now(),
+          });
+          hasImageContent = true;
+          toolResultBlocks.push({
+            type: "image",
+            source: {
+              type: "base64",
+              mediaType: img.mediaType,
+              data: img.data,
+            },
+          });
+        }
+
         emitStep({
           type: "agent-step",
           stepIndex,
@@ -2721,6 +2784,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           resolvedElement,
           status: result.success ? "ok" : "error",
           observation,
+          ...(result.image && {
+            image: {
+              mediaType: result.image.mediaType,
+              data: result.image.data,
+              width: result.image.width,
+              height: result.image.height,
+            },
+          }),
         });
 
         // output_file — hand the panel a download card. The agent-step above

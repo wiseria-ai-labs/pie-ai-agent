@@ -56,6 +56,14 @@ _Avoid_: round-trip, 把 `open -a` / `start` / handoff 绝对路径写成产品�
 「本机装了哪个本地 agent」的底层探测。mac 与 Windows 各写各的模块（`detect-darwin` / `detect-win32`），安装落点按平台调研，不可互推。上层 `list_agents` / handoff 的 id 与语义统一（ADR 0009）。
 _Avoid_: 用一份路径表同时描述两个平台
 
+**agent brand**:
+用户心智里的一个本地 Agent——Claude / Codex / Cursor / OpenCode / Pi。设置开关、启用偏好、确认卡上的「选哪个 Agent」都按品牌。任一形态检出即该品牌可用。
+_Avoid_: 把 App / Terminal 当成两个 Agent；用 provider / model 指本地 Agent
+
+**agent form**:
+一个品牌的交棒外壳：`app` 或 `terminal`。检测路径、launch 命令、`handoff_to_agent.target` 仍是形态 id（`claude-app` / `claude-terminal` …）。只在确认卡、且该品牌两种形态都装了时才让人再选一次。
+_Avoid_: 在设置里给形态单独开关；把 form 叫 mode（`HandoffResult.mode` 是 launch 结果，不是身份）
+
 **bridge session**:
 反向调用（本地 Agent → Pie）时 daemon 侧建的 ephemeral session，仅作 CDP ownerToken / sandbox 记账；操作按 tabId 直打**真实活跃 tab**，不绑某个 Pie session 的 pinned tab。
 _Avoid_: pinned tab session
@@ -63,3 +71,17 @@ _Avoid_: pinned tab session
 **grant（授权账本）**:
 daemon 持有的持久授权（`~/.pie/grants.json`），只记 `skill:<id>:<permsHash>` 和 `mcp:<server>[:<tool>]` 两类；批准发生在扩展 HITL 卡，强制与持久在 daemon（ADR 0006）。
 _Avoid_: permission, consent（"cdp-consent" 等 panel-request kind 是 UI 层，grant 是 daemon 持久层）
+
+## Skills & Kits
+
+**Skill**:
+一份「怎么做」的包——SKILL.md 说明 + 可选 `scripts/`。不负责提供 ffmpeg / yt-dlp 这类运行时。
+_Avoid_: 用 skill 指代本机二进制；把 kit 叫成 skill 的附件
+
+**Kit（套件）**:
+一份「做它需要什么」的运行时包——按平台打包的二进制 / 解释器，带版本和校验。多个 skill 可共享同一 kit。用户看见的是套件展示名，不是 yt-dlp。
+_Avoid_: helper、dependency（对用户）；把 brew 包装叫 kit
+
+**requires**:
+Skill 对 Kit 的声明（kit id + 主版本），装 skill / 首次跑脚本时解析。不是沙箱权限信封。
+_Avoid_: metadata.pie.network/write（ADR 0007 已删）；在 skill 里列举二进制文件名

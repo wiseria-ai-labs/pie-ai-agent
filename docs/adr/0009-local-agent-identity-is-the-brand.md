@@ -1,0 +1,13 @@
+# 本地 Agent 的用户身份是品牌，形态只是交棒外壳
+
+**决定**：设置、启用偏好、确认卡上的「选哪个 Agent」都以**品牌**（Claude / Codex / Cursor / OpenCode / Pi）为身份。App / Terminal 是该品牌的**形态**，只在交棒确认卡、且两种都装了时才选。daemon 候选表与 `handoff_to_agent.target` 仍是形态 id。
+
+**为什么**：用户要的是「我用不用 Claude」，不是「我用不用 Claude 的哪一层壳」。检出任意形态即品牌可用。形态选择是一次交棒的事，不是设置项。
+
+**被拒的备选**：
+
+- **继续按形态分开关**：合并只换了皮，设置仍是 8 行。
+- **品牌开关 + 设置里的默认形态 / MRU**：确认卡已经能选；再持久一套偏好是第二套解决同一问题的机制。
+- **wire 改成品牌 id**：daemon launch 命令按形态分，硬改 target 要协议版本或歧义默认；形态 id 留给机器，品牌留给人。
+
+**下游**：`enabled_local_agents` 存品牌 id，读时把旧形态 id 并集归一化。App 启动协议（深链 vs `open -a`）是形态上的数据，见 `docs/specs/2026-08-15-merge-local-agent-forms.md`。

@@ -446,9 +446,9 @@ describe("updateLastAccessed", () => {
 describe("skill-run approvals — ADR 0007 (isSkillApprovedInSession / recordSkillApproval)", () => {
   it("unapproved skill → false; after recordSkillApproval → true (per session × per skill)", async () => {
     const meta = await createSession({ now: 1700000000000 });
-    expect(await isSkillApprovedInSession(meta.id, "video-parser")).toBe(false);
-    await recordSkillApproval(meta.id, "video-parser");
-    expect(await isSkillApprovedInSession(meta.id, "video-parser")).toBe(true);
+    expect(await isSkillApprovedInSession(meta.id, "disk-tool")).toBe(false);
+    await recordSkillApproval(meta.id, "disk-tool");
+    expect(await isSkillApprovedInSession(meta.id, "disk-tool")).toBe(true);
     // 不同 skill 仍未批准（per-skill 粒度）
     expect(await isSkillApprovedInSession(meta.id, "other")).toBe(false);
   });

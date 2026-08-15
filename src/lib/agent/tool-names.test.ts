@@ -120,9 +120,11 @@ describe("Phase 5 screenshot tools — names + classes", () => {
   it("capture_visible_tab and capture_fullpage_tab are registered", () => {
     expect(KNOWN_BUILT_IN_TOOL_NAMES).toContain("capture_visible_tab");
     expect(KNOWN_BUILT_IN_TOOL_NAMES).toContain("capture_fullpage_tab");
+    expect(KNOWN_BUILT_IN_TOOL_NAMES).toContain("capture_video_frame");
   });
   it("screenshot tools are class=read (no tab-state mutation)", () => {
     expect(getToolClass("capture_visible_tab")).toBe("read");
     expect(getToolClass("capture_fullpage_tab")).toBe("read");
+    expect(getToolClass("capture_video_frame")).toBe("read");
   });
 });

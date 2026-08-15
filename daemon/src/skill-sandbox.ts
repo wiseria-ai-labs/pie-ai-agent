@@ -12,7 +12,6 @@
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 import { runtimeFeatures } from "./runtime-features";
 
-const TIMEOUT_MS = 60_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export interface SandboxSettings {
@@ -28,13 +27,21 @@ export interface SandboxRunResult {
   timedOut: boolean;
   truncated: boolean;
 }
+export interface SandboxRunOpts {
+  signal?: AbortSignal;
+  onStart?: () => void;
+  onStdout?: (chunk: string) => void;
+}
+
 export interface SkillSandbox {
-  /** 在 settings 约束下跑 argv（argv[0] 是解释器绝对路径）。cwd/env 由调用方给。 */
+  /** 在 settings 约束下跑 argv（argv[0] 是解释器绝对路径）。cwd/env 由调用方给。
+   *  无超时：终止权 = signal abort + 断连收尸。 */
   run(
     argv: string[],
     cwd: string,
     env: Record<string, string>,
     settings: SandboxSettings,
+    opts?: SandboxRunOpts,
   ): Promise<SandboxRunResult>;
 }
 
@@ -77,7 +84,10 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function drainCapped(stream: ReadableStream<Uint8Array>): Promise<{ text: string; truncated: boolean }> {
+async function drainCapped(
+  stream: ReadableStream<Uint8Array>,
+  onChunk?: (text: string) => void,
+): Promise<{ text: string; truncated: boolean }> {
   // 增量读 + 封顶 MAX_OUTPUT_BYTES：读满即停拼接，但继续排空管道（防子进程写阻塞死锁，
   // 同 2b realSkillSpawn 的教训——stdout/stderr 必须都排空）。
   const reader = stream.getReader();
@@ -87,8 +97,10 @@ async function drainCapped(stream: ReadableStream<Uint8Array>): Promise<{ text: 
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    const piece = dec.decode(value, { stream: true });
+    onChunk?.(piece);
     if (text.length <= MAX_OUTPUT_BYTES) {
-      text += dec.decode(value, { stream: true });
+      text += piece;
       if (text.length > MAX_OUTPUT_BYTES) {
         text = text.slice(0, MAX_OUTPUT_BYTES);
         truncated = true;
@@ -104,6 +116,7 @@ async function runViaSrt(
   cwd: string,
   env: Record<string, string>,
   settings: SandboxSettings,
+  opts?: SandboxRunOpts,
 ): Promise<SandboxRunResult> {
   const runtimeConfig = {
     // 固定基线：网络全放（ADR 0007）。srt 的 allowedDomains 不接受 "*"（schema 只在
@@ -143,6 +156,10 @@ async function runViaSrt(
     // win32 走另一条路：子进程 env 已内联进 cmd 命令串（不穿透 CreateProcessWithLogonW
     // 换的沙箱账户，见 F3），broker 进程本身仍需 process.env + wrapped.env（srt-win 自己的
     // 代理/CA 配置）来把请求路由到围栏，故 win32 分支保留 `wrapped.env` 展开。
+    if (opts?.signal?.aborted) {
+      return { stdout: "", stderr: "killed", exitCode: 137, timedOut: false, truncated: false };
+    }
+    opts?.onStart?.();
     const proc = Bun.spawn({
       cmd: wrapped.argv,
       cwd,
@@ -151,14 +168,17 @@ async function runViaSrt(
       stderr: "pipe",
       windowsHide: true,
     });
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill();
-    }, TIMEOUT_MS);
+    const onAbort = () => {
+      try {
+        proc.kill();
+      } catch {
+        /* already dead */
+      }
+    };
+    opts?.signal?.addEventListener("abort", onAbort);
     try {
       const [out, err, exitCode] = await Promise.all([
-        drainCapped(proc.stdout),
+        drainCapped(proc.stdout, opts?.onStdout),
         drainCapped(proc.stderr),
         proc.exited,
       ]);
@@ -168,11 +188,11 @@ async function runViaSrt(
         stdout: out.text,
         stderr: err.text,
         exitCode,
-        timedOut,
+        timedOut: false,
         truncated: out.truncated,
       };
     } finally {
-      clearTimeout(timer);
+      opts?.signal?.removeEventListener("abort", onAbort);
     }
   } finally {
     SandboxManager.cleanupAfterCommand();
@@ -181,7 +201,7 @@ async function runViaSrt(
 }
 
 export const realSkillSandbox: SkillSandbox = {
-  run: (argv, cwd, env, settings) => serialize(() => runViaSrt(argv, cwd, env, settings)),
+  run: (argv, cwd, env, settings, opts) => serialize(() => runViaSrt(argv, cwd, env, settings, opts)),
 };
 
 /**
@@ -193,13 +213,19 @@ export const realSkillSandbox: SkillSandbox = {
  * 且诚实。settings 在此仅作 grant 记录，不做任何强制。
  *
  * 仍走 **async Bun.spawn**（绝不 spawnSync）；env 直接注入（无 srt 账户切换，无 F3 穿透问题）；
- * 60s 超时 + drainCapped 封顶，与 srt 后端对齐。
+ * 无超时 + drainCapped 封顶，与 srt 后端对齐。终止权 = signal abort。
  */
 async function runPassthrough(
   argv: string[],
   cwd: string,
   env: Record<string, string>,
+  _settings?: SandboxSettings,
+  opts?: SandboxRunOpts,
 ): Promise<SandboxRunResult> {
+  if (opts?.signal?.aborted) {
+    return { stdout: "", stderr: "killed", exitCode: 137, timedOut: false, truncated: false };
+  }
+  opts?.onStart?.();
   const proc = Bun.spawn({
     cmd: argv,
     cwd,
@@ -208,24 +234,29 @@ async function runPassthrough(
     stderr: "pipe",
     windowsHide: true,
   });
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    proc.kill();
-  }, TIMEOUT_MS);
+  const onAbort = () => {
+    try {
+      proc.kill();
+    } catch {
+      /* already dead */
+    }
+  };
+  opts?.signal?.addEventListener("abort", onAbort);
   try {
     const [out, err, exitCode] = await Promise.all([
-      drainCapped(proc.stdout),
+      drainCapped(proc.stdout, opts?.onStdout),
       drainCapped(proc.stderr),
       proc.exited,
     ]);
-    return { stdout: out.text, stderr: err.text, exitCode, timedOut, truncated: out.truncated };
+    return { stdout: out.text, stderr: err.text, exitCode, timedOut: false, truncated: out.truncated };
   } finally {
-    clearTimeout(timer);
+    opts?.signal?.removeEventListener("abort", onAbort);
   }
 }
 
-export const passthroughSkillSandbox: SkillSandbox = { run: (argv, cwd, env) => runPassthrough(argv, cwd, env) };
+export const passthroughSkillSandbox: SkillSandbox = {
+  run: (argv, cwd, env, settings, opts) => runPassthrough(argv, cwd, env, settings, opts),
+};
 
 /** 隔离能力 none → passthrough；srt → 真沙箱。 */
 export function selectSkillSandbox(platform: NodeJS.Platform = process.platform): SkillSandbox {

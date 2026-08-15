@@ -400,6 +400,7 @@ export const ptBRDict = {
     screenshotAlt: "captura de tela {width}x{height}",
     observation: "observação",
     running: "em execução",
+    queued: "na fila",
     error: "erro",
     ok: "ok",
     nonSerializable: "(não serializável)",

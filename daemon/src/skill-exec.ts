@@ -7,8 +7,14 @@ import { assertSkillName, listSkills, resolveSkillRoot, defaultRoots } from "./s
 import type { SkillRoots } from "./skill-store";
 import { getCachedUserPath } from "./agents";
 import { appendAudit } from "./audit";
-import { beginSkillRun, endSkillRun } from "./status";
+import {
+  registerSkillRun,
+  markSkillRunRunning,
+  appendSkillRunStdout,
+  endSkillRun,
+} from "./status";
 import { selectSkillSandbox } from "./skill-sandbox";
+import { prependBinDir } from "./skill-helpers";
 import type { SkillSandbox } from "./skill-sandbox";
 import { runtimeFeatures } from "./runtime-features";
 import { darwinInterpreter } from "./skill-interpreter-darwin";
@@ -30,6 +36,10 @@ export interface SkillExecDeps {
   auditPath?: string;
   /** env 白名单构建注入（测试用）：缺省走 buildSandboxEnv（login-shell PATH + 白名单擦除）。 */
   buildEnv?: (extra: Record<string, string>) => Record<string, string>;
+  /** PATH 前置的 helper 目录（缺省 ~/.pie/bin）。测试可注入。 */
+  binDir?: string;
+  /** 发起这次 run 的 socket（断连收尸归属）。测试可省略。 */
+  socket?: unknown;
 }
 
 /**
@@ -51,12 +61,14 @@ const ENV_PASSTHROUGH_KEYS = ["HOME", "TMPDIR", "LANG", "USER", "SHELL"] as cons
  */
 export function buildSandboxEnv(
   extra: Record<string, string>,
-  opts: { path?: string; env?: NodeJS.ProcessEnv } = {},
+  opts: { path?: string; env?: NodeJS.ProcessEnv; binDir?: string; platform?: NodeJS.Platform } = {},
 ): Record<string, string> {
   const src = opts.env ?? process.env;
   const out: Record<string, string> = {};
   const path = opts.path ?? getCachedUserPath();
-  if (path) out.PATH = path;
+  const binDir = opts.binDir ?? paths.binDir;
+  const platform = opts.platform ?? process.platform;
+  if (path || binDir) out.PATH = prependBinDir(path ?? "", binDir, platform);
   for (const k of ENV_PASSTHROUGH_KEYS) {
     const v = src[k];
     if (typeof v === "string") out[k] = v;
@@ -89,6 +101,8 @@ export function scanOutputs(
     }
     for (const e of entries) {
       if (truncated) return;
+      // PyInstaller / OS junk (.tmp, .DS_Store) is not a skill product.
+      if (e.name.startsWith(".")) continue;
       const abs = join(dir, e.name);
       if (e.isDirectory()) {
         walk(abs);
@@ -145,7 +159,8 @@ export async function runSkillScript(
   // Windows 改 passthrough（无 srt 沙箱设施可查），mac/linux srt 就绪由 srt 运行时保证——
   // 两端都无需前置就绪门，默认恒 ready；保留注入 seam 供测试与未来后端用。
   const readinessCheck = deps.readinessCheck ?? (async () => ({ ready: true }));
-  const buildEnv = deps.buildEnv ?? ((extra: Record<string, string>) => buildSandboxEnv(extra));
+  const buildEnv =
+    deps.buildEnv ?? ((extra: Record<string, string>) => buildSandboxEnv(extra, { binDir: deps.binDir }));
 
   const name = assertSkillName(params.name);
   const located = resolveSkillRoot(name, roots);
@@ -181,6 +196,11 @@ export async function runSkillScript(
   // 只读副根）。这里是「副根污染」bug（旧 mkdir skillDir/workspace）的修复点。
   const workspace = sessionWorkspace(params.sessionId, sessionsDir);
   mkdirSync(workspace, { recursive: true });
+  // srt allowWrite 只有 workspace。宿主 TMPDIR（/var/folders/…/T）在白名单里透传，
+  // 但沙箱拒写，PyInstaller 打包的 yt-dlp 会立刻报 Could not create temporary directory。
+  // extra 覆盖白名单同名键，把 TMPDIR/TEMP/TMP 钉在 workspace/.tmp。
+  const sandboxTmp = join(workspace, ".tmp");
+  mkdirSync(sandboxTmp, { recursive: true });
 
   // 固定基线沙箱（不可声明不可配，ADR 0007）：写限 workspace（skill 目录含只读副根永不
   // 可写），denyRead 基线挡磁盘密钥，网络全放（外泄面靠 env 擦除 + denyRead 压制）。
@@ -191,17 +211,38 @@ export async function runSkillScript(
   const argv = [...interp, join(skillDir, "scripts", params.entry), ...(params.args ?? [])];
   // cwd = workspace（可写区），skillDir 通过 PIE_SKILL_DIR 供脚本读自身资源。
   // env 走白名单擦除（D7）：只有 PIE_*/BUN_BE_BUN + 一小撮受控系统 env + login-shell PATH。
-  const env = buildEnv({ BUN_BE_BUN: "1", PIE_SKILL_DIR: skillDir, PIE_WORKSPACE: workspace });
+  const env = buildEnv({
+    BUN_BE_BUN: "1",
+    PIE_SKILL_DIR: skillDir,
+    PIE_WORKSPACE: workspace,
+    TMPDIR: sandboxTmp,
+    TEMP: sandboxTmp,
+    TMP: sandboxTmp,
+  });
 
   const startedAt = now();
   log("info", "skill.run", { name, entry: params.entry });
-  // 活跃执行注册表：顶栏 app 的 status RPC 据此显示「正在运行的 skill」。
-  const runId = beginSkillRun(name, params.entry);
+  const live = registerSkillRun({
+    runId: params.runId,
+    socket: deps.socket,
+    name,
+    entry: params.entry,
+  });
   let res;
   try {
-    res = await sandbox.run(argv, workspace, env, settings);
+    if (live.killed) {
+      throw Object.assign(new Error("skill script killed"), { code: "killed" });
+    }
+    res = await sandbox.run(argv, workspace, env, settings, {
+      signal: live.abort.signal,
+      onStart: () => markSkillRunRunning(live.runId),
+      onStdout: (chunk) => appendSkillRunStdout(live.runId, chunk),
+    });
+    if (live.killed) {
+      throw Object.assign(new Error("skill script killed"), { code: "killed" });
+    }
   } finally {
-    endSkillRun(runId);
+    endSkillRun(live.runId);
   }
 
   const sandboxBaseline: SandboxBaseline = {

@@ -404,6 +404,7 @@ export const enDict = {
     screenshotAlt: "screenshot {width}x{height}",
     observation: "observation",
     running: "running",
+    queued: "queued",
     error: "error",
     ok: "ok",
     nonSerializable: "(non-serializable)",

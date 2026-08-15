@@ -20,7 +20,7 @@ import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import { Collapse } from "./ui/Collapse";
 import type { ResolvedElement } from "@/types";
-import type { AgentStepImageExtras } from "@/types/messages";
+import type { AgentStepImageExtras, AgentStepProgress } from "@/types/messages";
 
 interface AgentStepLineProps {
   tool: string;
@@ -34,6 +34,7 @@ interface AgentStepLineProps {
   /** Phase 5 follow-up — screenshot tools attach the captured JPEG so the
    *  details block renders the same image alongside the text observation. */
   image?: AgentStepImageExtras;
+  progress?: AgentStepProgress;
 }
 
 export default function AgentStepLine({
@@ -44,6 +45,7 @@ export default function AgentStepLine({
   observation,
   defaultExpanded = false,
   image,
+  progress,
 }: AgentStepLineProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const t = useT();
@@ -63,6 +65,13 @@ export default function AgentStepLine({
             <>
               {t("agentStep.callingToolPrefix")} <code className="font-mono text-fg-1">{tool}</code>
               <span className="text-fg-3">…</span>
+              {progress && (
+                <span className="ml-1.5 font-mono text-[11px] text-fg-3">
+                  {progress.state === "queued"
+                    ? t("agentStep.queued")
+                    : formatElapsed(progress.elapsedMs)}
+                </span>
+              )}
             </>
           ) : (
             <code className="font-mono text-fg-1">{tool}</code>
@@ -75,6 +84,11 @@ export default function AgentStepLine({
         >
           ›
         </span>
+        {status === "pending" && progress?.stdoutTail && (
+          <span className="min-w-0 truncate text-fg-3" title={progress.stdoutTail}>
+            · {lastNonEmptyLine(progress.stdoutTail)}
+          </span>
+        )}
         {status === "error" && observation && (
           <span className="min-w-0 truncate text-fg-3" title={observation}>
             · {firstLine(observation)}
@@ -192,6 +206,18 @@ function firstLine(s: string): string {
   const i = s.indexOf("\n");
   const line = i === -1 ? s : s.slice(0, i);
   return line.length > 80 ? line.slice(0, 77) + "..." : line;
+}
+
+function lastNonEmptyLine(s: string): string {
+  const lines = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  return firstLine(lines[lines.length - 1] ?? s);
+}
+
+function formatElapsed(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
 }
 
 function safeStringify(v: unknown, fallback: string): string {

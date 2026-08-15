@@ -286,6 +286,8 @@ export type DisplayMessage =
        *  text observation in the details block. Wire-only / React-state-only:
        *  agent-step is never persisted, so these bytes never hit storage. */
       image?: AgentStepImageExtras;
+      /** Long-running skill script: live poll snapshot (queued/running + stdout tail). */
+      progress?: AgentStepProgress;
     }
   | {
       role: "agent-summary";
@@ -342,6 +344,12 @@ export interface ResolvedElement {
  * confirm-card-only `capturedAt` (no stale-window semantics here — by the
  * time the agent-step lands, the capture is already history).
  */
+export interface AgentStepProgress {
+  state: "queued" | "running" | "done";
+  elapsedMs: number;
+  stdoutTail?: string;
+}
+
 export interface AgentStepImageExtras {
   /** Post-resize MIME, currently always image/jpeg. */
   mediaType: string;
@@ -371,6 +379,8 @@ export interface AgentStepMessage {
    *  tools and for screenshot steps that ended in error. Wire-only:
    *  agent-step is React-state-only and never hits storage. */
   image?: AgentStepImageExtras;
+  /** Long-running skill script poll snapshot. Wire-only; same as DisplayMessage.progress. */
+  progress?: AgentStepProgress;
   /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
   sessionId: string;
 }

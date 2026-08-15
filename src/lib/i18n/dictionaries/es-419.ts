@@ -400,6 +400,7 @@ export const es419Dict = {
     screenshotAlt: "captura de pantalla {width}x{height}",
     observation: "observación",
     running: "ejecutando",
+    queued: "en cola",
     error: "error",
     ok: "ok",
     nonSerializable: "(no serializable)",

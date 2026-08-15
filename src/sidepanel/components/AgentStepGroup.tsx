@@ -23,7 +23,7 @@ import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import AgentStepLine from "./AgentStepLine";
 import type { ResolvedElement } from "@/types";
-import type { AgentStepImageExtras } from "@/types/messages";
+import type { AgentStepImageExtras, AgentStepProgress } from "@/types/messages";
 
 export interface AgentStepData {
   stepIndex: number;
@@ -33,6 +33,7 @@ export interface AgentStepData {
   status: "pending" | "ok" | "error";
   observation?: string;
   image?: AgentStepImageExtras;
+  progress?: AgentStepProgress;
 }
 
 interface AgentStepGroupProps {
@@ -82,6 +83,7 @@ export default function AgentStepGroup({
                   status={s.status}
                   observation={s.observation}
                   image={s.image}
+                  progress={s.progress}
                 />
               ))}
             </div>
@@ -99,6 +101,7 @@ export default function AgentStepGroup({
         status={currentStep.status}
         observation={currentStep.observation}
         image={currentStep.image}
+        progress={currentStep.progress}
       />
     </div>
   );
