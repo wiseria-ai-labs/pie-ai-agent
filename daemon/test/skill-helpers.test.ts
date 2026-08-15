@@ -8,7 +8,20 @@ import {
   resolveHelper,
   listSkillHelpers,
   ensureSkillHelpers,
+  helperVersionLooksRight,
 } from "../src/skill-helpers";
+
+describe("helperVersionLooksRight", () => {
+  test("yt-dlp --version is a date, not the word yt-dlp", () => {
+    expect(helperVersionLooksRight("yt-dlp", "2026.07.04\n")).toBe(true);
+    expect(helperVersionLooksRight("yt-dlp", "yt-dlp 2026.07.04")).toBe(true);
+    expect(helperVersionLooksRight("yt-dlp", "Permission denied")).toBe(false);
+  });
+  test("ffmpeg must mention ffmpeg", () => {
+    expect(helperVersionLooksRight("ffmpeg", "ffmpeg version 8.0.1 Copyright")).toBe(true);
+    expect(helperVersionLooksRight("ffmpeg", "2026.07.04")).toBe(false);
+  });
+});
 
 describe("helper path helpers", () => {
   test("file names are platform-correct", () => {

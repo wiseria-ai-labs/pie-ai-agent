@@ -82,7 +82,7 @@ export function listSkillHelpers(opts: HelperResolve = {}): ListSkillHelpersResu
 export interface HelperInstallDeps extends HelperResolve {
   fetchBytes?: (url: string) => Promise<Uint8Array>;
   extractTo?: (archive: string, destFile: string, id: SkillHelperId) => void;
-  smoke?: (bin: string, id: SkillHelperId) => boolean;
+  smoke?: (bin: string, id: SkillHelperId) => boolean | { ok: boolean; detail: string };
 }
 
 function ytdlpUrl(platform: NodeJS.Platform): string {
@@ -103,11 +103,28 @@ async function defaultFetchBytes(url: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-function defaultSmoke(bin: string, id: SkillHelperId): boolean {
+/** yt-dlp --version is a date (`2026.07.04`); ffmpeg prints `ffmpeg version …`. */
+export function helperVersionLooksRight(id: SkillHelperId, output: string): boolean {
+  const out = output.trim();
+  if (id === "ffmpeg") return out.toLowerCase().includes("ffmpeg");
+  return /\d{4}\.\d{2}\.\d{2}/.test(out) || out.toLowerCase().includes("yt-dlp");
+}
+
+function defaultSmoke(bin: string, id: SkillHelperId): { ok: boolean; detail: string } {
   const flag = id === "ffmpeg" ? "-version" : "--version";
-  const r = Bun.spawnSync([bin, flag], { stdout: "pipe", stderr: "pipe" });
-  const out = r.stdout.toString() + r.stderr.toString();
-  return r.exitCode === 0 && out.toLowerCase().includes(id === "ffmpeg" ? "ffmpeg" : "yt-dlp");
+  try {
+    const r = Bun.spawnSync([bin, flag], { stdout: "pipe", stderr: "pipe" });
+    const out = (r.stdout.toString() + r.stderr.toString()).trim();
+    if (r.exitCode !== 0) {
+      return { ok: false, detail: `exit ${r.exitCode}${r.signalCode ? `/${r.signalCode}` : ""}: ${out.slice(0, 300)}` };
+    }
+    const looksRight = helperVersionLooksRight(id, out);
+    return looksRight
+      ? { ok: true, detail: out.split("\n")[0] ?? "" }
+      : { ok: false, detail: `unexpected ${id} output: ${out.slice(0, 200)}` };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 function defaultExtract(archive: string, destFile: string, id: SkillHelperId): void {
@@ -177,10 +194,20 @@ async function installOne(id: SkillHelperId, deps: HelperInstallDeps): Promise<S
     chmodSync(staged, 0o755);
     renameSync(staged, dest);
   }
+  chmodSync(dest, 0o755);
+  // curl/Safari quarantine makes a freshly written Mach-O look like EACCES.
+  try {
+    Bun.spawnSync(["xattr", "-c", dest], { stdout: "ignore", stderr: "ignore" });
+  } catch {
+    /* non-mac / no xattr */
+  }
   const smoke = deps.smoke ?? defaultSmoke;
-  if (!smoke(dest, id)) {
+  const verdict = smoke(dest, id);
+  const failed = typeof verdict === "boolean" ? !verdict : !verdict.ok;
+  if (failed) {
+    const detail = typeof verdict === "boolean" ? "" : verdict.detail;
     rmSync(dest, { force: true });
-    throw new Error(`${id} downloaded but failed a version check`);
+    throw new Error(`${id} downloaded but failed a version check${detail ? `: ${detail}` : ""}`);
   }
   return { id, present: true, path: dest, source: "pie-bin" };
 }
