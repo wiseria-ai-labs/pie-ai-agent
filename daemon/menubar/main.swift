@@ -353,7 +353,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func quitPieLink() {
-        _ = Self.launchctl(["bootout", "gui/\(getuid())/ai.wiseria.pie"])
+        // 新 daemon：shutdown 自己卸 KeepAlive 再退。旧 daemon 无此方法 → 仍 bootout。
+        if queryDaemon("shutdown") == nil {
+            _ = Self.launchctl(["bootout", "gui/\(getuid())/ai.wiseria.pie"])
+        }
         NSApp.terminate(nil)
     }
 

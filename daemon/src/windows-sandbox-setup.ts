@@ -15,7 +15,7 @@ import type {
   WindowsInstallResult,
   WindowsSandboxStatus,
 } from "@anthropic-ai/sandbox-runtime";
-import { srtWinPath } from "./skill-sandbox";
+import { srtWinPath } from "./skill-sandbox-win32";
 
 export type WinSandboxAction = "install" | "uninstall" | "status";
 

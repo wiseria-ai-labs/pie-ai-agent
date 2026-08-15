@@ -1,5 +1,7 @@
 // 扩展 ↔ daemon 桥协议。此文件是唯一权威源；daemon 相对 import，不复制。
 // 加字段只增不改语义；破坏性变更才 bump PROTOCOL_VERSION（spec §7）。
+// 口径（ADR 0010）：只传语义（id / kind / 能力 / 用户内容），不传系统怎么做
+// （绝对路径、pid、平台 URL、win32 布尔）。存量违规字段见 ADR 0010 债务表，新代码不得当合同。
 
 // v1→v2（ADR 0007）：授权模型从 grant 信封换成 agent 确认层。破坏点 = run_skill_script
 // 不再收 grantApproved/approvedEnvelopeHash、daemon 不再回 needs_authorization、
@@ -21,12 +23,23 @@ export interface HelloRequest {
   method: "hello";
   params: { protocolVersion: number };
 }
+/** 脚本执行隔离能力（ADR 0010）：srt = 有围栏；none = 以用户账户直跑。 */
+export type SkillIsolation = "srt" | "none";
+
 export interface HelloResponse {
   id: string;
   ok: true;
   // daemonVersion 加法演进（PROTOCOL_VERSION 不动，spec §6）：旧 daemon 不给此
   // 字段 → 扩展视为版本过旧，走软升级提示。
-  result: { protocolVersion: number; capabilities: string[]; daemonVersion?: string };
+  result: {
+    protocolVersion: number;
+    capabilities: string[];
+    daemonVersion?: string;
+    /** 加法（ADR 0010）：脚本隔离能力。旧 daemon 不给 → 确认卡用既有通用披露。 */
+    skillIsolation?: SkillIsolation;
+    /** 加法（ADR 0010）：是否支持 apply_update。旧 daemon 不给 → 视为未知。 */
+    selfUpdate?: boolean;
+  };
 }
 
 // ── run_local_agent ──────────────────────────────────────────────────
@@ -85,9 +98,12 @@ export interface HandoffParams {
   files?: { name: string; content: string }[];
 }
 export interface HandoffResult {
-  /** daemon 建的 handoff 目录（回填给侧栏卡片/observation） */
+  /**
+   * @deprecated ADR 0010：绝对路径不是协议合同。daemon 仍回填（加法，旧客户端可读），
+   * 新接口不得消费（observation / UI 不得展示或依赖）。
+   */
   dir: string;
-  /** terminal = 自动开跑；app = Cowork 已打开但需用户发一句话启动 */
+  /** terminal = 自动开跑；app = 已打开但需用户发一句话启动 */
   mode: "terminal" | "app";
 }
 
@@ -199,7 +215,10 @@ export interface SandboxBaseline {
   network: "open";
   /** env 白名单版本号（擦除策略变更时递增，audit 可追溯当时的擦除口径）。 */
   envAllowlist: string;
-  /** Windows passthrough：无 srt 围栏，以用户账户直跑。确认卡应据此披露。 */
+  /**
+   * @deprecated ADR 0010：跑后 audit 仍可记。跑前披露走 hello.skillIsolation，
+   * 新确认卡不得靠此字段猜平台。
+   */
   unsandboxed?: boolean;
 }
 
@@ -235,25 +254,34 @@ export interface PieLinkLatest {
   windows: { url: string; sha256: string };
 }
 
-/** check_update 结果：当前 vs 最新版本比较 + 平台对应的下载 URL。 */
+/** check_update 结果：当前 vs 最新版本比较。 */
 export interface CheckUpdateResult {
   current: string;
   latest: string;
   /** latest > current（三段 semver 比较） */
   available: boolean;
-  /** 本平台的更新物 URL（macos.url / windows.url）；无法确定时省略 */
+  /**
+   * @deprecated ADR 0010：下载 URL 不是协议合同（runtime 内部选发布物）。
+   * 新客户端只读 available / latest / supported。
+   */
   url?: string;
-  /** false = 本平台不支持 daemon 自更新（Windows 走安装器，见 supported=false 分支）。
-   *  apply_update 只在 supported=true 时可用。 */
+  /** 是否支持 apply_update 一键换文件。与 hello.selfUpdate 同义。 */
   supported: boolean;
 }
 
-/** apply_update 结果（仅 macOS）：换文件成功后回新版本号，调用方决定何时 kickstart。 */
+/** apply_update 结果：换文件成功后回新版本号，调用方决定何时重启。 */
 export interface ApplyUpdateResult {
   /** 替换后磁盘上的新版本号（= latest.version） */
   version: string;
-  /** 被替换的二进制绝对路径（~/.pie/bin/pie），回给顶栏 app 做日志 */
+  /**
+   * @deprecated ADR 0010：绝对路径不是协议合同。daemon 仍回填，新客户端不得依赖。
+   */
   path: string;
+}
+
+/** shutdown 结果：runtime 已接受停止请求，回包后自行退出。 */
+export interface ShutdownResult {
+  stopping: true;
 }
 
 // ── status（顶栏 app / 诊断用）────────────────────────────────────────
@@ -264,10 +292,8 @@ export interface StatusResult {
   extensionConnected: boolean;
   runningSkills: { name: string; startedAt: number }[];
   /**
-   * daemon 进程 pid。顶栏 / 托盘 app 的「退出 daemon」据此定位并结束进程
-   * （Windows 无 launchctl 等价物，托盘走 pid kill）。
-   * 加法演进（PROTOCOL_VERSION 不动）：旧 daemon 不给此字段 → 消费方回落
-   * 为无此能力（mac 顶栏 app 走 launchctl，本就不读 pid）。
+   * @deprecated ADR 0010：pid 不是退出合同。新客户端发 `shutdown`。
+   * daemon 仍回填，旧托盘可作回落。
    */
   pid?: number;
 }
@@ -290,7 +316,8 @@ export interface BridgeRequest {
     | "list_audit"
     | "status"
     | "check_update"
-    | "apply_update";
+    | "apply_update"
+    | "shutdown";
   params: unknown;
 }
 export type BridgeResponse =

@@ -9,22 +9,11 @@
 //     所有出站挂到超时（这个坑在 spike 里踩过，务必别复现）。
 //   - SandboxManager 是全局单例（initialize/updateConfig/reset 改共享状态 + 起代理端口），
 //     故 run() 全程串行化：一次只跑一个沙箱，避免并发请求互相踩配置/代理。
-import { SandboxManager, resolveSrtWin, verifyWindowsWfpEgress } from "@anthropic-ai/sandbox-runtime";
-import { dirname, join } from "path";
+import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
+import { runtimeFeatures } from "./runtime-features";
 
 const TIMEOUT_MS = 60_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
-
-const IS_WIN = process.platform === "win32";
-
-/**
- * srt-win.exe 是安装器伴随文件（与 pie.exe 同目录，spec §6.1 / open-question #1）：
- * v0.0.67 起无隐式 vendored 回落——省略 `windows.srtWin.path` 即 throw；且 bun compile
- * 单二进制里 `__dirname` 相对解析失效，必须运行时显式解出并传给 SandboxManager。
- */
-export function srtWinPath(): string {
-  return join(dirname(process.execPath), "srt-win.exe");
-}
 
 export interface SandboxSettings {
   /** 绝对路径白名单，只有这些子树可写（固定基线 = session workspace） */
@@ -75,42 +64,6 @@ export function buildSpawnEnv(
 /** POSIX 单引号包每个 arg：'\'' 转义单引号。argv → 可交给 srt 的 shell 命令串。 */
 function shellQuote(argv: string[]): string {
   return argv.map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ");
-}
-
-/** cmd.exe 引号语义：把每个 arg 包成 "..."，内部 `"` 转义为 `""`（CommandLineToArgvW 约定）。
- *  POSIX 单引号语义在 cmd 下不成立，故 win32 分支单列。纯函数，供单测覆盖。 */
-export function cmdQuote(argv: string[]): string {
-  return argv.map((a) => `"${a.replace(/"/g, `""`)}"`).join(" ");
-}
-
-/** F3：srt-win 经 `CreateProcessWithLogonW` 换账户后，broker 进程的自定义 env 不穿透到
- *  沙箱子进程，故 env 改经 cmd 内联 `set "K=V" && ...` 链前置到命令串（Gate 0 S6b 验证）。
- *  引号保护值里的空格/`&`；我们注入的都是受控绝对路径与常量，无需再防 `%`/`"`。 */
-export function cmdEnvPrefix(env: Record<string, string>): string {
-  return Object.entries(env)
-    .map(([k, v]) => `set "${k}=${v}" && `)
-    .join("");
-}
-
-/** Windows 沙箱的完整命令串 = env set 链 + quoted argv（交给 `wrapWithSandboxArgv(_, "cmd")`）。 */
-export function buildWindowsCommand(argv: string[], env: Record<string, string>): string {
-  return cmdEnvPrefix(env) + cmdQuote(argv);
-}
-
-/**
- * Windows 脚本沙箱设施就绪探针（spec §3.2 / F6）。非 win32 恒 ready（mac/linux 的沙箱
- * 就绪由 srt 在 run 时保证，既有行为不变）。win32 走 `verifyWindowsWfpEgress` 行为探针
- * （BLOCKED=围栏在位）——不看 BFE filter 枚举（非管理员必 cannot-read）。任何非 blocked
- * 结果都会 throw，转成 `{ ready:false }` + 原因，供 fail-closed 报错引导重装。
- */
-export async function checkWindowsSandboxReady(): Promise<{ ready: boolean; reason?: string }> {
-  if (!IS_WIN) return { ready: true };
-  try {
-    await verifyWindowsWfpEgress({ srtWin: resolveSrtWin({ path: srtWinPath() }) });
-    return { ready: true };
-  } catch (e) {
-    return { ready: false, reason: e instanceof Error ? e.message : String(e) };
-  }
 }
 
 // 全局串行化：SandboxManager 是单例，一次只允许一个沙箱运行。
@@ -164,19 +117,14 @@ async function runViaSrt(
       allowWrite: settings.allowWrite,
       denyWrite: [],
     },
-    // win32：srt-win.exe 无隐式回落，须显式给出伴随文件路径（spec §6.1）。
-    ...(IS_WIN ? { windows: { srtWin: { path: srtWinPath() } } } : {}),
   };
   // ask 回调恒 true = 网络全放（任何未显式命中规则的 host 都放行）。
   await SandboxManager.initialize(runtimeConfig, async () => true);
   try {
     await SandboxManager.waitForNetworkInitialization();
-    // win32：cmd 引号语义 + env 内联 set 链（F3）；mac/linux：POSIX 引号，env 走 spawn。
-    const command = IS_WIN ? buildWindowsCommand(argv, env) : shellQuote(argv);
-    const binShell = IS_WIN ? "cmd" : undefined;
     const wrapped = await SandboxManager.wrapWithSandboxArgv(
-      command,
-      binShell,
+      shellQuote(argv),
+      undefined,
       undefined,
       undefined,
       cwd,
@@ -198,7 +146,7 @@ async function runViaSrt(
     const proc = Bun.spawn({
       cmd: wrapped.argv,
       cwd,
-      env: buildSpawnEnv(IS_WIN, env, process.env, wrapped.env as Record<string, string>),
+      env: buildSpawnEnv(false, env, process.env, wrapped.env as Record<string, string>),
       stdout: "pipe",
       stderr: "pipe",
       windowsHide: true,
@@ -279,7 +227,7 @@ async function runPassthrough(
 
 export const passthroughSkillSandbox: SkillSandbox = { run: (argv, cwd, env) => runPassthrough(argv, cwd, env) };
 
-/** 平台后端选择：win32 → passthrough（无沙箱 + 风险披露）；mac/linux → srt。纯函数供测试。 */
+/** 隔离能力 none → passthrough；srt → 真沙箱。 */
 export function selectSkillSandbox(platform: NodeJS.Platform = process.platform): SkillSandbox {
-  return platform === "win32" ? passthroughSkillSandbox : realSkillSandbox;
+  return runtimeFeatures(platform).skillIsolation === "none" ? passthroughSkillSandbox : realSkillSandbox;
 }

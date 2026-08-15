@@ -22,11 +22,7 @@ export async function doctor(
   // named pipe 不在文件系统命名空间，existsSync 无法反映 daemon 是否在跑——只报地址、
   // 不做在场判定；ok 在 pipe 平台不把 IPC 在场性算进去（避免误报「未运行」）。
   const ipcPresent = paths.isPipe ? null : existsSync(paths.ipcPath);
-  if (paths.isPipe) {
-    lines.push(`pipe ${paths.ipcPath}: (existence not fs-checkable on Windows)`);
-  } else {
-    lines.push(`socket ${paths.ipcPath}: ${ipcPresent ? "present" : "absent (daemon not running?)"}`);
-  }
+  lines.push(ipcStatusLine(paths.ipcPath, paths.isPipe, ipcPresent));
 
   // 与 handoff / 设置页同一个真源（detectAgents）：login shell PATH（Windows 走 env+注册表）、
   // binPaths 回落、全部候选。裸 Bun.which("claude") 在 menubar app 这类 launchd 上下文里
@@ -63,4 +59,9 @@ export async function doctor(
   }
 
   return { ok, lines, checks };
+}
+
+function ipcStatusLine(ipcPath: string, isPipe: boolean, present: boolean | null): string {
+  if (isPipe) return `pipe ${ipcPath}: (existence not fs-checkable on Windows)`;
+  return `socket ${ipcPath}: ${present ? "present" : "absent (daemon not running?)"}`;
 }

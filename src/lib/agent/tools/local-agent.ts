@@ -61,8 +61,7 @@ export function buildRunLocalAgentTool(deps: RunLocalAgentToolDeps): Tool {
         return {
           success: false,
           error:
-            "run_local_agent: no local headless agent detected on this machine " +
-            "(looked for the claude / codex / cursor-agent / opencode / pi CLIs).",
+            "run_local_agent: no local headless agent is available on this machine.",
         };
       }
       // 用户在卡上选后端 + 授权一步完成；null = 拒绝。target 是用户选的，不进 LLM tool schema。

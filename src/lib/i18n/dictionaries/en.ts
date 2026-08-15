@@ -222,6 +222,8 @@ export const enDict = {
     argsNone: "None",
     disclosure:
       "The script runs with your user permissions inside a sandbox: writes limited to this session's workspace, sensitive folders blocked from reading, and secrets stripped from its environment. Approving lets this skill run scripts for the rest of this session.",
+    disclosureNone:
+      "This script will run with your user account and no extra sandbox. It can read and write anything your account can. Approving lets this skill run scripts for the rest of this session.",
     allow: "Allow & run",
     deny: "Deny",
   },

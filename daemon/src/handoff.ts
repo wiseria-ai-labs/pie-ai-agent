@@ -1,5 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { homedir } from "os";
+import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { HandoffParams, HandoffResult } from "../../src/types/local-bridge";
 import type { SpawnFn } from "./spawn";
@@ -8,6 +7,8 @@ import type { DetectedAgent } from "./agents";
 import { detectAgents } from "./agents";
 import { paths } from "./paths";
 import { log } from "./log";
+import { launchDarwinHandoff } from "./handoff-darwin";
+import { launchWin32Handoff } from "./handoff-win32";
 
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
 const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md", "agents.md"]);
@@ -15,96 +16,6 @@ const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md
 /** 交棒引导语：terminal 直接注入 argv，app 写进 convention 文件。 */
 const HANDOFF_PROMPT =
   "Read context.md in this directory for the handed-off context, then continue the task.";
-
-/**
- * 单引号包裹 + 转义内部单引号。路径来自 which / 文件系统，可能含空格
- * （/Users/na me/.local/bin/claude）——裸拼进 exec 会被拆成两个参数。
- */
-function shq(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
-}
-
-/** cmd.exe 双引号转义：`"` → `""`。 */
-export function batQuote(s: string): string {
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
-export function buildWindowsStartBat(dir: string, agentPath: string, argv: string[]): string {
-  return [
-    "@echo off",
-    `cd /d ${batQuote(dir)} || exit /b 1`,
-    [batQuote(agentPath), ...argv.map(batQuote)].join(" "),
-    "",
-  ].join("\r\n");
-}
-
-/**
- * Windows 版 `open -a`：`cmd /c start "" <exe> <dir>`。
- * 必须走 `start` 再 detach——realSpawn 带 windowsHide，直接 spawn .exe 会把 GUI 藏掉。
- * 空格路径由 spawn 的 argv quoting 处理（跟 windowsHandoffSpawn 同一契约，不要 batQuote）。
- */
-export function windowsOpenApp(exe: string, dir: string): { cmd: string; args: string[] } {
-  return { cmd: "cmd.exe", args: ["/c", "start", "", exe, dir] };
-}
-
-/**
- * 外层 `cmd /c start` 可以 windowsHide——`start` 会另开可见窗。
- * 有 wt 则 `start "" wt -d dir cmd /c start.bat`，否则 `start "" /D dir cmd /c start.bat`。
- */
-export function windowsHandoffSpawn(
-  dir: string,
-  scriptPath: string,
-  wtPath: string | null,
-): { cmd: string; args: string[] } {
-  if (wtPath) {
-    return { cmd: "cmd.exe", args: ["/c", "start", "", wtPath, "-d", dir, "cmd.exe", "/c", scriptPath] };
-  }
-  return { cmd: "cmd.exe", args: ["/c", "start", "", "/D", dir, "cmd.exe", "/c", scriptPath] };
-}
-
-const WT_WELL_KNOWN = ["AppData/Local/Microsoft/WindowsApps/wt.exe", "AppData/Local/Microsoft/Windows Terminal/wt.exe"];
-
-/** 给 wt 用：WindowsApps 别名算命中（与 detectAgents 的 stub 过滤相反）。 */
-function defaultWhere(bin: string): string | null {
-  try {
-    const r = Bun.spawnSync(["where", bin], {
-      stdin: "ignore",
-      timeout: 3000,
-      windowsHide: true,
-    });
-    for (const line of r.stdout.toString().split(/\r?\n/)) {
-      const t = line.trim();
-      if (t) return t;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/** wt 的 WindowsApps 别名是真入口（不像 Store python stub），允许命中。 */
-export function resolveWindowsTerminal(opts?: {
-  which?: (bin: string) => string | null;
-  exists?: (path: string) => boolean;
-  home?: string;
-}): string | null {
-  const which = opts?.which;
-  const exists = opts?.exists ?? existsSync;
-  const home = opts?.home ?? homedir();
-  const fromWhere = which?.("wt.exe") ?? which?.("wt");
-  if (fromWhere) return fromWhere;
-  for (const rel of WT_WELL_KNOWN) {
-    const p = join(home, ...rel.split("/"));
-    if (exists(p)) return p;
-  }
-  return null;
-}
-
-/**
- * do script 注入串的前导牺牲空格数。zsh 启动期的 stdin 消费者（omz 升级提示
- * read -k 1 等）每次吃 1 字符；8 个空格覆盖多个消费者叠加，剩余空格 shell 忽略。
- */
-const LAUNCH_PAD = 8;
 
 /** slug：context 前 24 字符小写、非字母数字转 -。 */
 function slugify(context: string): string {
@@ -119,9 +30,9 @@ function slugify(context: string): string {
  */
 export function safeFileName(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? "";
-  // 大小写不敏感比对：Slice 1 macOS-only，默认文件系统（APFS/HFS+）大小写不敏感——
+  // 大小写不敏感比对：默认文件系统（APFS / NTFS 常见配置）大小写不敏感——
   // `START.COMMAND` / `Context.MD` 这类变体若只做大小写敏感比对会放过检查，却
-  // 在磁盘上解析成同一份保留文件，构成潜在的 start.command 覆盖。
+  // 在磁盘上解析成同一份保留文件。
   if (!base || base === "." || base === ".." || RESERVED.has(base.toLowerCase())) {
     throw new Error(`unsafe file name: ${JSON.stringify(name)}`);
   }
@@ -170,83 +81,18 @@ export async function runHandoff(
   if (agent.kind === "app") {
     writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${HANDOFF_PROMPT}\n`);
     log("info", "handoff.open_app", { dir, target: agent.id, files: (params.files ?? []).length });
-    // app 直开：mac `open -a <bundle> <dir>`；win `cmd /c start "" <exe> <dir>`。
-    // 无 prompt 注入面 → 目录内的约定文件引导（Claude 系读 CLAUDE.md，Codex/Cursor 读 AGENTS.md）。
-    // 人到场发一句即开跑（mode 回传给扩展，observation 明示需发一句）。
-    const launch =
-      platform === "win32"
-        ? windowsOpenApp(agent.path, dir)
-        : { cmd: "open", args: ["-a", agent.path, dir] };
-    const r = await spawn(launch.cmd, launch.args, dir);
-    if (r.exitCode !== 0) {
-      const opener = platform === "win32" ? "start" : "open";
-      throw new Error(
-        `failed to open ${agent.label} (${opener} exit ${r.exitCode}): ${(r.stderr ?? "").trim().slice(0, 300)} — ` +
-          `open the folder manually in the app: ${dir}`,
-      );
-    }
-    return { dir, mode: "app" };
+  } else {
+    log("info", "handoff.open", { dir, target: agent.id, files: (params.files ?? []).length });
   }
 
-  // 交互式会话脚本：cd 进目录、用初始 prompt 拉起 claude。**不带**
-  // --dangerously-skip-permissions —— 人就在终端前，claude 自己的交互审批有人可批，
-  // 这正是 hand-off 区别于 round-trip 的地方。exec 让 claude 接管终端；退出后
-  // Terminal 显示 process completed，错误（如 claude 未装）对用户可见。
-  // dir 是 daemon 派生（homedir + ISO 日期 + slugify 限制字符集在
-  // [a-z0-9-]），charset 由构造方式圈定，不是靠 JSON.stringify 的引号规则
-  // 恰好兼容 bash 双引号语义（两者其实不等价：JSON 的 \n / \uXXXX 转义与 bash
-  // 双引号转义规则不同）——这里安全性来自 dir 本身不含双引号/反引号/`$`
-  // 等元字符，JSON.stringify 只是顺手拿来加一层引号。
-  const args = (agent.argv ?? ["{prompt}"]).map((a) => a.replace("{prompt}", HANDOFF_PROMPT));
+  const argv = (agent.argv ?? ["{prompt}"]).map((a) => a.replace("{prompt}", HANDOFF_PROMPT));
+  const io = { spawn, writeFile, which: opts?.which, exists: opts?.exists };
   if (platform === "win32") {
-    const scriptPath = join(dir, "start.bat");
-    writeFile(scriptPath, buildWindowsStartBat(dir, agent.path, args));
-    log("info", "handoff.open", { dir, target: agent.id, files: (params.files ?? []).length, launcher: "windows" });
-    const wtPath = resolveWindowsTerminal({
-      which: opts?.which ?? defaultWhere,
-      exists: opts?.exists,
-    });
-    const launch = windowsHandoffSpawn(dir, scriptPath, wtPath);
-    const r = await spawn(launch.cmd, launch.args, dir);
-    if (r.exitCode !== 0) {
-      throw new Error(
-        `failed to open a terminal (exit ${r.exitCode}): ${(r.stderr ?? "").trim().slice(0, 300)} — ` +
-          `run it manually: ${scriptPath}`,
-      );
-    }
-    return { dir, mode: "terminal" };
+    await launchWin32Handoff(agent, dir, argv, io);
+  } else {
+    await launchDarwinHandoff(agent, dir, argv, io);
   }
 
-  const script =
-    `#!/bin/bash\n` +
-    `cd ${JSON.stringify(dir)} || exit 1\n` +
-    `exec ${shq(agent.path)} ${args.map(shq).join(" ")}\n`;
-  const scriptPath = join(dir, "start.command");
-  writeFile(scriptPath, script, 0o755);
-  log("info", "handoff.open", { dir, target: agent.id, files: (params.files ?? []).length });
-  // 为什么不用 `open start.command`：Terminal 打开 .command 的机制是「spawn 交互式
-  // login zsh + 把脚本路径当键盘输入喂进 TTY」（真机 ps 链验证：Terminal → login →
-  // -zsh → script）。zsh 启动期任何读 stdin 的东西（oh-my-zsh 升级提示的 read -k 1
-  // 是实锤案例）会吃掉路径首字符 → 路径残缺 → 交棒静默失败。改走 AppleScript
-  // do script：注入的字符串由我们控制，前面垫 LAUNCH_PAD 个牺牲空格——启动期
-  // 消费者吃掉的只是空格，命令本体无损（shell 忽略前导空白）。
-  // scriptPath 是 daemon 派生路径（homedir + ISO 日期 + [a-z0-9-] slug），不含
-  // 双引号/反斜杠，可安全嵌入 AppleScript 双引号字符串与 shell 单引号。
-  const padded = `${" ".repeat(LAUNCH_PAD)}exec '${scriptPath}'`;
-  const r = await spawn(
-    "osascript",
-    ["-e", 'tell application "Terminal"', "-e", `do script "${padded}"`, "-e", "activate", "-e", "end tell"],
-    dir,
-  );
-  // osascript 非零 = Terminal 没被唤起（典型：TCC Automation 权限被拒 -1743）。
-  // fire-and-forget 只对 claude 进程成立，唤起终端这步失败必须让用户知道并给
-  // 自救路径（手动跑 start.command，文件已落盘）。
-  if (r.exitCode !== 0) {
-    throw new Error(
-      `failed to open Terminal (osascript exit ${r.exitCode}): ${(r.stderr ?? "").trim().slice(0, 300)} — ` +
-        `grant Automation permission for pie → Terminal in System Settings › Privacy & Security › Automation, ` +
-        `or run it manually: ${scriptPath}`,
-    );
-  }
-  return { dir, mode: "terminal" };
+  // `dir` 仍回填（加法，旧客户端可读）。新接口不得当合同（ADR 0010）。
+  return { dir, mode: agent.kind };
 }

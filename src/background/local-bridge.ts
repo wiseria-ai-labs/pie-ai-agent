@@ -22,6 +22,7 @@ import {
   type DeleteSkillResult,
   type ListAuditParams,
   type ListAuditResult,
+  type SkillIsolation,
 } from "@/types/local-bridge";
 
 const HOST_NAME = "ai.wiseria.pie";
@@ -29,6 +30,8 @@ const HOST_NAME = "ai.wiseria.pie";
 let port: chrome.runtime.Port | null = null;
 let ready = false;
 let capabilities: string[] = [];
+let skillIsolation: SkillIsolation | undefined;
+let selfUpdate: boolean | undefined;
 
 // ── 版本握手（spec §6）──────────────────────────────────────────────
 // 扩展内置最低 daemon 版本；daemonVersion < MIN = 软升级提示（功能按 capability
@@ -126,6 +129,18 @@ export function bridgeCapabilities(): string[] {
 export function bridgeHasSkillFs(): boolean {
   return ready && capabilities.includes("skill_fs");
 }
+/** 握手声明的脚本隔离能力。旧 daemon / 未连上 → undefined。 */
+export function bridgeSkillIsolation(): SkillIsolation | undefined {
+  return ready ? skillIsolation : undefined;
+}
+/** 握手声明是否支持 apply_update。旧 daemon / 未连上 → undefined。 */
+export function bridgeSelfUpdate(): boolean | undefined {
+  return ready ? selfUpdate : undefined;
+}
+
+function parseSkillIsolation(v: unknown): SkillIsolation | undefined {
+  return v === "srt" || v === "none" ? v : undefined;
+}
 
 // ── 自动重连（退避）──────────────────────────────────────────────────
 // SW 存活期内桥意外断开（daemon 重启/热替换/崩溃）→ 按退避序列重试；用户显式
@@ -196,6 +211,8 @@ export function initLocalBridge(): void {
     port = null;
     ready = false;
     capabilities = [];
+    skillIsolation = undefined;
+    selfUpdate = undefined;
     daemonVersion = null;
     installState = "not_installed"; // connectNative throw = host manifest/权限缺失
     pending.clear();
@@ -241,6 +258,8 @@ export function initLocalBridge(): void {
     ready = false;
     port = null;
     capabilities = [];
+    skillIsolation = undefined;
+    selfUpdate = undefined;
     daemonVersion = null; // protocolMismatch 保留到下次握手覆盖（断连间隙仍显示硬不兼容提示）
     // 记连续失败原文。断开会 mass-reject pending 的 hello → 其 .catch 也会跑，但那时
     // port 已置 null（!== myPort）→ .catch 早返回不重复计数，避免同一次失败双计。
@@ -263,12 +282,20 @@ export function initLocalBridge(): void {
       // 但已连上 daemon，不该再对用户喊「装了连不上」）。
       consecutiveFailures = 0;
       lastDisconnectError = null;
-      const res = r as { protocolVersion: number; capabilities: string[]; daemonVersion?: string };
+      const res = r as {
+        protocolVersion: number;
+        capabilities: string[];
+        daemonVersion?: string;
+        skillIsolation?: unknown;
+        selfUpdate?: unknown;
+      };
       // 兼容窗口：差 ≤1 视为兼容（spec §7）；差 >1 = 硬不兼容
       protocolMismatch = Math.abs(res.protocolVersion - PROTOCOL_VERSION) > 1;
       if (!protocolMismatch) {
         capabilities = res.capabilities;
         daemonVersion = res.daemonVersion ?? null;
+        skillIsolation = parseSkillIsolation(res.skillIsolation);
+        selfUpdate = typeof res.selfUpdate === "boolean" ? res.selfUpdate : undefined;
         ready = true;
         installState = "connected";
         reconnectAttempt = 0;
@@ -398,6 +425,8 @@ export function disconnectLocalBridge(): void {
   port = null;
   ready = false;
   capabilities = [];
+  skillIsolation = undefined;
+  selfUpdate = undefined;
   daemonVersion = null;
   installState = "unknown"; // 用户主动关闭 → 回到「未启用」的中性态（沿用旧文案）
   for (const p of pending.values()) p.reject(new Error("bridge disabled"));

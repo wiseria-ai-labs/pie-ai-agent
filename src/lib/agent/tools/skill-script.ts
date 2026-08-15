@@ -8,6 +8,7 @@ import type {
   RunSkillScriptResult,
   ReadSessionFileParams,
   ReadSessionFileResult,
+  SkillIsolation,
 } from "@/types/local-bridge";
 
 /** skill 运行确认卡 payload（ADR 0007）：用户看得到这次要跑哪个 skill 的哪个脚本、
@@ -22,6 +23,8 @@ export interface SkillRunConfirmRequest {
   entry: string;
   /** 本次的 CLI 参数全文（含视频 URL 等，用户看得到这次要干什么） */
   args: string[];
+  /** 握手声明的隔离能力（ADR 0010）。缺省 = 旧 daemon，卡用既有通用披露。 */
+  skillIsolation?: SkillIsolation;
 }
 
 /**

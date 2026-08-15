@@ -2,10 +2,12 @@ import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
 import type { HandoffParams, HandoffResult } from "@/types/local-bridge";
 
+export type HandoffAgentOption = { id: string; label: string; kind?: "app" | "terminal" };
+
 export interface HandoffToolDeps {
   run: (p: HandoffParams) => Promise<HandoffResult>;
   /** 桥：本机已检测 agent 列表（旧 daemon 的单项降级在 local-bridge 层做）。 */
-  listAgents: () => Promise<{ id: string; label: string }[]>;
+  listAgents: () => Promise<HandoffAgentOption[]>;
   /**
    * HITL 卡：用户选收件人 + 授权一步完成。返回选中的 agent id，null = 拒绝。
    * target 不由 LLM 传——被 untrusted 页面驱动的 LLM 无法诱导选收件人。
@@ -13,7 +15,7 @@ export interface HandoffToolDeps {
   requestConsent: (p: {
     context: string;
     fileCount: number;
-    agents: { id: string; label: string }[];
+    agents: HandoffAgentOption[];
   }) => Promise<string | null>;
 }
 
@@ -26,7 +28,7 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
       "FIRE-AND-FORGET: it writes your context to context.md, stages any files you provide, and opens " +
       "an interactive session (terminal or app) where the local agent continues the work WITH THE " +
       "HUMAN PRESENT. You do NOT choose the recipient — the user picks it on the authorization card. " +
-      "You get back ONLY the handoff directory path — results are NOT returned to you. Decision rule " +
+      "Results are NOT returned to you. Decision rule " +
       "vs run_local_agent: hand off when the human continues the work locally and this conversation " +
       "does not need the output (open-ended / collaborative / long-running, or heavy writes in a " +
       "real project directory where a human should approve each step); use run_local_agent instead " +
@@ -69,9 +71,7 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
       if (agents.length === 0) {
         return {
           success: false,
-          error:
-            "handoff_to_agent: no supported local agents detected on this machine " +
-            "(looked for the Claude app and the `claude` / `codex` CLIs).",
+          error: "handoff_to_agent: no local agent is available on this machine.",
         };
       }
       const target = await deps.requestConsent({
@@ -83,19 +83,17 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
         return { success: false, error: "User declined the hand-off." };
       }
       const result = await deps.run({ target, context: a.context, files });
-      // fire-and-forget：无 untrusted 内容回传。dir 是 daemon 派生路径（可信），
-      // 直接作 trusted observation 让 LLM 转述给用户去接着干。
+      // fire-and-forget：无 untrusted 内容回传。observation 只报语义（谁、何种形态），
+      // 不带宿主机路径（ADR 0010）。
       const label = agents.find((x) => x.id === target)?.label ?? target;
       const started =
         result.mode === "app"
-          ? `The app was opened rooted at that folder; send a continue message in the opened app to start the local agent.`
-          : `An interactive terminal session was opened there and is already running.`;
+          ? `The app was opened; send a continue message in the opened app to start the local agent.`
+          : `An interactive terminal session was opened and is already running.`;
       return {
         success: true,
         observation:
-          `Handed off to ${label} (picked by the user). Handoff directory:\n` +
-          `${result.dir}\n` +
-          `${started}\n` +
+          `Handed off to ${label} (picked by the user). ${started}\n` +
           `This is fire-and-forget — the local agent continues independently with the user; ` +
           `results are NOT returned here.`,
       };

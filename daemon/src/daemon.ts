@@ -1,4 +1,4 @@
-import { unlinkSync, existsSync, mkdirSync, chmodSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { PROTOCOL_VERSION, BRIDGE_CAPABILITIES } from "../../src/types/local-bridge";
 import { DAEMON_VERSION } from "./version";
 import type { BridgeResponse, RunLocalAgentParams, HandoffParams, ListAgentsResult } from "../../src/types/local-bridge";
@@ -14,6 +14,11 @@ import { readAuditTail } from "./audit";
 import { getStatus, markExtensionSocket, dropSocket } from "./status";
 import { checkUpdate, applyUpdate } from "./update";
 import { isAddrInUseError } from "./daemon-launcher";
+import { runtimeFeatures } from "./runtime-features";
+import { scheduleDaemonStop } from "./shutdown";
+import { claimIpc, hardenIpc, pipeAlreadyServed } from "./ipc-listen";
+
+export { pipeAlreadyServed };
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams,
   ListAuditParams, ListAuditResult, ReadSessionFileParams, DeleteSessionWorkspaceParams,
@@ -21,7 +26,7 @@ import type {
 
 export async function handleMessage(
   line: string,
-  ctx: { clientProtocol?: number } = {},
+  ctx: { clientProtocol?: number; scheduleStop?: () => void } = {},
 ): Promise<string> {
   let msg: { id?: string; method?: string; params?: unknown };
   try {
@@ -37,11 +42,19 @@ export async function handleMessage(
   ): string => JSON.stringify({ id, ...r } as BridgeResponse);
 
   switch (msg.method) {
-    case "hello":
+    case "hello": {
+      const features = runtimeFeatures();
       return respond({
         ok: true,
-        result: { protocolVersion: PROTOCOL_VERSION, capabilities: [...BRIDGE_CAPABILITIES], daemonVersion: DAEMON_VERSION },
+        result: {
+          protocolVersion: PROTOCOL_VERSION,
+          capabilities: [...BRIDGE_CAPABILITIES],
+          daemonVersion: DAEMON_VERSION,
+          skillIsolation: features.skillIsolation,
+          selfUpdate: features.selfUpdate,
+        },
       });
+    }
     case "run_local_agent": {
       try {
         const result = await runLocalAgent(msg.params as RunLocalAgentParams);
@@ -198,6 +211,15 @@ export async function handleMessage(
         return respond({ ok: false, error: { code: "apply_update_failed", message: String(e) } });
       }
     }
+    case "shutdown": {
+      try {
+        (ctx.scheduleStop ?? scheduleDaemonStop)();
+        return respond({ ok: true, result: { stopping: true } });
+      } catch (e) {
+        log("error", "shutdown.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "shutdown_failed", message: String(e) } });
+      }
+    }
     default:
       log("warn", "request.unknown_method", { id, method: String(msg.method) });
       return respond({ ok: false, error: { code: "unknown_method", message: String(msg.method) } });
@@ -277,28 +299,6 @@ export function makeBackpressureWriter(rawWrite: (bytes: Uint8Array) => number):
   };
 }
 
-/**
- * 抢 pipe 前先探一手：连得上说明已有 daemon 在服务这条 pipe，本进程让位。
- *
- * 为什么不能只靠 `Bun.listen` 抛 EADDRINUSE：Windows named pipe 名被占用时 Bun 1.3.11
- * **不是抛异常而是 panic**——listen 失败走 errdefer deinit，撞上
- * `Listener.zig:479` 的 `bun.assert(this.listener == .none)`，整个进程带着
- * "Internal assertion failure" 崩掉，catch 不到（Windows 11 真机实测，已报上游）。
- * 探测走「连接成功与否」而不是「异常长什么样」，与 Bun 的错误行为解耦。
- *
- * 残留竞态：两个 daemon 同时起、都探到没人时仍会撞 panic。这窗口只有毫秒级，且两边
- * 都是刚启动无状态，实践上由 host 侧「只拉一次」的约束兜住，不再加锁。
- */
-export async function pipeAlreadyServed(ipcPath: string): Promise<boolean> {
-  try {
-    const socket = await Bun.connect({ unix: ipcPath, socket: { data() {} } });
-    socket.end();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function startDaemon(): Promise<void> {
   if (!existsSync(paths.pieDir)) mkdirSync(paths.pieDir, { recursive: true });
   // 启动 GC：清超 30 天的孤儿 session workspace（桥断/卸载遗留）。best-effort，不阻塞启动。
@@ -308,14 +308,10 @@ export async function startDaemon(): Promise<void> {
   } catch (e) {
     log("warn", "sessions.gc_failed", { error: String(e) });
   }
-  // 单实例互斥（Windows）：named pipe 无磁盘文件，占用与否只能靠探测——且 Bun 在
-  // pipe 被占时会 panic 而非抛错，必须抢 listen 之前就让位。见 pipeAlreadyServed。
-  if (paths.isPipe && (await pipeAlreadyServed(paths.ipcPath))) {
+  if ((await claimIpc(paths)) === "already_running") {
     log("info", "daemon.already_running", { ipc: paths.ipcPath });
     return;
   }
-  // socket 文件残留清理仅对 unix domain socket 有意义；Windows named pipe 无磁盘文件。
-  if (!paths.isPipe && existsSync(paths.ipcPath)) unlinkSync(paths.ipcPath); // 清残留
   try {
     Bun.listen<{ carry: string; writer: BackpressureWriter; clientProtocol?: number }>({
       unix: paths.ipcPath,
@@ -357,9 +353,7 @@ export async function startDaemon(): Promise<void> {
     }
     throw e;
   }
-  // chmod 收敛到用户级信任边界仅适用于 socket 文件；named pipe 的 ACL 由创建者默认收敛，
-  // 且路径不在文件系统命名空间，chmodSync 会 ENOENT——Windows 下跳过。
-  if (!paths.isPipe) chmodSync(paths.ipcPath, 0o600); // 用户级信任边界
+  hardenIpc(paths);
   log("info", "daemon.listening", { socket: paths.ipcPath });
   await new Promise(() => {}); // 常驻
 }

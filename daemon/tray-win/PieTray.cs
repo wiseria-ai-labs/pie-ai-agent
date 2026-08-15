@@ -341,44 +341,68 @@ namespace PieLink
             public int Pid;
         }
 
+        /// <summary>连 named pipe，发一行 JSON-RPC，读一行响应（约 1.5s 上限）。失败返回 null。</summary>
+        private static Dictionary<string, object> Call(string method)
+        {
+            using (var pipe = new NamedPipeClientStream(".", Program.PipeName, PipeDirection.InOut))
+            {
+                pipe.Connect(1000);
+                var id = Guid.NewGuid().ToString();
+                var reqBytes = Encoding.UTF8.GetBytes(
+                    "{\"id\":\"" + id + "\",\"method\":\"" + method + "\",\"params\":{}}\n");
+                pipe.Write(reqBytes, 0, reqBytes.Length);
+                pipe.Flush();
+
+                var line = ReadLine(pipe, 1500);
+                if (line == null) return null;
+
+                var root = Json.Deserialize<Dictionary<string, object>>(line);
+                if (root == null || !(root.ContainsKey("ok") && root["ok"] is bool && (bool)root["ok"]))
+                    return null;
+                if (!(root.TryGetValue("result", out var r) && r is Dictionary<string, object> result))
+                    return null;
+                return result;
+            }
+        }
+
         /// <summary>连 named pipe，发一行 status 请求，读一行响应（约 1.5s 上限）。失败返回 null。</summary>
         internal static Status QueryStatus()
         {
             try
             {
-                using (var pipe = new NamedPipeClientStream(".", Program.PipeName, PipeDirection.InOut))
+                var result = Call("status");
+                if (result == null) return null;
+
+                return new Status
                 {
-                    pipe.Connect(1000); // daemon 未跑 → TimeoutException → null（图标转未连接态）
-                    var id = Guid.NewGuid().ToString();
-                    var reqBytes = Encoding.UTF8.GetBytes(
-                        "{\"id\":\"" + id + "\",\"method\":\"status\",\"params\":{}}\n");
-                    pipe.Write(reqBytes, 0, reqBytes.Length);
-                    pipe.Flush();
-
-                    var line = ReadLine(pipe, 1500);
-                    if (line == null) return null;
-
-                    var root = Json.Deserialize<Dictionary<string, object>>(line);
-                    if (root == null || !(root.ContainsKey("ok") && root["ok"] is bool && (bool)root["ok"]))
-                        return null;
-                    if (!(root.TryGetValue("result", out var r) && r is Dictionary<string, object> result))
-                        return null;
-
-                    return new Status
-                    {
-                        Version = result.TryGetValue("version", out var v) ? Convert.ToString(v) : "?",
-                        ExtensionConnected = result.TryGetValue("extensionConnected", out var e)
-                            && e is bool && (bool)e,
-                        // pid 是加法字段：旧 daemon 不给 → 0（「退出」回落为仅退托盘，不 kill）。
-                        Pid = result.TryGetValue("pid", out var p) && p != null
-                            ? Convert.ToInt32(p, CultureInfo.InvariantCulture)
-                            : 0,
-                    };
-                }
+                    Version = result.TryGetValue("version", out var v) ? Convert.ToString(v) : "?",
+                    ExtensionConnected = result.TryGetValue("extensionConnected", out var e)
+                        && e is bool && (bool)e,
+                    // pid 仅作旧 daemon 回落；新退出路径走 Shutdown。
+                    Pid = result.TryGetValue("pid", out var p) && p != null
+                        ? Convert.ToInt32(p, CultureInfo.InvariantCulture)
+                        : 0,
+                };
             }
             catch
             {
                 return null;
+            }
+        }
+
+        /// <summary>请 daemon 自己停（ADR 0010）。旧 daemon 无此方法 → false，调用方回落 pid。</summary>
+        internal static bool Shutdown()
+        {
+            try
+            {
+                var result = Call("shutdown");
+                return result != null
+                    && result.TryGetValue("stopping", out var s)
+                    && s is bool && (bool)s;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -885,25 +909,28 @@ namespace PieLink
             }
         }
 
-        // 「退出 Pie Link」= 关整套（对齐 mac Docker Desktop 模型）：先按 pid 结束 daemon，再退托盘。
+        // 「退出 Pie Link」= 关整套（对齐 mac Docker Desktop 模型）：先请 daemon 自己停，再退托盘。
         // 托盘因其它原因退出（注销 / 任务管理器）不走这里 → 不动 daemon（两进程独立）。
         private void QuitPieLink(DaemonClient.Status status)
         {
-            var pid = status != null ? status.Pid : 0;
-            if (pid <= 0)
+            if (!DaemonClient.Shutdown())
             {
-                // 菜单打开到点击之间 daemon 可能已变；补查一次 pid。
-                var fresh = DaemonClient.QueryStatus();
-                pid = fresh != null ? fresh.Pid : 0;
-            }
-            if (pid > 0)
-            {
-                try
+                // 旧 daemon 无 shutdown：回落 pid（加法字段，缺省 0）。
+                var pid = status != null ? status.Pid : 0;
+                if (pid <= 0)
                 {
-                    using (var proc = Process.GetProcessById(pid))
-                        proc.Kill();
+                    var fresh = DaemonClient.QueryStatus();
+                    pid = fresh != null ? fresh.Pid : 0;
                 }
-                catch { /* 已退出 / 无权限：忽略，仍退托盘 */ }
+                if (pid > 0)
+                {
+                    try
+                    {
+                        using (var proc = Process.GetProcessById(pid))
+                            proc.Kill();
+                    }
+                    catch { /* 已退出 / 无权限：忽略，仍退托盘 */ }
+                }
             }
             ExitThread();
         }

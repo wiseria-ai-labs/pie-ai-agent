@@ -5,12 +5,14 @@ import {
   WINDOWS_AGENT_CANDIDATES,
   agentCandidatesFor,
   detectAgents,
-  parseShellPath,
+} from "../src/agents";
+import { parseShellPath } from "../src/user-path-darwin";
+import {
   parseWherePath,
   isWindowsAppsStub,
   parseRegQueryPath,
   mergeWindowsPath,
-} from "../src/agents";
+} from "../src/user-path-win32";
 
 test("parseShellPath: takes the last line (rc 噪音在前面)", () => {
   const stdout = "Last login: whatever\n/usr/bin:/opt/homebrew/bin\n";
@@ -222,11 +224,12 @@ test("Windows 表品牌分组、app 在前；不含 claude-app / 不含 mac 路�
   for (const c of WINDOWS_AGENT_CANDIDATES) {
     if (c.kind === "terminal") expect(c.verified).not.toBe(false);
     if (c.kind === "app") {
-      expect(c.verified).toBe(false);
       expect(c.appPaths?.every((p) => !p.startsWith("/Applications/"))).toBe(true);
       expect(c.appPaths?.every((p) => p.endsWith(".exe"))).toBe(true);
     }
   }
+  expect(WINDOWS_AGENT_CANDIDATES.find((c) => c.id === "cursor-app")?.verified).toBe(true);
+  expect(WINDOWS_AGENT_CANDIDATES.find((c) => c.id === "codex-app")?.verified).toBe(true);
 });
 
 test("detectAgents(win32): where 命中即纳入", () => {
@@ -303,20 +306,15 @@ test("detectAgents(win32): ~ 展开后的 Cursor.exe 算已装；/Applications/C
   expect(detected.some((a) => a.path.includes("/Applications/"))).toBe(false);
 });
 
-test("detectAgents(win32): 默认排除 verified:false 的 app；includeUnverified 才纳入", () => {
+test("detectAgents(win32): 已验证 app 默认纳入；路径 miss 则不出现", () => {
   const home = homedir();
   const cursorExe = `${home}/AppData/Local/Programs/cursor/Cursor.exe`;
-  const exists = (p: string) => p === cursorExe;
-  const hidden = detectAgents({ platform: "win32", which: () => null, exists });
-  expect(hidden.map((a) => a.id)).not.toContain("cursor-app");
-  expect(hidden.map((a) => a.id)).not.toContain("codex-app");
+  const chatgptExe = `${home}/AppData/Local/Programs/ChatGPT/ChatGPT.exe`;
+  const exists = (p: string) => p === cursorExe || p === chatgptExe;
+  const shown = detectAgents({ platform: "win32", which: () => null, exists });
+  expect(shown.map((a) => a.id)).toEqual(["codex-app", "cursor-app"]);
 
-  const shown = detectAgents({
-    platform: "win32",
-    includeUnverified: true,
-    which: () => null,
-    exists,
-  });
-  expect(shown.map((a) => a.id)).toEqual(["cursor-app"]);
-  expect(shown[0].path).toBe(cursorExe);
+  const none = detectAgents({ platform: "win32", which: () => null, exists: () => false });
+  expect(none.map((a) => a.id)).not.toContain("cursor-app");
+  expect(none.map((a) => a.id)).not.toContain("codex-app");
 });

@@ -22,9 +22,10 @@ macOS 顶栏 app（`daemon/menubar/`）的 Windows 对应物，收敛版。权�
   1. **状态行**（禁用）：`Pie Link v<ver> · 运行中` + 浏览器扩展连接态；daemon 未响应时
      显示「未运行」。菜单点开时 fresh 查一次。
   2. **打开日志目录**：在资源管理器打开 `%USERPROFILE%\.pie\logs`。
-  3. **退出 Pie Link**：按 `StatusResult.pid` 结束 daemon 进程后退出托盘（Docker
-     Desktop 模型，对齐 mac「退出 = 图标与后台服务一起停」）。托盘因其它原因退出
-     （注销 / 任务管理器）**不**动 daemon——两进程独立，只有此菜单项才杀 daemon。
+  3. **退出 Pie Link**：发 `shutdown` 让 daemon 自己停，再退托盘（Docker
+     Desktop 模型，对齐 mac「退出 = 图标与后台服务一起停」）。旧 daemon 无此方法时
+     回落 `StatusResult.pid`。托盘因其它原因退出（注销 / 任务管理器）**不**动
+     daemon——两进程独立，只有此菜单项才停 daemon。
 
 ## 构建
 

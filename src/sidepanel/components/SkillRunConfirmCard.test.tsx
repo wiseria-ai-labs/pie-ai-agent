@@ -37,4 +37,14 @@ describe("SkillRunConfirmCard", () => {
     render(<SkillRunConfirmCard payload={{ ...payload, args: [] }} onDecision={vi.fn()} />);
     expect(screen.getByText("None")).toBeTruthy();
   });
+
+  it("shows the no-fence disclosure when isolation is none", () => {
+    render(<SkillRunConfirmCard payload={{ ...payload, skillIsolation: "none" }} onDecision={vi.fn()} />);
+    expect(screen.getByText(/no extra sandbox/i)).toBeTruthy();
+  });
+
+  it("keeps the sandbox disclosure when isolation is srt or omitted", () => {
+    render(<SkillRunConfirmCard payload={{ ...payload, skillIsolation: "srt" }} onDecision={vi.fn()} />);
+    expect(screen.getByText(/inside a sandbox/i)).toBeTruthy();
+  });
 });

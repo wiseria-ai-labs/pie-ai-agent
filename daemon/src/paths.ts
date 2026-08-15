@@ -1,8 +1,8 @@
 import { homedir } from "os";
 import nodePath from "path";
+import { win32IpcPath } from "./paths-win32";
 
-/** Windows named pipe basename（`\\.\pipe\<PIPE_NAME>`）；对齐 mac socket 语义的单实例键。 */
-export const PIPE_NAME = "ai.wiseria.pie";
+export { PIPE_NAME } from "./paths-win32";
 
 export interface Paths {
   pieDir: string;
@@ -46,7 +46,7 @@ export function computePaths(
 ): Paths {
   const isWin = platform === "win32";
   const pieDir = p.join(home, ".pie");
-  const ipcPath = isWin ? `\\\\.\\pipe\\${PIPE_NAME}` : p.join(pieDir, "daemon.sock");
+  const ipcPath = isWin ? win32IpcPath() : p.join(pieDir, "daemon.sock");
   return {
     pieDir,
     binDir: p.join(pieDir, "bin"),

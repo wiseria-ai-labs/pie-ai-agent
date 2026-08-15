@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { cmdQuote, cmdEnvPrefix, buildWindowsCommand } from "../src/skill-sandbox";
+import { cmdQuote, cmdEnvPrefix, buildWindowsCommand } from "../src/skill-sandbox-win32";
 
 // Windows 沙箱命令组装的纯逻辑（spec §3.1 + 实测发现 F3）。真机沙箱强制走 need-human-test；
 // 此处只测 mac/linux 上可判定的字符串构造：cmd 引号语义 + env 内联 set 链。

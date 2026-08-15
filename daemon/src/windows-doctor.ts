@@ -394,7 +394,7 @@ export function defaultWindowsDoctorDeps(): WindowsDoctorDeps {
     readFile: (p) => readFileSync(p, "utf8"),
     mappedDrives: () => defaultMappedDrives(),
     sandboxReady: async () => {
-      const { checkWindowsSandboxReady } = await import("./skill-sandbox");
+      const { checkWindowsSandboxReady } = await import("./skill-sandbox-win32");
       return checkWindowsSandboxReady();
     },
     probePipe: () => defaultProbePipe(`\\\\.\\pipe\\${NM_HOST_NAME}`),

@@ -218,6 +218,8 @@ export const es419Dict = {
     argsNone: "Ninguno",
     disclosure:
       "El script se ejecuta con tus permisos de usuario dentro de un sandbox: la escritura se limita al espacio de trabajo de esta sesión, la lectura de carpetas sensibles está bloqueada y los secretos se eliminan de su entorno. Al aprobar, esta skill podrá ejecutar scripts durante el resto de esta sesión.",
+    disclosureNone:
+      "Este script se ejecutará con tu cuenta de usuario y sin un sandbox adicional. Puede leer y escribir todo lo que tu cuenta pueda. Al aprobar, esta skill podrá ejecutar scripts durante el resto de esta sesión.",
     allow: "Permitir y ejecutar",
     deny: "Rechazar",
   },

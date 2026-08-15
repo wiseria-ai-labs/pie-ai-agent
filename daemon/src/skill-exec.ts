@@ -10,7 +10,12 @@ import { appendAudit } from "./audit";
 import { beginSkillRun, endSkillRun } from "./status";
 import { selectSkillSandbox } from "./skill-sandbox";
 import type { SkillSandbox } from "./skill-sandbox";
+import { runtimeFeatures } from "./runtime-features";
+import { darwinInterpreter } from "./skill-interpreter-darwin";
+import { win32Interpreter } from "./skill-interpreter-win32";
 import type { RunSkillScriptParams, RunSkillScriptResult, SandboxBaseline } from "../../src/types/local-bridge";
+
+export { pickWindowsPython } from "./skill-interpreter-win32";
 
 export interface SkillExecDeps {
   sandbox?: SkillSandbox;
@@ -119,57 +124,13 @@ export function baselineDenyRead(): string[] {
   ];
 }
 
-/** 全局安装 Python 缺失时的引导文案（F4：per-user / Store 别名沙箱账户不可见）。 */
-const PY_NOT_FOUND_MSG =
-  '未找到全局安装的 Python（已排除 Microsoft Store 执行别名）。请从 python.org 安装 Python 时勾选 "Install for all users"（全局安装），沙箱账户才能访问它。';
-/** Windows 不支持 .sh 的引导文案（建议作者提供跨平台 ts 版本）。 */
-const SH_UNSUPPORTED_MSG =
-  "Windows 上不支持执行 .sh 脚本；请让该 skill 的作者提供跨平台的 .ts 版本。";
-
-/** F4：`where python` 常同时命中 `\WindowsApps\` 的 Store 执行别名 stub（per-user
- *  reparse point，沙箱账户必然拒访问）。排除这些后取第一个真实候选；无候选 = null
- *  （按"无全局 python"处理）。纯函数，供单测覆盖排除规则。 */
-export function pickWindowsPython(candidates: string[]): string | null {
-  const real = candidates
-    .map((c) => c.trim())
-    .filter((c) => c.length > 0 && !/\\WindowsApps\\/i.test(c));
-  return real[0] ?? null;
-}
-
-/** 宿主侧探测全局 python（非沙箱内，spawnSync 无害——那条铁律只针对沙箱子进程）。
- *  排除 WindowsApps stub 后返回绝对路径，探测不到返回 null。 */
-function findWindowsPython(): string | null {
-  try {
-    const r = Bun.spawnSync(["where.exe", "python"], { windowsHide: true });
-    if (r.exitCode !== 0) return null;
-    return pickWindowsPython(r.stdout.toString().split(/\r?\n/));
-  } catch {
-    return null;
-  }
-}
-
-/** 解释器 argv 前缀（spec §4.8）：
- *  - `.ts/.js/.mjs/.cjs` → 内嵌 Bun（`[execPath, "run"]`，需 `BUN_BE_BUN=1`），三平台一致；
- *  - `.py` → mac/linux 走 `python3`；Windows 探测全局 python（排除 Store 别名），无则 `no_python`；
- *  - `.sh` → mac/linux 走 `bash`；Windows 明确报 `unsupported_script`（建议 ts 版本）。
- *  opts 供测试注入 platform / findPython，产品调用走 process.platform + 真机探测。 */
+/** 解释器 argv 前缀。实现分 skill-interpreter-darwin / skill-interpreter-win32。 */
 export function interpreterFor(
   entry: string,
   opts: { platform?: NodeJS.Platform; findPython?: () => string | null } = {},
 ): string[] {
   const platform = opts.platform ?? process.platform;
-  if (/\.(ts|js|mjs|cjs)$/.test(entry)) return [process.execPath, "run"]; // 需 BUN_BE_BUN=1
-  if (/\.py$/.test(entry)) {
-    if (platform !== "win32") return ["python3"];
-    const py = (opts.findPython ?? findWindowsPython)();
-    if (!py) throw Object.assign(new Error(PY_NOT_FOUND_MSG), { code: "no_python" });
-    return [py];
-  }
-  if (/\.sh$/.test(entry)) {
-    if (platform === "win32") throw Object.assign(new Error(SH_UNSUPPORTED_MSG), { code: "unsupported_script" });
-    return ["bash"];
-  }
-  return [process.execPath, "run"]; // 默认按 JS 跑
+  return platform === "win32" ? win32Interpreter(entry, opts.findPython) : darwinInterpreter(entry);
 }
 
 export async function runSkillScript(
@@ -246,7 +207,7 @@ export async function runSkillScript(
   const sandboxBaseline: SandboxBaseline = {
     network: "open",
     envAllowlist: ENV_ALLOWLIST_VERSION,
-    ...(process.platform === "win32" ? { unsandboxed: true } : {}),
+    ...(runtimeFeatures().skillIsolation === "none" ? { unsandboxed: true } : {}),
   };
   appendAudit(
     { ts: now(), skillName: name, entry: params.entry, exitCode: res.exitCode, timedOut: res.timedOut, truncated: res.truncated, ms: now() - startedAt, sandbox: sandboxBaseline },
