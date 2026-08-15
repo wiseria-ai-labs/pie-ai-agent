@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { Switch } from "../../ui/Switch";
 import { AgentBrandIcon } from "../../hitl/agent-brand-icons";
 import { queryBridgeStatus, type BridgeStatus } from "../bridge-status";
+import { groupAgentsByBrand, inferFormKind } from "@/lib/local-agents-prefs";
 
 // Pie Link 安装包稳定 URL（release latest）——升级卡下载按钮直链（升级用户已知 Pie Link 是什么，直链摩擦最小）。
 // #403：按平台分流——macOS 下 .pkg、Windows 下 setup.exe。旧代码只有 mac .pkg，Windows 用户点
@@ -23,6 +24,30 @@ const TROUBLESHOOT_THRESHOLD = 1;
 
 type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean; kind?: "app" | "terminal" };
 
+type BrandRow = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  installed: boolean;
+  chips: string[];
+};
+
+function toBrandRows(agents: PanelAgent[]): BrandRow[] {
+  return groupAgentsByBrand(agents).map((b) => {
+    const installedForms = b.forms.filter((f) => f.installed);
+    const hasKind = b.forms.some((f) => f.kind);
+    return {
+      id: b.id,
+      name: !hasKind && b.forms.length === 1 ? b.forms[0].label : b.label,
+      enabled: b.forms.some((f) => f.enabled && f.installed),
+      installed: installedForms.length > 0,
+      chips: hasKind
+        ? installedForms.map((f) => (inferFormKind(f.id, f.kind) === "app" ? "App" : "Terminal"))
+        : [],
+    };
+  });
+}
+
 // Settings「本地 Agent」列表 — 一次性查询，无轮询（挂载/桥就绪/开关交互后各触发一次）。
 function queryLocalAgents(cb: (agents: PanelAgent[]) => void): void {
   try {
@@ -37,14 +62,6 @@ function queryLocalAgents(cb: (agents: PanelAgent[]) => void): void {
 
 // 本地打通开关 + 实时状态。开=请求 nativeMessaging（用户手势）→ SW onAdded 连桥；
 // 关=移除权限 → SW onRemoved 断桥。挂载期每 1.5s 轮询一次状态（连接是异步的）。
-/** agent 名称/kind 拆分：有 kind 时剥掉 label 里的 "(App)"/"(Terminal)" 尾缀显示两行；
- *  旧 daemon 无 kind → 整串 label 单行回退。 */
-function splitAgentLabel(a: PanelAgent): { name: string; sub: string | null } {
-  if (!a.kind) return { name: a.label, sub: null };
-  const name = a.label.replace(/\s*\((App|Terminal)\)\s*$/i, "");
-  const sub = a.kind === "app" ? "App" : "Terminal";
-  return { name, sub };
-}
 
 export function LocalBridgeSection() {
   const t = useT();
@@ -146,7 +163,8 @@ export function LocalBridgeSection() {
               ? ""
               : t("settings.localBridge.statusEnabledNotConnected");
 
-  const enabledAgents = agents.filter((a) => a.enabled);
+  const brandRows = useMemo(() => toBrandRows(agents), [agents]);
+  const enabledBrands = brandRows.filter((b) => b.enabled);
 
   return (
     <section className="flex flex-col gap-3">
@@ -252,21 +270,20 @@ export function LocalBridgeSection() {
             )}
             {status?.ready && agents.length > 0 && (
               <div className="flex flex-col gap-2.5 border-t border-line pt-3">
-                {enabledAgents.length > 0 && (
+                {enabledBrands.length > 0 && (
                   <>
                     <span className="caps text-fg-3">{t("settings.localBridge.agentsEnabledTitle")}</span>
-                    {enabledAgents.map((a) => {
-                      const { name, sub } = splitAgentLabel(a);
-                      return (
-                        <div key={a.id} className="flex items-center gap-2.5">
-                          <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-chip bg-field text-fg-2">
-                            <AgentBrandIcon agentId={a.id} size={14} />
-                          </span>
-                          <span className="text-[13px] text-fg-1">{name}</span>
-                          {sub && <span className="text-[11px] text-fg-3">{sub}</span>}
-                        </div>
-                      );
-                    })}
+                    {enabledBrands.map((b) => (
+                      <div key={b.id} className="flex items-center gap-2.5">
+                        <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-chip bg-field text-fg-2">
+                          <AgentBrandIcon agentId={b.id} size={14} />
+                        </span>
+                        <span className="text-[13px] text-fg-1">{b.name}</span>
+                        {b.chips.length > 0 && (
+                          <span className="text-[11px] text-fg-3">{b.chips.join(" · ")}</span>
+                        )}
+                      </div>
+                    ))}
                   </>
                 )}
                 <button
@@ -300,26 +317,34 @@ export function LocalBridgeSection() {
               </button>
               <span className="text-[13px] font-medium text-fg-1">{t("settings.localBridge.manageAgents")}</span>
             </div>
-            {agents.map((a) => {
-              const { name, sub } = splitAgentLabel(a);
-              const subLine = [sub, a.installed ? null : t("settings.localBridge.agentNotInstalled")]
+            {brandRows.map((b) => {
+              const subLine = [
+                b.chips.join(" · ") || null,
+                b.installed ? null : t("settings.localBridge.agentNotInstalled"),
+              ]
                 .filter(Boolean)
                 .join(" · ");
               return (
-                <div key={a.id} className="flex flex-col gap-1">
+                <div key={b.id} className="flex flex-col gap-1">
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-chip bg-field ${a.installed ? "text-fg-2" : "text-fg-3"}`}
+                      className={`flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-chip bg-field ${b.installed ? "text-fg-2" : "text-fg-3"}`}
                     >
-                      <AgentBrandIcon agentId={a.id} size={14} />
+                      <AgentBrandIcon agentId={b.id} size={14} />
                     </span>
                     <div className="flex grow flex-col">
-                      <span className={`text-[13px] ${a.installed ? "text-fg-1" : "text-fg-2"}`}>{name}</span>
+                      <span className={`text-[13px] ${b.installed ? "text-fg-1" : "text-fg-2"}`}>{b.name}</span>
                       {subLine && <span className="text-[11px] text-fg-3">{subLine}</span>}
                     </div>
-                    <Switch checked={a.enabled} onChange={(next) => onAgentToggle(a.id, next)} />
+                    <Switch
+                      checked={b.enabled}
+                      onChange={(next) => {
+                        if (!b.installed && next) return;
+                        onAgentToggle(b.id, next);
+                      }}
+                    />
                   </div>
-                  {failedId === a.id && (
+                  {failedId === b.id && (
                     <div className="text-[11px] text-fg-3">{t("settings.localBridge.agentEnableFailed")}</div>
                   )}
                 </div>

@@ -1,19 +1,39 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
 import type { HandoffParams, HandoffResult } from "@/types/local-bridge";
+import { groupAgentsByBrand, inferFormKind } from "@/lib/local-agents-prefs";
+
+export interface HandoffBrandOption {
+  id: string;
+  label: string;
+  forms: { id: string; kind: "app" | "terminal" }[];
+}
+
+export function groupHandoffBrands(
+  agents: { id: string; label: string; kind?: "app" | "terminal" }[],
+): HandoffBrandOption[] {
+  return groupAgentsByBrand(agents).map((b) => ({
+    id: b.id,
+    label: b.label,
+    forms: b.forms.flatMap((f) => {
+      const kind = inferFormKind(f.id, f.kind);
+      return kind ? [{ id: f.id, kind }] : [];
+    }),
+  }));
+}
 
 export interface HandoffToolDeps {
   run: (p: HandoffParams) => Promise<HandoffResult>;
-  /** 桥：本机已检测 agent 列表（旧 daemon 的单项降级在 local-bridge 层做）。 */
-  listAgents: () => Promise<{ id: string; label: string }[]>;
+  /** 桥：本机已检测形态列表（旧 daemon 的单项降级在 local-bridge 层做）。 */
+  listAgents: () => Promise<{ id: string; label: string; kind?: "app" | "terminal" }[]>;
   /**
-   * HITL 卡：用户选收件人 + 授权一步完成。返回选中的 agent id，null = 拒绝。
+   * HITL 卡：用户选品牌（及可选形态）+ 授权一步完成。返回选中的形态 id，null = 拒绝。
    * target 不由 LLM 传——被 untrusted 页面驱动的 LLM 无法诱导选收件人。
    */
   requestConsent: (p: {
     context: string;
     fileCount: number;
-    agents: { id: string; label: string }[];
+    brands: HandoffBrandOption[];
   }) => Promise<string | null>;
 }
 
@@ -66,7 +86,8 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
         ? (a.files as { name: string; content: string }[])
         : undefined;
       const agents = await deps.listAgents();
-      if (agents.length === 0) {
+      const brands = groupHandoffBrands(agents);
+      if (brands.length === 0) {
         return {
           success: false,
           error:
@@ -77,7 +98,7 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
       const target = await deps.requestConsent({
         context: a.context,
         fileCount: files?.length ?? 0,
-        agents,
+        brands,
       });
       if (target == null) {
         return { success: false, error: "User declined the hand-off." };
@@ -85,10 +106,16 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
       const result = await deps.run({ target, context: a.context, files });
       // fire-and-forget：无 untrusted 内容回传。dir 是 daemon 派生路径（可信），
       // 直接作 trusted observation 让 LLM 转述给用户去接着干。
-      const label = agents.find((x) => x.id === target)?.label ?? target;
+      const form = brands.flatMap((b) => b.forms).find((f) => f.id === target);
+      const brand = brands.find((b) => b.forms.some((f) => f.id === target));
+      const label = brand
+        ? `${brand.label}${form ? ` (${form.kind === "app" ? "App" : "Terminal"})` : ""}`
+        : (agents.find((x) => x.id === target)?.label ?? target);
       const started =
         result.mode === "app"
-          ? `The app was opened rooted at that folder; the user must send a message there to start the local agent.`
+          ? result.appLaunch === "deeplink"
+            ? `The app was opened rooted at that folder; the composer was prefilled with a short prompt. The user must send it to start the local agent.`
+            : `The app was opened rooted at that folder; the user must send a message there to start the local agent.`
           : `An interactive terminal session was opened there and is already running.`;
       return {
         success: true,

@@ -6,6 +6,8 @@ import {
   buildWindowsStartBat,
   windowsHandoffSpawn,
   resolveWindowsTerminal,
+  buildDeeplinkUrl,
+  HANDOFF_PROMPT,
 } from "../src/handoff";
 import { AGENT_CANDIDATES } from "../src/agents";
 import { setLogEnabled } from "../src/log";
@@ -119,20 +121,21 @@ test("rejects unsupported/injected target before building the script or spawning
   expect(h.spawns).toHaveLength(0);
 });
 
-test("app mode: writes CLAUDE.md convention, opens Claude app on the dir, no start.command", async () => {
+test("claude-app deeplink: encodes prompt+dir, no CLAUDE.md, no start.command", async () => {
   const h = harness();
   const r = await runHandoff({ target: "claude-app", context: "Continue the report" }, h.opts);
   expect(r.mode).toBe("app");
-  // CLAUDE.md 约定注入（app 无 prompt 注入面，靠目录内约定）
-  const claudeMd = h.writes.find((w) => w.path.endsWith("/CLAUDE.md"));
-  expect(claudeMd?.content).toContain("context.md");
-  // context.md 照旧落盘
+  expect(r.appLaunch).toBe("deeplink");
   expect(h.writes.some((w) => w.path.endsWith("context.md") && w.content === "Continue the report")).toBe(true);
-  // app 模式不写 start.command、不走 osascript
+  expect(h.writes.some((w) => w.path.endsWith("CLAUDE.md"))).toBe(false);
   expect(h.writes.some((w) => w.path.endsWith("start.command"))).toBe(false);
   expect(h.spawns).toHaveLength(1);
   expect(h.spawns[0].cmd).toBe("open");
-  expect(h.spawns[0].args).toEqual(["-a", "/Applications/Claude.app", r.dir]);
+  const url = h.spawns[0].args[0];
+  expect(url.startsWith("claude://code/new?")).toBe(true);
+  expect(url).toContain(`q=${encodeURIComponent(HANDOFF_PROMPT)}`);
+  expect(url).toContain(`folder=${encodeURIComponent(r.dir)}`);
+  expect(h.spawns[0].args).not.toContain("-a");
 });
 
 test("codex terminal mode: start.command execs codex (bin from static table, not wire)", async () => {
@@ -167,13 +170,13 @@ test("safeFileName rejects CLAUDE.md case-insensitively (app-mode reserved file)
   expect(() => safeFileName("claude.md")).toThrow();
 });
 
-test("open failure in app mode throws with the dir as manual fallback", async () => {
+test("open-a failure (no deeplink) throws with the dir as manual fallback", async () => {
   const h = harness();
   h.opts.spawn = async (cmd: string, args: string[], cwd: string) => {
     h.spawns.push({ cmd, args, cwd });
-    return { stdout: "", exitCode: 1, stderr: "Unable to find application named 'Claude'" };
+    return { stdout: "", exitCode: 1, stderr: "Unable to find application named 'Cursor'" };
   };
-  await expect(runHandoff({ target: "claude-app", context: "x" }, h.opts)).rejects.toThrow(
+  await expect(runHandoff({ target: "cursor-app", context: "x" }, h.opts)).rejects.toThrow(
     /failed to open[\s\S]*pie-handoffs/,
   );
 });
@@ -211,22 +214,67 @@ test("argv 模板：flag 形态（opencode --prompt）", async () => {
   );
 });
 
-test("app 模式按 convention 写引导文件：Claude → CLAUDE.md", async () => {
+test("cursor-app 无深链：写 AGENTS.md + open -a", async () => {
   const h = harness();
-  const r = await runHandoff({ target: "claude-app", context: "x" }, h.opts);
+  const r = await runHandoff({ target: "cursor-app", context: "x" }, h.opts);
   expect(r.mode).toBe("app");
-  const guide = h.writes.find((w) => w.path.endsWith("CLAUDE.md"));
-  expect(guide?.content).toContain("Read context.md");
-  expect(h.writes.find((w) => w.path.endsWith("AGENTS.md"))).toBeUndefined();
-  expect(h.spawns[0]).toMatchObject({ cmd: "open", args: ["-a", "/Applications/Claude.app", r.dir] });
-});
-
-test("app 模式按 convention 写引导文件：Codex → AGENTS.md", async () => {
-  const h = harness();
-  const r = await runHandoff({ target: "codex-app", context: "x" }, h.opts);
+  expect(r.appLaunch).toBe("open-a");
   const guide = h.writes.find((w) => w.path.endsWith("AGENTS.md"));
   expect(guide?.content).toContain("Read context.md");
   expect(h.writes.find((w) => w.path.endsWith("CLAUDE.md"))).toBeUndefined();
+  expect(h.spawns[0]).toMatchObject({ cmd: "open", args: ["-a", "/Applications/Cursor.app", r.dir] });
+});
+
+test("codex-app deeplink: prompt+path encoded, no AGENTS.md", async () => {
+  const h = harness();
+  const r = await runHandoff({ target: "codex-app", context: "x" }, h.opts);
+  expect(r.appLaunch).toBe("deeplink");
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(false);
+  const url = h.spawns[0].args[0];
+  expect(url.startsWith("codex://new?")).toBe(true);
+  expect(url).toContain(`prompt=${encodeURIComponent(HANDOFF_PROMPT)}`);
+  expect(url).toContain(`path=${encodeURIComponent(r.dir)}`);
+});
+
+test("buildDeeplinkUrl URL-encodes reserved characters in prompt and dir", () => {
+  const url = buildDeeplinkUrl(
+    "claude://code/new?q={prompt}&folder={dir}",
+    "a b&c=d",
+    "/Users/na me/pie-handoffs/2026-08-15-x",
+  );
+  expect(url).toBe(
+    "claude://code/new?q=a%20b%26c%3Dd&folder=%2FUsers%2Fna%20me%2Fpie-handoffs%2F2026-08-15-x",
+  );
+});
+
+test("deeplink non-zero falls back to open -a and writes convention", async () => {
+  const h = harness();
+  h.opts.spawn = async (cmd: string, args: string[], cwd: string) => {
+    h.spawns.push({ cmd, args, cwd });
+    if (args[0]?.startsWith("claude://")) {
+      return { stdout: "", exitCode: 1, stderr: "LSOpenURLsWithRole() failed" };
+    }
+    return { stdout: "", exitCode: 0 };
+  };
+  const r = await runHandoff({ target: "claude-app", context: "x" }, h.opts);
+  expect(r.appLaunch).toBe("open-a");
+  expect(h.spawns).toHaveLength(2);
+  expect(h.spawns[0].args[0].startsWith("claude://")).toBe(true);
+  expect(h.spawns[1]).toMatchObject({ cmd: "open", args: ["-a", "/Applications/Claude.app", r.dir] });
+  const guide = h.writes.find((w) => w.path.endsWith("CLAUDE.md"));
+  expect(guide?.content).toContain("Read context.md");
+});
+
+test("deeplink fail + open-a fail throws with the dir as manual fallback", async () => {
+  const h = harness();
+  h.opts.spawn = async (cmd: string, args: string[], cwd: string) => {
+    h.spawns.push({ cmd, args, cwd });
+    return { stdout: "", exitCode: 1, stderr: "Unable to find application named 'Claude'" };
+  };
+  await expect(runHandoff({ target: "claude-app", context: "x" }, h.opts)).rejects.toThrow(
+    /failed to open[\s\S]*pie-handoffs/,
+  );
+  expect(h.spawns).toHaveLength(2);
 });
 
 test("RESERVED 挡掉 agents.md（大小写不敏感）", () => {

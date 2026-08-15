@@ -12,9 +12,16 @@ import { log } from "./log";
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
 const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md", "agents.md"]);
 
-/** 交棒引导语：terminal 直接注入 argv，app 写进 convention 文件。 */
-const HANDOFF_PROMPT =
+/** 交棒引导语：terminal 注入 argv；深链预填 composer；无深链 / 回落写进 convention 文件。 */
+export const HANDOFF_PROMPT =
   "Read context.md in this directory for the handed-off context, then continue the task.";
+
+/** 深链模板：`{prompt}` / `{dir}` 占位，插入前 URL-encode。 */
+export function buildDeeplinkUrl(template: string, prompt: string, dir: string): string {
+  return template
+    .replaceAll("{prompt}", encodeURIComponent(prompt))
+    .replaceAll("{dir}", encodeURIComponent(dir));
+}
 
 /**
  * 单引号包裹 + 转义内部单引号。路径来自 which / 文件系统，可能含空格
@@ -159,17 +166,33 @@ export async function runHandoff(
   }
 
   if (agent.kind === "app") {
-    writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${HANDOFF_PROMPT}\n`);
     if (platform === "win32") {
       throw new Error(
         `handoff: ${agent.label} app form is not supported on Windows yet — open the folder manually: ${dir}`,
       );
     }
-    // app 直开：`open -a <bundle 路径> <dir>` → 会话根在该目录。无 prompt 注入面
-    // → 目录内的约定文件引导（Claude 系读 CLAUDE.md，Codex/Cursor 读 AGENTS.md）。
-    // 人到场发一句即开跑（mode 回传给扩展，observation 明示需发一句）。
-    // 无 shell、无 TCC，launch 比 Terminal 稳，但不自动开跑。
-    log("info", "handoff.open_app", { dir, target: agent.id, files: (params.files ?? []).length });
+    // 深链：一次带目录 + 预填短引导语，不自动发送。成功则不写约定文件。
+    if (agent.deeplink) {
+      const url = buildDeeplinkUrl(agent.deeplink.template, HANDOFF_PROMPT, dir);
+      log("info", "handoff.open_app", {
+        dir, target: agent.id, launch: "deeplink", files: (params.files ?? []).length,
+      });
+      const r = await spawn("open", [url], dir);
+      if (r.exitCode === 0) {
+        return { dir, mode: "app", appLaunch: "deeplink" };
+      }
+      log("warn", "handoff.deeplink_fallback", {
+        dir,
+        target: agent.id,
+        exitCode: r.exitCode,
+        stderr: (r.stderr ?? "").trim().slice(0, 300),
+      });
+    }
+    // 无深链（Cursor）或深链非零：回落 `open -a` + 约定文件。
+    writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${HANDOFF_PROMPT}\n`);
+    log("info", "handoff.open_app", {
+      dir, target: agent.id, launch: "open-a", files: (params.files ?? []).length,
+    });
     const r = await spawn("open", ["-a", agent.path, dir], dir);
     if (r.exitCode !== 0) {
       throw new Error(
@@ -177,7 +200,7 @@ export async function runHandoff(
           `open the folder manually in the app: ${dir}`,
       );
     }
-    return { dir, mode: "app" };
+    return { dir, mode: "app", appLaunch: "open-a" };
   }
 
   // 交互式会话脚本：cd 进目录、用初始 prompt 拉起 claude。**不带**

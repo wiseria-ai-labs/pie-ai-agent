@@ -213,6 +213,14 @@ export const enDict = {
     filesLabel: "Files to stage",
     allow: "Hand off",
     deny: "Cancel",
+    form: {
+      groupLabel: "Form",
+      app: "App",
+      terminal: "Terminal",
+      noteTerminal: "The terminal session starts automatically.",
+      noteApp: "The app opens with a short prompt prefilled; you send it to start (Claude asks to confirm the folder first).",
+      noteAppOpen: "The app opens this folder; send a message there to start.",
+    },
   },
   skillRunConfirm: {
     title: "Run a script from {name}?",

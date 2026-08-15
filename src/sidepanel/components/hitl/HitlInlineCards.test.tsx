@@ -80,7 +80,11 @@ describe("HitlInlineCards", () => {
         request={{
           requestId: "r3",
           kind: "handoff-to-agent",
-          payload: { context: "ctx", fileCount: 0, agents: [{ id: "claude-app", label: "Claude Code (App)" }] },
+          payload: {
+            context: "ctx",
+            fileCount: 0,
+            brands: [{ id: "claude", label: "Claude Code", forms: [{ id: "claude-app", kind: "app" }] }],
+          },
         }}
         respond={respond}
         {...base}

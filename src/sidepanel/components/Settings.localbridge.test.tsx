@@ -35,32 +35,27 @@ afterEach(() => cleanup());
 const READY = { "local-bridge:status": () => ({ hasPermission: true, ready: true }) };
 
 describe("LocalBridgeSection — enabled-only main view + manage subview", () => {
-  it("main view lists ONLY enabled agents, without switches", async () => {
+  it("main view lists ONLY enabled brands, without switches", async () => {
     mockSendMessage({ ...READY, "local-agents:list": () => ({ agents: AGENTS }) });
     render(<LocalBridgeSection />);
-    // 已启用：claude-app（两行文案：名称 + kind 副标）
     expect(await screen.findByText("Claude Code")).toBeTruthy();
-    expect(screen.getByText("App")).toBeTruthy();
-    // 未启用/未安装的不出现在主视图
+    expect(screen.getByText("App · Terminal")).toBeTruthy();
     expect(screen.queryByText("Codex")).toBeFalsy();
-    // 主视图无开关（唯一的 switch 是本地打通总开关）
     expect(screen.getAllByRole("switch")).toHaveLength(1);
   });
 
-  it("manage link opens the in-card subview with ALL agents + toggles; back returns", async () => {
+  it("manage link opens the in-card subview with ALL brands + toggles; back returns", async () => {
     mockSendMessage({ ...READY, "local-agents:list": () => ({ agents: AGENTS }) });
     render(<LocalBridgeSection />);
     fireEvent.click(await screen.findByText("Manage agents"));
-    // 子视图：全量三行（含未安装 Codex），出现 agent 开关
     expect(await screen.findByText("Codex")).toBeTruthy();
     expect(screen.getByText(/Not installed/)).toBeTruthy();
     expect(screen.getAllByRole("switch").length).toBeGreaterThan(1);
-    // 返回
     fireEvent.click(screen.getByLabelText("Back"));
     await waitFor(() => expect(screen.queryByText("Codex")).toBeFalsy());
   });
 
-  it("toggling an agent in the subview sends local-agents:toggle", async () => {
+  it("toggling a brand in the subview sends local-agents:toggle with the brand id", async () => {
     mockSendMessage({
       ...READY,
       "local-agents:list": () => ({ agents: AGENTS }),
@@ -69,12 +64,13 @@ describe("LocalBridgeSection — enabled-only main view + manage subview", () =>
     render(<LocalBridgeSection />);
     fireEvent.click(await screen.findByText("Manage agents"));
     const switches = await screen.findAllByRole("switch");
-    fireEvent.click(switches[1]); // 第一个 agent 行开关（index 0 是总开关）
+    fireEvent.click(switches[0]); // 管理子视图没有总开关，第一行是 Claude 品牌
     await waitFor(() => {
       expect(
-        chromeMock.runtime.sendMessage.mock.calls.some(
-          (c) => (c[0] as { type?: string }).type === "local-agents:toggle",
-        ),
+        chromeMock.runtime.sendMessage.mock.calls.some((c) => {
+          const msg = c[0] as { type?: string; id?: string };
+          return msg.type === "local-agents:toggle" && msg.id === "claude";
+        }),
       ).toBe(true);
     });
   });

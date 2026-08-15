@@ -208,6 +208,14 @@ export const jaDict = {
     filesLabel: "引き継ぐファイル",
     allow: "引き継ぐ",
     deny: "キャンセル",
+    form: {
+      groupLabel: "形態",
+      app: "App",
+      terminal: "Terminal",
+      noteTerminal: "引き継ぎ後、ターミナルが自動で開始します。",
+      noteApp: "App が開き、短い案内が入力済みです。送信してください（Claude は先にフォルダ確認します）。",
+      noteAppOpen: "App がそのフォルダを開きます。一文送ると開始します。",
+    },
   },
   skillRunConfirm: {
     title: "{name} のスクリプトを実行しますか？",

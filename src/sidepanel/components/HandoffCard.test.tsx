@@ -16,28 +16,72 @@ function renderCard(props: ComponentProps<typeof HandoffCard>) {
   );
 }
 
-const AGENTS = [
-  { id: "claude-app", label: "Claude Code (App)" },
-  { id: "codex-terminal", label: "Codex (Terminal)" },
+const BRANDS = [
+  {
+    id: "claude",
+    label: "Claude Code",
+    forms: [
+      { id: "claude-app", kind: "app" as const },
+      { id: "claude-terminal", kind: "terminal" as const },
+    ],
+  },
+  {
+    id: "codex",
+    label: "Codex / ChatGPT",
+    forms: [{ id: "codex-terminal", kind: "terminal" as const }],
+  },
 ];
 
-const PAYLOAD = { context: "REFACTOR THE THING", fileCount: 2, agents: AGENTS };
+const PAYLOAD = { context: "REFACTOR THE THING", fileCount: 2, brands: BRANDS };
 
 describe("HandoffCard", () => {
-  it("renders context verbatim + agent dropdown, first option preselected", () => {
+  it("renders context verbatim + brand dropdown, first brand preselected", () => {
     renderCard({ payload: PAYLOAD, onDecision: vi.fn() });
     expect(screen.getByText("REFACTOR THE THING")).toBeTruthy();
-    expect(screen.getByText(/2/)).toBeTruthy(); // 文件数可见
-    // 触发器显示预选第一项（候选表顺序 = app 优先）；展开后两条都在
+    expect(screen.getByText(/2/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Claude Code/ }));
     const options = screen.getAllByRole("option");
     expect(options).toHaveLength(2);
     expect(options[0].getAttribute("aria-selected")).toBe("true");
   });
 
-  it("allow returns the picked agent id", () => {
+  it("shows App/Terminal segment only when the selected brand has both forms; App is default", () => {
+    renderCard({ payload: PAYLOAD, onDecision: vi.fn() });
+    const app = screen.getByRole("button", { name: "App" });
+    const term = screen.getByRole("button", { name: "Terminal" });
+    expect(app.getAttribute("aria-pressed")).toBe("true");
+    expect(term.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByText(/prefilled/i)).toBeTruthy();
+  });
+
+  it("single-form brand hides the form segment", () => {
+    renderCard({
+      payload: { context: "x", fileCount: 0, brands: [BRANDS[1]] },
+      onDecision: vi.fn(),
+    });
+    expect(screen.queryByRole("button", { name: "App" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
+    expect(screen.getByText(/starts automatically/i)).toBeTruthy();
+  });
+
+  it("allow returns the default App form id", () => {
     const onDecision = vi.fn();
-    renderCard({ payload: { context: "x", fileCount: 0, agents: AGENTS }, onDecision });
+    renderCard({ payload: { context: "x", fileCount: 0, brands: BRANDS }, onDecision });
+    fireEvent.click(screen.getByText("Hand off"));
+    expect(onDecision).toHaveBeenCalledWith("claude-app");
+  });
+
+  it("switching to Terminal then allow returns the terminal form id", () => {
+    const onDecision = vi.fn();
+    renderCard({ payload: { context: "x", fileCount: 0, brands: BRANDS }, onDecision });
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    fireEvent.click(screen.getByText("Hand off"));
+    expect(onDecision).toHaveBeenCalledWith("claude-terminal");
+  });
+
+  it("switching brand to a single-form agent returns that form id", () => {
+    const onDecision = vi.fn();
+    renderCard({ payload: { context: "x", fileCount: 0, brands: BRANDS }, onDecision });
     fireEvent.click(screen.getByRole("button", { name: /Claude Code/ }));
     fireEvent.click(screen.getByRole("option", { name: /Codex/ }));
     fireEvent.click(screen.getByText("Hand off"));
@@ -46,12 +90,12 @@ describe("HandoffCard", () => {
 
   it("deny returns null", () => {
     const onDecision = vi.fn();
-    renderCard({ payload: { context: "x", fileCount: 0, agents: AGENTS }, onDecision });
+    renderCard({ payload: { context: "x", fileCount: 0, brands: BRANDS }, onDecision });
     fireEvent.click(screen.getByText("Cancel"));
     expect(onDecision).toHaveBeenCalledWith(null);
   });
 
-  it("dropdown options carry brand icons keyed by agent id", () => {
+  it("dropdown options carry brand icons keyed by brand id", () => {
     renderCard({ payload: PAYLOAD, onDecision: () => {} });
     fireEvent.click(screen.getByRole("button", { name: /Claude Code/ }));
     expect(document.querySelector('svg[data-brand="claude"]')).toBeTruthy();

@@ -15,12 +15,19 @@ describe("handoff_to_agent tool", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("grants: consent gets the agent list, run called with the picked id", async () => {
+  it("grants: consent gets brand groups, run called with the picked form id", async () => {
     const run = vi.fn(async () => ({ dir: "/Users/x/pie-handoffs/2026-07-07-do-it", mode: "terminal" as const }));
     const consent = vi.fn(async () => "codex-terminal");
     const tool = buildHandoffTool({ run, listAgents: async () => AGENTS, requestConsent: consent });
     const r = await tool.handler({ context: "do it", files: [{ name: "a.md", content: "x" }] }, {} as never);
-    expect(consent).toHaveBeenCalledWith({ context: "do it", fileCount: 1, agents: AGENTS });
+    expect(consent).toHaveBeenCalledWith({
+      context: "do it",
+      fileCount: 1,
+      brands: [
+        { id: "claude", label: "Claude Code", forms: [{ id: "claude-app", kind: "app" }] },
+        { id: "codex", label: "Codex", forms: [{ id: "codex-terminal", kind: "terminal" }] },
+      ],
+    });
     expect(run).toHaveBeenCalledWith({ target: "codex-terminal", context: "do it", files: [{ name: "a.md", content: "x" }] });
     expect(r.success).toBe(true);
     expect(r.observation).toContain("/Users/x/pie-handoffs/2026-07-07-do-it");
@@ -33,6 +40,19 @@ describe("handoff_to_agent tool", () => {
     const r = await tool.handler({ context: "do it" }, {} as never);
     expect(r.success).toBe(true);
     expect(r.observation).toMatch(/send a message/i);
+    expect(r.observation).not.toMatch(/prefilled/i);
+  });
+
+  it("deeplink appLaunch mentions the prefilled composer", async () => {
+    const run = vi.fn(async () => ({
+      dir: "/Users/x/pie-handoffs/2026-07-07-do-it",
+      mode: "app" as const,
+      appLaunch: "deeplink" as const,
+    }));
+    const tool = buildHandoffTool({ run, listAgents: async () => AGENTS, requestConsent: async () => "claude-app" });
+    const r = await tool.handler({ context: "do it" }, {} as never);
+    expect(r.success).toBe(true);
+    expect(r.observation).toMatch(/prefilled/i);
   });
 
   it("empty detection: structured error, no consent card, no run", async () => {

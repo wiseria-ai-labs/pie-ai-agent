@@ -42,8 +42,15 @@ export interface AgentCandidate {
   binPaths?: string[];
   /** app：按优先级探，命中第一个存在的；spawn 用命中的绝对路径。 */
   appPaths?: string[];
-  /** app：目录内的约定引导文件名（app 无 prompt 注入面，靠它引导）。 */
+  /** app：目录内的约定引导文件名（无深链或深链回落时靠它引导）。 */
   convention?: "CLAUDE.md" | "AGENTS.md";
+  /**
+   * app：有则走深链（打开 + 目录 + 预填短引导语，不自动发送）；无则 `open -a` + convention。
+   * 模板里 `{prompt}` / `{dir}` 占位，插入前 URL-encode。
+   */
+  deeplink?: {
+    template: string;
+  };
   /**
    * `false` = 该条命令/路径尚未在对应平台真机验证过——**detectAgents 默认排除**
    * （「未验证条目不得默认启用」，见 #364）。字段缺省视为已验证（mac 8 条历史条目无需触碰）。
@@ -55,7 +62,8 @@ export interface AgentCandidate {
 
 export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   { id: "claude-app", label: "Claude Code (App)", kind: "app",
-    appPaths: ["/Applications/Claude.app"], convention: "CLAUDE.md" },
+    appPaths: ["/Applications/Claude.app"], convention: "CLAUDE.md",
+    deeplink: { template: "claude://code/new?q={prompt}&folder={dir}" } },
   { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude",
     argv: ["{prompt}"], binPaths: ["~/.local/bin/claude"],
     // headless: `claude -p "<prompt>"`；--dangerously-skip-permissions 让 headless claude
@@ -66,7 +74,8 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // /Applications/ChatGPT.app 的 bundle id 实测就是它，没有独立的 Codex.app）。优先
   // Codex.app（万一 OpenAI 再拆回来），回落 ChatGPT.app。显示名合并成 "Codex / ChatGPT"。
   { id: "codex-app", label: "Codex / ChatGPT (App)", kind: "app",
-    appPaths: ["/Applications/Codex.app", "/Applications/ChatGPT.app"], convention: "AGENTS.md" },
+    appPaths: ["/Applications/Codex.app", "/Applications/ChatGPT.app"], convention: "AGENTS.md",
+    deeplink: { template: "codex://new?prompt={prompt}&path={dir}" } },
   // --dangerously-bypass-approvals-and-sandbox：产品拍板（2026-07-14 验收）——交棒要
   // 「到手即跑」，目录确认会卡住每一次 handoff（目录每次新建，信任记忆无效）。代价是
   // 交棒后的 codex 会话无审批、无沙箱，风险由用户在交棒动作本身承担。

@@ -204,6 +204,14 @@ export const zhTWDict = {
     filesLabel: "隨交棒檔案",
     allow: "交棒",
     deny: "取消",
+    form: {
+      groupLabel: "形態",
+      app: "App",
+      terminal: "Terminal",
+      noteTerminal: "交棒後終端機會自動開跑。",
+      noteApp: "交棒後 App 開啟並預填引導語，需你傳送（Claude 會先確認目錄）。",
+      noteAppOpen: "App 已開啟該目錄，需傳送一句才能開跑。",
+    },
   },
   skillRunConfirm: {
     title: "執行來自 {name} 的腳本？",

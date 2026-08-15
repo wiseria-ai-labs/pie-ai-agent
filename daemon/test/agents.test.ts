@@ -72,10 +72,17 @@ test("各家 headless 契约（已查实的命令 + 跳权限 flag）", () => {
   expect(byId["pi-terminal"].headlessArgv).toEqual(["-p", "{prompt}"]);
 });
 
-test("app 候选必须有 convention（无 prompt 注入面，只能靠引导文件）", () => {
+test("app 候选必须有 convention（无深链或深链回落靠引导文件）", () => {
   for (const c of AGENT_CANDIDATES) {
     if (c.kind === "app") expect(c.convention).toBeDefined();
   }
+});
+
+test("claude-app / codex-app 有深链模板；cursor-app 没有", () => {
+  const byId = Object.fromEntries(AGENT_CANDIDATES.map((c) => [c.id, c]));
+  expect(byId["claude-app"].deeplink?.template).toBe("claude://code/new?q={prompt}&folder={dir}");
+  expect(byId["codex-app"].deeplink?.template).toBe("codex://new?prompt={prompt}&path={dir}");
+  expect(byId["cursor-app"].deeplink).toBeUndefined();
 });
 
 test("opencode 走 --prompt flag，其余 terminal 走位置参数", () => {

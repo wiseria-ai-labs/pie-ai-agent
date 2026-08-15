@@ -8,14 +8,17 @@ import {
   HitlDetailGroup,
 } from "./hitl/HitlCardShell";
 import { AgentSelect } from "./hitl/AgentSelect";
+import type { HandoffBrandOption } from "@/lib/agent/tools/handoff";
 
-interface AgentOption {
-  id: string;
-  label: string;
-}
 interface Props {
-  payload: { context: string; fileCount: number; agents: AgentOption[] };
+  payload: { context: string; fileCount: number; brands: HandoffBrandOption[] };
   onDecision: (target: string | null) => void;
+}
+
+const APP_NO_DEEPLINK = new Set(["cursor-app"]);
+
+function defaultFormId(forms: HandoffBrandOption["forms"]): string {
+  return forms.find((f) => f.kind === "app")?.id ?? forms[0]?.id ?? "";
 }
 
 const HandoffIcon = () => (
@@ -32,7 +35,25 @@ const HandoffIcon = () => (
  */
 export function HandoffCard({ payload, onDecision }: Props) {
   const t = useT();
-  const [selected, setSelected] = useState(payload.agents[0]?.id ?? "");
+  const first = payload.brands[0];
+  const [brandId, setBrandId] = useState(first?.id ?? "");
+  const [formId, setFormId] = useState(defaultFormId(first?.forms ?? []));
+  const brand = payload.brands.find((b) => b.id === brandId) ?? first;
+  const selectedForm = brand?.forms.find((f) => f.id === formId) ?? brand?.forms[0];
+  const showFormSegment = (brand?.forms.length ?? 0) === 2;
+  const formNote =
+    selectedForm?.kind === "terminal"
+      ? t("handoff.form.noteTerminal")
+      : selectedForm?.id && APP_NO_DEEPLINK.has(selectedForm.id)
+        ? t("handoff.form.noteAppOpen")
+        : t("handoff.form.noteApp");
+
+  const onBrand = (id: string) => {
+    setBrandId(id);
+    const next = payload.brands.find((b) => b.id === id);
+    setFormId(defaultFormId(next?.forms ?? []));
+  };
+
   return (
     <HitlCardShell
       register="local"
@@ -45,7 +66,7 @@ export function HandoffCard({ payload, onDecision }: Props) {
           <HitlSecondaryButton onClick={() => onDecision(null)}>
             {t("handoff.deny")}
           </HitlSecondaryButton>
-          <HitlPrimaryButton register="local" onClick={() => onDecision(selected)}>
+          <HitlPrimaryButton register="local" onClick={() => onDecision(formId)}>
             {t("handoff.allow")}
           </HitlPrimaryButton>
         </>
@@ -53,10 +74,37 @@ export function HandoffCard({ payload, onDecision }: Props) {
     >
       <AgentSelect
         label={t("handoff.targetLabel")}
-        agents={payload.agents}
-        selected={selected}
-        onSelect={setSelected}
+        agents={payload.brands.map((b) => ({ id: b.id, label: b.label }))}
+        selected={brandId}
+        onSelect={onBrand}
       />
+      {showFormSegment && brand && (
+        <div className="flex flex-col gap-1.5">
+          <div
+            className="flex gap-0.5 rounded-lg border border-line bg-field p-0.5"
+            role="group"
+            aria-label={t("handoff.form.groupLabel")}
+          >
+            {brand.forms.map((f) => {
+              const pressed = f.id === formId;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  aria-pressed={pressed}
+                  onClick={() => setFormId(f.id)}
+                  className={`flex-1 rounded-md px-2.5 py-1 text-[12px] ${
+                    pressed ? "bg-canvas font-medium text-fg-1" : "text-fg-2 hover:text-fg-1"
+                  }`}
+                >
+                  {f.kind === "app" ? t("handoff.form.app") : t("handoff.form.terminal")}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <p className="text-[12px] leading-relaxed text-fg-3">{formNote}</p>
       <HitlDetailBlock>
         <HitlDetailGroup label={t("handoff.contextLabel")}>
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[17px] text-fg-2">
