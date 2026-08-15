@@ -82,6 +82,8 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
     expect(md).toMatch(/video-parser/);
     expect(md).toMatch(/parse\.ts/);
     expect(md).toMatch(/Do NOT call L3/);
+    expect(md).toMatch(/~\/\.pie\/bin|Install on the card|Local tools/);
+    expect(md).not.toMatch(/brew install/);
   });
 
   it("create_skill_from_recording instructs preserving cross-tab steps", () => {

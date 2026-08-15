@@ -152,6 +152,13 @@ export const zhCNDict = {
       troubleshootRestartExtension: "重启扩展",
       troubleshootFallback:
         "还是连不上？确认菜单栏有 Pie 图标，然后完全退出 Chrome（⌘Q，不是关闭窗口）再重新打开。",
+      helpersTitle: "本机工具",
+      helpersDescription:
+        "解析视频需要 yt-dlp 和 ffmpeg。Pie 可以代为下载，不必自己用 Homebrew。转写走官方算力（就绪后），不用安装 Whisper。",
+      helpersInstall: "安装缺少的工具",
+      helpersInstalling: "正在安装…",
+      helpersOk: "已就绪",
+      helpersMissing: "未安装",
     },
     searchProvider: {
       caps: "网页搜索",
@@ -214,6 +221,12 @@ export const zhCNDict = {
       "脚本将以你的本机权限在沙箱内运行：写入仅限本次会话的工作区，敏感目录拒绝读取，环境变量中的密钥已剥离。批准后本次会话内该 skill 均可运行脚本。",
     allow: "允许运行",
     deny: "拒绝",
+    helpersNeeded: "这个脚本需要几个本机工具。Pie 可以下载到 ~/.pie/bin，不用输入密码，也不用 Homebrew。",
+    helpersReady: "所需本机工具已就绪。",
+    helpersNeedUpgrade: "当前 Pie Link 太旧，无法代装工具。请升级 Pie Link，或自行安装 yt-dlp 和 ffmpeg。",
+    installAndAllow: "安装工具并允许",
+    installing: "正在安装…",
+    installFailed: "工具安装失败。请重试，或自行安装 yt-dlp 和 ffmpeg。",
   },
   chat: {
     elementPicker: {

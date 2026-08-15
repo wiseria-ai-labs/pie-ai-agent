@@ -13,12 +13,13 @@ import { runSkillScript } from "./skill-exec";
 import { readAuditTail } from "./audit";
 import { getStatus, markExtensionSocket, dropSocket, pollSkillRun, killSkillRun, killRunsForSocket } from "./status";
 import { seedBundledSkills } from "./bundled-skills";
+import { listSkillHelpers, ensureSkillHelpers } from "./skill-helpers";
 import { checkUpdate, applyUpdate } from "./update";
 import { isAddrInUseError } from "./daemon-launcher";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams,
   ListAuditParams, ListAuditResult, ReadSessionFileParams, DeleteSessionWorkspaceParams,
-  PollSkillRunParams, KillSkillRunParams,
+  PollSkillRunParams, KillSkillRunParams, EnsureSkillHelpersParams,
 } from "../../src/types/local-bridge";
 
 export async function handleMessage(
@@ -146,6 +147,23 @@ export async function handleMessage(
       } catch (e) {
         log("error", "kill_skill_run.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "kill_skill_run_failed", message: String(e) } });
+      }
+    }
+    case "list_skill_helpers": {
+      try {
+        return respond({ ok: true, result: listSkillHelpers() });
+      } catch (e) {
+        log("error", "list_skill_helpers.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "list_skill_helpers_failed", message: String(e) } });
+      }
+    }
+    case "ensure_skill_helpers": {
+      try {
+        const p = (msg.params ?? {}) as EnsureSkillHelpersParams;
+        return respond({ ok: true, result: await ensureSkillHelpers(p) });
+      } catch (e) {
+        log("error", "ensure_skill_helpers.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "ensure_skill_helpers_failed", message: String(e) } });
       }
     }
     case "read_session_file": {

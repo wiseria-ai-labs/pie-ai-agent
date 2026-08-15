@@ -14,6 +14,7 @@ import {
   endSkillRun,
 } from "./status";
 import { selectSkillSandbox } from "./skill-sandbox";
+import { prependBinDir } from "./skill-helpers";
 import type { SkillSandbox } from "./skill-sandbox";
 import type { RunSkillScriptParams, RunSkillScriptResult, SandboxBaseline } from "../../src/types/local-bridge";
 
@@ -30,6 +31,8 @@ export interface SkillExecDeps {
   auditPath?: string;
   /** env 白名单构建注入（测试用）：缺省走 buildSandboxEnv（login-shell PATH + 白名单擦除）。 */
   buildEnv?: (extra: Record<string, string>) => Record<string, string>;
+  /** PATH 前置的 helper 目录（缺省 ~/.pie/bin）。测试可注入。 */
+  binDir?: string;
   /** 发起这次 run 的 socket（断连收尸归属）。测试可省略。 */
   socket?: unknown;
 }
@@ -53,12 +56,14 @@ const ENV_PASSTHROUGH_KEYS = ["HOME", "TMPDIR", "LANG", "USER", "SHELL"] as cons
  */
 export function buildSandboxEnv(
   extra: Record<string, string>,
-  opts: { path?: string; env?: NodeJS.ProcessEnv } = {},
+  opts: { path?: string; env?: NodeJS.ProcessEnv; binDir?: string; platform?: NodeJS.Platform } = {},
 ): Record<string, string> {
   const src = opts.env ?? process.env;
   const out: Record<string, string> = {};
   const path = opts.path ?? getCachedUserPath();
-  if (path) out.PATH = path;
+  const binDir = opts.binDir ?? paths.binDir;
+  const platform = opts.platform ?? process.platform;
+  if (path || binDir) out.PATH = prependBinDir(path ?? "", binDir, platform);
   for (const k of ENV_PASSTHROUGH_KEYS) {
     const v = src[k];
     if (typeof v === "string") out[k] = v;
@@ -191,7 +196,8 @@ export async function runSkillScript(
   // Windows 改 passthrough（无 srt 沙箱设施可查），mac/linux srt 就绪由 srt 运行时保证——
   // 两端都无需前置就绪门，默认恒 ready；保留注入 seam 供测试与未来后端用。
   const readinessCheck = deps.readinessCheck ?? (async () => ({ ready: true }));
-  const buildEnv = deps.buildEnv ?? ((extra: Record<string, string>) => buildSandboxEnv(extra));
+  const buildEnv =
+    deps.buildEnv ?? ((extra: Record<string, string>) => buildSandboxEnv(extra, { binDir: deps.binDir }));
 
   const name = assertSkillName(params.name);
   const located = resolveSkillRoot(name, roots);

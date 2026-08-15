@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { SkillRunConfirmRequest } from "@/lib/agent/tools/skill-script";
 import {
@@ -27,6 +28,32 @@ const ShieldIcon = () => (
 export function SkillRunConfirmCard({ payload, onDecision }: Props) {
   const t = useT();
   const args = payload.args ?? [];
+  const helpers = payload.helpers ?? [];
+  const missing = helpers.filter((h) => !h.present);
+  const canInstall = !!payload.helpersInstallable && missing.length > 0;
+  const [busy, setBusy] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
+
+  const installAndAllow = async () => {
+    setBusy(true);
+    setInstallError(null);
+    try {
+      const res = (await chrome.runtime.sendMessage({
+        type: "skill-helpers:ensure",
+        ids: missing.map((h) => h.id),
+      })) as { helpers?: unknown; error?: string } | undefined;
+      if (chrome.runtime.lastError || res?.error) {
+        setInstallError(res?.error ?? chrome.runtime.lastError?.message ?? t("skillRunConfirm.installFailed"));
+        setBusy(false);
+        return;
+      }
+      onDecision(true);
+    } catch (e) {
+      setInstallError(e instanceof Error ? e.message : t("skillRunConfirm.installFailed"));
+      setBusy(false);
+    }
+  };
+
   return (
     <HitlCardShell
       register="local"
@@ -39,8 +66,16 @@ export function SkillRunConfirmCard({ payload, onDecision }: Props) {
           <HitlSecondaryButton onClick={() => onDecision(false)}>
             {t("skillRunConfirm.deny")}
           </HitlSecondaryButton>
-          <HitlPrimaryButton register="local" onClick={() => onDecision(true)}>
-            {t("skillRunConfirm.allow")}
+          <HitlPrimaryButton
+            register="local"
+            onClick={canInstall ? () => void installAndAllow() : () => onDecision(true)}
+            disabled={busy}
+          >
+            {busy
+              ? t("skillRunConfirm.installing")
+              : canInstall
+                ? t("skillRunConfirm.installAndAllow")
+                : t("skillRunConfirm.allow")}
           </HitlPrimaryButton>
         </>
       }
@@ -64,6 +99,19 @@ export function SkillRunConfirmCard({ payload, onDecision }: Props) {
           )}
         </HitlDetailGroup>
       </HitlDetailBlock>
+      {helpers.length > 0 && (
+        <div className="text-[12px] leading-[18px] text-fg-2">
+          {missing.length === 0
+            ? t("skillRunConfirm.helpersReady")
+            : canInstall
+              ? t("skillRunConfirm.helpersNeeded")
+              : t("skillRunConfirm.helpersNeedUpgrade")}
+          <div className="mt-1 font-mono text-[11px] text-fg-3">
+            {helpers.map((h) => `${h.id} ${h.present ? "✓" : "–"}`).join("  ·  ")}
+          </div>
+          {installError && <div className="mt-1 text-[11px] text-warning">{installError}</div>}
+        </div>
+      )}
       <div className="text-[11px] leading-[17px] text-fg-2">{t("skillRunConfirm.disclosure")}</div>
     </HitlCardShell>
   );

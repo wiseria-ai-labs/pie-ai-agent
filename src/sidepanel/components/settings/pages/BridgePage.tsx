@@ -23,6 +23,81 @@ const TROUBLESHOOT_THRESHOLD = 1;
 
 type PanelAgent = { id: string; label: string; installed: boolean; enabled: boolean; kind?: "app" | "terminal" };
 
+type HelperRow = { id: string; present: boolean };
+
+function LocalToolsBlock() {
+  const t = useT();
+  const [helpers, setHelpers] = useState<HelperRow[] | null>(null);
+  const [installable, setInstallable] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const refresh = () => {
+    try {
+      chrome.runtime.sendMessage({ type: "skill-helpers:status" }, (res) => {
+        if (chrome.runtime.lastError) return;
+        if (!res) return;
+        setHelpers(Array.isArray(res.helpers) ? (res.helpers as HelperRow[]) : []);
+        setInstallable(res.installable === true);
+      });
+    } catch {
+      /* noop */
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const missing = (helpers ?? []).filter((h) => !h.present);
+  const onInstall = () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      chrome.runtime.sendMessage(
+        { type: "skill-helpers:ensure", ids: missing.map((h) => h.id) },
+        (res) => {
+          setBusy(false);
+          if (chrome.runtime.lastError || res?.error) {
+            setErr(res?.error ?? chrome.runtime.lastError?.message ?? t("skillRunConfirm.installFailed"));
+            return;
+          }
+          refresh();
+        },
+      );
+    } catch (e) {
+      setBusy(false);
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  if (helpers == null) return null;
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
+      <div className="text-[13px] font-medium text-fg-1">{t("settings.localBridge.helpersTitle")}</div>
+      <div className="text-[12px] leading-relaxed text-fg-3">{t("settings.localBridge.helpersDescription")}</div>
+      <div className="font-mono text-[11px] text-fg-2">
+        {(helpers.length ? helpers : [{ id: "yt-dlp", present: false }, { id: "ffmpeg", present: false }]).map((h) => (
+          <div key={h.id}>
+            {h.id} · {h.present ? t("settings.localBridge.helpersOk") : t("settings.localBridge.helpersMissing")}
+          </div>
+        ))}
+      </div>
+      {installable && missing.length > 0 && (
+        <button
+          type="button"
+          onClick={onInstall}
+          disabled={busy}
+          className="self-start rounded border border-line px-2 py-0.5 text-[11px] text-fg-2 hover:text-fg-1 disabled:opacity-50"
+        >
+          {busy ? t("settings.localBridge.helpersInstalling") : t("settings.localBridge.helpersInstall")}
+        </button>
+      )}
+      {err && <div className="text-[11px] text-warning">{err}</div>}
+    </div>
+  );
+}
+
 // Settings「本地 Agent」列表 — 一次性查询，无轮询（挂载/桥就绪/开关交互后各触发一次）。
 function queryLocalAgents(cb: (agents: PanelAgent[]) => void): void {
   try {
@@ -250,6 +325,7 @@ export function LocalBridgeSection() {
                 </div>
               </div>
             )}
+            {status?.ready && <LocalToolsBlock />}
             {status?.ready && agents.length > 0 && (
               <div className="flex flex-col gap-2.5 border-t border-line pt-3">
                 {enabledAgents.length > 0 && (

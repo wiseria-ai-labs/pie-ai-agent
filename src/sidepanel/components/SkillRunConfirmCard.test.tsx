@@ -37,4 +37,23 @@ describe("SkillRunConfirmCard", () => {
     render(<SkillRunConfirmCard payload={{ ...payload, args: [] }} onDecision={vi.fn()} />);
     expect(screen.getByText("None")).toBeTruthy();
   });
+
+  it("missing helpers + installable → Install tools & allow, not Allow & run", () => {
+    render(
+      <SkillRunConfirmCard
+        payload={{
+          ...payload,
+          helpersInstallable: true,
+          helpers: [
+            { id: "yt-dlp", present: false },
+            { id: "ffmpeg", present: false },
+          ],
+        }}
+        onDecision={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Install tools & allow")).toBeTruthy();
+    expect(screen.queryByText("Allow & run")).toBeNull();
+    expect(screen.getByText(/yt-dlp –/)).toBeTruthy();
+  });
 });

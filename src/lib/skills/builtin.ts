@@ -298,15 +298,17 @@ Only after the No-captions path above (you genuinely looked). If the user
 still needs the spoken content and Pie Link is connected:
 1. run_skill_script({ skillId: "video-parser", entry: "parse.ts",
    args: [<the page URL>] }). First run in the session will pause for the
-   user to approve. This downloads via yt-dlp on the user's machine — it
-   can take minutes; the user can abort.
+   user to approve. If yt-dlp/ffmpeg are missing, the confirmation card
+   offers to download them into ~/.pie/bin — do NOT tell the user to brew
+   or pip install anything. This can take minutes; the user can abort.
 2. The script writes frames/*.jpg plus optional transcript.txt / audio.wav
    into the session workspace. Read text with read_skill_output({ path });
    read a frame with read_skill_output({ path: "frames/..." }) — image
    paths come back as pictures, not text.
-3. If the script exits saying yt-dlp/ffmpeg are missing, relay the install
-   guide. If video-parser is an unknown skill, Pie Link is off or too old —
-   tell the user to enable Local integration / update Pie Link.
+3. If the script exits NEED_HELPERS, the user still needs to tap Install on
+   the card or in Settings → Local tools. Relay that — do not invent brew
+   commands as the primary path. If video-parser is unknown, Pie Link is off
+   or too old — tell the user to enable Local integration / update Pie Link.
 4. Never pass cookies or ask the user to log the daemon into the site.
    Logged-in-only videos are out of scope.
 

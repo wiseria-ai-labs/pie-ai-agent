@@ -16,6 +16,9 @@ import {
   type PollSkillRunResult,
   type KillSkillRunParams,
   type KillSkillRunResult,
+  type ListSkillHelpersResult,
+  type EnsureSkillHelpersParams,
+  type EnsureSkillHelpersResult,
   type ReadSessionFileParams,
   type ReadSessionFileResult,
   type DeleteSessionWorkspaceParams,
@@ -341,6 +344,14 @@ export async function requestPollSkillRun(p: PollSkillRunParams): Promise<PollSk
 }
 export async function requestKillSkillRun(p: KillSkillRunParams): Promise<KillSkillRunResult> {
   return (await send("kill_skill_run", p)) as KillSkillRunResult;
+}
+export async function requestListSkillHelpers(): Promise<ListSkillHelpersResult> {
+  return (await send("list_skill_helpers", {})) as ListSkillHelpersResult;
+}
+export async function requestEnsureSkillHelpers(
+  p: EnsureSkillHelpersParams = {},
+): Promise<EnsureSkillHelpersResult> {
+  return (await send("ensure_skill_helpers", p)) as EnsureSkillHelpersResult;
 }
 /** 读回 session workspace 内产物（read_skill_output tool → 此 RPC）。 */
 export async function requestReadSessionFile(p: ReadSessionFileParams): Promise<ReadSessionFileResult> {

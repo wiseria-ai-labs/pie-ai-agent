@@ -156,6 +156,8 @@ import {
   requestListAgents,
   bridgeHasSkillFs,
   requestListAudit,
+  requestListSkillHelpers,
+  requestEnsureSkillHelpers,
   requestDeleteSessionWorkspace,
   setBridgeReconnectAction,
 } from "./local-bridge";
@@ -806,6 +808,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, reason: String(e) }));
     return true; // async response
+  }
+
+  // Confirm card / Settings：Pie 代装 yt-dlp + ffmpeg 到 ~/.pie/bin。
+  if (message?.type === "skill-helpers:status") {
+    (async () => {
+      if (!isBridgeReady()) return { helpers: [], installable: false };
+      try {
+        return await requestListSkillHelpers();
+      } catch {
+        return { helpers: [], installable: false };
+      }
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ helpers: [], installable: false }));
+    return true;
+  }
+  if (message?.type === "skill-helpers:ensure") {
+    const ids = (message as { ids?: string[] }).ids;
+    (async () => {
+      try {
+        return await requestEnsureSkillHelpers({
+          ids: ids as import("@/types/local-bridge").SkillHelperId[] | undefined,
+        });
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) };
+      }
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ error: String(e) }));
+    return true;
   }
 
   // Settings「本地打通」— 最近脚本执行审计。旧 daemon（无 list_audit）→ 空列表。

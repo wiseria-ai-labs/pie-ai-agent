@@ -63,6 +63,7 @@ function makeTool(overrides: Partial<SkillScriptDeps> = {}) {
       pollRun: overrides.pollRun,
       killRun: overrides.killRun,
       onProgress: overrides.onProgress,
+      listHelpers: overrides.listHelpers,
     }),
     runOnDaemon,
     confirmSkillRun,
@@ -249,6 +250,46 @@ describe("run_skill_script — 运行确认层（ADR 0007 skill-run-confirm）",
     // 执行参数里没有任何「已批准」字段（LLM 不可自批）。
     expect(calls[0]).toMatchObject({ name: "disk-tool", entry: "scripts/run.sh", args: ["https://x/v"], sessionId: SID });
     expect(typeof calls[0].runId).toBe("string");
+  });
+
+  it("video-parser 确认卡带 helper 状态（缺工具时 installable）", async () => {
+    const confirmSkillRun = vi.fn(async () => false);
+    const listHelpers = vi.fn(async () => ({
+      installable: true as const,
+      helpers: [
+        { id: "yt-dlp" as const, present: false },
+        { id: "ffmpeg" as const, present: true, path: "/opt/homebrew/bin/ffmpeg", source: "path" as const },
+      ],
+    }));
+    const { tool } = makeTool({
+      getSource: () =>
+        fakeSource([
+          {
+            id: "video-parser",
+            name: "Video Parser",
+            description: "d",
+            builtIn: false,
+            origin: "disk",
+            files: ["SKILL.md", "scripts/parse.ts"],
+            runnableScripts: ["parse.ts"],
+            createdAt: 0,
+          },
+        ]),
+      confirmSkillRun,
+      listHelpers,
+    });
+    await tool.handler({ skillId: "video-parser", entry: "parse.ts", args: ["https://x"] }, ctx);
+    expect(listHelpers).toHaveBeenCalled();
+    expect(confirmSkillRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skillId: "video-parser",
+        helpersInstallable: true,
+        helpers: [
+          { id: "yt-dlp", present: false },
+          { id: "ffmpeg", present: true, path: "/opt/homebrew/bin/ffmpeg", source: "path" },
+        ],
+      }),
+    );
   });
 
   it("确认被拒 → declined 错误，不执行", async () => {

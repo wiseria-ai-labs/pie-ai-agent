@@ -9,7 +9,10 @@ import type {
   ReadSessionFileParams,
   ReadSessionFileResult,
   PollSkillRunResult,
+  ListSkillHelpersResult,
+  SkillHelperStatus,
 } from "@/types/local-bridge";
+import { SKILL_REQUIRED_HELPERS } from "@/types/local-bridge";
 import { resizeSW } from "@/lib/images/resize-sw";
 
 /** skill 运行确认卡 payload（ADR 0007）：用户看得到这次要跑哪个 skill 的哪个脚本、
@@ -24,6 +27,10 @@ export interface SkillRunConfirmRequest {
   entry: string;
   /** 本次的 CLI 参数全文（含视频 URL 等，用户看得到这次要干什么） */
   args: string[];
+  /** 该 skill 声明的本机 helper（yt-dlp / ffmpeg）及是否已就绪。缺省 = 无依赖。 */
+  helpers?: SkillHelperStatus[];
+  /** 当前 Pie Link 能否代装 helper。旧 daemon 为 false。 */
+  helpersInstallable?: boolean;
 }
 
 /**
@@ -70,6 +77,8 @@ export interface SkillScriptDeps {
   killRun?: (runId: string) => Promise<void>;
   /** 把 poll 快照交给 loop → panel。 */
   onProgress?: (p: PollSkillRunResult) => void;
+  /** 查 ~/.pie/bin + PATH 上的 yt-dlp/ffmpeg。旧 daemon 无此 RPC 时不传。 */
+  listHelpers?: () => Promise<ListSkillHelpersResult>;
 }
 
 function isStringArray(x: unknown): x is string[] {
@@ -211,6 +220,21 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
       }
       const finalArgs = argv ?? [];
 
+      const needed = SKILL_REQUIRED_HELPERS[a.skillId] ?? [];
+      let helpers: SkillHelperStatus[] | undefined;
+      let helpersInstallable = false;
+      if (needed.length > 0 && deps.listHelpers) {
+        try {
+          const st = await deps.listHelpers();
+          helpersInstallable = st.installable === true;
+          helpers = needed.map(
+            (id) => st.helpers.find((h) => h.id === id) ?? { id, present: false },
+          );
+        } catch {
+          helpers = needed.map((id) => ({ id, present: false }));
+        }
+      }
+
       // 运行确认（ADR 0007）先于执行：SW 查本会话对该 skill 的批准记录，未批准则弹确认卡。
       // 批准信号由 panel 直达 SW，不进 tool schema——LLM 不能自批（旧的
       // grantApproved/approvedEnvelopeHash 参数注入路径随信封一起删除）。
@@ -222,6 +246,7 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
           description: skillEntry.description,
           entry,
           args: finalArgs,
+          ...(helpers ? { helpers, helpersInstallable } : {}),
         });
       } catch {
         return {

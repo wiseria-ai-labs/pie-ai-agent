@@ -50,11 +50,11 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, unlinkSync, exists
 import { join } from "path";
 
 const INSTALL =
-  "Missing tools. Install both, then retry:\\n" +
-  "  macOS:   brew install yt-dlp ffmpeg\\n" +
-  "  Ubuntu:  sudo apt install yt-dlp ffmpeg\\n" +
-  "  Windows: winget install yt-dlp.yt-dlp Gyan.FFmpeg\\n" +
-  "Optional transcription: pipx install openai-whisper   # or brew install whisper-cpp";
+  "NEED_HELPERS: yt-dlp,ffmpeg\\n" +
+  "Pie can install these into ~/.pie/bin (Settings → Local integration → Local tools,\\n" +
+  "or allow the install prompt on the confirmation card). No Homebrew or admin password.\\n" +
+  "Transcription uses Pie official compute when available — do not install Whisper yourself." +
+  "\\nManual fallback: brew install yt-dlp ffmpeg   |   winget install yt-dlp.yt-dlp Gyan.FFmpeg";
 
 function which(cmd: string): string | null {
   const isWin = process.platform === "win32";

@@ -157,6 +157,37 @@ export interface KillSkillRunParams {
 export interface KillSkillRunResult {
   ok: true;
 }
+
+/** Pie 代管的本机 helper（下到 ~/.pie/bin，不要求用户自己 brew/apt）。 */
+export type SkillHelperId = "yt-dlp" | "ffmpeg";
+
+/** skill id → 跑脚本前必须在 PATH / ~/.pie/bin 里的 helper。扩展与 daemon 共用。 */
+export const SKILL_REQUIRED_HELPERS: Readonly<Record<string, readonly SkillHelperId[]>> = {
+  "video-parser": ["yt-dlp", "ffmpeg"],
+};
+
+export interface SkillHelperStatus {
+  id: SkillHelperId;
+  present: boolean;
+  /** 解析到的绝对路径；缺省 = 未找到。 */
+  path?: string;
+  /** pie-bin = ~/.pie/bin 里 Pie 下的；path = 用户自己装的。 */
+  source?: "pie-bin" | "path";
+}
+
+export interface ListSkillHelpersResult {
+  helpers: SkillHelperStatus[];
+  /** 新 daemon 恒 true。旧 daemon 无此 method → 扩展回落「请升级 Pie Link / 自行安装」。 */
+  installable: true;
+}
+
+export interface EnsureSkillHelpersParams {
+  /** 要补齐的 helper；缺省 = 全部已知 helper。 */
+  ids?: SkillHelperId[];
+}
+export interface EnsureSkillHelpersResult {
+  helpers: SkillHelperStatus[];
+}
 export interface RunSkillScriptResult {
   /** 脚本 stdout，调用方包 <untrusted_skill_content> */
   output: string;
@@ -317,6 +348,8 @@ export interface BridgeRequest {
     | "run_skill_script"
     | "poll_skill_run"
     | "kill_skill_run"
+    | "list_skill_helpers"
+    | "ensure_skill_helpers"
     | "read_session_file"
     | "delete_session_workspace"
     | "write_skill"

@@ -86,6 +86,11 @@ overwrites a copy you edited). It is the reference long-running skill:
 - no 60 s timeout — the user can abort; the card shows elapsed + last stdout
 - JPEG paths are read back with `read_skill_output` and arrive as pictures
 
+Pie can download `yt-dlp` and `ffmpeg` into `~/.pie/bin` (Settings → Local
+integration, or the confirmation card). Users should not need Homebrew.
+Transcription is official/BYOK model compute — do not ask them to install
+Whisper.
+
 Copy that shape for any other minute-scale local pipeline.
 
 ## Cross-platform scripts

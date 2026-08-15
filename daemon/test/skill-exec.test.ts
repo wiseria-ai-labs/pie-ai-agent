@@ -113,6 +113,8 @@ test("buildSandboxEnv: only whitelisted keys pass through; secrets are erased", 
     { BUN_BE_BUN: "1", PIE_SKILL_DIR: "/s", PIE_WORKSPACE: "/w" },
     {
       path: "/opt/homebrew/bin:/usr/bin",
+      binDir: "/Users/u/.pie/bin",
+      platform: "darwin",
       env: {
         HOME: "/home/u",
         TMPDIR: "/tmp",
@@ -129,7 +131,7 @@ test("buildSandboxEnv: only whitelisted keys pass through; secrets are erased", 
     },
   );
   // login-shell PATH 覆盖了继承的 PATH
-  expect(env.PATH).toBe("/opt/homebrew/bin:/usr/bin");
+  expect(env.PATH).toBe("/Users/u/.pie/bin:/opt/homebrew/bin:/usr/bin");
   // 白名单键放行
   expect(env.HOME).toBe("/home/u");
   expect(env.TMPDIR).toBe("/tmp");
