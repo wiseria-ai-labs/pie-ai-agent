@@ -157,13 +157,6 @@ export const es419Dict = {
       troubleshootRestartExtension: "Reiniciar extensión",
       troubleshootFallback:
         "¿Sigue sin conectar? Asegúrate de que el ícono de Pie esté en la barra de menú y luego cierra Chrome por completo (⌘Q, no solo la ventana) y vuelve a abrirlo.",
-      helpersTitle: "Herramientas locales",
-      helpersDescription:
-        "Analizar video necesita yt-dlp y ffmpeg. Pie puede descargarlos — no hace falta Homebrew. La transcripción usa el cómputo oficial de Pie cuando esté listo; no instales Whisper.",
-      helpersInstall: "Instalar herramientas faltantes",
-      helpersInstalling: "Instalando…",
-      helpersOk: "Listo",
-      helpersMissing: "No instalado",
     },
     searchProvider: {
       caps: "Proveedor de búsqueda",
@@ -226,14 +219,6 @@ export const es419Dict = {
       "El script se ejecuta con tus permisos de usuario dentro de un sandbox: la escritura se limita al espacio de trabajo de esta sesión, la lectura de carpetas sensibles está bloqueada y los secretos se eliminan de su entorno. Al aprobar, esta skill podrá ejecutar scripts durante el resto de esta sesión.",
     allow: "Permitir y ejecutar",
     deny: "Rechazar",
-    helpersNeeded:
-      "Este script necesita unas herramientas locales. Pie puede descargarlas en ~/.pie/bin — sin contraseña de administrador ni Homebrew.",
-    helpersReady: "Las herramientas locales necesarias están listas.",
-    helpersNeedUpgrade:
-      "Esta Pie Link es demasiado antigua para instalar las herramientas. Actualízala, o instala yt-dlp y ffmpeg tú.",
-    installAndAllow: "Instalar herramientas y permitir",
-    installing: "Instalando…",
-    installFailed: "No se pudieron instalar las herramientas. Inténtalo de nuevo o instala yt-dlp y ffmpeg tú.",
   },
   chat: {
     elementPicker: {

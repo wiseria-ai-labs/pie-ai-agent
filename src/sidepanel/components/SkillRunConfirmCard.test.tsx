@@ -38,22 +38,10 @@ describe("SkillRunConfirmCard", () => {
     expect(screen.getByText("None")).toBeTruthy();
   });
 
-  it("missing helpers + installable → Install tools & allow, not Allow & run", () => {
-    render(
-      <SkillRunConfirmCard
-        payload={{
-          ...payload,
-          helpersInstallable: true,
-          helpers: [
-            { id: "yt-dlp", present: false },
-            { id: "ffmpeg", present: false },
-          ],
-        }}
-        onDecision={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("Install tools & allow")).toBeTruthy();
-    expect(screen.queryByText("Allow & run")).toBeNull();
-    expect(screen.getByText(/yt-dlp –/)).toBeTruthy();
+  it("does not mention local helper binaries", () => {
+    render(<SkillRunConfirmCard payload={payload} onDecision={vi.fn()} />);
+    expect(screen.queryByText(/yt-dlp/i)).toBeNull();
+    expect(screen.queryByText(/ffmpeg/i)).toBeNull();
+    expect(screen.queryByText(/Install tools/i)).toBeNull();
   });
 });

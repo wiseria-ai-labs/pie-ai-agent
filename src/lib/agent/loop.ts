@@ -47,7 +47,6 @@ import {
   requestRunSkillScript,
   requestPollSkillRun,
   requestKillSkillRun,
-  requestListSkillHelpers,
   requestReadSessionFile,
 } from "@/background/local-bridge";
 import { filterUsableAgents, filterHeadlessBackends, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
@@ -2034,7 +2033,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         killRun: async (runId) => {
           await requestKillSkillRun({ runId });
         },
-        listHelpers: () => requestListSkillHelpers(),
         onProgress: (p) => {
           if (!liveStepMeta || liveStepMeta.tool !== "run_skill_script") return;
           emitStep({

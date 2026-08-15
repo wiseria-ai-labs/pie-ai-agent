@@ -10,12 +10,7 @@ import {
 } from "./skill-script";
 import type { SkillEntry, SkillSource } from "@/lib/skills/source";
 import type { RunSkillScriptOutcome } from "@/background/local-bridge";
-import {
-  SKILL_REQUIRED_HELPERS,
-  type RunSkillScriptParams,
-  type ReadSessionFileParams,
-  type SkillHelperId,
-} from "@/types/local-bridge";
+import type { RunSkillScriptParams, ReadSessionFileParams } from "@/types/local-bridge";
 
 // #296 — handler 读 ctx.sessionId 并透传给 daemon。传一个 UUID 形状的 stub。
 const SID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -68,7 +63,6 @@ function makeTool(overrides: Partial<SkillScriptDeps> = {}) {
       pollRun: overrides.pollRun,
       killRun: overrides.killRun,
       onProgress: overrides.onProgress,
-      listHelpers: overrides.listHelpers,
     }),
     runOnDaemon,
     confirmSkillRun,
@@ -257,38 +251,26 @@ describe("run_skill_script — 运行确认层（ADR 0007 skill-run-confirm）",
     expect(typeof calls[0].runId).toBe("string");
   });
 
-  it("声明了 required helpers 的 skill，确认卡带 helper 状态（缺工具时 installable）", async () => {
-    const map = SKILL_REQUIRED_HELPERS as Record<string, readonly SkillHelperId[]>;
-    map["disk-tool"] = ["yt-dlp", "ffmpeg"];
-    try {
-      const confirmSkillRun = vi.fn(async () => false);
-      const listHelpers = vi.fn(async () => ({
-        installable: true as const,
-        helpers: [
-          { id: "yt-dlp" as const, present: false },
-          { id: "ffmpeg" as const, present: true, path: "/opt/homebrew/bin/ffmpeg", source: "path" as const },
-        ],
-      }));
-      const { tool } = makeTool({
-        getSource: () => fakeSource([diskEntry()]),
-        confirmSkillRun,
-        listHelpers,
-      });
-      await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh", args: ["https://x"] }, ctx);
-      expect(listHelpers).toHaveBeenCalled();
-      expect(confirmSkillRun).toHaveBeenCalledWith(
-        expect.objectContaining({
-          skillId: "disk-tool",
-          helpersInstallable: true,
-          helpers: [
-            { id: "yt-dlp", present: false },
-            { id: "ffmpeg", present: true, path: "/opt/homebrew/bin/ffmpeg", source: "path" },
-          ],
-        }),
-      );
-    } finally {
-      delete map["disk-tool"];
-    }
+  it("确认卡 payload 不含 helper 状态", async () => {
+    const seen: SkillRunConfirmRequest[] = [];
+    const confirmSkillRun = vi.fn(async (p: SkillRunConfirmRequest) => {
+      seen.push(p);
+      return false;
+    });
+    const { tool } = makeTool({
+      getSource: () => fakeSource([diskEntry()]),
+      confirmSkillRun,
+    });
+    await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh", args: ["https://x"] }, ctx);
+    expect(seen[0]).toEqual({
+      skillId: "disk-tool",
+      skillName: "disk-tool",
+      description: "does a thing",
+      entry: "scripts/run.sh",
+      args: ["https://x"],
+    });
+    expect("helpers" in seen[0]).toBe(false);
+    expect("helpersInstallable" in seen[0]).toBe(false);
   });
 
   it("确认被拒 → declined 错误，不执行", async () => {

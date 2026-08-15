@@ -155,13 +155,6 @@ export const enDict = {
       troubleshootRestartExtension: "Restart extension",
       troubleshootFallback:
         "Still not connecting? Make sure the Pie icon is in the menu bar, then fully quit Chrome (⌘Q — not just closing the window) and reopen it.",
-      helpersTitle: "Local tools",
-      helpersDescription:
-        "Video parsing needs yt-dlp and ffmpeg. Pie can download them here — you don't have to use Homebrew. Transcription uses Pie's official compute when available; no need to install Whisper.",
-      helpersInstall: "Install missing tools",
-      helpersInstalling: "Installing…",
-      helpersOk: "Ready",
-      helpersMissing: "Not installed",
     },
     searchProvider: {
       caps: "Search provider",
@@ -230,14 +223,6 @@ export const enDict = {
       "The script runs with your user permissions inside a sandbox: writes limited to this session's workspace, sensitive folders blocked from reading, and secrets stripped from its environment. Approving lets this skill run scripts for the rest of this session.",
     allow: "Allow & run",
     deny: "Deny",
-    helpersNeeded:
-      "This script needs a couple of local tools. Pie can download them into ~/.pie/bin — no admin password, no Homebrew.",
-    helpersReady: "Required local tools are ready.",
-    helpersNeedUpgrade:
-      "This Pie Link is too old to install tools for you. Update Pie Link, or install yt-dlp and ffmpeg yourself.",
-    installAndAllow: "Install tools & allow",
-    installing: "Installing…",
-    installFailed: "Couldn't install the tools. Try again, or install yt-dlp and ffmpeg yourself.",
   },
   chat: {
     elementPicker: {

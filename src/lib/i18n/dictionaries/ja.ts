@@ -156,13 +156,6 @@ export const jaDict = {
       troubleshootRestartExtension: "拡張機能を再起動",
       troubleshootFallback:
         "まだ接続できませんか？ メニューバーに Pie アイコンがあるか確認し、Chrome を完全に終了し（⌘Q。ウィンドウを閉じるだけでは不十分）、開き直してください。",
-      helpersTitle: "ローカルツール",
-      helpersDescription:
-        "動画の解析には yt-dlp と ffmpeg が必要です。Pie が代わりにダウンロードします。Homebrew は不要です。文字起こしは公式の計算資源（準備でき次第）を使い、Whisper のインストールは不要です。",
-      helpersInstall: "足りないツールを入れる",
-      helpersInstalling: "インストール中…",
-      helpersOk: "準備完了",
-      helpersMissing: "未インストール",
     },
     searchProvider: {
       caps: "検索プロバイダー",
@@ -225,12 +218,6 @@ export const jaDict = {
       "スクリプトはあなたのユーザー権限でサンドボックス内で実行されます。書き込みはこのセッションのワークスペースに限定され、機密フォルダの読み取りは拒否され、環境から秘密情報は取り除かれます。承認すると、このスキルはこのセッションの間スクリプトを実行できます。",
     allow: "許可して実行",
     deny: "拒否",
-    helpersNeeded: "このスクリプトにはローカルツールが必要です。Pie が ~/.pie/bin にダウンロードします。管理者パスワードも Homebrew も不要です。",
-    helpersReady: "必要なローカルツールは揃っています。",
-    helpersNeedUpgrade: "この Pie Link は古く、ツールを代行インストールできません。Pie Link を更新するか、yt-dlp と ffmpeg を自分で入れてください。",
-    installAndAllow: "ツールを入れて許可",
-    installing: "インストール中…",
-    installFailed: "ツールをインストールできませんでした。再試行するか、yt-dlp と ffmpeg を自分で入れてください。",
   },
   chat: {
     elementPicker: {
