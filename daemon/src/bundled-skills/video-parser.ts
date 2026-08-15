@@ -162,6 +162,13 @@ function tryDownload(
     const file = firstExisting(dest);
     if (r.ok && file) return { ok: true, file, log: logs.join("\\n") };
     const tail = (r.stderr || r.stdout).trim().split("\\n").slice(-4).join(" | ");
+    if (/semctl|sync semaphore|PYI-\\d+:ERROR/.test(r.stderr + r.stdout)) {
+      console.error(
+        "HELPER_BROKEN: this yt-dlp is a PyInstaller binary and cannot run inside Pie's sandbox (semctl denied). " +
+          "Open Settings → Local integration → Local tools and reinstall yt-dlp (Pie will fetch the Python zipimport build).",
+      );
+      process.exit(1);
+    }
     logs.push(\`\${attempt.label}: \${tail}\`);
   }
   return { ok: false, log: logs.join("\\n") };

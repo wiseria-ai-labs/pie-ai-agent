@@ -1,7 +1,7 @@
 // Pie-managed local helpers (yt-dlp / ffmpeg) live in ~/.pie/bin — same
 // user-writable directory as the daemon binary. Users should not need brew,
 // apt, or admin rights. Whisper is NOT installed here (official / BYOK compute).
-import { existsSync, mkdirSync, writeFileSync, chmodSync, renameSync, rmSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, chmodSync, renameSync, rmSync, readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { paths } from "./paths";
@@ -45,9 +45,34 @@ export function prependBinDir(pathEnv: string, binDir: string, platform: NodeJS.
 
 export interface HelperResolve {
   which?: (cmd: string, pathEnv: string) => string | null;
+  pythonVersion?: (bin: string) => string;
   binDir?: string;
   pathEnv?: string;
   platform?: NodeJS.Platform;
+}
+
+const PYTHON_CANDIDATES = ["python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "python3", "python"];
+
+export function pythonMeetsYtdlp(versionOut: string): boolean {
+  const m = /Python\s+(\d+)\.(\d+)/.exec(versionOut);
+  if (!m) return false;
+  return Number(m[1]) > 3 || (Number(m[1]) === 3 && Number(m[2]) >= 10);
+}
+
+function defaultPythonVersion(bin: string): string {
+  const r = Bun.spawnSync([bin, "--version"], { stdout: "pipe", stderr: "pipe" });
+  return (r.stdout.toString() + r.stderr.toString()).trim();
+}
+
+export function findPythonForYtdlp(opts: HelperResolve = {}): string | null {
+  const pathEnv = opts.pathEnv ?? getCachedUserPath();
+  const which = opts.which ?? defaultWhich;
+  const ver = opts.pythonVersion ?? defaultPythonVersion;
+  for (const name of PYTHON_CANDIDATES) {
+    const p = which(name, pathEnv);
+    if (p && pythonMeetsYtdlp(ver(p))) return p;
+  }
+  return null;
 }
 
 function defaultWhich(cmd: string, pathEnv: string): string | null {
@@ -69,7 +94,15 @@ export function resolveHelper(id: SkillHelperId, opts: HelperResolve = {}): Skil
   const pathEnv = opts.pathEnv ?? getCachedUserPath();
   const which = opts.which ?? defaultWhich;
   const local = join(binDir, helperFileName(id, platform));
-  if (existsSync(local)) return { id, present: true, path: local, source: "pie-bin" };
+  if (existsSync(local)) {
+    // Leftover PyInstaller onefile cannot run under srt — pretend it's absent
+    // so ensure() will replace it with the zipimport script.
+    if (id === "yt-dlp" && platform !== "win32" && isMachOFile(local)) {
+      /* fall through to PATH / missing */
+    } else {
+      return { id, present: true, path: local, source: "pie-bin" };
+    }
+  }
   const onPath = which(helperFileName(id, platform).replace(/\.exe$/i, ""), pathEnv);
   if (onPath) return { id, present: true, path: onPath, source: "path" };
   return { id, present: false };
@@ -85,10 +118,35 @@ export interface HelperInstallDeps extends HelperResolve {
   smoke?: (bin: string, id: SkillHelperId) => boolean | { ok: boolean; detail: string };
 }
 
-function ytdlpUrl(platform: NodeJS.Platform): string {
+/**
+ * mac/linux: zipimport `yt-dlp` (needs python3). The `yt-dlp_macos` / `_linux`
+ * standalones are PyInstaller onefile — they call semctl on boot, which
+ * sandbox-exec denies (`Failed to initialize sync semaphore`).
+ * Windows runs passthrough, so the .exe is fine.
+ */
+export function ytdlpUrl(platform: NodeJS.Platform): string {
   if (platform === "win32") return `${YTDLP_RELEASE}yt-dlp.exe`;
-  if (platform === "darwin") return `${YTDLP_RELEASE}yt-dlp_macos`;
-  return `${YTDLP_RELEASE}yt-dlp_linux`;
+  return `${YTDLP_RELEASE}yt-dlp`;
+}
+
+const MACHO_MAGICS = new Set([
+  0xcafebabe, 0xcafebabf, 0xfeedface, 0xfeedfacf, 0xbebafeca, 0xcefaedfe, 0xcffaedfe,
+]);
+
+/** True if `path` is a Mach-O (incl. fat) — the PyInstaller yt-dlp_macos shape. */
+export function isMachOFile(path: string): boolean {
+  try {
+    const fd = openSync(path, "r");
+    const buf = Buffer.alloc(4);
+    try {
+      if (readSync(fd, buf, 0, 4, 0) < 4) return false;
+    } finally {
+      closeSync(fd);
+    }
+    return MACHO_MAGICS.has(buf.readUInt32BE(0));
+  } catch {
+    return false;
+  }
 }
 
 function ffmpegUrl(platform: NodeJS.Platform): string {
@@ -190,6 +248,18 @@ async function installOne(id: SkillHelperId, deps: HelperInstallDeps): Promise<S
     renameSync(staged, archive);
     extract(archive, dest, id);
     rmSync(archive, { force: true });
+  } else if (id === "yt-dlp" && platform !== "win32") {
+    const py = findPythonForYtdlp(deps);
+    if (!py) throw new Error("yt-dlp in the sandbox needs Python 3.10+");
+    const pyz = `${dest}.pyz`;
+    renameSync(staged, pyz);
+    chmodSync(pyz, 0o644);
+    // Hardcode the 3.10+ interpreter. `#!/usr/bin/env python3` hits Apple's 3.9 first.
+    const wrapper =
+      "#!/bin/sh\n" +
+      `exec ${JSON.stringify(py)} ${JSON.stringify(pyz)} "$@"\n`;
+    writeFileSync(dest, wrapper);
+    chmodSync(dest, 0o755);
   } else {
     chmodSync(staged, 0o755);
     renameSync(staged, dest);
@@ -223,6 +293,13 @@ export async function ensureSkillHelpers(
     if (have.present) {
       out.push(have);
       continue;
+    }
+    if (id === "yt-dlp" && (deps.platform ?? process.platform) !== "win32") {
+      if (!findPythonForYtdlp(deps)) {
+        throw new Error(
+          "yt-dlp in the sandbox needs Python 3.10+ (the macOS standalone cannot use semaphores here). Install python@3.12 or newer, then retry.",
+        );
+      }
     }
     out.push(await installOne(id, deps));
   }

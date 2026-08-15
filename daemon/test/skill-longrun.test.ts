@@ -95,6 +95,7 @@ describe("seedBundledSkills", () => {
     expect(script).toContain("NEED_HELPERS");
     expect(script).toContain("DOWNLOAD_BLOCKED");
     expect(script).toContain("TMPDIR");
+    expect(script).toContain("HELPER_BROKEN");
     expect(script).toContain("player_client");
     expect(script).toContain("js-runtimes");
     expect(script).toContain("--frames");

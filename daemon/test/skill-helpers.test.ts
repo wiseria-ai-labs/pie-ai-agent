@@ -9,7 +9,18 @@ import {
   listSkillHelpers,
   ensureSkillHelpers,
   helperVersionLooksRight,
+  ytdlpUrl,
+  isMachOFile,
+  pythonMeetsYtdlp,
 } from "../src/skill-helpers";
+
+describe("pythonMeetsYtdlp", () => {
+  test("requires 3.10+", () => {
+    expect(pythonMeetsYtdlp("Python 3.9.6")).toBe(false);
+    expect(pythonMeetsYtdlp("Python 3.10.0")).toBe(true);
+    expect(pythonMeetsYtdlp("Python 3.14.3")).toBe(true);
+  });
+});
 
 describe("helperVersionLooksRight", () => {
   test("yt-dlp --version is a date, not the word yt-dlp", () => {
@@ -20,6 +31,15 @@ describe("helperVersionLooksRight", () => {
   test("ffmpeg must mention ffmpeg", () => {
     expect(helperVersionLooksRight("ffmpeg", "ffmpeg version 8.0.1 Copyright")).toBe(true);
     expect(helperVersionLooksRight("ffmpeg", "2026.07.04")).toBe(false);
+  });
+});
+
+describe("ytdlpUrl", () => {
+  test("mac/linux use zipimport, not PyInstaller onefile", () => {
+    expect(ytdlpUrl("darwin")).toBe("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp");
+    expect(ytdlpUrl("linux")).toBe("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp");
+    expect(ytdlpUrl("win32")).toContain("yt-dlp.exe");
+    expect(ytdlpUrl("darwin")).not.toContain("macos");
   });
 });
 
@@ -61,6 +81,23 @@ describe("resolve / list", () => {
       which: () => "/usr/bin/yt-dlp",
     });
     expect(r).toEqual({ id: "yt-dlp", present: true, path: join(dir, "yt-dlp"), source: "pie-bin" });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("Mach-O yt-dlp in pie-bin is treated as missing on darwin", () => {
+    const dir = join(import.meta.dir, ".tmp-macho-" + Math.random().toString(36).slice(2));
+    mkdirSync(dir, { recursive: true });
+    const fat = Buffer.alloc(8);
+    fat.writeUInt32BE(0xcafebabe, 0);
+    writeFileSync(join(dir, "yt-dlp"), fat);
+    expect(isMachOFile(join(dir, "yt-dlp"))).toBe(true);
+    const r = resolveHelper("yt-dlp", {
+      binDir: dir,
+      pathEnv: "/usr/bin",
+      platform: "darwin",
+      which: () => null,
+    });
+    expect(r.present).toBe(false);
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -127,9 +164,11 @@ describe("ensureSkillHelpers", () => {
       {
         binDir: dir,
         platform: "darwin",
-        which: () => null,
+        which: (cmd) => (cmd.startsWith("python") ? "/opt/homebrew/bin/python3.14" : null),
+        pythonVersion: () => "Python 3.14.3",
         fetchBytes: async (url) => {
-          expect(url).toContain("yt-dlp_macos");
+          expect(url.endsWith("/yt-dlp")).toBe(true);
+          expect(url).not.toContain("macos");
           return new Uint8Array([0x23, 0x21]);
         },
         smoke: (bin) => existsSync(bin),
