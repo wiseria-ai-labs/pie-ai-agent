@@ -307,8 +307,11 @@ still needs the spoken content and Pie Link is connected:
    paths come back as pictures, not text.
 3. If the script exits NEED_HELPERS, the user still needs to tap Install on
    the card or in Settings → Local tools. Relay that — do not invent brew
-   commands as the primary path. If video-parser is unknown, Pie Link is off
-   or too old — tell the user to enable Local integration / update Pie Link.
+   commands as the primary path. If stdout contains DOWNLOAD_BLOCKED or
+   DOWNLOAD_PRIVATE, do not retry the URL — fall back to L1 / L1.5 on the
+   open tab and tell the user the local download was refused.
+4. If video-parser is unknown, Pie Link is off or too old — tell the user to
+   enable Local integration / update Pie Link.
 4. Never pass cookies or ask the user to log the daemon into the site.
    Logged-in-only videos are out of scope.
 

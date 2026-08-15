@@ -36,8 +36,13 @@ Stdout is a short manifest. Files land in the session workspace:
 - \`transcript.txt\` — only if a local \`whisper\` / \`whisper-cpp\` binary exists.
 - \`audio.wav\` — extracted audio, even when whisper is missing.
 
-If stdout says yt-dlp or ffmpeg is missing, **relay the install guide** and
-stop. Do not invent a transcript.
+If stdout says yt-dlp or ffmpeg are missing, **relay the install prompt**
+(Settings → Local tools) and stop.
+
+If stdout contains \`DOWNLOAD_BLOCKED\`, the site refused the download
+(YouTube 403 / JS challenge). **Do not retry the same URL in a loop.**
+Fall back to L1 captions and L1.5 \`capture_video_frame\` on the open tab.
+Tell the user the local download was blocked — never invent a transcript.
 
 Logged-in / DRM / cookie-gated videos are out of scope. Never ask the user
 to export cookies.
@@ -73,6 +78,80 @@ function run(argv: string[]): { ok: boolean; stdout: string; stderr: string } {
     stdout: r.stdout.toString(),
     stderr: r.stderr.toString(),
   };
+}
+
+function classifyYtdlpError(text: string): "blocked" | "private" | "other" {
+  const t = text.toLowerCase();
+  if (/sign in|private video|members.only|login required|join this channel/.test(t)) return "private";
+  if (/403|forbidden|nsig|js runtime|player_client|unable to download video data|http error 429|confirm you.re not a bot/.test(t)) {
+    return "blocked";
+  }
+  return "other";
+}
+
+function detectJsRuntime(): { name: string; path: string } | null {
+  for (const name of ["deno", "node", "bun"] as const) {
+    const p = which(name);
+    if (p) return { name, path: p };
+  }
+  return null;
+}
+
+function ytdlpBase(ytdlp: string, js: { name: string; path: string } | null): string[] {
+  const a = [
+    ytdlp,
+    "--no-playlist",
+    "--retries", "8",
+    "--fragment-retries", "8",
+    "--retry-sleep", "exp=1:8",
+    "--socket-timeout", "20",
+    "--newline",
+    "--no-mtime",
+  ];
+  if (js) a.push("--js-runtimes", \`\${js.name}:\${js.path}\`);
+  return a;
+}
+
+type Attempt = { label: string; extra: string[]; format: string };
+
+function downloadAttempts(kind: "audio" | "video"): Attempt[] {
+  const clients = [
+    { label: "web+ios", extra: ["--extractor-args", "youtube:player_client=web,ios"] },
+    { label: "tv", extra: ["--extractor-args", "youtube:player_client=tv,web"] },
+    { label: "android", extra: ["--extractor-args", "youtube:player_client=android,web"] },
+    { label: "default", extra: [] as string[] },
+  ];
+  const formats =
+    kind === "audio"
+      ? ["ba[ext=m4a]/ba/bestaudio", "bestaudio/best"]
+      : ["18/bv*[height<=360][ext=mp4]/w", "bv*[height<=480]+ba/b[height<=480]/b"];
+  const out: Attempt[] = [];
+  for (const c of clients) for (const format of formats) out.push({ label: \`\${c.label}/\${format}\`, extra: c.extra, format });
+  return out;
+}
+
+function firstExisting(prefix: string): string | undefined {
+  return readdirSync(".").find((f) => f === prefix || f.startsWith(prefix + "."));
+}
+
+function tryDownload(
+  kind: "audio" | "video",
+  dest: string,
+  base: string[],
+): { ok: boolean; file?: string; log: string } {
+  const logs: string[] = [];
+  for (const attempt of downloadAttempts(kind)) {
+    for (const leftover of readdirSync(".").filter((f) => f === dest || f.startsWith(dest + "."))) {
+      try { unlinkSync(leftover); } catch { /* ignore */ }
+    }
+    console.log(\`trying \${kind} via \${attempt.label}\`);
+    const r = run([...base, ...attempt.extra, "-f", attempt.format, "-o", dest + ".%(ext)s", url]);
+    const file = firstExisting(dest);
+    if (r.ok && file) return { ok: true, file, log: logs.join("\\n") };
+    const tail = (r.stderr || r.stdout).trim().split("\\n").slice(-4).join(" | ");
+    logs.push(\`\${attempt.label}: \${tail}\`);
+  }
+  return { ok: false, log: logs.join("\\n") };
 }
 
 function parseArgs(argv: string[]): { url: string; frames: number } {
@@ -119,33 +198,41 @@ if (!ytdlp || !ffmpeg) {
 }
 
 const whisper = which("whisper") ?? which("whisper-cpp") ?? which("whisper-cli");
+const js = detectJsRuntime();
 
 console.log(\`video-parser: fetching \${url}\`);
-console.log(\`tools: yt-dlp=\${ytdlp} ffmpeg=\${ffmpeg} whisper=\${whisper ?? "(none)"}\`);
+console.log(\`tools: yt-dlp=\${ytdlp} ffmpeg=\${ffmpeg} whisper=\${whisper ?? "(none)"} js=\${js ? js.name + "@" + js.path : "(none)"}\`);
 
-const dl = run([
-  ytdlp,
-  "--no-playlist",
-  "--no-warnings",
-  "-f",
-  "bv*[height<=480]+ba/b[height<=480]/b",
-  "--max-filesize",
-  "80M",
-  "-o",
-  "source.%(ext)s",
-  url,
-]);
-if (!dl.ok) {
-  console.error(dl.stderr.slice(-2000) || dl.stdout.slice(-2000));
-  console.error("yt-dlp failed. The video may be private, geo-blocked, or DRM-protected.");
+const base = ytdlpBase(ytdlp, js);
+const audioDl = tryDownload("audio", "audio.src", base);
+const videoDl = tryDownload("video", "video.src", base);
+
+if (!audioDl.ok && !videoDl.ok) {
+  const combined = audioDl.log + "\\n" + videoDl.log;
+  const kind = classifyYtdlpError(combined);
+  console.error(combined.slice(-2500));
+  if (kind === "private") {
+    console.error("DOWNLOAD_PRIVATE: this video needs a login or is private. Cookies are out of scope. Use L1/L1.5 on the open tab.");
+  } else if (kind === "blocked") {
+    console.error(
+      "DOWNLOAD_BLOCKED: the site refused the download (often YouTube 403 / JS challenge)." +
+        (js ? "" : " No JS runtime (deno/node/bun) was found — YouTube usually needs one.") +
+        " Do not retry this URL. Fall back to L1 captions and L1.5 capture_video_frame.",
+    );
+  } else {
+    console.error("DOWNLOAD_FAILED: yt-dlp could not fetch audio or video. Fall back to L1/L1.5.");
+  }
   process.exit(1);
 }
 
-const source = readdirSync(".").find((f) => f.startsWith("source."));
+// Prefer a real video file for frames; otherwise derive both from whichever we got.
+const source = videoDl.file ?? audioDl.file;
 if (!source) {
-  console.error("yt-dlp reported success but wrote no source.* file.");
+  console.error("DOWNLOAD_FAILED: no media file on disk after yt-dlp.");
   process.exit(1);
 }
+if (!videoDl.ok) console.log("(video download blocked — frames may be missing; audio-only)");
+if (!audioDl.ok) console.log("(audio download blocked — will try to pull audio from the video file)");
 
 const probe = run([
   ffmpeg,
@@ -160,34 +247,38 @@ if (durMatch) {
 }
 
 mkdirSync("frames", { recursive: true });
-const interval = duration > 0 ? Math.max(duration / (frames + 1), 0.5) : 5;
-const vf = duration > 0
-  ? \`fps=1/\${interval.toFixed(3)}\`
-  : "fps=1/5";
-const grab = run([
-  ffmpeg,
-  "-y",
-  "-i",
-  source,
-  "-vf",
-  \`\${vf},scale='min(1280,iw)':-2\`,
-  "-q:v",
-  "3",
-  "-frames:v",
-  String(frames),
-  join("frames", "frame_%03d.jpg"),
-]);
-if (!grab.ok) {
-  console.error(grab.stderr.slice(-1500));
-  console.error("ffmpeg frame extract failed.");
-  process.exit(1);
+if (videoDl.file) {
+  const interval = duration > 0 ? Math.max(duration / (frames + 1), 0.5) : 5;
+  const vf = duration > 0
+    ? \`fps=1/\${interval.toFixed(3)}\`
+    : "fps=1/5";
+  const grab = run([
+    ffmpeg,
+    "-y",
+    "-i",
+    videoDl.file,
+    "-vf",
+    \`\${vf},scale='min(1280,iw)':-2\`,
+    "-q:v",
+    "3",
+    "-frames:v",
+    String(frames),
+    join("frames", "frame_%03d.jpg"),
+  ]);
+  if (!grab.ok) {
+    console.log("(ffmpeg frame extract failed; audio may still be available)");
+    console.log(grab.stderr.slice(-800));
+  }
+} else {
+  console.log("(no video stream — skip frames; use L1.5 capture_video_frame on the open tab)");
 }
 
+const audioIn = audioDl.file ?? source;
 const audio = run([
   ffmpeg,
   "-y",
   "-i",
-  source,
+  audioIn,
   "-vn",
   "-ac",
   "1",
@@ -201,10 +292,9 @@ if (!audio.ok) {
   console.log("(audio extract failed; frames are still available)");
 }
 
-try {
-  unlinkSync(source);
-} catch {
-  /* keep source if unlink fails */
+for (const leftover of [source, audioDl.file, videoDl.file]) {
+  if (!leftover) continue;
+  try { unlinkSync(leftover); } catch { /* keep if unlink fails */ }
 }
 
 let transcriptPath: string | null = null;
@@ -243,7 +333,7 @@ for (let i = 0; i < frameFiles.length; i++) {
 }
 console.log(\`audio: \${existsSync("audio.wav") ? "audio.wav" : "(none)"}\`);
 console.log(
-  \`transcript: \${transcriptPath ?? "(none — install openai-whisper or use the page transcript / L1)"}\`,
+  \`transcript: \${transcriptPath ?? "(none — official whisper compute or L1 page captions)"}\`,
 );
 console.log("Read frames with read_skill_output({ path: \\"frames/frame_001.jpg\\" }).");
 `;

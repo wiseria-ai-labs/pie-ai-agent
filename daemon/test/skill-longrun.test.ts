@@ -92,7 +92,10 @@ describe("seedBundledSkills", () => {
     expect(md).toContain("video-parser");
     expect(md).toContain("yt-dlp");
     const script = readFileSync(join(dir, "video-parser", "scripts", "parse.ts"), "utf8");
-    expect(script).toContain("brew install yt-dlp ffmpeg");
+    expect(script).toContain("NEED_HELPERS");
+    expect(script).toContain("DOWNLOAD_BLOCKED");
+    expect(script).toContain("player_client");
+    expect(script).toContain("js-runtimes");
     expect(script).toContain("--frames");
     writeFileSync(join(dir, "video-parser", "SKILL.md"), "USER EDIT");
     expect(seedBundledSkills(dir)).toBe(0);
