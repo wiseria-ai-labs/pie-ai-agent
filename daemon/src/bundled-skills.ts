@@ -3,11 +3,9 @@
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { paths } from "./paths";
-import { VIDEO_PARSER_FILES } from "./bundled-skills/video-parser";
-
-const BUNDLED: { name: string; files: Record<string, string> }[] = [
-  { name: "video-parser", files: VIDEO_PARSER_FILES },
-];
+// First-party disk skills are not seeded until Skill + Kit landing
+// (docs/specs/2026-08-15-skill-kits.md). Keep the hook; the list stays empty.
+const BUNDLED: { name: string; files: Record<string, string> }[] = [];
 
 /** Returns how many skills were newly written. */
 export function seedBundledSkills(skillsDir: string = paths.skillsDir): number {

@@ -163,7 +163,8 @@ export type SkillHelperId = "yt-dlp" | "ffmpeg";
 
 /** skill id → 跑脚本前必须在 PATH / ~/.pie/bin 里的 helper。扩展与 daemon 共用。 */
 export const SKILL_REQUIRED_HELPERS: Readonly<Record<string, readonly SkillHelperId[]>> = {
-  "video-parser": ["yt-dlp", "ffmpeg"],
+  // video-parser withdrawn until Skill + Kit lands. No skill hard-requires
+  // named binaries in the meantime.
 };
 
 export interface SkillHelperStatus {

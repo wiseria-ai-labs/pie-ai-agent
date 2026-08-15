@@ -10,7 +10,12 @@ import {
 } from "./skill-script";
 import type { SkillEntry, SkillSource } from "@/lib/skills/source";
 import type { RunSkillScriptOutcome } from "@/background/local-bridge";
-import type { RunSkillScriptParams, ReadSessionFileParams } from "@/types/local-bridge";
+import {
+  SKILL_REQUIRED_HELPERS,
+  type RunSkillScriptParams,
+  type ReadSessionFileParams,
+  type SkillHelperId,
+} from "@/types/local-bridge";
 
 // #296 — handler 读 ctx.sessionId 并透传给 daemon。传一个 UUID 形状的 stub。
 const SID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -252,44 +257,38 @@ describe("run_skill_script — 运行确认层（ADR 0007 skill-run-confirm）",
     expect(typeof calls[0].runId).toBe("string");
   });
 
-  it("video-parser 确认卡带 helper 状态（缺工具时 installable）", async () => {
-    const confirmSkillRun = vi.fn(async () => false);
-    const listHelpers = vi.fn(async () => ({
-      installable: true as const,
-      helpers: [
-        { id: "yt-dlp" as const, present: false },
-        { id: "ffmpeg" as const, present: true, path: "/opt/homebrew/bin/ffmpeg", source: "path" as const },
-      ],
-    }));
-    const { tool } = makeTool({
-      getSource: () =>
-        fakeSource([
-          {
-            id: "video-parser",
-            name: "Video Parser",
-            description: "d",
-            builtIn: false,
-            origin: "disk",
-            files: ["SKILL.md", "scripts/parse.ts"],
-            runnableScripts: ["parse.ts"],
-            createdAt: 0,
-          },
-        ]),
-      confirmSkillRun,
-      listHelpers,
-    });
-    await tool.handler({ skillId: "video-parser", entry: "parse.ts", args: ["https://x"] }, ctx);
-    expect(listHelpers).toHaveBeenCalled();
-    expect(confirmSkillRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        skillId: "video-parser",
-        helpersInstallable: true,
+  it("声明了 required helpers 的 skill，确认卡带 helper 状态（缺工具时 installable）", async () => {
+    const map = SKILL_REQUIRED_HELPERS as Record<string, readonly SkillHelperId[]>;
+    map["disk-tool"] = ["yt-dlp", "ffmpeg"];
+    try {
+      const confirmSkillRun = vi.fn(async () => false);
+      const listHelpers = vi.fn(async () => ({
+        installable: true as const,
         helpers: [
-          { id: "yt-dlp", present: false },
-          { id: "ffmpeg", present: true, path: "/opt/homebrew/bin/ffmpeg", source: "path" },
+          { id: "yt-dlp" as const, present: false },
+          { id: "ffmpeg" as const, present: true, path: "/opt/homebrew/bin/ffmpeg", source: "path" as const },
         ],
-      }),
-    );
+      }));
+      const { tool } = makeTool({
+        getSource: () => fakeSource([diskEntry()]),
+        confirmSkillRun,
+        listHelpers,
+      });
+      await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh", args: ["https://x"] }, ctx);
+      expect(listHelpers).toHaveBeenCalled();
+      expect(confirmSkillRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skillId: "disk-tool",
+          helpersInstallable: true,
+          helpers: [
+            { id: "yt-dlp", present: false },
+            { id: "ffmpeg", present: true, path: "/opt/homebrew/bin/ffmpeg", source: "path" },
+          ],
+        }),
+      );
+    } finally {
+      delete map["disk-tool"];
+    }
   });
 
   it("确认被拒 → declined 错误，不执行", async () => {
@@ -341,8 +340,8 @@ describe("run_skill_script — 运行确认层（ADR 0007 skill-run-confirm）",
 // ── ADR 0007 — per session × per skill 运行确认闭包（loop.ts 用它绑定 sessionId）──
 describe("makeSessionSkillConfirm", () => {
   const req: SkillRunConfirmRequest = {
-    skillId: "video-parser",
-    skillName: "Video Parser",
+    skillId: "disk-tool",
+    skillName: "disk-tool",
     description: "d",
     entry: "scripts/run.sh",
     args: ["https://x/v"],
@@ -356,7 +355,7 @@ describe("makeSessionSkillConfirm", () => {
 
     expect(await confirm(req)).toBe(true);
     expect(requestConfirm).toHaveBeenCalledTimes(1);
-    expect(record).toHaveBeenCalledWith("video-parser");
+    expect(record).toHaveBeenCalledWith("disk-tool");
   });
 
   it("已批准 skill 的二次调用 → 直接放行，panel 不被触达、不重复落记录", async () => {

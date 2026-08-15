@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import {
   appendStdoutTail,
@@ -12,7 +12,6 @@ import {
 } from "../src/status";
 import { handleMessage } from "../src/daemon";
 import { seedBundledSkills } from "../src/bundled-skills";
-import { VIDEO_PARSER_FILES } from "../src/bundled-skills/video-parser";
 import { readSessionFile } from "../src/skill-store";
 
 describe("appendStdoutTail", () => {
@@ -31,7 +30,7 @@ describe("poll / kill registry", () => {
   });
 
   test("registered run is queued then gone after end", () => {
-    const live = registerSkillRun({ name: "video-parser", entry: "parse.ts", runId: "run-1" });
+    const live = registerSkillRun({ name: "demo", entry: "run.ts", runId: "run-1" });
     expect(pollSkillRun("run-1").state).toBe("queued");
     expect(pollSkillRun("run-1").stdoutTail).toBe("");
     endSkillRun(live.runId);
@@ -84,32 +83,12 @@ describe("poll_skill_run / kill_skill_run RPC", () => {
 });
 
 describe("seedBundledSkills", () => {
-  test("writes video-parser once and does not overwrite", () => {
+  test("empty BUNDLED writes nothing", () => {
     const dir = join(import.meta.dir, ".tmp-seed-" + Math.random().toString(36).slice(2));
     mkdirSync(dir, { recursive: true });
-    expect(seedBundledSkills(dir)).toBe(1);
-    const md = readFileSync(join(dir, "video-parser", "SKILL.md"), "utf8");
-    expect(md).toContain("video-parser");
-    expect(md).toContain("yt-dlp");
-    const script = readFileSync(join(dir, "video-parser", "scripts", "parse.ts"), "utf8");
-    expect(script).toContain("NEED_HELPERS");
-    expect(script).toContain("DOWNLOAD_BLOCKED");
-    expect(script).toContain("TMPDIR");
-    expect(script).toContain("HELPER_BROKEN");
-    expect(script).toContain("player_client");
-    expect(script).toContain("js-runtimes");
-    expect(script).toContain("--frames");
-    // PyInstaller 建不了临时目录时不要包装成 private/geo/DRM
-    expect(script).toMatch(/Could not create temporary directory/);
-    expect(script).toMatch(/\[PYI-/);
-    writeFileSync(join(dir, "video-parser", "SKILL.md"), "USER EDIT");
     expect(seedBundledSkills(dir)).toBe(0);
-    expect(readFileSync(join(dir, "video-parser", "SKILL.md"), "utf8")).toBe("USER EDIT");
+    expect(readdirSync(dir)).toEqual([]);
     rmSync(dir, { recursive: true, force: true });
-  });
-
-  test("bundled files include both SKILL.md and parse.ts", () => {
-    expect(Object.keys(VIDEO_PARSER_FILES).sort()).toEqual(["SKILL.md", "scripts/parse.ts"]);
   });
 });
 

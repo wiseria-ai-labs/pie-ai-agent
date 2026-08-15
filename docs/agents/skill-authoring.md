@@ -75,23 +75,9 @@ deduped.csv (12 KB)
   (especially the shared `~/.agents/skills` root, which belongs to other agents).
   Use the workspace.
 
-## Reference: `video-parser`
-
-Pie Link seeds `~/.pie/skills/video-parser/` on first start (never
-overwrites a copy you edited). It is the reference long-running skill:
-
-- one `scripts/parse.ts` entry, URL in `process.argv`
-- prints a manifest to stdout; writes `frames/*.jpg` + `audio.wav` to cwd
-- missing `yt-dlp` / `ffmpeg` → install guide on stdout, exit 1
-- no 60 s timeout — the user can abort; the card shows elapsed + last stdout
-- JPEG paths are read back with `read_skill_output` and arrive as pictures
-
-Pie can download `yt-dlp` and `ffmpeg` into `~/.pie/bin` (Settings → Local
-integration, or the confirmation card). Users should not need Homebrew.
-Transcription is official/BYOK model compute — do not ask them to install
-Whisper.
-
-Copy that shape for any other minute-scale local pipeline.
+Long-running scripts have no 60 s timeout; the user can abort, and the
+card shows elapsed time plus the last stdout lines. JPEG paths under the
+workspace come back as pictures via `read_skill_output`.
 
 ## Cross-platform scripts
 

@@ -1,7 +1,7 @@
 # Skill 与 Kit（套件）解耦
 
 - 日期: 2026-08-15
-- 状态: 定稿方向（尚未落地；当前 PR 的 yt-dlp/ffmpeg 代装是过渡实现）
+- 状态: 方向草稿（尚未落地；video-parser skill 已撤回，等本基座想清楚再做上层）
 - 驱动: 视频解析 L3 暴露「用户要懂 PyInstaller / Python 版本 / 沙箱信号量」——这是依赖泄漏进产品面，不是 skill 写坏了
 
 ## 1. 问题
@@ -84,8 +84,8 @@ install / 启用 / 首次 run_skill_script
 
 当前 PR 里「Settings / 确认卡代装 yt-dlp、ffmpeg 到 `~/.pie/bin`」= 未命名的、唯一的隐式 kit。落地 Kit 机制时：
 
-- 把它收成官方 `media-extract@1`
-- `video-parser` 改声明 `requires`
+- 把它收成官方 `media-extract@1`（或当时定下的第一个官方 kit）
+- 上层 skill（含暂停中的视频解析 L3）再声明 `requires`
 - `~/.pie/bin` 里已装的 helper 可迁入 kit 或继续当 PATH 回落
 - 确认卡文案从二进制名改成套件名
 

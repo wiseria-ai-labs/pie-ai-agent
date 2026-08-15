@@ -76,14 +76,12 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
     const noCap = md.slice(md.indexOf("## No captions available"));
     expect(noCap).toMatch(/read_page/);
     expect(noCap).toMatch(/\.\.\.more|Show more|more-actions|expanded/);
-    // L1.5 / L3 梯子：截帧 tool + 本地 video-parser，且 L3 不得抢 L1
+    // L1.5 截帧；本地 L3 parser 已撤回，引导不得再指向 video-parser
     expect(md).toMatch(/capture_video_frame/);
     expect(md).toMatch(/blank_or_drm_frame/);
-    expect(md).toMatch(/video-parser/);
-    expect(md).toMatch(/parse\.ts/);
-    expect(md).toMatch(/Do NOT call L3/);
-    expect(md).toMatch(/~\/\.pie\/bin|Install on the card|Local tools/);
-    expect(md).toMatch(/DOWNLOAD_BLOCKED/);
+    expect(md).not.toMatch(/video-parser/);
+    expect(md).not.toMatch(/parse\.ts/);
+    expect(md).not.toMatch(/DOWNLOAD_BLOCKED/);
     expect(md).not.toMatch(/brew install/);
   });
 

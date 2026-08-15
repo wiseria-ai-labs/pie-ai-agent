@@ -211,7 +211,7 @@ Constraints:
   pkg(
     "video_transcript",
     "Video Transcript",
-    "Use when the user wants a video summarized or explained, or asks what a video covers / says / talks about / looks like — 'summarize this video', 'what's in this video', 'give me the key points', 'what did they say about X', 'what's on screen at 2:30' — while a YouTube or Bilibili (or other) video page is open. Prefer the page's own transcript first; use capture_video_frame for pictures; fall back to the local video-parser skill via Pie Link only when there are no captions and the user needs the spoken content.",
+    "Use when the user wants a video summarized or explained, or asks what a video covers / says / talks about / looks like — 'summarize this video', 'what's in this video', 'give me the key points', 'what did they say about X', 'what's on screen at 2:30' — while a YouTube or Bilibili video page is open. Reads the video's own on-page transcript / caption panel as text. If the video has no captions, say so plainly — never invent the content. Use capture_video_frame only when the user asks about the picture.",
     `# Video Transcript
 
 Read the current video's on-page transcript (captions) as text, then use
@@ -281,9 +281,9 @@ still legitimately do (e.g. summarize from the title / description /
 chapters if that helps) and then call done. Never fabricate a summary from
 the thumbnail or title alone and present it as the video's content.
 
-## Combine with the picture (L1.5)
-When the user asks what is on screen, to combine visuals with the transcript,
-or after you have a transcript and want 2–4 key moments:
+## Combine with the picture
+When the user asks what is on screen, or after you have a transcript and
+want 2–4 key moments:
 1. Pick timestamps from chapters / transcript stamps / the user's "at N:MM".
 2. Call capture_video_frame({ timeSeconds }) for each (shared 5-frame budget
    with other screenshots). The tab must be the focused/visible pinned tab.
@@ -293,29 +293,8 @@ or after you have a transcript and want 2–4 key moments:
 5. If the current model has no vision, do not call this tool; tell the user
    to switch to a vision-capable model.
 
-## Local parse when captions are missing (L3)
-Only after the No-captions path above (you genuinely looked). If the user
-still needs the spoken content and Pie Link is connected:
-1. run_skill_script({ skillId: "video-parser", entry: "parse.ts",
-   args: [<the page URL>] }). First run in the session will pause for the
-   user to approve. If yt-dlp/ffmpeg are missing, the confirmation card
-   offers to download them into ~/.pie/bin — do NOT tell the user to brew
-   or pip install anything. This can take minutes; the user can abort.
-2. The script writes frames/*.jpg plus optional transcript.txt / audio.wav
-   into the session workspace. Read text with read_skill_output({ path });
-   read a frame with read_skill_output({ path: "frames/..." }) — image
-   paths come back as pictures, not text.
-3. If the script exits NEED_HELPERS, the user still needs to tap Install on
-   the card or in Settings → Local tools. Relay that — do not invent brew
-   commands as the primary path. If stdout contains DOWNLOAD_BLOCKED or
-   DOWNLOAD_PRIVATE, do not retry the URL — fall back to L1 / L1.5 on the
-   open tab and tell the user the local download was refused.
-4. If video-parser is unknown, Pie Link is off or too old — tell the user to
-   enable Local integration / update Pie Link.
-4. Never pass cookies or ask the user to log the daemon into the site.
-   Logged-in-only videos are out of scope.
-
-Do NOT call L3 when L1 already produced a usable transcript.
+Do not download the video or call a local parser. Local extract is paused
+until Skill + Kit lands.
 
 ## Deliver
 Once you have the transcript text (and any frames you captured), answer

@@ -6,22 +6,22 @@ import type { SkillRunConfirmRequest } from "@/lib/agent/tools/skill-script";
 afterEach(() => cleanup());
 
 const payload: SkillRunConfirmRequest = {
-  skillId: "video-parser",
-  skillName: "Video Parser",
-  description: "Extract frames and audio from a video URL.",
+  skillId: "disk-tool",
+  skillName: "Disk Tool",
+  description: "Run a declared disk skill script.",
   entry: "run.ts",
-  args: ["https://youtu.be/abc", "--frames"],
+  args: ["https://example.com/a", "--flag"],
 };
 
 describe("SkillRunConfirmCard", () => {
   it("shows skill name, description, entry and every arg verbatim", () => {
     render(<SkillRunConfirmCard payload={payload} onDecision={vi.fn()} />);
-    expect(screen.getByText(/Video Parser/)).toBeTruthy();
-    expect(screen.getByText("Extract frames and audio from a video URL.")).toBeTruthy();
+    expect(screen.getByText(/Disk Tool/)).toBeTruthy();
+    expect(screen.getByText("Run a declared disk skill script.")).toBeTruthy();
     expect(screen.getByText("run.ts")).toBeTruthy();
     // args 全文可见（含 URL），用户看得到这次要干什么
-    expect(screen.getByText("https://youtu.be/abc")).toBeTruthy();
-    expect(screen.getByText("--frames")).toBeTruthy();
+    expect(screen.getByText("https://example.com/a")).toBeTruthy();
+    expect(screen.getByText("--flag")).toBeTruthy();
   });
 
   it("Allow → onDecision(true); Deny → onDecision(false)", () => {

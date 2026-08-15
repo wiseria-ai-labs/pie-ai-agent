@@ -1051,14 +1051,14 @@ describe("v1.5 multi-pin — mergeSessionAgentSnapshot", () => {
       stepIndex: 4,
       hasImageContent: false,
       currentFocusTabId: 13,
-      approvedSkillIds: ["video-parser", "csv-utils"],
+      approvedSkillIds: ["disk-tool", "csv-utils"],
     };
     const merged = mergeSessionAgentSnapshot(existing, buildSessionAgentTombstone());
     // Task-scoped carry-over is cleared…
     expect(merged.currentFocusTabId).toBeUndefined();
     expect(merged.stepIndex).toBe(0);
     // …but session-scoped approvals survive.
-    expect(merged.approvedSkillIds).toEqual(["video-parser", "csv-utils"]);
+    expect(merged.approvedSkillIds).toEqual(["disk-tool", "csv-utils"]);
   });
 
   it("tombstone with lastTaskSynth payload (folded by builder) still clears carry-over", () => {
