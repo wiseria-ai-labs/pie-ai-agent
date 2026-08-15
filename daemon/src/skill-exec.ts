@@ -98,6 +98,8 @@ export function scanOutputs(
       if (truncated) return;
       const abs = join(dir, e.name);
       if (e.isDirectory()) {
+        // sandbox TMPDIR = workspace/.tmp；不把 PyInstaller/ffmpeg 临时文件当成产物
+        if (e.name === ".tmp") continue;
         walk(abs);
       } else if (e.isFile()) {
         let st;
@@ -233,6 +235,11 @@ export async function runSkillScript(
   // 只读副根）。这里是「副根污染」bug（旧 mkdir skillDir/workspace）的修复点。
   const workspace = sessionWorkspace(params.sessionId, sessionsDir);
   mkdirSync(workspace, { recursive: true });
+  // srt allowWrite 只有 workspace。宿主 TMPDIR（/var/folders/…/T）在白名单里透传，
+  // 但沙箱拒写，PyInstaller 打包的 yt-dlp 会立刻报 Could not create temporary directory。
+  // extra 覆盖白名单同名键，把 TMPDIR/TEMP/TMP 钉在 workspace/.tmp。
+  const sandboxTmp = join(workspace, ".tmp");
+  mkdirSync(sandboxTmp, { recursive: true });
 
   // 固定基线沙箱（不可声明不可配，ADR 0007）：写限 workspace（skill 目录含只读副根永不
   // 可写），denyRead 基线挡磁盘密钥，网络全放（外泄面靠 env 擦除 + denyRead 压制）。
@@ -243,7 +250,14 @@ export async function runSkillScript(
   const argv = [...interp, join(skillDir, "scripts", params.entry), ...(params.args ?? [])];
   // cwd = workspace（可写区），skillDir 通过 PIE_SKILL_DIR 供脚本读自身资源。
   // env 走白名单擦除（D7）：只有 PIE_*/BUN_BE_BUN + 一小撮受控系统 env + login-shell PATH。
-  const env = buildEnv({ BUN_BE_BUN: "1", PIE_SKILL_DIR: skillDir, PIE_WORKSPACE: workspace });
+  const env = buildEnv({
+    BUN_BE_BUN: "1",
+    PIE_SKILL_DIR: skillDir,
+    PIE_WORKSPACE: workspace,
+    TMPDIR: sandboxTmp,
+    TEMP: sandboxTmp,
+    TMP: sandboxTmp,
+  });
 
   const startedAt = now();
   log("info", "skill.run", { name, entry: params.entry });

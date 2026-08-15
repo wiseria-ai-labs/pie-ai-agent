@@ -80,7 +80,8 @@ function run(argv: string[]): { ok: boolean; stdout: string; stderr: string } {
   };
 }
 
-function classifyYtdlpError(text: string): "blocked" | "private" | "other" {
+function classifyYtdlpError(text: string): "tmpdir" | "blocked" | "private" | "other" {
+  if (/Could not create temporary directory/i.test(text) || /\\[PYI-/.test(text)) return "tmpdir";
   const t = text.toLowerCase();
   if (/sign in|private video|members.only|login required|join this channel/.test(t)) return "private";
   if (/403|forbidden|nsig|js runtime|player_client|unable to download video data|http error 429|confirm you.re not a bot/.test(t)) {
@@ -211,7 +212,9 @@ if (!audioDl.ok && !videoDl.ok) {
   const combined = audioDl.log + "\\n" + videoDl.log;
   const kind = classifyYtdlpError(combined);
   console.error(combined.slice(-2500));
-  if (kind === "private") {
+  if (kind === "tmpdir") {
+    console.error("DOWNLOAD_FAILED: yt-dlp could not create a temporary directory (sandbox TMPDIR).");
+  } else if (kind === "private") {
     console.error("DOWNLOAD_PRIVATE: this video needs a login or is private. Cookies are out of scope. Use L1/L1.5 on the open tab.");
   } else if (kind === "blocked") {
     console.error(

@@ -97,6 +97,9 @@ describe("seedBundledSkills", () => {
     expect(script).toContain("player_client");
     expect(script).toContain("js-runtimes");
     expect(script).toContain("--frames");
+    // PyInstaller 建不了临时目录时不要包装成 private/geo/DRM
+    expect(script).toMatch(/Could not create temporary directory/);
+    expect(script).toMatch(/\[PYI-/);
     writeFileSync(join(dir, "video-parser", "SKILL.md"), "USER EDIT");
     expect(seedBundledSkills(dir)).toBe(0);
     expect(readFileSync(join(dir, "video-parser", "SKILL.md"), "utf8")).toBe("USER EDIT");
