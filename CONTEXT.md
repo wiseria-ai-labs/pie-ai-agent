@@ -41,8 +41,16 @@ _Avoid_: 用 Bridge 指 Host 进程
 _Avoid_: hand-off（交棒到终端、不回传，是另一形态）, sub-agent
 
 **hand-off**:
-接力形态之一——上下文 + 文件落盘 `~/pie-handoffs/`，`open -a` 唤起终端里的**交互式** session，用户去终端继续；fire-and-forget，不回传。
+接力形态之一——上下文 + 文件落盘 `~/pie-handoffs/`，唤起本机 Agent 的**交互式** session（Terminal 自动开跑；App 打开并预填引导语，人发一句才开跑），用户去本地继续；fire-and-forget，不回传。
 _Avoid_: round-trip
+
+**agent brand**:
+用户心智里的一个本地 Agent——Claude / Codex / Cursor / OpenCode / Pi。设置开关、启用偏好、确认卡上的「选哪个 Agent」都按品牌。任一形态检出即该品牌可用。
+_Avoid_: 把 App / Terminal 当成两个 Agent；用 provider / model 指本地 Agent
+
+**agent form**:
+一个品牌的交棒外壳：`app` 或 `terminal`。检测路径、launch 命令、`handoff_to_agent.target` 仍是形态 id（`claude-app` / `claude-terminal` …）。只在确认卡、且该品牌两种形态都装了时才让人再选一次。
+_Avoid_: 在设置里给形态单独开关；把 form 叫 mode（`HandoffResult.mode` 是 launch 结果，不是身份）
 
 **bridge session**:
 反向调用（本地 Agent → Pie）时 daemon 侧建的 ephemeral session，仅作 CDP ownerToken / sandbox 记账；操作按 tabId 直打**真实活跃 tab**，不绑某个 Pie session 的 pinned tab。
