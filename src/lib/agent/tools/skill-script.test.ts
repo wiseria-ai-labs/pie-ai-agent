@@ -4,6 +4,7 @@ import {
   buildReadSkillOutputTool,
   buildSkillOutputObservation,
   makeSessionSkillConfirm,
+  isSkillImagePath,
   type SkillScriptDeps,
   type SkillRunConfirmRequest,
 } from "./skill-script";
@@ -54,7 +55,15 @@ function makeTool(overrides: Partial<SkillScriptDeps> = {}) {
   const confirmSkillRun = overrides.confirmSkillRun ?? defaultConfirm;
   const isBridgeReady = overrides.isBridgeReady ?? (() => true);
   return {
-    tool: buildRunSkillScriptTool({ getSource, runOnDaemon, confirmSkillRun, isBridgeReady }),
+    tool: buildRunSkillScriptTool({
+      getSource,
+      runOnDaemon,
+      confirmSkillRun,
+      isBridgeReady,
+      pollRun: overrides.pollRun,
+      killRun: overrides.killRun,
+      onProgress: overrides.onProgress,
+    }),
     runOnDaemon,
     confirmSkillRun,
   };
@@ -140,7 +149,7 @@ describe("run_skill_script — disk 路径（daemon 执行）", () => {
       ctx,
     );
     expect(r.success).toBe(true);
-    expect(runOnDaemon).toHaveBeenCalledWith({ name: "disk-tool", entry: "scripts/run.sh", args: ["--foo", "bar"], sessionId: SID });
+    expect(runOnDaemon).toHaveBeenCalledWith(expect.objectContaining({ name: "disk-tool", entry: "scripts/run.sh", args: ["--foo", "bar"], sessionId: SID }));
   });
 
   it("entry 带 scripts/ 前缀而可执行集是裸文件名 → 归一化后放行并以裸名送 daemon", async () => {
@@ -153,7 +162,7 @@ describe("run_skill_script — disk 路径（daemon 执行）", () => {
     });
     const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/hello.ts" }, ctx);
     expect(r.success).toBe(true);
-    expect(runOnDaemon).toHaveBeenCalledWith({ name: "disk-tool", entry: "hello.ts", args: [], sessionId: SID });
+    expect(runOnDaemon).toHaveBeenCalledWith(expect.objectContaining({ name: "disk-tool", entry: "hello.ts", args: [], sessionId: SID }));
   });
 
   it("无 args → 空数组参数", async () => {
@@ -161,7 +170,7 @@ describe("run_skill_script — disk 路径（daemon 执行）", () => {
     const { tool } = makeTool({ getSource: () => fakeSource([diskEntry()]), runOnDaemon, confirmSkillRun: async () => true });
     const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh" }, ctx);
     expect(r.success).toBe(true);
-    expect(runOnDaemon).toHaveBeenCalledWith({ name: "disk-tool", entry: "scripts/run.sh", args: [], sessionId: SID });
+    expect(runOnDaemon).toHaveBeenCalledWith(expect.objectContaining({ name: "disk-tool", entry: "scripts/run.sh", args: [], sessionId: SID }));
   });
 
   it("未声明的 entry（磁盘）→ 拒绝并列出 runnableScripts（确认前）", async () => {
@@ -238,7 +247,30 @@ describe("run_skill_script — 运行确认层（ADR 0007 skill-run-confirm）",
       args: ["https://x/v"],
     });
     // 执行参数里没有任何「已批准」字段（LLM 不可自批）。
-    expect(calls[0]).toEqual({ name: "disk-tool", entry: "scripts/run.sh", args: ["https://x/v"], sessionId: SID });
+    expect(calls[0]).toMatchObject({ name: "disk-tool", entry: "scripts/run.sh", args: ["https://x/v"], sessionId: SID });
+    expect(typeof calls[0].runId).toBe("string");
+  });
+
+  it("确认卡 payload 不含 helper 状态", async () => {
+    const seen: SkillRunConfirmRequest[] = [];
+    const confirmSkillRun = vi.fn(async (p: SkillRunConfirmRequest) => {
+      seen.push(p);
+      return false;
+    });
+    const { tool } = makeTool({
+      getSource: () => fakeSource([diskEntry()]),
+      confirmSkillRun,
+    });
+    await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh", args: ["https://x"] }, ctx);
+    expect(seen[0]).toEqual({
+      skillId: "disk-tool",
+      skillName: "disk-tool",
+      description: "does a thing",
+      entry: "scripts/run.sh",
+      args: ["https://x"],
+    });
+    expect("helpers" in seen[0]).toBe(false);
+    expect("helpersInstallable" in seen[0]).toBe(false);
   });
 
   it("确认被拒 → declined 错误，不执行", async () => {
@@ -280,7 +312,8 @@ describe("run_skill_script — 运行确认层（ADR 0007 skill-run-confirm）",
     );
     expect(r.success).toBe(true);
     expect(confirmSkillRun).toHaveBeenCalledTimes(1);
-    expect(calls[0]).toEqual({ name: "disk-tool", entry: "scripts/run.sh", args: [], sessionId: SID });
+    expect(calls[0]).toMatchObject({ name: "disk-tool", entry: "scripts/run.sh", args: [], sessionId: SID });
+    expect(typeof calls[0].runId).toBe("string");
     expect("grantApproved" in calls[0]).toBe(false);
     expect("approvedEnvelopeHash" in calls[0]).toBe(false);
   });
@@ -289,8 +322,8 @@ describe("run_skill_script — 运行确认层（ADR 0007 skill-run-confirm）",
 // ── ADR 0007 — per session × per skill 运行确认闭包（loop.ts 用它绑定 sessionId）──
 describe("makeSessionSkillConfirm", () => {
   const req: SkillRunConfirmRequest = {
-    skillId: "video-parser",
-    skillName: "Video Parser",
+    skillId: "disk-tool",
+    skillName: "disk-tool",
     description: "d",
     entry: "scripts/run.sh",
     args: ["https://x/v"],
@@ -304,7 +337,7 @@ describe("makeSessionSkillConfirm", () => {
 
     expect(await confirm(req)).toBe(true);
     expect(requestConfirm).toHaveBeenCalledTimes(1);
-    expect(record).toHaveBeenCalledWith("video-parser");
+    expect(record).toHaveBeenCalledWith("disk-tool");
   });
 
   it("已批准 skill 的二次调用 → 直接放行，panel 不被触达、不重复落记录", async () => {
@@ -463,5 +496,65 @@ describe("read_skill_output", () => {
     expect(r.success).toBe(false);
     expect(r.error).toContain("read_skill_output failed:");
     expect(r.error).toContain("unsafe path");
+  });
+
+  it("image path → base64 read + image attachment", async () => {
+    const b64 = btoa("fake-jpeg");
+    const readOutput = vi.fn(async (p: ReadSessionFileParams) => {
+      expect(p.encoding).toBe("base64");
+      return { content: b64, encoding: "base64" as const };
+    });
+    const tool = buildReadSkillOutputTool({ readOutput });
+    const r = await tool.handler({ path: "frames/frame_001.jpg" }, ctx);
+    expect(r.success).toBe(true);
+    expect(r.image).toBeDefined();
+    expect(r.observation).toMatch(/image frames\/frame_001\.jpg/);
+  });
+});
+
+describe("isSkillImagePath", () => {
+  it("recognizes jpeg/png/webp and rejects text", () => {
+    expect(isSkillImagePath("frames/a.jpg")).toBe(true);
+    expect(isSkillImagePath("frames/a.JPEG")).toBe(true);
+    expect(isSkillImagePath("x.png")).toBe(true);
+    expect(isSkillImagePath("x.webp")).toBe(true);
+    expect(isSkillImagePath("transcript.txt")).toBe(false);
+    expect(isSkillImagePath("audio.wav")).toBe(false);
+  });
+});
+
+describe("run_skill_script abort", () => {
+  it("abort signal kills the run and returns aborted", async () => {
+    const ac = new AbortController();
+    const killRun = vi.fn(async () => undefined);
+    const runOnDaemon = vi.fn(async (): Promise<RunSkillScriptOutcome> => {
+      ac.abort();
+      return { ok: true, result: { output: "late" } };
+    });
+    const { tool } = makeTool({
+      getSource: () =>
+        fakeSource([
+          {
+            id: "disk-tool",
+            name: "disk-tool",
+            description: "d",
+            builtIn: false,
+            origin: "disk",
+            files: ["SKILL.md", "scripts/run.sh"],
+            runnableScripts: ["scripts/run.sh"],
+            createdAt: 0,
+          },
+        ]),
+      runOnDaemon,
+      confirmSkillRun: async () => true,
+      killRun,
+    });
+    const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh" }, {
+      sessionId: SID,
+      signal: ac.signal,
+    } as never);
+    expect(killRun).toHaveBeenCalledTimes(1);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/aborted/);
   });
 });

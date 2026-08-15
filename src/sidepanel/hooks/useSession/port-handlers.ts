@@ -159,7 +159,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       let nextMessages: DisplayMessage[] = flushedMsgs;
 
       // 2. Either update the trailing matching step in place, or append.
-      const { stepIndex, tool, args, resolvedElement, status, observation, image } = msg;
+      const { stepIndex, tool, args, resolvedElement, status, observation, image, progress } = msg;
       const tail = nextMessages.length - 1;
       const last = tail >= 0 ? nextMessages[tail] : null;
       const matchesTail =
@@ -177,6 +177,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         status,
         observation,
         ...(image && { image }),
+        ...(progress && { progress }),
       };
 
       if (matchesTail) {

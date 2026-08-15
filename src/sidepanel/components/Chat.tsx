@@ -79,6 +79,7 @@ function buildSegments(messages: readonly DisplayMessage[]): RenderSegment[] {
         status: s.status,
         observation: s.observation,
         image: s.image,
+        progress: s.progress,
       });
       i++;
     }

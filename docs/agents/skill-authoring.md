@@ -18,10 +18,10 @@ value — think `node script.ts arg1 arg2`, not `(input) => output`.
 | Output (files) | Write into **cwd** (= the session workspace). The daemon lists them back to the agent, which can read them with `read_skill_output`. |
 | **Return value** | **Discarded.** A returned/exported value goes nowhere — it is a CLI process, not a sandbox callback. This is the single most common mistake. |
 | cwd | `~/.pie/sessions/<sessionId>/workspace/` — per-session, shared across skills in that session (so skill A can hand a file to skill B). |
-| Writable | cwd subtree + any paths declared in `metadata.pie.write`. |
+| Writable | cwd subtree only (skill directory is never writable). |
 | Readable | Everything except denied sensitive dirs (`~/.ssh`, `~/.aws`, …). Read your own skill's bundled resources via `$PIE_SKILL_DIR`. |
-| Network | Off by default; only domains listed in `metadata.pie.network` are allowed out. |
-| Timeout | 60 s. |
+| Network | Open (fixed sandbox baseline). Env is wiped to a small allowlist so tokens do not leak. |
+| Timeout | None. The user can abort; disconnecting Pie Link kills the process. Progress (elapsed + last stdout lines) shows on the tool card. |
 | Failure | Non-zero exit → the agent gets an error with the last 2000 chars of stderr. |
 
 Two environment variables are injected:
@@ -66,15 +66,18 @@ deduped.csv (12 KB)
 - **Don't `return` your result.** Print it or write a file. A bare
   `export default () => {...}` runs, defines nothing observable, and exits 0 —
   the agent gets "produced nothing".
-- **Only files under the workspace (cwd) are listed.** If you write to a
-  `metadata.pie.write` path outside the workspace, the daemon does not scan for
-  it — `console.log` the path yourself so the agent knows where it went.
+- **Only files under the workspace (cwd) are listed.** Writes outside cwd
+  are denied by the sandbox; there is no extra write-path declaration.
 - **Products are per-session.** Two sessions running the same script write into
   different workspaces; they never collide. Within one session, skills share the
   workspace, so name your outputs distinctly if that matters.
 - **Never write into the skill directory** — it is read-only to the process
   (especially the shared `~/.agents/skills` root, which belongs to other agents).
   Use the workspace.
+
+Long-running scripts have no 60 s timeout; the user can abort, and the
+card shows elapsed time plus the last stdout lines. JPEG paths under the
+workspace come back as pictures via `read_skill_output`.
 
 ## Cross-platform scripts
 

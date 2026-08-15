@@ -131,6 +131,63 @@ export interface RunSkillScriptParams {
   /** 调用会话 id（不可信输入，daemon 侧 assertSessionId 做 uuid 形状校验防路径穿越）。
    *  脚本 cwd = ~/.pie/sessions/<sessionId>/workspace/，产物按 session 隔离。 */
   sessionId: string;
+  /**
+   * 扩展生成的本次 run 标识（加法，PROTOCOL_VERSION 不动）。
+   * 用于 poll_skill_run / kill_skill_run 在阻塞的 run_skill_script 期间并发查询/中止。
+   * 旧扩展不传 → daemon 自生成，进度/中止不可达，行为与原来一致。
+   */
+  runId?: string;
+}
+
+/** poll_skill_run：查一次长任务进度。run 已结束或不存在 → state "done"（完成竞态，不是错误）。 */
+export interface PollSkillRunParams {
+  runId: string;
+}
+export interface PollSkillRunResult {
+  state: "queued" | "running" | "done";
+  elapsedMs: number;
+  /** 末尾约 8KB，已折叠 yt-dlp/ffmpeg 的 \\r 进度刷屏。不可信，UI 当纯文本。 */
+  stdoutTail: string;
+}
+
+/** kill_skill_run：中止一次 in-flight / queued run。幂等（未知 runId 也 ok）。 */
+export interface KillSkillRunParams {
+  runId: string;
+}
+export interface KillSkillRunResult {
+  ok: true;
+}
+
+/** Pie 代管的本机 helper（下到 ~/.pie/bin，不要求用户自己 brew/apt）。 */
+export type SkillHelperId = "yt-dlp" | "ffmpeg";
+
+/** skill id → 跑脚本前必须在 PATH / ~/.pie/bin 里的 helper。扩展与 daemon 共用。 */
+export const SKILL_REQUIRED_HELPERS: Readonly<Record<string, readonly SkillHelperId[]>> = {
+  // video-parser withdrawn until Skill + Kit lands. No skill hard-requires
+  // named binaries in the meantime.
+};
+
+export interface SkillHelperStatus {
+  id: SkillHelperId;
+  present: boolean;
+  /** 解析到的绝对路径；缺省 = 未找到。 */
+  path?: string;
+  /** pie-bin = ~/.pie/bin 里 Pie 下的；path = 用户自己装的。 */
+  source?: "pie-bin" | "path";
+}
+
+export interface ListSkillHelpersResult {
+  helpers: SkillHelperStatus[];
+  /** 新 daemon 恒 true。旧 daemon 无此 method → 扩展回落「请升级 Pie Link / 自行安装」。 */
+  installable: true;
+}
+
+export interface EnsureSkillHelpersParams {
+  /** 要补齐的 helper；缺省 = 全部已知 helper。 */
+  ids?: SkillHelperId[];
+}
+export interface EnsureSkillHelpersResult {
+  helpers: SkillHelperStatus[];
 }
 export interface RunSkillScriptResult {
   /** 脚本 stdout，调用方包 <untrusted_skill_content> */
@@ -150,6 +207,11 @@ export interface ReadSessionFileParams {
   path: string;
   /** 字符偏移续读（D8）：从第 offset 个字符起返回，缺省 0。 */
   offset?: number;
+  /**
+   * 加法：utf8（默认，文本产物）或 base64（图片等二进制，给 vision 喂帧）。
+   * 旧 daemon 忽略此字段，按 utf8 读。
+   */
+  encoding?: "utf8" | "base64";
 }
 export interface ReadSessionFileResult {
   content: string;
@@ -157,6 +219,8 @@ export interface ReadSessionFileResult {
   truncated?: boolean;
   /** 文件总字符数（truncated 时供 LLM 判断还剩多少）。加法字段：旧 daemon 不给。 */
   totalLength?: number;
+  /** 与请求 encoding 回显；缺省按 utf8。 */
+  encoding?: "utf8" | "base64";
 }
 
 /** read_session_file 单次返回上限（D8）：256K 字符。超限截断 + truncated 标记，
@@ -283,6 +347,10 @@ export interface BridgeRequest {
     | "list_skills"
     | "read_skill_file"
     | "run_skill_script"
+    | "poll_skill_run"
+    | "kill_skill_run"
+    | "list_skill_helpers"
+    | "ensure_skill_helpers"
     | "read_session_file"
     | "delete_session_workspace"
     | "write_skill"

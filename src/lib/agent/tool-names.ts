@@ -77,6 +77,9 @@ export const TAB_TOOL_NAMES = [
 export const SCREENSHOT_TOOL_NAMES = [
   "capture_visible_tab",
   "capture_fullpage_tab",
+  // L1.5 — seek the page's primary <video> then captureVisibleTab. class=read:
+  // seeking currentTime is incidental to reading a frame (same family as scroll).
+  "capture_video_frame",
 ] as const;
 
 // Web search tool (always present in BUILT_IN_TOOLS).
@@ -258,6 +261,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // Phase 5 screenshot tools
   capture_visible_tab: "read",
   capture_fullpage_tab: "read",
+  capture_video_frame: "read",
   // Web search tool — reads external data, no browser tab mutation
   search_web: "read",
   // Progressive disclosure mediator — read (returns a tool manifest, no side effects)
@@ -371,6 +375,7 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   load_tools: "core",
   // env-lit
   capture_visible_tab: "screenshot", capture_fullpage_tab: "screenshot",
+  capture_video_frame: "screenshot",
   use_skill: "skill-mediation", read_skill_file: "skill-mediation",
   run_skill_script: "skill-mediation", read_skill_output: "skill-mediation",
   read_pdf: "pdf", search_pdf: "pdf", get_pdf_outline: "pdf",

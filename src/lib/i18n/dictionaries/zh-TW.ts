@@ -392,6 +392,7 @@ export const zhTWDict = {
     screenshotAlt: "螢幕截圖 {width}x{height}",
     observation: "觀察結果",
     running: "執行中",
+    queued: "排隊中",
     error: "錯誤",
     ok: "成功",
     nonSerializable: "(無法序列化)",

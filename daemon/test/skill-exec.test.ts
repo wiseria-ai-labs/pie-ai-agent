@@ -61,6 +61,13 @@ test("runs directly with fixed-baseline sandbox settings; returns stdout", async
   expect(seenEnv!.PIE_WORKSPACE).toBe(seenCwd!);
   expect(seenEnv!.PIE_SKILL_DIR!.endsWith("/web-fetch")).toBe(true);
   expect(seenEnv!.BUN_BE_BUN).toBe("1");
+  // TMPDIR/TEMP/TMP 必须落在 workspace/.tmp（srt allowWrite 只有 workspace，
+  // 透传宿主 /var/folders/…/T 会让 PyInstaller/yt-dlp 建不了临时目录）
+  const sandboxTmp = join(seenCwd!, ".tmp");
+  expect(seenEnv!.TMPDIR).toBe(sandboxTmp);
+  expect(seenEnv!.TEMP).toBe(sandboxTmp);
+  expect(seenEnv!.TMP).toBe(sandboxTmp);
+  expect(existsSync(sandboxTmp)).toBe(true);
   rmSync(f.base, { recursive: true, force: true });
 });
 
@@ -113,6 +120,8 @@ test("buildSandboxEnv: only whitelisted keys pass through; secrets are erased", 
     { BUN_BE_BUN: "1", PIE_SKILL_DIR: "/s", PIE_WORKSPACE: "/w" },
     {
       path: "/opt/homebrew/bin:/usr/bin",
+      binDir: "/Users/u/.pie/bin",
+      platform: "darwin",
       env: {
         HOME: "/home/u",
         TMPDIR: "/tmp",
@@ -129,7 +138,7 @@ test("buildSandboxEnv: only whitelisted keys pass through; secrets are erased", 
     },
   );
   // login-shell PATH 覆盖了继承的 PATH
-  expect(env.PATH).toBe("/opt/homebrew/bin:/usr/bin");
+  expect(env.PATH).toBe("/Users/u/.pie/bin:/opt/homebrew/bin:/usr/bin");
   // 白名单键放行
   expect(env.HOME).toBe("/home/u");
   expect(env.TMPDIR).toBe("/tmp");
@@ -150,6 +159,14 @@ test("buildSandboxEnv: only whitelisted keys pass through; secrets are erased", 
 test("buildSandboxEnv: extra overrides collide-named whitelist keys", () => {
   const env = buildSandboxEnv({ HOME: "/injected" }, { path: "/usr/bin", env: { HOME: "/real" } });
   expect(env.HOME).toBe("/injected");
+});
+
+test("buildSandboxEnv: extra TMPDIR overrides host temp (sandbox writable)", () => {
+  const env = buildSandboxEnv(
+    { TMPDIR: "/ws/.tmp" },
+    { path: "/usr/bin", env: { TMPDIR: "/var/folders/xx/T/" } },
+  );
+  expect(env.TMPDIR).toBe("/ws/.tmp");
 });
 
 // ── 副根污染修复（spec §1.2 / I1）：跑副根 skill 脚本 → 副根目录零写入 ──────────
@@ -227,8 +244,32 @@ test("scanOutputs: caps at 50 files and sets truncated", () => {
   rmSync(base, { recursive: true, force: true });
 });
 
+test("scanOutputs skips dotfiles and .tmp (PyInstaller extract junk)", () => {
+  const base = join(import.meta.dir, ".tmp-dot-" + Math.random().toString(36).slice(2));
+  const ws = join(base, "workspace");
+  mkdirSync(join(ws, ".tmp", "_MEI123"), { recursive: true });
+  writeFileSync(join(ws, ".tmp", "_MEI123", "boot"), "x");
+  writeFileSync(join(ws, ".DS_Store"), "x");
+  writeFileSync(join(ws, "out.csv"), "ok");
+  const { outputs } = scanOutputs(ws, 0);
+  expect(outputs.map((o) => o.path)).toEqual(["out.csv"]);
+  rmSync(base, { recursive: true, force: true });
+});
+
 test("scanOutputs: missing workspace → empty, not throw", () => {
   const { outputs, truncated } = scanOutputs(join(import.meta.dir, "does-not-exist-xyz"), 0);
   expect(outputs).toEqual([]);
   expect(truncated).toBe(false);
+});
+
+test("scanOutputs: skips workspace/.tmp (sandbox TMPDIR leftovers)", () => {
+  const base = join(import.meta.dir, ".tmp-scan-tmp-" + Math.random().toString(36).slice(2));
+  const ws = join(base, "workspace");
+  mkdirSync(join(ws, ".tmp", "pyi"), { recursive: true });
+  writeFileSync(join(ws, ".tmp", "pyi", "foo"), "x");
+  writeFileSync(join(ws, "frame.jpg"), "j");
+  const { outputs, truncated } = scanOutputs(ws, 0);
+  expect(outputs.map((o) => o.path)).toEqual(["frame.jpg"]);
+  expect(truncated).toBe(false);
+  rmSync(base, { recursive: true, force: true });
 });

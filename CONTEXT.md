@@ -59,3 +59,17 @@ _Avoid_: pinned tab session
 **grant（授权账本）**:
 daemon 持有的持久授权（`~/.pie/grants.json`），只记 `skill:<id>:<permsHash>` 和 `mcp:<server>[:<tool>]` 两类；批准发生在扩展 HITL 卡，强制与持久在 daemon（ADR 0006）。
 _Avoid_: permission, consent（"cdp-consent" 等 panel-request kind 是 UI 层，grant 是 daemon 持久层）
+
+## Skills & Kits
+
+**Skill**:
+一份「怎么做」的包——SKILL.md 说明 + 可选 `scripts/`。不负责提供 ffmpeg / yt-dlp 这类运行时。
+_Avoid_: 用 skill 指代本机二进制；把 kit 叫成 skill 的附件
+
+**Kit（套件）**:
+一份「做它需要什么」的运行时包——按平台打包的二进制 / 解释器，带版本和校验。多个 skill 可共享同一 kit。用户看见的是套件展示名，不是 yt-dlp。
+_Avoid_: helper、dependency（对用户）；把 brew 包装叫 kit
+
+**requires**:
+Skill 对 Kit 的声明（kit id + 主版本），装 skill / 首次跑脚本时解析。不是沙箱权限信封。
+_Avoid_: metadata.pie.network/write（ADR 0007 已删）；在 skill 里列举二进制文件名

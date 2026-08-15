@@ -21,12 +21,13 @@ const ShieldIcon = () => (
 
 /**
  * skill 运行确认卡（ADR 0007，取代信封授权卡）：展示这次要跑哪个 skill 的哪个脚本、
- * 带什么参数（args 全文，含视频 URL 等），内容不经 LLM 转述。批准粒度 = per session ×
+ * 带什么参数（args 全文），内容不经 LLM 转述。批准粒度 = per session ×
  * per skill——同会话再调同一 skill 不再弹卡（记录随 session 持久化）。
  */
 export function SkillRunConfirmCard({ payload, onDecision }: Props) {
   const t = useT();
   const args = payload.args ?? [];
+
   return (
     <HitlCardShell
       register="local"
