@@ -390,7 +390,7 @@ namespace PieLink
             }
         }
 
-        /// <summary>请 daemon 自己停（ADR 0010）。旧 daemon 无此方法 → false，调用方回落 pid。</summary>
+        /// <summary>请 daemon 自己停（ADR 0012）。旧 daemon 无此方法 → false，调用方回落 pid。</summary>
         internal static bool Shutdown()
         {
             try

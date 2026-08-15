@@ -1,5 +1,5 @@
 /**
- * 本 runtime 对外声明的产品能力。协议只传这些语义，不传 platform（ADR 0010）。
+ * 本 runtime 对外声明的产品能力。协议只传这些语义，不传 platform（ADR 0012）。
  * 平台判定留在本文件内部。
  */
 export type SkillIsolation = "srt" | "none";

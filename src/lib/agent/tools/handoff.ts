@@ -84,7 +84,7 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
       }
       const result = await deps.run({ target, context: a.context, files });
       // fire-and-forget：无 untrusted 内容回传。observation 只报语义（谁、何种形态），
-      // 不带宿主机路径（ADR 0010）。
+      // 不带宿主机路径（ADR 0012）。
       const label = agents.find((x) => x.id === target)?.label ?? target;
       const started =
         result.mode === "app"

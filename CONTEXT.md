@@ -22,7 +22,7 @@ _Avoid_: background task, detached run
 
 ## Local Daemon Bridge
 
-（spec `docs/specs/2026-07-05-local-daemon-bridge.md`；ADR 0005/0007/0009/0010）
+（spec `docs/specs/2026-07-05-local-daemon-bridge.md`；ADR 0005/0007/0009/0010/0011/0012）
 
 **Daemon**:
 常驻本地进程（`pie daemon`，macOS launchd 拉起），扩展与本地世界的桥；是浏览器侧与本地 Agent 侧两个客户端的**会合点**，持有授权账本 + audit + skill 执行器 + MCP 代理 + agent runner。
@@ -37,7 +37,7 @@ _Avoid_: proxy, bridge（"Bridge" 指整条通道，不是这个进程）, nativ
 _Avoid_: 用 Bridge 指 Host 进程
 
 **wire（桥协议）**:
-接口（扩展、顶栏、托盘）与 runtime（daemon）之间的唯一合同，权威源 `src/types/local-bridge.ts`。只传语义：id / label / kind / 能力 / 用户内容；不传系统怎么做（绝对路径、pid、平台下载 URL、win32 布尔）。runtime 自己 handle detect、唤起、沙箱、更新（ADR 0010）。
+接口（扩展、顶栏、托盘）与 runtime（daemon）之间的唯一合同，权威源 `src/types/local-bridge.ts`。只传语义：id / label / kind / 能力 / 用户内容；不传系统怎么做（绝对路径、pid、平台下载 URL、win32 布尔）。runtime 自己 handle detect、唤起、沙箱、更新（ADR 0012）。
 _Avoid_: 在协议里带 `platform`、把宿主机路径或杀进程手段做成返回契约
 
 **interface / runtime**:
@@ -53,7 +53,7 @@ _Avoid_: hand-off（交棒到终端、不回传，是另一形态）, sub-agent
 _Avoid_: round-trip, 把 `open -a` / `start` / handoff 绝对路径写成产品语义
 
 **platform detect（平台检测）**:
-「本机装了哪个本地 agent」的底层探测。mac 与 Windows 各写各的模块（`detect-darwin` / `detect-win32`），安装落点按平台调研，不可互推。上层 `list_agents` / handoff 的 id 与语义统一（ADR 0009）。
+「本机装了哪个本地 agent」的底层探测。mac 与 Windows 各写各的模块（`detect-darwin` / `detect-win32`），安装落点按平台调研，不可互推。上层 `list_agents` / handoff 的 id 与语义统一（ADR 0011）。
 _Avoid_: 用一份路径表同时描述两个平台
 
 **agent brand**:

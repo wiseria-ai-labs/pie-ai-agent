@@ -25,7 +25,7 @@ export interface SkillRunConfirmRequest {
   entry: string;
   /** 本次的 CLI 参数全文（用户看得到这次要干什么） */
   args: string[];
-  /** 握手声明的隔离能力（ADR 0010）。缺省 = 旧 daemon，卡用既有通用披露。 */
+  /** 握手声明的隔离能力（ADR 0012）。缺省 = 旧 daemon，卡用既有通用披露。 */
   skillIsolation?: SkillIsolation;
 }
 

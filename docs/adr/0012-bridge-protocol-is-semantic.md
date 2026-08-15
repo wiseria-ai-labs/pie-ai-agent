@@ -1,10 +1,10 @@
-# ADR 0010：桥协议只传语义；runtime 不向接口暴露系统怎么做
+# ADR 0012：桥协议只传语义；runtime 不向接口暴露系统怎么做
 
 ## 背景
 
 Pie Link 的接口（Chrome 扩展，以及顶栏 / 托盘这些同样走桥的客户端）和 runtime（`pie daemon`；`pie host` 仍是薄透传）之间，唯一合同是 `src/types/local-bridge.ts`。
 
-mac 与 Windows 已是两份 runtime。检测按平台拆开（ADR 0009），但协议里仍有一批「本机怎么做」的字段：绝对路径、pid、按 OS 切的下载 URL、`unsandboxed` 这类平台布尔。接口一旦消费它们，就会按路径形状或 OS 分支写逻辑——下一台机器或下一种安装形态一变，设置页 / observation / 托盘就错。
+mac 与 Windows 已是两份 runtime。检测按平台拆开（ADR 0011），但协议里仍有一批「本机怎么做」的字段：绝对路径、pid、按 OS 切的下载 URL、`unsandboxed` 这类平台布尔。接口一旦消费它们，就会按路径形状或 OS 分支写逻辑——下一台机器或下一种安装形态一变，设置页 / observation / 托盘就错。
 
 本决定只定 **runtime ↔ 接口** 的口径。安装器、打包、商店上架不在范围内。
 
@@ -45,12 +45,12 @@ mac 与 Windows 已是两份 runtime。检测按平台拆开（ADR 0009），但
    | `SandboxBaseline.unsandboxed` | 仍进跑后 audit；**跑前披露走 `hello.skillIsolation`** |
    | handoff 失败 `message` | **已改为语义错误**（不含脚本 / 目录绝对路径） |
 
-5. **runtime 内部继续按平台拆模块，不收成一个系统适配器。** ADR 0009 的检测分家仍然有效；唤起、PATH、更新、沙箱同样各写各的。协议稳定不等于 runtime 合成一个神对象。
+5. **runtime 内部继续按平台拆模块，不收成一个系统适配器。** ADR 0011 的检测分家仍然有效；唤起、PATH、更新、沙箱同样各写各的。协议稳定不等于 runtime 合成一个神对象。
 
 ## 与既有 ADR 的关系
 
 - **ADR 0005**（会合点）不变：daemon 常驻、host 薄透传。0005 第 3 条把传输写成 unix socket，那是当时 mac 的 runtime 实现，**不是协议字段**。Windows 已是 named pipe。接口只认 `connectNative("ai.wiseria.pie")`，不得依赖「这是文件还是 pipe」。
-- **ADR 0009**（检测按平台解耦）是本决定在 detect 上的特例。本决定把同一条规矩收到整条桥：上层统一的是方法与语义，不是路径表。
+- **ADR 0011**（检测按平台解耦）是本决定在 detect 上的特例。本决定把同一条规矩收到整条桥：上层统一的是方法与语义，不是路径表。
 - **ADR 0007**（确认在 agent 层）不变。隔离能不能披露，靠握手上的具名能力，不靠协议里的 Windows 布尔。
 
 ## 被拒的备选

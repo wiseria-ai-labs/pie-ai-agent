@@ -1,6 +1,6 @@
 /**
  * 语义退出：客户端发 `shutdown`，runtime 自己卸 KeepAlive / 结束进程。
- * 接口不得靠 pid 杀（ADR 0010）。
+ * 接口不得靠 pid 杀（ADR 0012）。
  */
 
 export interface ShutdownHooks {

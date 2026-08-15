@@ -18,7 +18,7 @@ export {
  * 静态候选表 = 唯一 launch 权威：spawn 的命令 / app 路径只住在这里，绝不来自 wire 或
  * LLM 参数（wire 上只传 id，daemon 用 id 查表）。加新 agent = 在对应平台表加一行，
  * **必须先在该平台真机上调研安装落点并验证命令**——mac 与 Windows 安装信息不可互推。
- * 检测实现分 `detect-darwin.ts` / `detect-win32.ts`，互不调用（ADR 0009）。
+ * 检测实现分 `detect-darwin.ts` / `detect-win32.ts`，互不调用（ADR 0011）。
  *
  * 顺序即 HandoffCard 的预选顺序：品牌分组，每组 app 在前（app 无 shell、无 TCC，launch 最稳）。
  *

@@ -93,6 +93,6 @@ export async function runHandoff(
     await launchDarwinHandoff(agent, dir, argv, io);
   }
 
-  // `dir` 仍回填（加法，旧客户端可读）。新接口不得当合同（ADR 0010）。
+  // `dir` 仍回填（加法，旧客户端可读）。新接口不得当合同（ADR 0012）。
   return { dir, mode: agent.kind };
 }

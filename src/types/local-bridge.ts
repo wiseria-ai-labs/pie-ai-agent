@@ -1,7 +1,7 @@
 // 扩展 ↔ daemon 桥协议。此文件是唯一权威源；daemon 相对 import，不复制。
 // 加字段只增不改语义；破坏性变更才 bump PROTOCOL_VERSION（spec §7）。
-// 口径（ADR 0010）：只传语义（id / kind / 能力 / 用户内容），不传系统怎么做
-// （绝对路径、pid、平台 URL、win32 布尔）。存量违规字段见 ADR 0010 债务表，新代码不得当合同。
+// 口径（ADR 0012）：只传语义（id / kind / 能力 / 用户内容），不传系统怎么做
+// （绝对路径、pid、平台 URL、win32 布尔）。存量违规字段见 ADR 0012 债务表，新代码不得当合同。
 
 // v1→v2（ADR 0007）：授权模型从 grant 信封换成 agent 确认层。破坏点 = run_skill_script
 // 不再收 grantApproved/approvedEnvelopeHash、daemon 不再回 needs_authorization、
@@ -23,7 +23,7 @@ export interface HelloRequest {
   method: "hello";
   params: { protocolVersion: number };
 }
-/** 脚本执行隔离能力（ADR 0010）：srt = 有围栏；none = 以用户账户直跑。 */
+/** 脚本执行隔离能力（ADR 0012）：srt = 有围栏；none = 以用户账户直跑。 */
 export type SkillIsolation = "srt" | "none";
 
 export interface HelloResponse {
@@ -35,9 +35,9 @@ export interface HelloResponse {
     protocolVersion: number;
     capabilities: string[];
     daemonVersion?: string;
-    /** 加法（ADR 0010）：脚本隔离能力。旧 daemon 不给 → 确认卡用既有通用披露。 */
+    /** 加法（ADR 0012）：脚本隔离能力。旧 daemon 不给 → 确认卡用既有通用披露。 */
     skillIsolation?: SkillIsolation;
-    /** 加法（ADR 0010）：是否支持 apply_update。旧 daemon 不给 → 视为未知。 */
+    /** 加法（ADR 0012）：是否支持 apply_update。旧 daemon 不给 → 视为未知。 */
     selfUpdate?: boolean;
   };
 }
@@ -99,7 +99,7 @@ export interface HandoffParams {
 }
 export interface HandoffResult {
   /**
-   * @deprecated ADR 0010：绝对路径不是协议合同。daemon 仍回填（加法，旧客户端可读），
+   * @deprecated ADR 0012：绝对路径不是协议合同。daemon 仍回填（加法，旧客户端可读），
    * 新接口不得消费（observation / UI 不得展示或依赖）。
    */
   dir: string;
@@ -280,7 +280,7 @@ export interface SandboxBaseline {
   /** env 白名单版本号（擦除策略变更时递增，audit 可追溯当时的擦除口径）。 */
   envAllowlist: string;
   /**
-   * @deprecated ADR 0010：跑后 audit 仍可记。跑前披露走 hello.skillIsolation，
+   * @deprecated ADR 0012：跑后 audit 仍可记。跑前披露走 hello.skillIsolation，
    * 新确认卡不得靠此字段猜平台。
    */
   unsandboxed?: boolean;
@@ -325,7 +325,7 @@ export interface CheckUpdateResult {
   /** latest > current（三段 semver 比较） */
   available: boolean;
   /**
-   * @deprecated ADR 0010：下载 URL 不是协议合同（runtime 内部选发布物）。
+   * @deprecated ADR 0012：下载 URL 不是协议合同（runtime 内部选发布物）。
    * 新客户端只读 available / latest / supported。
    */
   url?: string;
@@ -338,7 +338,7 @@ export interface ApplyUpdateResult {
   /** 替换后磁盘上的新版本号（= latest.version） */
   version: string;
   /**
-   * @deprecated ADR 0010：绝对路径不是协议合同。daemon 仍回填，新客户端不得依赖。
+   * @deprecated ADR 0012：绝对路径不是协议合同。daemon 仍回填，新客户端不得依赖。
    */
   path: string;
 }
@@ -356,7 +356,7 @@ export interface StatusResult {
   extensionConnected: boolean;
   runningSkills: { name: string; startedAt: number }[];
   /**
-   * @deprecated ADR 0010：pid 不是退出合同。新客户端发 `shutdown`。
+   * @deprecated ADR 0012：pid 不是退出合同。新客户端发 `shutdown`。
    * daemon 仍回填，旧托盘可作回落。
    */
   pid?: number;
