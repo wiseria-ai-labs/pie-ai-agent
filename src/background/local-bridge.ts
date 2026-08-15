@@ -12,6 +12,10 @@ import {
   type ReadSkillFileResult,
   type RunSkillScriptParams,
   type RunSkillScriptResult,
+  type PollSkillRunParams,
+  type PollSkillRunResult,
+  type KillSkillRunParams,
+  type KillSkillRunResult,
   type ReadSessionFileParams,
   type ReadSessionFileResult,
   type DeleteSessionWorkspaceParams,
@@ -331,6 +335,12 @@ export async function requestRunSkillScript(p: RunSkillScriptParams): Promise<Ru
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+export async function requestPollSkillRun(p: PollSkillRunParams): Promise<PollSkillRunResult> {
+  return (await send("poll_skill_run", p)) as PollSkillRunResult;
+}
+export async function requestKillSkillRun(p: KillSkillRunParams): Promise<KillSkillRunResult> {
+  return (await send("kill_skill_run", p)) as KillSkillRunResult;
 }
 /** 读回 session workspace 内产物（read_skill_output tool → 此 RPC）。 */
 export async function requestReadSessionFile(p: ReadSessionFileParams): Promise<ReadSessionFileResult> {

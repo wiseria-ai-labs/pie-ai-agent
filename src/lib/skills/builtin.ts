@@ -211,7 +211,7 @@ Constraints:
   pkg(
     "video_transcript",
     "Video Transcript",
-    "Use when the user wants a video summarized or explained, or asks what a video covers / says / talks about — 'summarize this video', 'what's in this video', 'give me the key points', 'what did they say about X' — while a YouTube or Bilibili video page is open. Reads the video's own on-page transcript / caption panel as text so you can summarize or answer questions. If the video has no captions, say so plainly — never invent the content.",
+    "Use when the user wants a video summarized or explained, or asks what a video covers / says / talks about / looks like — 'summarize this video', 'what's in this video', 'give me the key points', 'what did they say about X', 'what's on screen at 2:30' — while a YouTube or Bilibili (or other) video page is open. Prefer the page's own transcript first; use capture_video_frame for pictures; fall back to the local video-parser skill via Pie Link only when there are no captions and the user needs the spoken content.",
     `# Video Transcript
 
 Read the current video's on-page transcript (captions) as text, then use
@@ -281,11 +281,42 @@ still legitimately do (e.g. summarize from the title / description /
 chapters if that helps) and then call done. Never fabricate a summary from
 the thumbnail or title alone and present it as the video's content.
 
+## Combine with the picture (L1.5)
+When the user asks what is on screen, to combine visuals with the transcript,
+or after you have a transcript and want 2–4 key moments:
+1. Pick timestamps from chapters / transcript stamps / the user's "at N:MM".
+2. Call capture_video_frame({ timeSeconds }) for each (shared 5-frame budget
+   with other screenshots). The tab must be the focused/visible pinned tab.
+3. Ground any visual claim in the frame you just captured.
+4. If the tool returns blank_or_drm_frame or no_video, say so plainly — DRM
+   and some embeds cannot be screenshotted. Do not invent the picture.
+5. If the current model has no vision, do not call this tool; tell the user
+   to switch to a vision-capable model.
+
+## Local parse when captions are missing (L3)
+Only after the No-captions path above (you genuinely looked). If the user
+still needs the spoken content and Pie Link is connected:
+1. run_skill_script({ skillId: "video-parser", entry: "parse.ts",
+   args: [<the page URL>] }). First run in the session will pause for the
+   user to approve. This downloads via yt-dlp on the user's machine — it
+   can take minutes; the user can abort.
+2. The script writes frames/*.jpg plus optional transcript.txt / audio.wav
+   into the session workspace. Read text with read_skill_output({ path });
+   read a frame with read_skill_output({ path: "frames/..." }) — image
+   paths come back as pictures, not text.
+3. If the script exits saying yt-dlp/ffmpeg are missing, relay the install
+   guide. If video-parser is an unknown skill, Pie Link is off or too old —
+   tell the user to enable Local integration / update Pie Link.
+4. Never pass cookies or ask the user to log the daemon into the site.
+   Logged-in-only videos are out of scope.
+
+Do NOT call L3 when L1 already produced a usable transcript.
+
 ## Deliver
-Once you have the transcript text, answer the user's actual request —
-summary, key points, or a specific question — grounded only in the
-transcript you read. Say so if your coverage is partial (e.g. you only read
-part of a long transcript).`,
+Once you have the transcript text (and any frames you captured), answer
+the user's actual request — summary, key points, a specific question, or
+what's on screen — grounded only in what you read or saw. Say so if your
+coverage is partial (e.g. you only read part of a long transcript).`,
   ),
 
 ];

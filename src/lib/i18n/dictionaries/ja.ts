@@ -396,6 +396,7 @@ export const jaDict = {
     screenshotAlt: "スクリーンショット {width}x{height}",
     observation: "観察結果",
     running: "実行中",
+    queued: "待機中",
     error: "エラー",
     ok: "OK",
     nonSerializable: "(シリアライズ不可)",

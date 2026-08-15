@@ -8,7 +8,9 @@ import type {
   RunSkillScriptResult,
   ReadSessionFileParams,
   ReadSessionFileResult,
+  PollSkillRunResult,
 } from "@/types/local-bridge";
+import { resizeSW } from "@/lib/images/resize-sw";
 
 /** skill 运行确认卡 payload（ADR 0007）：用户看得到这次要跑哪个 skill 的哪个脚本、
  *  带什么参数。批准粒度 = per session × per skill（同会话再调同一 skill 不重弹）。 */
@@ -62,10 +64,22 @@ export interface SkillScriptDeps {
    * 确实无脚本，不加引导。缺省视作已连接（back-compat）。
    */
   isBridgeReady?: () => boolean;
+  /** 长任务进度：每秒 poll 一次，推给 loop 重绘 pending 卡片。旧 daemon 无此 RPC 时不传。 */
+  pollRun?: (runId: string) => Promise<PollSkillRunResult>;
+  /** 用户 abort / 桥断时杀 daemon 侧进程。旧 daemon 无此 RPC 时不传。 */
+  killRun?: (runId: string) => Promise<void>;
+  /** 把 poll 快照交给 loop → panel。 */
+  onProgress?: (p: PollSkillRunResult) => void;
 }
 
 function isStringArray(x: unknown): x is string[] {
   return Array.isArray(x) && x.every((v) => typeof v === "string");
+}
+
+const SKILL_IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
+
+export function isSkillImagePath(path: string): boolean {
+  return SKILL_IMAGE_EXT.test(path);
 }
 
 /** 人类可读字节数（清单里让 LLM 判断值不值得读）。 */
@@ -218,11 +232,39 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
       }
       if (!approved) return { success: false, error: "User declined skill authorization." };
 
-      const outcome = await deps.runOnDaemon({ name: a.skillId, entry, args: finalArgs, sessionId });
-      if (outcome.ok) {
-        return { success: true, observation: buildSkillOutputObservation(outcome.result) };
+      const runId = crypto.randomUUID();
+      let pollTimer: ReturnType<typeof setInterval> | undefined;
+      const abortRun = () => {
+        void deps.killRun?.(runId);
+      };
+      ctx.signal?.addEventListener("abort", abortRun);
+      if (deps.pollRun) {
+        pollTimer = setInterval(() => {
+          void deps.pollRun!(runId).then(
+            (p) => deps.onProgress?.(p),
+            () => undefined,
+          );
+        }, 1000);
       }
-      return { success: false, error: `run_skill_script failed: ${outcome.error}` };
+      try {
+        const outcome = await deps.runOnDaemon({
+          name: a.skillId,
+          entry,
+          args: finalArgs,
+          sessionId,
+          runId,
+        });
+        if (ctx.signal?.aborted) {
+          return { success: false, error: "run_skill_script aborted." };
+        }
+        if (outcome.ok) {
+          return { success: true, observation: buildSkillOutputObservation(outcome.result) };
+        }
+        return { success: false, error: `run_skill_script failed: ${outcome.error}` };
+      } finally {
+        if (pollTimer) clearInterval(pollTimer);
+        ctx.signal?.removeEventListener("abort", abortRun);
+      }
     },
   };
 }
@@ -241,8 +283,8 @@ export function buildReadSkillOutputTool(deps: ReadSkillOutputDeps): Tool {
     description:
       "Read a file that a skill script wrote into the session workspace. The available paths are listed " +
       "in the observation right after run_skill_script. Reads only the current session's products. " +
-      "At most 256K characters are returned per call; if the file is longer the result is truncated and " +
-      "you can pass `offset` (character offset) to continue reading from where it stopped.",
+      "Text files return at most 256K characters per call; if truncated, pass `offset` to continue. " +
+      "Image paths (.jpg/.jpeg/.png/.webp) come back as a picture you can see (vision), not as text.",
     parameters: {
       type: "object",
       properties: {
@@ -270,6 +312,37 @@ export function buildReadSkillOutputTool(deps: ReadSkillOutputDeps): Tool {
         return { success: false, error: "read_skill_output requires an active session." };
       const offset = typeof a.offset === "number" ? a.offset : 0;
       try {
+        if (isSkillImagePath(a.path)) {
+          const r = await deps.readOutput({
+            sessionId: ctx.sessionId,
+            path: a.path,
+            offset: 0,
+            encoding: "base64",
+          });
+          const raw = r.content.replace(/\s/g, "");
+          const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+          const mime = a.path.toLowerCase().endsWith(".png")
+            ? "image/png"
+            : a.path.toLowerCase().endsWith(".webp")
+              ? "image/webp"
+              : "image/jpeg";
+          const blob = new Blob([bytes], { type: mime });
+          const resized = await resizeSW(blob);
+          if (!resized.ok) {
+            return { success: false, error: `read_skill_output image failed: ${resized.reason}` };
+          }
+          return {
+            success: true,
+            observation: `image ${a.path}: ${resized.value.width}x${resized.value.height} jpeg`,
+            image: {
+              mediaType: "image/jpeg",
+              data: resized.value.data,
+              width: resized.value.width,
+              height: resized.value.height,
+              byteLength: resized.value.byteLength,
+            },
+          };
+        }
         const r = await deps.readOutput({ sessionId: ctx.sessionId, path: a.path, offset });
         // 截断时在闭合标签之外（框架句，我们写的）告知续读位置——不进不可信块。
         const suffix = r.truncated

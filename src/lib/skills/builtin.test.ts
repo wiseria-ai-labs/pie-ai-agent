@@ -76,6 +76,12 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
     const noCap = md.slice(md.indexOf("## No captions available"));
     expect(noCap).toMatch(/read_page/);
     expect(noCap).toMatch(/\.\.\.more|Show more|more-actions|expanded/);
+    // L1.5 / L3 梯子：截帧 tool + 本地 video-parser，且 L3 不得抢 L1
+    expect(md).toMatch(/capture_video_frame/);
+    expect(md).toMatch(/blank_or_drm_frame/);
+    expect(md).toMatch(/video-parser/);
+    expect(md).toMatch(/parse\.ts/);
+    expect(md).toMatch(/Do NOT call L3/);
   });
 
   it("create_skill_from_recording instructs preserving cross-tab steps", () => {

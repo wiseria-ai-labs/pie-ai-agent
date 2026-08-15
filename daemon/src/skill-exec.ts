@@ -7,7 +7,12 @@ import { assertSkillName, listSkills, resolveSkillRoot, defaultRoots } from "./s
 import type { SkillRoots } from "./skill-store";
 import { getCachedUserPath } from "./agents";
 import { appendAudit } from "./audit";
-import { beginSkillRun, endSkillRun } from "./status";
+import {
+  registerSkillRun,
+  markSkillRunRunning,
+  appendSkillRunStdout,
+  endSkillRun,
+} from "./status";
 import { selectSkillSandbox } from "./skill-sandbox";
 import type { SkillSandbox } from "./skill-sandbox";
 import type { RunSkillScriptParams, RunSkillScriptResult, SandboxBaseline } from "../../src/types/local-bridge";
@@ -25,6 +30,8 @@ export interface SkillExecDeps {
   auditPath?: string;
   /** env 白名单构建注入（测试用）：缺省走 buildSandboxEnv（login-shell PATH + 白名单擦除）。 */
   buildEnv?: (extra: Record<string, string>) => Record<string, string>;
+  /** 发起这次 run 的 socket（断连收尸归属）。测试可省略。 */
+  socket?: unknown;
 }
 
 /**
@@ -234,13 +241,27 @@ export async function runSkillScript(
 
   const startedAt = now();
   log("info", "skill.run", { name, entry: params.entry });
-  // 活跃执行注册表：顶栏 app 的 status RPC 据此显示「正在运行的 skill」。
-  const runId = beginSkillRun(name, params.entry);
+  const live = registerSkillRun({
+    runId: params.runId,
+    socket: deps.socket,
+    name,
+    entry: params.entry,
+  });
   let res;
   try {
-    res = await sandbox.run(argv, workspace, env, settings);
+    if (live.killed) {
+      throw Object.assign(new Error("skill script killed"), { code: "killed" });
+    }
+    res = await sandbox.run(argv, workspace, env, settings, {
+      signal: live.abort.signal,
+      onStart: () => markSkillRunRunning(live.runId),
+      onStdout: (chunk) => appendSkillRunStdout(live.runId, chunk),
+    });
+    if (live.killed) {
+      throw Object.assign(new Error("skill script killed"), { code: "killed" });
+    }
   } finally {
-    endSkillRun(runId);
+    endSkillRun(live.runId);
   }
 
   const sandboxBaseline: SandboxBaseline = {

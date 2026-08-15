@@ -11,17 +11,19 @@ import { log } from "./log";
 import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded, readSessionFile, deleteSessionWorkspace, sweepSessions } from "./skill-store";
 import { runSkillScript } from "./skill-exec";
 import { readAuditTail } from "./audit";
-import { getStatus, markExtensionSocket, dropSocket } from "./status";
+import { getStatus, markExtensionSocket, dropSocket, pollSkillRun, killSkillRun, killRunsForSocket } from "./status";
+import { seedBundledSkills } from "./bundled-skills";
 import { checkUpdate, applyUpdate } from "./update";
 import { isAddrInUseError } from "./daemon-launcher";
 import type {
   ReadSkillFileParams, RunSkillScriptParams, WriteSkillParams, DeleteSkillParams,
   ListAuditParams, ListAuditResult, ReadSessionFileParams, DeleteSessionWorkspaceParams,
+  PollSkillRunParams, KillSkillRunParams,
 } from "../../src/types/local-bridge";
 
 export async function handleMessage(
   line: string,
-  ctx: { clientProtocol?: number } = {},
+  ctx: { clientProtocol?: number; socket?: unknown } = {},
 ): Promise<string> {
   let msg: { id?: string; method?: string; params?: unknown };
   try {
@@ -118,19 +120,41 @@ export async function handleMessage(
         });
       }
       try {
-        const result = await runSkillScript(msg.params as RunSkillScriptParams);
+        const result = await runSkillScript(msg.params as RunSkillScriptParams, { socket: ctx.socket });
         return respond({ ok: true, result });
       } catch (e) {
-        // 保留业务错误码（unknown_skill / unknown_entry / timeout / script_error / no_python …）
+        // 保留业务错误码（unknown_skill / unknown_entry / timeout / script_error / no_python / killed …）
         const code = (e as { code?: string }).code ?? "run_skill_script_failed";
         log("error", "run_skill_script.failed", { id, code, error: String(e) });
         return respond({ ok: false, error: { code, message: String(e) } });
       }
     }
+    case "poll_skill_run": {
+      try {
+        const p = msg.params as PollSkillRunParams;
+        return respond({ ok: true, result: pollSkillRun(p.runId) });
+      } catch (e) {
+        log("error", "poll_skill_run.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "poll_skill_run_failed", message: String(e) } });
+      }
+    }
+    case "kill_skill_run": {
+      try {
+        const p = msg.params as KillSkillRunParams;
+        killSkillRun(p.runId);
+        return respond({ ok: true, result: { ok: true } });
+      } catch (e) {
+        log("error", "kill_skill_run.failed", { id, error: String(e) });
+        return respond({ ok: false, error: { code: "kill_skill_run_failed", message: String(e) } });
+      }
+    }
     case "read_session_file": {
       try {
         const p = msg.params as ReadSessionFileParams;
-        return respond({ ok: true, result: readSessionFile(p.sessionId, p.path, p.offset) });
+        return respond({
+          ok: true,
+          result: readSessionFile(p.sessionId, p.path, p.offset, paths.sessionsDir, p.encoding ?? "utf8"),
+        });
       } catch (e) {
         log("error", "read_session_file.failed", { id, error: String(e) });
         return respond({ ok: false, error: { code: "read_session_file_failed", message: String(e) } });
@@ -218,6 +242,7 @@ export function processSocketChunk(
   chunk: string,
   write: (out: string) => void,
   clientProtocol?: number,
+  socket?: unknown,
 ): { carry: string; pending: Promise<void>; sawHello: boolean; clientProtocol?: number } {
   const { lines, carry: nextCarry } = decodeNdjsonLines(carry, chunk);
   // 扩展 host 连接会发 hello，顶栏 app 不发 → 发过 hello 的 socket 记为扩展连接。
@@ -237,7 +262,9 @@ export function processSocketChunk(
     }
   }
   const pending = Promise.all(
-    lines.map((line) => handleMessage(line, { clientProtocol: nextProtocol }).then((out) => write(out + "\n"))),
+    lines.map((line) =>
+      handleMessage(line, { clientProtocol: nextProtocol, socket }).then((out) => write(out + "\n")),
+    ),
   ).then(() => undefined);
   return { carry: nextCarry, pending, sawHello, clientProtocol: nextProtocol };
 }
@@ -308,6 +335,12 @@ export async function startDaemon(): Promise<void> {
   } catch (e) {
     log("warn", "sessions.gc_failed", { error: String(e) });
   }
+  try {
+    const seeded = seedBundledSkills();
+    if (seeded > 0) log("info", "skills.seeded", { count: seeded });
+  } catch (e) {
+    log("warn", "skills.seed_failed", { error: String(e) });
+  }
   // 单实例互斥（Windows）：named pipe 无磁盘文件，占用与否只能靠探测——且 Bun 在
   // pipe 被占时会 panic 而非抛错，必须抢 listen 之前就让位。见 pipeAlreadyServed。
   if (paths.isPipe && (await pipeAlreadyServed(paths.ipcPath))) {
@@ -327,6 +360,7 @@ export async function startDaemon(): Promise<void> {
           log("info", "client.connect");
         },
         close(socket) {
+          killRunsForSocket(socket);
           dropSocket(socket);
           log("info", "client.disconnect");
         },
@@ -336,6 +370,7 @@ export async function startDaemon(): Promise<void> {
             data.toString(),
             (out) => socket.data.writer.write(out),
             socket.data.clientProtocol,
+            socket,
           );
           if (sawHello) markExtensionSocket(socket);
           socket.data.carry = carry;

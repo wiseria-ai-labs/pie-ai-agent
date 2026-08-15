@@ -229,17 +229,32 @@ export function deleteSkillGuarded(name: string, roots: SkillRoots = defaultRoot
  *  D8：单次返回上限 READ_OUTPUT_CAP（256K 字符），从 offset 起切；超限置 truncated
  *  + 回总长度，LLM 用 offset 续读。既防大转写文本直灌 context，也守住 native
  *  messaging 单帧上限。 */
+/** 二进制产物单次上限（base64 编码后须落在 native messaging ~1MB 帧内）。 */
+const READ_IMAGE_BYTE_CAP = 512 * 1024;
+
 export function readSessionFile(
   sessionId: string,
   rel: string,
   offset = 0,
   sessionsDir: string = paths.sessionsDir,
+  encoding: "utf8" | "base64" = "utf8",
 ): ReadSessionFileResult {
   const ws = sessionWorkspace(sessionId, sessionsDir); // 内含 assertSessionId
-  const full = readFileSync(safeRelPath(ws, rel), "utf8");
+  const abs = safeRelPath(ws, rel);
+  if (encoding === "base64") {
+    const buf = readFileSync(abs);
+    if (buf.length > READ_IMAGE_BYTE_CAP) {
+      throw Object.assign(
+        new Error(`file too large for image read (${buf.length} bytes; max ${READ_IMAGE_BYTE_CAP})`),
+        { code: "file_too_large" },
+      );
+    }
+    return { content: buf.toString("base64"), encoding: "base64", totalLength: buf.length };
+  }
+  const full = readFileSync(abs, "utf8");
   const start = Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
   const content = full.slice(start, start + READ_OUTPUT_CAP);
-  const result: ReadSessionFileResult = { content };
+  const result: ReadSessionFileResult = { content, encoding: "utf8" };
   if (start + content.length < full.length) {
     result.truncated = true;
     result.totalLength = full.length;

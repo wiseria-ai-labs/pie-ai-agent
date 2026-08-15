@@ -392,6 +392,7 @@ export const zhCNDict = {
     screenshotAlt: "截图 {width}x{height}",
     observation: "观察结果",
     running: "运行中",
+    queued: "排队中",
     error: "错误",
     ok: "成功",
     nonSerializable: "(不可序列化)",
