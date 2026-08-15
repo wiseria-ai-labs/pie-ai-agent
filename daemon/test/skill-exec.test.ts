@@ -244,6 +244,18 @@ test("scanOutputs: caps at 50 files and sets truncated", () => {
   rmSync(base, { recursive: true, force: true });
 });
 
+test("scanOutputs skips dotfiles and .tmp (PyInstaller extract junk)", () => {
+  const base = join(import.meta.dir, ".tmp-dot-" + Math.random().toString(36).slice(2));
+  const ws = join(base, "workspace");
+  mkdirSync(join(ws, ".tmp", "_MEI123"), { recursive: true });
+  writeFileSync(join(ws, ".tmp", "_MEI123", "boot"), "x");
+  writeFileSync(join(ws, ".DS_Store"), "x");
+  writeFileSync(join(ws, "out.csv"), "ok");
+  const { outputs } = scanOutputs(ws, 0);
+  expect(outputs.map((o) => o.path)).toEqual(["out.csv"]);
+  rmSync(base, { recursive: true, force: true });
+});
+
 test("scanOutputs: missing workspace → empty, not throw", () => {
   const { outputs, truncated } = scanOutputs(join(import.meta.dir, "does-not-exist-xyz"), 0);
   expect(outputs).toEqual([]);

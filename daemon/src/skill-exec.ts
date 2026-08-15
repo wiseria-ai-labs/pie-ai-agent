@@ -96,10 +96,10 @@ export function scanOutputs(
     }
     for (const e of entries) {
       if (truncated) return;
+      // PyInstaller / OS junk (.tmp, .DS_Store) is not a skill product.
+      if (e.name.startsWith(".")) continue;
       const abs = join(dir, e.name);
       if (e.isDirectory()) {
-        // sandbox TMPDIR = workspace/.tmp；不把 PyInstaller/ffmpeg 临时文件当成产物
-        if (e.name === ".tmp") continue;
         walk(abs);
       } else if (e.isFile()) {
         let st;

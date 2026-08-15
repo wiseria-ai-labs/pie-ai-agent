@@ -54,6 +54,14 @@ const PARSE_TS = `#!/usr/bin/env bun
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, unlinkSync, existsSync } from "fs";
 import { join } from "path";
 
+// yt-dlp_macos is PyInstaller: it unpacks to $TMPDIR. The Pie sandbox only
+// allows writes in cwd (session workspace), so point temp at ./.tmp.
+const tmpDir = join(process.env.PIE_WORKSPACE || process.cwd(), ".tmp");
+mkdirSync(tmpDir, { recursive: true });
+process.env.TMPDIR = tmpDir;
+process.env.TEMP = tmpDir;
+process.env.TMP = tmpDir;
+
 const INSTALL =
   "NEED_HELPERS: yt-dlp,ffmpeg\\n" +
   "Pie can install these into ~/.pie/bin (Settings → Local integration → Local tools,\\n" +
@@ -72,7 +80,11 @@ function which(cmd: string): string | null {
 }
 
 function run(argv: string[]): { ok: boolean; stdout: string; stderr: string } {
-  const r = Bun.spawnSync(argv, { stdout: "pipe", stderr: "pipe" });
+  const r = Bun.spawnSync(argv, {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, TMPDIR: tmpDir, TEMP: tmpDir, TMP: tmpDir },
+  });
   return {
     ok: r.exitCode === 0,
     stdout: r.stdout.toString(),

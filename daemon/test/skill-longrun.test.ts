@@ -94,6 +94,7 @@ describe("seedBundledSkills", () => {
     const script = readFileSync(join(dir, "video-parser", "scripts", "parse.ts"), "utf8");
     expect(script).toContain("NEED_HELPERS");
     expect(script).toContain("DOWNLOAD_BLOCKED");
+    expect(script).toContain("TMPDIR");
     expect(script).toContain("player_client");
     expect(script).toContain("js-runtimes");
     expect(script).toContain("--frames");
