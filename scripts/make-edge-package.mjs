@@ -3,9 +3,12 @@
 // Same build, three edits — every one of them something Edge's package
 // validator complains about and Chrome needs (or doesn't care about):
 //
-//   1. `manifest.key` — a hard REJECTION on Edge. Chrome needs it: the key
-//      pins the extension ID, and the Google OAuth redirect URI is registered
-//      against that ID.
+//   1. `manifest.key` — a hard REJECTION on Edge Add-ons. Chrome needs it: the
+//      key pins the extension ID (`gpccjhdgjkmalnepmeclooflliiocfed`), and the
+//      Google OAuth redirect URI is registered against that ID.
+//      This zip is store-only. Local Edge load-unpacked must use the Chrome
+//      zip (key intact) so Pie Link `allowed_origins` still matches. A
+//      path-derived unpacked ID is unstable and must never be allowlisted.
 //   2. Store copy that names another browser — a warning per locale. Each
 //      locale carries an `extension_description_edge` alternative for this.
 //   3. `chrome://extensions/shortcuts` in the command hints — not a validator

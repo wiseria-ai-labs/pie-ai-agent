@@ -37,6 +37,11 @@ export function windowsOpenApp(exe: string, dir: string): { cmd: string; args: s
   return { cmd: "cmd.exe", args: ["/c", "start", "", exe, dir] };
 }
 
+/** Windows 深链：`cmd /c start "" <url>`。URL 走独立 argv，`&` 不会被 cmd 拆开。 */
+export function windowsOpenDeeplink(url: string): { cmd: string; args: string[] } {
+  return { cmd: "cmd.exe", args: ["/c", "start", "", url] };
+}
+
 /**
  * 外层 `cmd /c start` 可以 windowsHide——`start` 会另开可见窗。
  * 有 wt 则 `start "" wt -d dir cmd /c start.bat`，否则 `start "" /D dir cmd /c start.bat`。

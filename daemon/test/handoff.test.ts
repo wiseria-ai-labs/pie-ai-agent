@@ -5,6 +5,7 @@ import {
   buildWindowsStartBat,
   windowsHandoffSpawn,
   windowsOpenApp,
+  windowsOpenDeeplink,
   resolveWindowsTerminal,
 } from "../src/handoff-win32";
 import { AGENT_CANDIDATES } from "../src/agents";
@@ -217,15 +218,19 @@ test("argv 模板：flag 形态（opencode --prompt）", async () => {
   );
 });
 
-test("cursor-app 无深链：写 AGENTS.md + open -a", async () => {
+test("cursor-app afterOpen: 先 open -a 再发 prompt 深链，写 AGENTS.md", async () => {
   const h = harness();
   const r = await runHandoff({ target: "cursor-app", context: "x" }, h.opts);
   expect(r.mode).toBe("app");
-  expect(r.appLaunch).toBe("open-a");
+  expect(r.appLaunch).toBe("deeplink");
   const guide = h.writes.find((w) => w.path.endsWith("AGENTS.md"));
   expect(guide?.content).toContain("Read context.md");
   expect(h.writes.find((w) => w.path.endsWith("CLAUDE.md"))).toBeUndefined();
+  expect(h.spawns).toHaveLength(2);
   expect(h.spawns[0]).toMatchObject({ cmd: "open", args: ["-a", "/Applications/Cursor.app", r.dir] });
+  expect(h.spawns[1].cmd).toBe("open");
+  expect(h.spawns[1].args[0].startsWith("cursor://anysphere.cursor-deeplink/prompt?")).toBe(true);
+  expect(h.spawns[1].args[0]).toContain(`text=${encodeURIComponent(HANDOFF_PROMPT)}`);
 });
 
 test("codex-app deeplink: prompt+path encoded, no AGENTS.md", async () => {
@@ -423,7 +428,13 @@ test("windowsOpenApp: cmd /c start \"\" <exe> <dir> (bare argv, no batQuote)", (
   expect(s.args).not.toContain("-a");
 });
 
-test("win32 app with deeplink template still uses start exe (no mac open)", async () => {
+test("windowsOpenDeeplink: cmd /c start \"\" <url>", () => {
+  const url = "codex://new?prompt=a%20b&path=C%3A%5Ch%5Cd";
+  const s = windowsOpenDeeplink(url);
+  expect(s).toEqual({ cmd: "cmd.exe", args: ["/c", "start", "", url] });
+});
+
+test("win32 app with deeplink: start url, no AGENTS.md, no mac open", async () => {
   const h = harness();
   h.opts.detect = () => [{
     ...winCursorApp(),
@@ -436,28 +447,62 @@ test("win32 app with deeplink template still uses start exe (no mac open)", asyn
     { ...h.opts, platform: "win32" },
   );
   expect(r.mode).toBe("app");
-  expect(r.appLaunch).toBe("open-a");
-  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(true);
+  expect(r.appLaunch).toBe("deeplink");
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(false);
   expect(h.spawns).toHaveLength(1);
   expect(h.spawns[0].cmd).toBe("cmd.exe");
-  expect(h.spawns.some((s) => s.cmd === "open" || s.args[0]?.startsWith("codex://"))).toBe(false);
+  expect(h.spawns[0].args[0]).toBe("/c");
+  expect(h.spawns[0].args[3].startsWith("codex://new?")).toBe(true);
+  expect(h.spawns[0].args[3]).toContain(`prompt=${encodeURIComponent(HANDOFF_PROMPT)}`);
+  expect(h.spawns[0].args[3]).toContain(`path=${encodeURIComponent(r.dir)}`);
+  expect(h.spawns.some((s) => s.cmd === "open" || s.cmd === "osascript")).toBe(false);
 });
 
-test("win32 app: start \"\" <exe> <dir>，写 AGENTS.md，mode=app", async () => {
+test("win32 deeplink non-zero falls back to start exe + convention", async () => {
   const h = harness();
-  h.opts.detect = () => [winCursorApp()];
+  h.opts.detect = () => [{
+    ...winCursorApp(),
+    id: "codex-app" as const,
+    label: "Codex / ChatGPT (App)",
+    deeplink: { template: "codex://new?prompt={prompt}&path={dir}" },
+  }];
+  h.opts.spawn = async (cmd, args, cwd) => {
+    h.spawns.push({ cmd, args, cwd });
+    if (args[3]?.startsWith("codex://")) {
+      return { stdout: "", exitCode: 1, stderr: "start failed" };
+    }
+    return { stdout: "", exitCode: 0 };
+  };
+  const r = await runHandoff(
+    { target: "codex-app", context: "x" },
+    { ...h.opts, platform: "win32" },
+  );
+  expect(r.appLaunch).toBe("open-a");
+  expect(h.spawns).toHaveLength(2);
+  expect(h.spawns[0].args[3].startsWith("codex://")).toBe(true);
+  expect(h.spawns[1].args).toEqual(["/c", "start", "", CURSOR_EXE, r.dir]);
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(true);
+});
+
+test("win32 cursor-app afterOpen: start exe 再 start prompt 深链", async () => {
+  const h = harness();
+  h.opts.detect = () => [{
+    ...winCursorApp(),
+    deeplink: { template: "cursor://anysphere.cursor-deeplink/prompt?text={prompt}", afterOpen: true },
+  }];
   const r = await runHandoff(
     { target: "cursor-app", context: "Continue the report" },
     { ...h.opts, platform: "win32" },
   );
   expect(r.mode).toBe("app");
+  expect(r.appLaunch).toBe("deeplink");
   expect(h.writes.some((w) => w.path.endsWith("context.md") && w.content === "Continue the report")).toBe(true);
   const guide = h.writes.find((w) => w.path.endsWith("AGENTS.md"));
   expect(guide?.content).toContain("Read context.md");
   expect(h.writes.some((w) => w.path.endsWith("start.command") || w.path.endsWith("start.bat"))).toBe(false);
-  expect(h.spawns).toHaveLength(1);
-  expect(h.spawns[0].cmd).toBe("cmd.exe");
+  expect(h.spawns).toHaveLength(2);
   expect(h.spawns[0].args).toEqual(["/c", "start", "", CURSOR_EXE, r.dir]);
+  expect(h.spawns[1].args[3].startsWith("cursor://anysphere.cursor-deeplink/prompt?")).toBe(true);
   expect(h.spawns.some((s) => s.cmd === "open" || s.cmd === "osascript")).toBe(false);
 });
 

@@ -10,4 +10,4 @@
 - **品牌开关 + 设置里的默认形态 / MRU**：确认卡已经能选；再持久一套偏好是第二套解决同一问题的机制。
 - **wire 改成品牌 id**：daemon launch 命令按形态分，硬改 target 要协议版本或歧义默认；形态 id 留给机器，品牌留给人。
 
-**下游**：`enabled_local_agents` 存品牌 id，读时把旧形态 id 并集归一化。App 启动协议（深链 vs `open -a`）是形态上的数据，见 `docs/specs/2026-08-15-merge-local-agent-forms.md`。
+**下游**：`enabled_local_agents` 存品牌 id，读时把旧形态 id 并集归一化。App 启动必须预填目录+提示词，见 ADR 0013。

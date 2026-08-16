@@ -54,6 +54,15 @@ describe("HandoffCard", () => {
     expect(screen.getByText(/prefilled/i)).toBeTruthy();
   });
 
+  it("places the form segment on the same row as the agent select, at most 1/3 width", () => {
+    renderCard({ payload: PAYLOAD, onDecision: vi.fn() });
+    const group = screen.getByRole("group", { name: "Form" });
+    expect(group.className).toMatch(/max-w-\[33%\]/);
+    expect(group.parentElement?.className).toMatch(/\bflex\b/);
+    expect(group.parentElement?.className).toMatch(/items-end/);
+    expect(group.parentElement?.querySelector("button[aria-haspopup='listbox']")).toBeTruthy();
+  });
+
   it("single-form brand hides the form segment", () => {
     renderCard({
       payload: { context: "x", fileCount: 0, brands: [BRANDS[1]] },
@@ -108,7 +117,7 @@ describe("HandoffCard", () => {
     expect(container.textContent).not.toContain("handoff_to_agent");
   });
 
-  it("Cursor App uses the open-folder note, not the prefill note", () => {
+  it("Cursor App uses the prefill note now that prompt deeplink is wired", () => {
     renderCard({
       payload: {
         context: "x",
@@ -123,8 +132,7 @@ describe("HandoffCard", () => {
       },
       onDecision: vi.fn(),
     });
-    expect(screen.getByText(/opens this folder/i)).toBeTruthy();
-    expect(screen.queryByText(/prefilled/i)).toBeNull();
+    expect(screen.getByText(/prefilled/i)).toBeTruthy();
   });
 
   it("uses form kind, not the id suffix, to decide the note", () => {

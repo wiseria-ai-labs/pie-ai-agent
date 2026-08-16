@@ -61,8 +61,8 @@ _Avoid_: 用一份路径表同时描述两个平台
 _Avoid_: 把 App / Terminal 当成两个 Agent；用 provider / model 指本地 Agent
 
 **agent form**:
-一个品牌的交棒外壳：`app` 或 `terminal`。检测路径、launch 命令、`handoff_to_agent.target` 仍是形态 id（`claude-app` / `claude-terminal` …）。只在确认卡、且该品牌两种形态都装了时才让人再选一次。
-_Avoid_: 在设置里给形态单独开关；把 form 叫 mode（`HandoffResult.mode` 是 launch 结果，不是身份）
+一个品牌的交棒外壳：`app` 或 `terminal`。检测路径、launch 命令、`handoff_to_agent.target` 仍是形态 id（`claude-app` / `claude-terminal` …）。只在确认卡、且该品牌两种形态都装了时才让人再选一次。App 形态的体验条 = 打开 App 并预填工作目录和提示词（ADR 0013）。
+_Avoid_: 在设置里给形态单独开关；把 form 叫 mode（`HandoffResult.mode` 是 launch 结果，不是身份）；只打开文件夹、不预填的 App 行
 
 **bridge session**:
 反向调用（本地 Agent → Pie）时 daemon 侧建的 ephemeral session，仅作 CDP ownerToken / sandbox 记账；操作按 tabId 直打**真实活跃 tab**，不绑某个 Pie session 的 pinned tab。

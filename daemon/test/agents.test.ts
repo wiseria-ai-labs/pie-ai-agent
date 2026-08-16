@@ -75,16 +75,35 @@ test("各家 headless 契约（已查实的命令 + 跳权限 flag）", () => {
 });
 
 test("app 候选必须有 convention（无深链或深链回落靠引导文件）", () => {
-  for (const c of AGENT_CANDIDATES) {
+  for (const c of [...AGENT_CANDIDATES, ...WINDOWS_AGENT_CANDIDATES]) {
     if (c.kind === "app") expect(c.convention).toBeDefined();
   }
 });
 
-test("claude-app / codex-app 有深链模板；cursor-app 没有", () => {
+test("每条 app 候选必须有深链（ADR 0013：打开+文件夹+预填）", () => {
+  for (const c of [...AGENT_CANDIDATES, ...WINDOWS_AGENT_CANDIDATES]) {
+    if (c.kind !== "app") continue;
+    expect(c.deeplink?.template, c.id).toBeTruthy();
+    expect(c.deeplink!.template).toContain("{prompt}");
+    if (!c.deeplink!.afterOpen) expect(c.deeplink!.template).toContain("{dir}");
+  }
+});
+
+test("claude-app / codex-app 有目录+预填深链；cursor-app 是打开后再发 prompt 深链", () => {
   const byId = Object.fromEntries(AGENT_CANDIDATES.map((c) => [c.id, c]));
   expect(byId["claude-app"].deeplink?.template).toBe("claude://code/new?q={prompt}&folder={dir}");
   expect(byId["codex-app"].deeplink?.template).toBe("codex://new?prompt={prompt}&path={dir}");
-  expect(byId["cursor-app"].deeplink).toBeUndefined();
+  expect(byId["cursor-app"].deeplink?.template).toBe(
+    "cursor://anysphere.cursor-deeplink/prompt?text={prompt}",
+  );
+  expect(byId["cursor-app"].deeplink?.afterOpen).toBe(true);
+});
+
+test("Windows 三家 App 深链与 mac 同构", () => {
+  const byId = Object.fromEntries(WINDOWS_AGENT_CANDIDATES.map((c) => [c.id, c]));
+  expect(byId["claude-app"].deeplink?.template).toBe("claude://code/new?q={prompt}&folder={dir}");
+  expect(byId["codex-app"].deeplink?.template).toBe("codex://new?prompt={prompt}&path={dir}");
+  expect(byId["cursor-app"].deeplink?.afterOpen).toBe(true);
 });
 
 test("opencode 走 --prompt flag，其余 terminal 走位置参数", () => {
@@ -218,8 +237,9 @@ test("agentCandidatesFor: win32 → Windows 表；其余 → mac 8 条", () => {
   expect(agentCandidatesFor("linux")).toBe(AGENT_CANDIDATES);
 });
 
-test("Windows 表品牌分组、app 在前；不含 claude-app / 不含 mac 路径", () => {
+test("Windows 表品牌分组、app 在前；不含 mac 路径", () => {
   expect(WINDOWS_AGENT_CANDIDATES.map((c) => c.id)).toEqual([
+    "claude-app",
     "claude-terminal",
     "codex-app",
     "codex-terminal",
@@ -227,7 +247,6 @@ test("Windows 表品牌分组、app 在前；不含 claude-app / 不含 mac 路�
     "cursor-terminal",
     "opencode-terminal",
   ]);
-  expect(WINDOWS_AGENT_CANDIDATES.some((c) => c.id === "claude-app")).toBe(false);
   for (const c of WINDOWS_AGENT_CANDIDATES) {
     if (c.kind === "terminal") expect(c.verified).not.toBe(false);
     if (c.kind === "app") {

@@ -140,20 +140,21 @@ open "codex://new?prompt=<urlencoded 短引导语>&path=<urlencoded 绝对目录
 - 至少要带 `prompt` / `path` / `originUrl` 之一，否则链接无操作——我们两项都带
 - 深链路径 **不写** `AGENTS.md`
 
-### 7.4 Cursor App（本轮不升级协议）
+### 7.4 Cursor App
 
-维持：
+官方 prompt 深链没有 folder，和打开目录是两条通道。实现按顺序走两条官方通道：
 
 ```
-write AGENTS.md（短引导语）
-open -a <命中的 Cursor.app 路径> <dir>
+write AGENTS.md（短引导语，回落）
+open -a / start exe <dir>
+open / start "" "cursor://anysphere.cursor-deeplink/prompt?text=<urlencoded 短引导语>"
 ```
 
-官方 prompt deeplink（`cursor://anysphere.cursor-deeplink/prompt?text=`）**没有 folder 参数**，和打开目录是两条通道，本轮不硬拼。不把「对不齐的预填」标成已交付。
+prompt 深链成功则 `appLaunch=deeplink`；只打开了目录则 `open-a`。不把两条通道捏成一条假协议。
 
 ### 7.5 深链失败回落
 
-`open <deeplink>` 非零：回落到现在的 `open -a <appPath> <dir>`，并补写该品牌约定文件（Claude → `CLAUDE.md`，Codex → `AGENTS.md`）。回落必须在 observation / 日志里能看出来，便于真机排障。Windows App 仍报「尚未支持」，不编深链（#23）。
+`open <deeplink>` / Windows `start "" <deeplink>` 非零：回落到现在的 `open -a` / `start exe` + 约定文件（Claude → `CLAUDE.md`，Codex → `AGENTS.md`）。回落必须在 observation / 日志里能看出来，便于真机排障。Windows 上 Codex App 走同一条 `codex://new?prompt=&path=`（`cmd /c start "" <url>`）；Cursor 仍无「目录 + 预填」协议。Claude App 未进 Windows 候选表。
 
 ### 7.6 候选表数据
 
@@ -179,7 +180,7 @@ deeplink?: {
 
 - **`run_local_agent`**：后端仍是 headless 形态列表，不按品牌再包一层选择。品牌开关会透过「形态 → 品牌」影响谁出现。
 - **OpenCode Desktop**：桌面端已存在，但没有已验证的「打开 + 目录 + 预填」协议。继续只有 Terminal。
-- **Windows App 形态**：#23。本轮深链只要求 macOS 真机（`open "scheme://…"`）。
+- **OpenCode Desktop / Pi App**：没有已验证的「打开 + 目录 + 预填」协议，继续只有 Terminal。
 - **形态级开关 / 默认形态设置项 / MRU**。
 - **用户自定义 agent 条目**。
 - **handoff 打开真实项目目录**（仍是一次性 `~/pie-handoffs/…`；#269 spec §6 已单开）。

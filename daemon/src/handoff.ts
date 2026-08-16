@@ -8,7 +8,7 @@ import { detectAgents } from "./agents";
 import { paths } from "./paths";
 import { log } from "./log";
 import { launchDarwinHandoff } from "./handoff-darwin";
-import { launchWin32Handoff } from "./handoff-win32";
+import { launchWin32Handoff, windowsOpenDeeplink } from "./handoff-win32";
 
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
 const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md", "agents.md"]);
@@ -86,13 +86,14 @@ export async function runHandoff(
   }
 
   if (agent.kind === "app") {
-    // 深链只走 macOS `open`（本轮已验证）。Windows App 继续 start exe + convention（#23）。
-    if (platform !== "win32" && agent.deeplink) {
+    // 统一深链（Claude / Codex）：一次带目录 + 预填。成功则不写约定文件。
+    if (agent.deeplink && !agent.deeplink.afterOpen) {
       const url = buildDeeplinkUrl(agent.deeplink.template, HANDOFF_PROMPT, dir);
       log("info", "handoff.open_app", {
         dir, target: agent.id, launch: "deeplink", files: (params.files ?? []).length,
       });
-      const r = await spawn("open", [url], dir);
+      const launch = platform === "win32" ? windowsOpenDeeplink(url) : { cmd: "open", args: [url] };
+      const r = await spawn(launch.cmd, launch.args, dir);
       if (r.exitCode === 0) {
         return { dir, mode: "app", appLaunch: "deeplink" };
       }
@@ -117,6 +118,25 @@ export async function runHandoff(
     await launchWin32Handoff(agent, dir, argv, io);
   } else {
     await launchDarwinHandoff(agent, dir, argv, io);
+  }
+
+  // Cursor：官方 prompt 深链没有 folder，先打开目录再发预填。
+  if (agent.kind === "app" && agent.deeplink?.afterOpen) {
+    const url = buildDeeplinkUrl(agent.deeplink.template, HANDOFF_PROMPT, dir);
+    log("info", "handoff.open_app", {
+      dir, target: agent.id, launch: "deeplink", files: (params.files ?? []).length,
+    });
+    const launch = platform === "win32" ? windowsOpenDeeplink(url) : { cmd: "open", args: [url] };
+    const r = await spawn(launch.cmd, launch.args, dir);
+    if (r.exitCode === 0) {
+      return { dir, mode: "app", appLaunch: "deeplink" };
+    }
+    log("warn", "handoff.deeplink_fallback", {
+      dir,
+      target: agent.id,
+      exitCode: r.exitCode,
+      stderr: (r.stderr ?? "").trim().slice(0, 300),
+    });
   }
 
   // `dir` 仍回填（加法，旧客户端可读）。新接口不得当合同（ADR 0012）。

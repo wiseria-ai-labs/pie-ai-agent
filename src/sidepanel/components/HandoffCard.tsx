@@ -15,8 +15,6 @@ interface Props {
   onDecision: (target: string | null) => void;
 }
 
-const APP_NO_DEEPLINK = new Set(["cursor-app"]);
-
 function defaultFormId(forms: HandoffBrandOption["forms"]): string {
   return forms.find((f) => f.kind === "app")?.id ?? forms[0]?.id ?? "";
 }
@@ -42,11 +40,7 @@ export function HandoffCard({ payload, onDecision }: Props) {
   const selectedForm = brand?.forms.find((f) => f.id === formId) ?? brand?.forms[0];
   const showFormSegment = (brand?.forms.length ?? 0) === 2;
   const formNote =
-    selectedForm?.kind === "terminal"
-      ? t("handoff.form.noteTerminal")
-      : selectedForm?.id && APP_NO_DEEPLINK.has(selectedForm.id)
-        ? t("handoff.form.noteAppOpen")
-        : t("handoff.form.noteApp");
+    selectedForm?.kind === "terminal" ? t("handoff.form.noteTerminal") : t("handoff.form.noteApp");
 
   const onBrand = (id: string) => {
     setBrandId(id);
@@ -72,16 +66,18 @@ export function HandoffCard({ payload, onDecision }: Props) {
         </>
       }
     >
-      <AgentSelect
-        label={t("handoff.targetLabel")}
-        agents={payload.brands.map((b) => ({ id: b.id, label: b.label }))}
-        selected={brandId}
-        onSelect={onBrand}
-      />
-      {showFormSegment && brand && (
-        <div className="flex flex-col gap-1.5">
+      <div className="flex items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <AgentSelect
+            label={t("handoff.targetLabel")}
+            agents={payload.brands.map((b) => ({ id: b.id, label: b.label }))}
+            selected={brandId}
+            onSelect={onBrand}
+          />
+        </div>
+        {showFormSegment && brand && (
           <div
-            className="flex gap-0.5 rounded-lg border border-line bg-field p-0.5"
+            className="flex h-[38px] w-1/3 max-w-[33%] shrink-0 gap-0.5 rounded-lg border border-line bg-field p-0.5"
             role="group"
             aria-label={t("handoff.form.groupLabel")}
           >
@@ -93,7 +89,7 @@ export function HandoffCard({ payload, onDecision }: Props) {
                   type="button"
                   aria-pressed={pressed}
                   onClick={() => setFormId(f.id)}
-                  className={`flex-1 rounded-md px-2.5 py-1 text-[12px] ${
+                  className={`min-w-0 flex-1 truncate rounded-md px-1.5 text-[12px] ${
                     pressed ? "bg-canvas font-medium text-fg-1" : "text-fg-2 hover:text-fg-1"
                   }`}
                 >
@@ -102,8 +98,8 @@ export function HandoffCard({ payload, onDecision }: Props) {
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
       <p className="text-[12px] leading-relaxed text-fg-3">{formNote}</p>
       <HitlDetailBlock>
         <HitlDetailGroup label={t("handoff.contextLabel")}>
