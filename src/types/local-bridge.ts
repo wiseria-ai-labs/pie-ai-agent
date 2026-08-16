@@ -103,8 +103,14 @@ export interface HandoffResult {
    * 新接口不得消费（observation / UI 不得展示或依赖）。
    */
   dir: string;
-  /** terminal = 自动开跑；app = 已打开但需用户发一句话启动 */
+  /** terminal = 自动开跑；app = App 已打开但需用户发一句话启动 */
   mode: "terminal" | "app";
+  /**
+   * 加法（PROTOCOL_VERSION 不动）：app 实际怎么打开的。
+   * deeplink = 官方深链预填了引导语；open-a = `open -a` / 回落 / Cursor。
+   * 旧 daemon 缺省 → 消费方按 open-a（不要谎称预填）。
+   */
+  appLaunch?: "deeplink" | "open-a";
 }
 
 // ── skill_fs ──────────────────────────────────────────────────────────

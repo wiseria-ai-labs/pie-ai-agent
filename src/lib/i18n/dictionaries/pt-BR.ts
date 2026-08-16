@@ -210,6 +210,14 @@ export const ptBRDict = {
     appContinueHint: "O app só abre o espaço de trabalho; envie um continue no app para começar.",
     allow: "Repassar",
     deny: "Cancelar",
+    form: {
+      groupLabel: "Forma",
+      app: "App",
+      terminal: "Terminal",
+      noteTerminal: "A sessão do terminal começa automaticamente.",
+      noteApp: "O app abre com um aviso curto já preenchido; você envia (o Claude pede para confirmar a pasta).",
+      noteAppOpen: "O app abre essa pasta; envie uma mensagem para começar.",
+    },
   },
   skillRunConfirm: {
     title: "Executar um script de {name}?",

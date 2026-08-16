@@ -205,6 +205,14 @@ export const zhCNDict = {
     appContinueHint: "App 只会打开工作区，需要你在 App 里发一句继续。",
     allow: "交棒",
     deny: "取消",
+    form: {
+      groupLabel: "形态",
+      app: "App",
+      terminal: "Terminal",
+      noteTerminal: "交棒后终端会自动开跑。",
+      noteApp: "交棒后 App 打开并预填引导语，需你发送（Claude 会先确认目录）。",
+      noteAppOpen: "App 已打开该目录，需发送一句才能开跑。",
+    },
   },
   skillRunConfirm: {
     title: "运行来自 {name} 的脚本？",

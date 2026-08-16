@@ -8,14 +8,21 @@ import { detectAgents } from "./agents";
 import { paths } from "./paths";
 import { log } from "./log";
 import { launchDarwinHandoff } from "./handoff-darwin";
-import { launchWin32Handoff } from "./handoff-win32";
+import { launchWin32Handoff, windowsOpenDeeplink } from "./handoff-win32";
 
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
 const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md", "agents.md"]);
 
-/** 交棒引导语：terminal 直接注入 argv，app 写进 convention 文件。 */
-const HANDOFF_PROMPT =
+/** 交棒引导语：terminal 注入 argv；深链预填 composer；无深链 / 回落写进 convention 文件。 */
+export const HANDOFF_PROMPT =
   "Read context.md in this directory for the handed-off context, then continue the task.";
+
+/** 深链模板：`{prompt}` / `{dir}` 占位，插入前 URL-encode。 */
+export function buildDeeplinkUrl(template: string, prompt: string, dir: string): string {
+  return template
+    .replaceAll("{prompt}", encodeURIComponent(prompt))
+    .replaceAll("{dir}", encodeURIComponent(dir));
+}
 
 /** slug：context 前 24 字符小写、非字母数字转 -。 */
 function slugify(context: string): string {
@@ -79,8 +86,28 @@ export async function runHandoff(
   }
 
   if (agent.kind === "app") {
+    // 统一深链（Claude / Codex）：一次带目录 + 预填。成功则不写约定文件。
+    if (agent.deeplink && !agent.deeplink.afterOpen) {
+      const url = buildDeeplinkUrl(agent.deeplink.template, HANDOFF_PROMPT, dir);
+      log("info", "handoff.open_app", {
+        dir, target: agent.id, launch: "deeplink", files: (params.files ?? []).length,
+      });
+      const launch = platform === "win32" ? windowsOpenDeeplink(url) : { cmd: "open", args: [url] };
+      const r = await spawn(launch.cmd, launch.args, dir);
+      if (r.exitCode === 0) {
+        return { dir, mode: "app", appLaunch: "deeplink" };
+      }
+      log("warn", "handoff.deeplink_fallback", {
+        dir,
+        target: agent.id,
+        exitCode: r.exitCode,
+        stderr: (r.stderr ?? "").trim().slice(0, 300),
+      });
+    }
     writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${HANDOFF_PROMPT}\n`);
-    log("info", "handoff.open_app", { dir, target: agent.id, files: (params.files ?? []).length });
+    log("info", "handoff.open_app", {
+      dir, target: agent.id, launch: "open-a", files: (params.files ?? []).length,
+    });
   } else {
     log("info", "handoff.open", { dir, target: agent.id, files: (params.files ?? []).length });
   }
@@ -93,6 +120,25 @@ export async function runHandoff(
     await launchDarwinHandoff(agent, dir, argv, io);
   }
 
+  // Cursor：官方 prompt 深链没有 folder，先打开目录再发预填。
+  if (agent.kind === "app" && agent.deeplink?.afterOpen) {
+    const url = buildDeeplinkUrl(agent.deeplink.template, HANDOFF_PROMPT, dir);
+    log("info", "handoff.open_app", {
+      dir, target: agent.id, launch: "deeplink", files: (params.files ?? []).length,
+    });
+    const launch = platform === "win32" ? windowsOpenDeeplink(url) : { cmd: "open", args: [url] };
+    const r = await spawn(launch.cmd, launch.args, dir);
+    if (r.exitCode === 0) {
+      return { dir, mode: "app", appLaunch: "deeplink" };
+    }
+    log("warn", "handoff.deeplink_fallback", {
+      dir,
+      target: agent.id,
+      exitCode: r.exitCode,
+      stderr: (r.stderr ?? "").trim().slice(0, 300),
+    });
+  }
+
   // `dir` 仍回填（加法，旧客户端可读）。新接口不得当合同（ADR 0012）。
-  return { dir, mode: agent.kind };
+  return { dir, mode: agent.kind, ...(agent.kind === "app" ? { appLaunch: "open-a" as const } : {}) };
 }

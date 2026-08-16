@@ -1,10 +1,11 @@
 import { test, expect } from "bun:test";
-import { runHandoff, safeFileName } from "../src/handoff";
+import { runHandoff, safeFileName, buildDeeplinkUrl, HANDOFF_PROMPT } from "../src/handoff";
 import {
   batQuote,
   buildWindowsStartBat,
   windowsHandoffSpawn,
   windowsOpenApp,
+  windowsOpenDeeplink,
   resolveWindowsTerminal,
 } from "../src/handoff-win32";
 import { AGENT_CANDIDATES } from "../src/agents";
@@ -124,20 +125,21 @@ test("rejects unsupported/injected target before building the script or spawning
   expect(h.spawns).toHaveLength(0);
 });
 
-test("app mode: writes CLAUDE.md convention, opens Claude app on the dir, no start.command", async () => {
+test("claude-app deeplink: encodes prompt+dir, no CLAUDE.md, no start.command", async () => {
   const h = harness();
   const r = await runHandoff({ target: "claude-app", context: "Continue the report" }, h.opts);
   expect(r.mode).toBe("app");
-  // CLAUDE.md 约定注入（app 无 prompt 注入面，靠目录内约定）
-  const claudeMd = h.writes.find((w) => w.path.endsWith("/CLAUDE.md"));
-  expect(claudeMd?.content).toContain("context.md");
-  // context.md 照旧落盘
+  expect(r.appLaunch).toBe("deeplink");
   expect(h.writes.some((w) => w.path.endsWith("context.md") && w.content === "Continue the report")).toBe(true);
-  // app 模式不写 start.command、不走 osascript
+  expect(h.writes.some((w) => w.path.endsWith("CLAUDE.md"))).toBe(false);
   expect(h.writes.some((w) => w.path.endsWith("start.command"))).toBe(false);
   expect(h.spawns).toHaveLength(1);
   expect(h.spawns[0].cmd).toBe("open");
-  expect(h.spawns[0].args).toEqual(["-a", "/Applications/Claude.app", r.dir]);
+  const url = h.spawns[0].args[0];
+  expect(url.startsWith("claude://code/new?")).toBe(true);
+  expect(url).toContain(`q=${encodeURIComponent(HANDOFF_PROMPT)}`);
+  expect(url).toContain(`folder=${encodeURIComponent(r.dir)}`);
+  expect(h.spawns[0].args).not.toContain("-a");
 });
 
 test("codex terminal mode: start.command execs codex (bin from static table, not wire)", async () => {
@@ -172,14 +174,14 @@ test("safeFileName rejects CLAUDE.md case-insensitively (app-mode reserved file)
   expect(() => safeFileName("claude.md")).toThrow();
 });
 
-test("open failure in app mode is semantic (no folder path)", async () => {
+test("open-a failure (no deeplink) is semantic (no folder path)", async () => {
   const h = harness();
   h.opts.spawn = async (cmd: string, args: string[], cwd: string) => {
     h.spawns.push({ cmd, args, cwd });
-    return { stdout: "", exitCode: 1, stderr: "Unable to find application named 'Claude'" };
+    return { stdout: "", exitCode: 1, stderr: "Unable to find application named 'Cursor'" };
   };
-  await expect(runHandoff({ target: "claude-app", context: "x" }, h.opts)).rejects.toThrow(
-    /failed to open Claude Code \(App\)/,
+  await expect(runHandoff({ target: "cursor-app", context: "x" }, h.opts)).rejects.toThrow(
+    /failed to open Cursor \(App\)/,
   );
 });
 
@@ -216,22 +218,71 @@ test("argv 模板：flag 形态（opencode --prompt）", async () => {
   );
 });
 
-test("app 模式按 convention 写引导文件：Claude → CLAUDE.md", async () => {
+test("cursor-app afterOpen: 先 open -a 再发 prompt 深链，写 AGENTS.md", async () => {
   const h = harness();
-  const r = await runHandoff({ target: "claude-app", context: "x" }, h.opts);
+  const r = await runHandoff({ target: "cursor-app", context: "x" }, h.opts);
   expect(r.mode).toBe("app");
-  const guide = h.writes.find((w) => w.path.endsWith("CLAUDE.md"));
-  expect(guide?.content).toContain("Read context.md");
-  expect(h.writes.find((w) => w.path.endsWith("AGENTS.md"))).toBeUndefined();
-  expect(h.spawns[0]).toMatchObject({ cmd: "open", args: ["-a", "/Applications/Claude.app", r.dir] });
-});
-
-test("app 模式按 convention 写引导文件：Codex → AGENTS.md", async () => {
-  const h = harness();
-  const r = await runHandoff({ target: "codex-app", context: "x" }, h.opts);
+  expect(r.appLaunch).toBe("deeplink");
   const guide = h.writes.find((w) => w.path.endsWith("AGENTS.md"));
   expect(guide?.content).toContain("Read context.md");
   expect(h.writes.find((w) => w.path.endsWith("CLAUDE.md"))).toBeUndefined();
+  expect(h.spawns).toHaveLength(2);
+  expect(h.spawns[0]).toMatchObject({ cmd: "open", args: ["-a", "/Applications/Cursor.app", r.dir] });
+  expect(h.spawns[1].cmd).toBe("open");
+  expect(h.spawns[1].args[0].startsWith("cursor://anysphere.cursor-deeplink/prompt?")).toBe(true);
+  expect(h.spawns[1].args[0]).toContain(`text=${encodeURIComponent(HANDOFF_PROMPT)}`);
+});
+
+test("codex-app deeplink: prompt+path encoded, no AGENTS.md", async () => {
+  const h = harness();
+  const r = await runHandoff({ target: "codex-app", context: "x" }, h.opts);
+  expect(r.appLaunch).toBe("deeplink");
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(false);
+  const url = h.spawns[0].args[0];
+  expect(url.startsWith("codex://new?")).toBe(true);
+  expect(url).toContain(`prompt=${encodeURIComponent(HANDOFF_PROMPT)}`);
+  expect(url).toContain(`path=${encodeURIComponent(r.dir)}`);
+});
+
+test("buildDeeplinkUrl URL-encodes reserved characters in prompt and dir", () => {
+  const url = buildDeeplinkUrl(
+    "claude://code/new?q={prompt}&folder={dir}",
+    "a b&c=d",
+    "/Users/na me/pie-handoffs/2026-08-15-x",
+  );
+  expect(url).toBe(
+    "claude://code/new?q=a%20b%26c%3Dd&folder=%2FUsers%2Fna%20me%2Fpie-handoffs%2F2026-08-15-x",
+  );
+});
+
+test("deeplink non-zero falls back to open -a and writes convention", async () => {
+  const h = harness();
+  h.opts.spawn = async (cmd: string, args: string[], cwd: string) => {
+    h.spawns.push({ cmd, args, cwd });
+    if (args[0]?.startsWith("claude://")) {
+      return { stdout: "", exitCode: 1, stderr: "LSOpenURLsWithRole() failed" };
+    }
+    return { stdout: "", exitCode: 0 };
+  };
+  const r = await runHandoff({ target: "claude-app", context: "x" }, h.opts);
+  expect(r.appLaunch).toBe("open-a");
+  expect(h.spawns).toHaveLength(2);
+  expect(h.spawns[0].args[0].startsWith("claude://")).toBe(true);
+  expect(h.spawns[1]).toMatchObject({ cmd: "open", args: ["-a", "/Applications/Claude.app", r.dir] });
+  const guide = h.writes.find((w) => w.path.endsWith("CLAUDE.md"));
+  expect(guide?.content).toContain("Read context.md");
+});
+
+test("deeplink fail + open-a fail is semantic (no folder path)", async () => {
+  const h = harness();
+  h.opts.spawn = async (cmd: string, args: string[], cwd: string) => {
+    h.spawns.push({ cmd, args, cwd });
+    return { stdout: "", exitCode: 1, stderr: "Unable to find application named 'Claude'" };
+  };
+  await expect(runHandoff({ target: "claude-app", context: "x" }, h.opts)).rejects.toThrow(
+    /failed to open Claude Code \(App\)/,
+  );
+  expect(h.spawns).toHaveLength(2);
 });
 
 test("RESERVED 挡掉 agents.md（大小写不敏感）", () => {
@@ -377,21 +428,81 @@ test("windowsOpenApp: cmd /c start \"\" <exe> <dir> (bare argv, no batQuote)", (
   expect(s.args).not.toContain("-a");
 });
 
-test("win32 app: start \"\" <exe> <dir>，写 AGENTS.md，mode=app", async () => {
+test("windowsOpenDeeplink: cmd /c start \"\" <url>", () => {
+  const url = "codex://new?prompt=a%20b&path=C%3A%5Ch%5Cd";
+  const s = windowsOpenDeeplink(url);
+  expect(s).toEqual({ cmd: "cmd.exe", args: ["/c", "start", "", url] });
+});
+
+test("win32 app with deeplink: start url, no AGENTS.md, no mac open", async () => {
   const h = harness();
-  h.opts.detect = () => [winCursorApp()];
+  h.opts.detect = () => [{
+    ...winCursorApp(),
+    id: "codex-app" as const,
+    label: "Codex / ChatGPT (App)",
+    deeplink: { template: "codex://new?prompt={prompt}&path={dir}" },
+  }];
+  const r = await runHandoff(
+    { target: "codex-app", context: "x" },
+    { ...h.opts, platform: "win32" },
+  );
+  expect(r.mode).toBe("app");
+  expect(r.appLaunch).toBe("deeplink");
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(false);
+  expect(h.spawns).toHaveLength(1);
+  expect(h.spawns[0].cmd).toBe("cmd.exe");
+  expect(h.spawns[0].args[0]).toBe("/c");
+  expect(h.spawns[0].args[3].startsWith("codex://new?")).toBe(true);
+  expect(h.spawns[0].args[3]).toContain(`prompt=${encodeURIComponent(HANDOFF_PROMPT)}`);
+  expect(h.spawns[0].args[3]).toContain(`path=${encodeURIComponent(r.dir)}`);
+  expect(h.spawns.some((s) => s.cmd === "open" || s.cmd === "osascript")).toBe(false);
+});
+
+test("win32 deeplink non-zero falls back to start exe + convention", async () => {
+  const h = harness();
+  h.opts.detect = () => [{
+    ...winCursorApp(),
+    id: "codex-app" as const,
+    label: "Codex / ChatGPT (App)",
+    deeplink: { template: "codex://new?prompt={prompt}&path={dir}" },
+  }];
+  h.opts.spawn = async (cmd, args, cwd) => {
+    h.spawns.push({ cmd, args, cwd });
+    if (args[3]?.startsWith("codex://")) {
+      return { stdout: "", exitCode: 1, stderr: "start failed" };
+    }
+    return { stdout: "", exitCode: 0 };
+  };
+  const r = await runHandoff(
+    { target: "codex-app", context: "x" },
+    { ...h.opts, platform: "win32" },
+  );
+  expect(r.appLaunch).toBe("open-a");
+  expect(h.spawns).toHaveLength(2);
+  expect(h.spawns[0].args[3].startsWith("codex://")).toBe(true);
+  expect(h.spawns[1].args).toEqual(["/c", "start", "", CURSOR_EXE, r.dir]);
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(true);
+});
+
+test("win32 cursor-app afterOpen: start exe 再 start prompt 深链", async () => {
+  const h = harness();
+  h.opts.detect = () => [{
+    ...winCursorApp(),
+    deeplink: { template: "cursor://anysphere.cursor-deeplink/prompt?text={prompt}", afterOpen: true },
+  }];
   const r = await runHandoff(
     { target: "cursor-app", context: "Continue the report" },
     { ...h.opts, platform: "win32" },
   );
   expect(r.mode).toBe("app");
+  expect(r.appLaunch).toBe("deeplink");
   expect(h.writes.some((w) => w.path.endsWith("context.md") && w.content === "Continue the report")).toBe(true);
   const guide = h.writes.find((w) => w.path.endsWith("AGENTS.md"));
   expect(guide?.content).toContain("Read context.md");
   expect(h.writes.some((w) => w.path.endsWith("start.command") || w.path.endsWith("start.bat"))).toBe(false);
-  expect(h.spawns).toHaveLength(1);
-  expect(h.spawns[0].cmd).toBe("cmd.exe");
+  expect(h.spawns).toHaveLength(2);
   expect(h.spawns[0].args).toEqual(["/c", "start", "", CURSOR_EXE, r.dir]);
+  expect(h.spawns[1].args[3].startsWith("cursor://anysphere.cursor-deeplink/prompt?")).toBe(true);
   expect(h.spawns.some((s) => s.cmd === "open" || s.cmd === "osascript")).toBe(false);
 });
 

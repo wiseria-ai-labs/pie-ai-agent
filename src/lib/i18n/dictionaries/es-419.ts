@@ -210,6 +210,14 @@ export const es419Dict = {
     appContinueHint: "La app solo abre el espacio de trabajo; envía un continue en la app para empezar.",
     allow: "Delegar",
     deny: "Cancelar",
+    form: {
+      groupLabel: "Forma",
+      app: "App",
+      terminal: "Terminal",
+      noteTerminal: "La sesión de terminal se inicia automáticamente.",
+      noteApp: "La app se abre con una instrucción breve ya escrita; tú la envías (Claude pide confirmar la carpeta).",
+      noteAppOpen: "La app abre esa carpeta; envía un mensaje para empezar.",
+    },
   },
   skillRunConfirm: {
     title: "¿Ejecutar un script de {name}?",

@@ -24,9 +24,13 @@ export interface PanelRequestMap {
     req: {
       context: string;
       fileCount: number;
-      agents: { id: string; label: string; kind?: "app" | "terminal" }[];
+      brands: {
+        id: string;
+        label: string;
+        forms: { id: string; kind: "app" | "terminal" }[];
+      }[];
     };
-    res: string | null; // 用户选中的 agent id；null = 拒绝
+    res: string | null; // 用户选中的形态 id（claude-app 等）；null = 拒绝
   };
   "skill-run-confirm": { req: SkillRunConfirmRequest; res: boolean };
 }

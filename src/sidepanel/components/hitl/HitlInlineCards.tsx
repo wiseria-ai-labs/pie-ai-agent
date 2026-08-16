@@ -62,7 +62,11 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
             request.payload as {
               context: string;
               fileCount: number;
-              agents: { id: string; label: string }[];
+              brands: {
+                id: string;
+                label: string;
+                forms: { id: string; kind: "app" | "terminal" }[];
+              }[];
             }
           }
           onDecision={(target) => respond(request.requestId, { ok: true, data: target })}

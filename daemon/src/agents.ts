@@ -71,8 +71,18 @@ export interface AgentCandidate {
   appxPackagePrefix?: string;
   /** 相对 PackageRootFolder 的 exe（正斜杠或反斜杠均可）。 */
   appxRelExes?: readonly string[];
-  /** app：目录内的约定引导文件名（app 无 prompt 注入面，靠它引导）。 */
+  /** app：目录内的约定引导文件名（无深链或深链回落时靠它引导）。 */
   convention?: "CLAUDE.md" | "AGENTS.md";
+  /**
+   * app **必填**（ADR 0013）：打开 App + 预填工作目录 + 预填提示词。
+   * 优先一条官方深链（`{prompt}` / `{dir}` 占位，插入前 URL-encode）。
+   * `afterOpen`：官方链没有 folder（Cursor），先打开目录再发 prompt 深链。
+   * 没有可验证的这条路径，就不要加 App 行。
+   */
+  deeplink?: {
+    template: string;
+    afterOpen?: boolean;
+  };
   /**
    * `false` = 该条命令/路径尚未在对应平台真机验证过——**detectAgents 默认排除**
    * （「未验证条目不得默认启用」，见 #364）。字段缺省视为已验证（mac 8 条历史条目无需触碰）。
@@ -84,7 +94,8 @@ export interface AgentCandidate {
 
 export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   { id: "claude-app", label: "Claude Code (App)", kind: "app",
-    appPaths: ["/Applications/Claude.app"], convention: "CLAUDE.md" },
+    appPaths: ["/Applications/Claude.app"], convention: "CLAUDE.md",
+    deeplink: { template: "claude://code/new?q={prompt}&folder={dir}" } },
   { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude",
     argv: ["{prompt}"], binPaths: ["~/.local/bin/claude"],
     // headless: `claude -p "<prompt>"`；--dangerously-skip-permissions 让 headless claude
@@ -95,7 +106,8 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // /Applications/ChatGPT.app 的 bundle id 实测就是它，没有独立的 Codex.app）。优先
   // Codex.app（万一 OpenAI 再拆回来），回落 ChatGPT.app。显示名合并成 "Codex / ChatGPT"。
   { id: "codex-app", label: "Codex / ChatGPT (App)", kind: "app",
-    appPaths: ["/Applications/Codex.app", "/Applications/ChatGPT.app"], convention: "AGENTS.md" },
+    appPaths: ["/Applications/Codex.app", "/Applications/ChatGPT.app"], convention: "AGENTS.md",
+    deeplink: { template: "codex://new?prompt={prompt}&path={dir}" } },
   // --dangerously-bypass-approvals-and-sandbox：产品拍板（2026-07-14 验收）——交棒要
   // 「到手即跑」，目录确认会卡住每一次 handoff（目录每次新建，信任记忆无效）。代价是
   // 交棒后的 codex 会话无审批、无沙箱，风险由用户在交棒动作本身承担。
@@ -112,7 +124,8 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // 用户 ⌘L 发一句话让 agent 接手（已知取舍，见 spec §6）。
   // CLI 是 cursor-agent —— /Applications/Cursor.app 里的 `cursor` 是 IDE 启动器，不是 agent。
   { id: "cursor-app", label: "Cursor (App)", kind: "app",
-    appPaths: ["/Applications/Cursor.app"], convention: "AGENTS.md" },
+    appPaths: ["/Applications/Cursor.app"], convention: "AGENTS.md",
+    deeplink: { template: "cursor://anysphere.cursor-deeplink/prompt?text={prompt}", afterOpen: true } },
   // 不加 --trust：help 说它能跳工作区信任提示，但真机实测「--trust can only be used
   // with --print/headless mode」，交互式 TUI 直接报错退出。claude/codex 也无同粒度
   // flag（codex 只有全跳审批+沙箱的 dangerously-bypass，不能替用户开）——三家统一保持
@@ -140,12 +153,23 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
  * Windows 候选表。顺序与 mac 同构：品牌分组、每组 app 在前、terminal 随后
  * （HandoffCard 预选 = 表序里第一个已装且启用的）。
  *
- * terminal 四条（#12）真机确认后默认启用。app 两条（#23）先查 Uninstall
+ * terminal 四条（#12）真机确认后默认启用。app 先查 Uninstall
  * 注册表（DisplayName → DisplayIcon / InstallLocation），再回落 appPaths。
- * app 两条已在本机 Windows 11 真机点亮（Cursor = Uninstall 注册表；
- * Codex/ChatGPT = AppModel Store 包）。不加 claude-app：官方 Windows `.exe` 落点未确认。
+ * Cursor / Codex App 已在本机 Windows 11 真机点亮。Claude App 走同一套检测 +
+ * 官方 `claude://` 深链（协议跨平台；未装则 detect 不纳入）。
  */
 export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
+  { id: "claude-app", label: "Claude Code (App)", kind: "app",
+    uninstallNames: ["Claude", "Claude Code"],
+    uninstallExes: ["Claude.exe", "claude.exe"],
+    appPaths: [
+      "~/AppData/Local/AnthropicClaude/claude.exe",
+      "~/AppData/Local/claude/Claude.exe",
+      "~/AppData/Local/Programs/Claude/Claude.exe",
+      "~/AppData/Local/Programs/claude/Claude.exe",
+    ],
+    convention: "CLAUDE.md", verified: true,
+    deeplink: { template: "claude://code/new?q={prompt}&folder={dir}" } },
   { id: "claude-terminal", label: "Claude Code (Terminal)", kind: "terminal", bin: "claude",
     argv: ["{prompt}"],
     binPaths: ["~/.local/bin/claude.exe", "~/.local/bin/claude", "~/AppData/Roaming/npm/claude.cmd"],
@@ -161,7 +185,8 @@ export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
       "~/AppData/Local/Programs/ChatGPT/ChatGPT.exe",
       "~/AppData/Local/Programs/OpenAI/ChatGPT/ChatGPT.exe",
     ],
-    convention: "AGENTS.md", verified: true },
+    convention: "AGENTS.md", verified: true,
+    deeplink: { template: "codex://new?prompt={prompt}&path={dir}" } },
   { id: "codex-terminal", label: "Codex (Terminal)", kind: "terminal", bin: "codex",
     argv: ["--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
     binPaths: [
@@ -176,7 +201,8 @@ export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
     uninstallNames: ["Cursor"],
     uninstallExes: ["Cursor.exe"],
     appPaths: ["~/AppData/Local/Programs/cursor/Cursor.exe"],
-    convention: "AGENTS.md", verified: true },
+    convention: "AGENTS.md", verified: true,
+    deeplink: { template: "cursor://anysphere.cursor-deeplink/prompt?text={prompt}", afterOpen: true } },
   { id: "cursor-terminal", label: "Cursor (Terminal)", kind: "terminal", bin: "cursor-agent",
     argv: ["{prompt}"],
     binPaths: [
