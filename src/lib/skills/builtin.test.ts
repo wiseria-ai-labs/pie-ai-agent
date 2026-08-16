@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BUILT_IN_SKILL_PACKAGES } from "./builtin";
+import { BUILT_IN_SKILL_PACKAGES, PARKED_BUILT_IN_SKILL_PACKAGES } from "./builtin";
 import { parseSkillMarkdown } from "./frontmatter";
 
 describe("BUILT_IN_SKILL_PACKAGES", () => {
@@ -43,8 +43,13 @@ describe("BUILT_IN_SKILL_PACKAGES", () => {
     }
   });
 
+  it("video_transcript 未注册进 catalog（Skill + Kit 落地前停用）", () => {
+    expect(BUILT_IN_SKILL_PACKAGES.map((p) => p.id)).not.toContain("video_transcript");
+    expect(PARKED_BUILT_IN_SKILL_PACKAGES.map((p) => p.id)).toContain("video_transcript");
+  });
+
   it("video_transcript 引导视频字幕/transcript 抓取 (L1)", () => {
-    const skill = BUILT_IN_SKILL_PACKAGES.find((p) => p.id === "video_transcript");
+    const skill = PARKED_BUILT_IN_SKILL_PACKAGES.find((p) => p.id === "video_transcript");
     expect(skill).toBeTruthy();
     // description 进 catalog，须带触发信号，让「总结这个视频」类请求可靠触发
     expect(skill!.frontmatter.description).toMatch(/summarize|video/i);
