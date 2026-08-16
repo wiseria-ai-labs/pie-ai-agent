@@ -82,4 +82,55 @@ describe("handoff_to_agent tool", () => {
     expect(requestConsent).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
   });
+
+  it("forwards a short opening to the consent card and daemon", async () => {
+    const run = vi.fn(async () => ({ dir: "/tmp/h", mode: "terminal" as const }));
+    const consent = vi.fn(async () => "codex-terminal");
+    const tool = buildHandoffTool({ run, listAgents: async () => AGENTS, requestConsent: consent });
+    const r = await tool.handler(
+      { context: "full brief", opening: "  Finish the auth refactor next.  " },
+      {} as never,
+    );
+    expect(r.success).toBe(true);
+    expect(consent).toHaveBeenCalledWith(
+      expect.objectContaining({ context: "full brief", opening: "Finish the auth refactor next." }),
+    );
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: "codex-terminal",
+        context: "full brief",
+        opening: "Finish the auth refactor next.",
+      }),
+    );
+  });
+
+  it("omits empty / whitespace opening so daemon can fall back", async () => {
+    const run = vi.fn(async () => ({ dir: "/tmp/h", mode: "terminal" as const }));
+    const consent = vi.fn(async () => "codex-terminal");
+    const tool = buildHandoffTool({ run, listAgents: async () => AGENTS, requestConsent: consent });
+    await tool.handler({ context: "full brief", opening: "   " }, {} as never);
+    expect(consent).toHaveBeenCalledWith(expect.not.objectContaining({ opening: expect.anything() }));
+    expect(run).toHaveBeenCalledWith(expect.not.objectContaining({ opening: expect.anything() }));
+  });
+
+  it("truncates opening to 500 characters before consent and daemon", async () => {
+    const run = vi.fn(async () => ({ dir: "/tmp/h", mode: "terminal" as const }));
+    const consent = vi.fn(async () => "codex-terminal");
+    const tool = buildHandoffTool({ run, listAgents: async () => AGENTS, requestConsent: consent });
+    const long = "x".repeat(600);
+    await tool.handler({ context: "full brief", opening: long }, {} as never);
+    expect(consent).toHaveBeenCalledWith(expect.objectContaining({ opening: "x".repeat(500) }));
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ opening: "x".repeat(500) }));
+  });
+
+  it("schema describes opening as a short first instruction, not a copy of context", () => {
+    const tool = buildHandoffTool({
+      run: async () => ({ dir: "/tmp/h", mode: "terminal" }),
+      listAgents: async () => AGENTS,
+      requestConsent: async () => null,
+    });
+    const opening = (tool.parameters.properties as { opening?: { description?: string } }).opening;
+    expect(opening?.description).toMatch(/short/i);
+    expect(opening?.description).toMatch(/do not copy/i);
+  });
 });

@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { HandoffParams, HandoffResult } from "../../src/types/local-bridge";
+import { normalizeHandoffOpening, type HandoffParams, type HandoffResult } from "../../src/types/local-bridge";
 import type { SpawnFn } from "./spawn";
 import { realSpawn } from "./spawn";
 import type { DetectedAgent } from "./agents";
@@ -16,6 +16,11 @@ const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md
 /** 交棒引导语：terminal 注入 argv；深链预填 composer；无深链 / 回落写进 convention 文件。 */
 export const HANDOFF_PROMPT =
   "Read context.md in this directory for the handed-off context, then continue the task.";
+
+/** 模型 opening（截断后）优先；空 / 缺省回落固定句。三处（深链 / argv / 约定文件）同一字符串。 */
+export function resolveHandoffOpening(opening?: string): string {
+  return normalizeHandoffOpening(opening) ?? HANDOFF_PROMPT;
+}
 
 /** 深链模板：`{prompt}` / `{dir}` 占位，插入前 URL-encode。 */
 export function buildDeeplinkUrl(template: string, prompt: string, dir: string): string {
@@ -84,11 +89,12 @@ export async function runHandoff(
   for (const f of params.files ?? []) {
     writeFile(join(dir, safeFileName(f.name)), f.content);
   }
+  const prompt = resolveHandoffOpening(params.opening);
 
   if (agent.kind === "app") {
     // 统一深链（Claude / Codex）：一次带目录 + 预填。成功则不写约定文件。
     if (agent.deeplink && !agent.deeplink.afterOpen) {
-      const url = buildDeeplinkUrl(agent.deeplink.template, HANDOFF_PROMPT, dir);
+      const url = buildDeeplinkUrl(agent.deeplink.template, prompt, dir);
       log("info", "handoff.open_app", {
         dir, target: agent.id, launch: "deeplink", files: (params.files ?? []).length,
       });
@@ -104,7 +110,7 @@ export async function runHandoff(
         stderr: (r.stderr ?? "").trim().slice(0, 300),
       });
     }
-    writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${HANDOFF_PROMPT}\n`);
+    writeFile(join(dir, agent.convention ?? "AGENTS.md"), `${prompt}\n`);
     log("info", "handoff.open_app", {
       dir, target: agent.id, launch: "open-a", files: (params.files ?? []).length,
     });
@@ -112,7 +118,7 @@ export async function runHandoff(
     log("info", "handoff.open", { dir, target: agent.id, files: (params.files ?? []).length });
   }
 
-  const argv = (agent.argv ?? ["{prompt}"]).map((a) => a.replace("{prompt}", HANDOFF_PROMPT));
+  const argv = (agent.argv ?? ["{prompt}"]).map((a) => a.replace("{prompt}", prompt));
   const io = { spawn, writeFile, which: opts?.which, exists: opts?.exists };
   if (platform === "win32") {
     await launchWin32Handoff(agent, dir, argv, io);
@@ -122,7 +128,7 @@ export async function runHandoff(
 
   // Cursor：官方 prompt 深链没有 folder，先打开目录再发预填。
   if (agent.kind === "app" && agent.deeplink?.afterOpen) {
-    const url = buildDeeplinkUrl(agent.deeplink.template, HANDOFF_PROMPT, dir);
+    const url = buildDeeplinkUrl(agent.deeplink.template, prompt, dir);
     log("info", "handoff.open_app", {
       dir, target: agent.id, launch: "deeplink", files: (params.files ?? []).length,
     });

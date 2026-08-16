@@ -204,6 +204,7 @@ export const jaDict = {
     title: "ローカルエージェントに引き継ぐ（対話型）？",
     semanticsNote: "タスクはローカル agent に引き継がれ、結果はこの会話には戻りません。",
     targetLabel: "宛先",
+    openingLabel: "冒頭の指示",
     contextLabel: "コンテキスト",
     filesLabel: "引き継ぐファイル",
     appContinueHint: "アプリはワークスペースを開くだけです。続行するにはアプリ内で一言送ってください。",

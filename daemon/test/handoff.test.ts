@@ -520,6 +520,65 @@ test("win32 app start 失败：文件已落盘，错误不含路径", async () =
   expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(true);
 });
 
+test("opening: deeplink / argv / convention file all use the same resolved string", async () => {
+  const opening = "Finish the auth refactor next.";
+  const h = harness();
+  const r = await runHandoff(
+    { target: "claude-app", context: "LONG BRIEF THAT MUST STAY IN THE FILE", opening },
+    h.opts,
+  );
+  expect(h.writes.find((w) => w.path.endsWith("context.md"))?.content).toBe(
+    "LONG BRIEF THAT MUST STAY IN THE FILE",
+  );
+  expect(h.spawns[0].args[0]).toContain(`q=${encodeURIComponent(opening)}`);
+  expect(h.spawns[0].args[0]).not.toContain(encodeURIComponent(HANDOFF_PROMPT));
+  expect(r.appLaunch).toBe("deeplink");
+
+  const term = harness();
+  await runHandoff({ target: "claude-terminal", context: "x", opening }, term.opts);
+  const cmd = term.writes.find((w) => w.path.endsWith("start.command"));
+  expect(cmd?.content).toContain(`exec '/Users/x/.local/bin/claude' '${opening}'`);
+  expect(cmd?.content).not.toContain(HANDOFF_PROMPT);
+
+  const fallback = harness();
+  fallback.opts.spawn = async (cmd, args, cwd) => {
+    fallback.spawns.push({ cmd, args, cwd });
+    if (args[0]?.startsWith("claude://")) {
+      return { stdout: "", exitCode: 1, stderr: "LSOpenURLsWithRole() failed" };
+    }
+    return { stdout: "", exitCode: 0 };
+  };
+  await runHandoff({ target: "claude-app", context: "x", opening }, fallback.opts);
+  const guide = fallback.writes.find((w) => w.path.endsWith("CLAUDE.md"));
+  expect(guide?.content).toBe(`${opening}\n`);
+});
+
+test("opening: cursor convention file gets opening; context.md stays the brief", async () => {
+  const opening = "Pick up the leftover types.";
+  const h = harness();
+  await runHandoff({ target: "cursor-app", context: "the full brief", opening }, h.opts);
+  expect(h.writes.find((w) => w.path.endsWith("context.md"))?.content).toBe("the full brief");
+  expect(h.writes.find((w) => w.path.endsWith("AGENTS.md"))?.content).toBe(`${opening}\n`);
+});
+
+test("no opening / empty opening falls back to HANDOFF_PROMPT", async () => {
+  const none = harness();
+  await runHandoff({ target: "claude-app", context: "x" }, none.opts);
+  expect(none.spawns[0].args[0]).toContain(`q=${encodeURIComponent(HANDOFF_PROMPT)}`);
+
+  const empty = harness();
+  await runHandoff({ target: "claude-app", context: "x", opening: "   " }, empty.opts);
+  expect(empty.spawns[0].args[0]).toContain(`q=${encodeURIComponent(HANDOFF_PROMPT)}`);
+});
+
+test("opening longer than 500 characters is truncated", async () => {
+  const opening = "y".repeat(612);
+  const h = harness();
+  await runHandoff({ target: "claude-app", context: "x", opening }, h.opts);
+  expect(h.spawns[0].args[0]).toContain(`q=${encodeURIComponent("y".repeat(500))}`);
+  expect(h.spawns[0].args[0]).not.toContain(encodeURIComponent(opening));
+});
+
 test("darwin launch 源码不提 Windows 唤起", async () => {
   const src = await Bun.file(new URL("../src/handoff-darwin.ts", import.meta.url)).text();
   expect(src).not.toContain("cmd.exe");

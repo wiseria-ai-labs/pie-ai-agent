@@ -200,6 +200,7 @@ export const zhTWDict = {
     title: "交棒給本地 Agent（互動式）？",
     semanticsNote: "任務將移交本機 agent，結果不會返回此對話。",
     targetLabel: "收件人",
+    openingLabel: "開場白",
     contextLabel: "上下文",
     filesLabel: "隨交棒檔案",
     appContinueHint: "App 只會開啟工作區，需要你在 App 裡發一句繼續。",

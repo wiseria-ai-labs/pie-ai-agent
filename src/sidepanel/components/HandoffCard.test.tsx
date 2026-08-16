@@ -45,6 +45,21 @@ describe("HandoffCard", () => {
     expect(options[0].getAttribute("aria-selected")).toBe("true");
   });
 
+  it("renders opening verbatim when provided", () => {
+    renderCard({
+      payload: { ...PAYLOAD, opening: "Finish the auth refactor next." },
+      onDecision: vi.fn(),
+    });
+    expect(screen.getByText("Finish the auth refactor next.")).toBeTruthy();
+    expect(screen.getByText("Opening")).toBeTruthy();
+    expect(screen.getByText("REFACTOR THE THING")).toBeTruthy();
+  });
+
+  it("does not render an opening row when opening is absent", () => {
+    renderCard({ payload: PAYLOAD, onDecision: vi.fn() });
+    expect(screen.queryByText("Opening")).toBeNull();
+  });
+
   it("shows App/Terminal segment only when the selected brand has both forms; App is default", () => {
     renderCard({ payload: PAYLOAD, onDecision: vi.fn() });
     const app = screen.getByRole("button", { name: "App" });
