@@ -207,7 +207,12 @@ Constraints:
   call fail with reason "recording too sparse to skillify".
 - Do not call any tool other than create_skill / done / fail.`,
   ),
+];
 
+// Parked: L1 video-transcript playbook. Kept in-repo so it can come back
+// once Skill + Kit lands; not registered, so it stays out of the catalog
+// and SkillsList until then.
+export const PARKED_BUILT_IN_SKILL_PACKAGES: SkillPackage[] = [
   pkg(
     "video_transcript",
     "Video Transcript",
@@ -326,7 +331,6 @@ const EXPECTED_BUILT_IN_SKILL_IDS = new Set([
   "close_inactive_tabs",
   "create_skill_from_recording",
   "extract_structured_data",
-  "video_transcript",
 ]);
 
 const actualIds = new Set(BUILT_IN_SKILL_PACKAGES.map((p) => p.id));
