@@ -61,8 +61,8 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 1. bump `package.json` 和 `manifest.json` 的 `version`（必须一致），commit。同一 commit/PR 里产出 release notes：`docs/release-notes/v0.x.y.md`（英文，即 GitHub release body 同源）**＋中文版 `v0.x.y.zh-Hans.md`**——官网 changelog 页（pie-website#12）按页面 locale 从 `raw.githubusercontent.com` 的 `main` 分支拉 `v{ver}.{locale}.md`，404 回落英文，所以中文版漏发不报错、但中文用户就只能看英文；其它语言（如 `.ja.md`）可选，同名规则
 2. `git tag v0.x.y && git push origin v0.x.y`
 3. 在 GitHub 上 publish release notes（tag 已存在即可）
-4. tag push 触发 workflow → CI 跑 `pnpm build` → 验 manifest invariant → 打包 `pie-0.x.y.zip`（Chrome）＋ `pie-0.x.y-edge.zip`（同一份构建、去掉 `manifest.key`，Edge 校验拒收该字段而 Chrome 靠它钉住 extension ID / OAuth redirect URI）→ 上传到对应 release
-5. 商店上架仍是手工：Chrome Web Store 传 `pie-0.x.y.zip`，Edge 传 `-edge.zip`
+4. tag push 触发 workflow → CI 跑 `pnpm build` → 验 manifest invariant → 打包 `pie-0.x.y.zip`（带 `manifest.key`，钉死扩展 ID / OAuth redirect URI）→ 上传到对应 release
+5. 商店上架仍是手工：Chrome Web Store 传 release 的 `pie-0.x.y.zip`。Edge Add-ons 在本机 `pnpm build && node scripts/make-edge-package.mjs dist` 后自行打 zip 上传（脚本去掉 `key`、换 Edge 文案；**不**进 GitHub Release——那份去 key 包 load unpacked 会对不上 Pie Link）
 
 Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 - `dist/manifest.json` 的 `background.service_worker` 和 `content_scripts[0].js[0]` 必须以 `.js` 结尾（不是 `.ts`）

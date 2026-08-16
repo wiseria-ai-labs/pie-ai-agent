@@ -39,7 +39,7 @@
 
 ## 配方与坑（不遵守必踩）
 
-- **扩展 ID 是商店固定 ID** `gpccjhdgjkmalnepmeclooflliiocfed`（manifest 带 `key`，不由路径推导）。本机 Edge 验收必须加载带 key 的 Chrome zip，不要加载 `-edge.zip`。Edge Add-ons 正式 ID 是 `gbfdgfkpglimajnjedphgakmhaplgobf`（只给商店包；Playwright 仍用 Chrome ID）。
+- **扩展 ID 是商店固定 ID** `gpccjhdgjkmalnepmeclooflliiocfed`（manifest 带 `key`，不由路径推导）。本机 Edge 验收必须加载带 key 的 Chrome zip，不要加载去 key 的商店包。Edge Add-ons 正式 ID 是 `gbfdgfkpglimajnjedphgakmhaplgobf`（只给商店包；Playwright 仍用 Chrome ID）。
 - **NM manifest 位置**：`<user-data-dir>/NativeMessagingHosts/ai.wiseria.pie.json`（跟随 `--user-data-dir`，**不是** `~/Library/Application Support/Chromium/...`）；`path` 指向 host-wrapper，`allowed_origins` 用上面的固定 ID。每个 profile 启动前写入。
 - **locale 钉死**：launch 传 `locale:'en-US'` + `--lang=en-US`，否则 UI 跟系统语言走、文本断言全挂。
 - **seedConfig 三坑**（eval bridge 只服务 SW loop，panel 不认）：

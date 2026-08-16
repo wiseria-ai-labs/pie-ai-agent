@@ -265,7 +265,7 @@ describe("LocalBridgeSection — unallowlisted extension id (#35)", () => {
 
     render(<LocalBridgeSection />);
     expect(await screen.findByText(/this copy can't connect to pie link/i)).toBeTruthy();
-    expect(screen.getByText(/-edge\.zip is store-only/i)).toBeTruthy();
+    expect(screen.getByText(/loaded without the pinned key/i)).toBeTruthy();
     expect(screen.queryByRole("link", { name: /install pie link/i })).toBeNull();
   });
 

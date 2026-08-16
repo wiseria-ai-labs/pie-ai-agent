@@ -159,7 +159,7 @@ export const ptBRDict = {
         "Ainda não conecta? Confirme que o ícone do Pie está na barra de menus e encerre o Chrome por completo (⌘Q — não apenas feche a janela) e abra novamente.",
       wrongExtIdTitle: "Esta cópia não consegue conectar ao Pie Link",
       wrongExtIdBody:
-        "O Pie Link só autoriza os IDs estáveis das lojas do Chrome e do Edge. Esta cópia foi carregada sem a chave fixa (o -edge.zip é só para a loja). Carregue o pie-x.y.z.zip — o ID em chrome://extensions ou edge://extensions deve ser gpccjhdgjkmalnepmeclooflliiocfed.",
+        "O Pie Link só autoriza os IDs estáveis das lojas do Chrome e do Edge. Esta cópia foi carregada sem a chave fixa. Carregue o pie-x.y.z.zip — o ID em chrome://extensions ou edge://extensions deve ser gpccjhdgjkmalnepmeclooflliiocfed.",
     },
     searchProvider: {
       caps: "Provedor de busca",

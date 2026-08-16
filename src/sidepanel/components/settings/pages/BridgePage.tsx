@@ -140,7 +140,7 @@ export function LocalBridgeSection() {
   // 现有「未连接」文案（向后兼容）。
   const installState = status?.installState;
   const notReadyEnabled = enabled && status != null && !status.ready && !showUpgrade;
-  // Path-derived unpacked id (Edge `-edge.zip` without `key`) is not in
+  // Path-derived unpacked id (a keyless Edge store package) is not in
   // Pie Link `allowed_origins`. Don't send those users down the "install
   // Pie Link" funnel — the host is fine, the package is wrong.
   const extId = typeof chrome !== "undefined" ? chrome.runtime?.id : undefined;

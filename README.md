@@ -129,7 +129,7 @@ For an offline or self-managed install of the same build:
 4. Click **Load unpacked** and select the folder
 5. Pin Pie to the toolbar and click the icon to open the side panel
 
-> **Edge (local load):** use this zip (`pie-x.y.z.zip`). It includes the `key` that pins the extension ID Pie Link allowlists (`gpccjhdgjkmalnepmeclooflliiocfed`). Do **not** load `pie-x.y.z-edge.zip` unpacked — that file is only for the Edge store submission and will not connect to Pie Link.
+> **Edge (local load):** use this zip. It includes the `key` that pins the extension ID Pie Link allowlists (`gpccjhdgjkmalnepmeclooflliiocfed`). A keyless store package will not connect to Pie Link.
 
 > **Upgrading:** to keep your chats and saved keys, unzip the new release
 > *into the same folder* and click **↻ reload** on Pie's card. Don't click

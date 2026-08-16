@@ -112,7 +112,7 @@ Pie**。该选择会被记住，之后点击工具栏图标也会直接打开这
 4. 点 **加载已解压的扩展程序**，选中该文件夹
 5. 把 Pie 钉到工具栏，点击图标打开侧边栏
 
-> **本机 Edge：** 加载这份带 key 的 `pie-x.y.z.zip`。扩展页 ID 必须是 `gpccjhdgjkmalnepmeclooflliiocfed`。不要加载 `pie-x.y.z-edge.zip`——那份只给 Edge 商店上架，本机 load unpacked 连不上 Pie Link。
+> **本机 Edge：** 加载这份带 key 的 zip。扩展页 ID 必须是 `gpccjhdgjkmalnepmeclooflliiocfed`。去 key 的商店包 load unpacked 连不上 Pie Link。
 
 > **升级：** 要保留聊天记录和已存的 key，把新版解压**到同一个文件夹**，
 > 再点 Pie 卡片上的 **↻ 重新加载**。别点 **移除** —— 那会清掉设备上存的一切，

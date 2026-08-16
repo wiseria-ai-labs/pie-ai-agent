@@ -112,7 +112,7 @@ Pie**。這個選擇會被記住，之後點擊工具列圖示也會直接開啟
 4. 點 **載入未封裝項目**，選擇該資料夾
 5. 把 Pie 釘到工具列，點擊圖示開啟側邊欄
 
-> **本機 Edge：** 載入這份帶 key 的 `pie-x.y.z.zip`。擴充功能頁 ID 必須是 `gpccjhdgjkmalnepmeclooflliiocfed`。不要載入 `pie-x.y.z-edge.zip`——那份只給 Edge 商店上架，本機 load unpacked 連不上 Pie Link。
+> **本機 Edge：** 載入這份帶 key 的 zip。擴充功能頁 ID 必須是 `gpccjhdgjkmalnepmeclooflliiocfed`。去 key 的商店包 load unpacked 連不上 Pie Link。
 
 > **升級：** 要保留聊天記錄和已存的 key，把新版解壓**到同一個資料夾**，
 > 再點 Pie 卡片上的 **↻ 重新載入**。別點 **移除** —— 那會清掉裝置上存的一切，

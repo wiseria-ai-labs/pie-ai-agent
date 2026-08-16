@@ -158,7 +158,7 @@ export const jaDict = {
         "まだ接続できませんか？ メニューバーに Pie アイコンがあるか確認し、Chrome を完全に終了し（⌘Q。ウィンドウを閉じるだけでは不十分）、開き直してください。",
       wrongExtIdTitle: "このコピーは Pie Link に接続できません",
       wrongExtIdBody:
-        "Pie Link が許可するのは Chrome / Edge ストアの安定 ID だけです。このコピーは key なしで読み込まれています（-edge.zip はストア提出専用）。pie-x.y.z.zip を読み込んでください。拡張機能ページの ID は gpccjhdgjkmalnepmeclooflliiocfed である必要があります。",
+        "Pie Link が許可するのは Chrome / Edge ストアの安定 ID だけです。このコピーは key なしで読み込まれています。pie-x.y.z.zip を読み込んでください。拡張機能ページの ID は gpccjhdgjkmalnepmeclooflliiocfed である必要があります。",
     },
     searchProvider: {
       caps: "検索プロバイダー",

@@ -130,7 +130,7 @@ Para una instalación offline o autogestionada de la misma versión:
 4. Haz clic en **Cargar descomprimida** y selecciona la carpeta
 5. Fija Pie en la barra de herramientas y haz clic en el ícono para abrir el panel lateral
 
-> **Edge (carga local):** usa este zip (`pie-x.y.z.zip`), que incluye la `key` que fija el ID. El ID en `edge://extensions` debe ser `gpccjhdgjkmalnepmeclooflliiocfed`. No cargues `pie-x.y.z-edge.zip` descomprimido: ese archivo es solo para la tienda y no conectará con Pie Link.
+> **Edge (carga local):** usa este zip, que incluye la `key` que fija el ID. El ID en `edge://extensions` debe ser `gpccjhdgjkmalnepmeclooflliiocfed`. Un paquete de tienda sin `key` no conectará con Pie Link.
 
 > **Actualizar:** para conservar tus chats y claves guardadas, descomprime la
 > nueva versión *en la misma carpeta* y haz clic en **↻ recargar** en la tarjeta
