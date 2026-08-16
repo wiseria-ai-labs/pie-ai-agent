@@ -96,9 +96,11 @@ Moonshot（Kimi —— 國際區與中國區）· StepFun**。透過 Ollama 接�
 Pie**。這個選擇會被記住，之後點擊工具列圖示也會直接開啟該視窗；隨時可在
 **設定 → 偏好** 中修改。
 
-### 方式一 —— Chrome Web Store（推薦）
+### 方式一 —— 瀏覽器商店（推薦）
 
-從 **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)** 安裝，點 **Add to Chrome**，把 Pie 釘到工具列。Chrome 會自動保持更新。
+**Chrome：** 從 **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)** 安裝，點 **Add to Chrome**，把 Pie 釘到工具列。Chrome 會自動保持更新。
+
+**Edge：** 從 **[Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/pie-%C2%B7-opensource-ai-agen/gbfdgfkpglimajnjedphgakmhaplgobf)** 安裝。商店包有自己的穩定 ID，Pie Link 已放行。
 
 ### 方式二 —— GitHub Release zip
 
@@ -106,9 +108,11 @@ Pie**。這個選擇會被記住，之後點擊工具列圖示也會直接開啟
 
 1. 從 [Releases 頁面](https://github.com/wiseria-ai-labs/pie-ai-agent/releases) 下載最新的 `pie-x.y.z.zip`
 2. 解壓到一個會長期保留的資料夾（Chrome 從這個資料夾載入 —— 別刪）
-3. 開啟 `chrome://extensions`，啟用 **開發人員模式**
+3. 開啟 `chrome://extensions`（或 `edge://extensions`），啟用 **開發人員模式**
 4. 點 **載入未封裝項目**，選擇該資料夾
 5. 把 Pie 釘到工具列，點擊圖示開啟側邊欄
+
+> **本機 Edge：** 載入這份帶 key 的 `pie-x.y.z.zip`。擴充功能頁 ID 必須是 `gpccjhdgjkmalnepmeclooflliiocfed`。不要載入 `pie-x.y.z-edge.zip`——那份只給 Edge 商店上架，本機 load unpacked 連不上 Pie Link。
 
 > **升級：** 要保留聊天記錄和已存的 key，把新版解壓**到同一個資料夾**，
 > 再點 Pie 卡片上的 **↻ 重新載入**。別點 **移除** —— 那會清掉裝置上存的一切，

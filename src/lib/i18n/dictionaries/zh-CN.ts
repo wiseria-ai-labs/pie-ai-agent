@@ -152,6 +152,9 @@ export const zhCNDict = {
       troubleshootRestartExtension: "重启扩展",
       troubleshootFallback:
         "还是连不上？确认菜单栏有 Pie 图标，然后完全退出 Chrome（⌘Q，不是关闭窗口）再重新打开。",
+      wrongExtIdTitle: "当前安装包连不上 Pie Link",
+      wrongExtIdBody:
+        "Pie Link 只放行商店稳定 ID。本机请加载带 key 的 pie-x.y.z.zip，不要加载只给商店用的 -edge.zip。扩展页上的 ID 必须是 gpccjhdgjkmalnepmeclooflliiocfed。",
     },
     searchProvider: {
       caps: "网页搜索",

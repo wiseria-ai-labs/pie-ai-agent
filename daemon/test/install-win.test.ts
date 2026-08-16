@@ -20,6 +20,7 @@ const releaseYml = readFileSync(
 );
 
 const EXT_ID = "gpccjhdgjkmalnepmeclooflliiocfed";
+const EDGE_EXT_ID = "gbfdgfkpglimajnjedphgakmhaplgobf";
 
 // ── pie-host.bat (native-messaging wrapper) ─────────────────────────────────
 test("pie-host.bat forwards to `pie.exe host` next to itself, with CRLF", () => {
@@ -65,10 +66,16 @@ test("iss writes an HKLM Run key that launches the tray (machine-wide login auto
   expect(iss).toContain('{app}\\PieTray.exe');
 });
 
-test("iss pins the fixed extension id in allowed_origins", () => {
-  // ExtId is defined once and templated into the origin (iscc expands {#ExtId} at compile).
+test("iss pins the Chrome and Edge store ids in allowed_origins", () => {
+  // Both ids are defined once and templated into the origin (iscc expands at compile).
   expect(iss).toContain(`#define ExtId "${EXT_ID}"`);
+  expect(iss).toContain(`#define EdgeExtId "${EDGE_EXT_ID}"`);
   expect(iss).toContain("chrome-extension://{#ExtId}/");
+  expect(iss).toContain("chrome-extension://{#EdgeExtId}/");
+});
+
+test("iss does not allowlist a path-derived unpacked id", () => {
+  expect(iss).not.toContain("oalbbnaognpedempboblkimkapdpbhjl");
 });
 
 test("iss lands the native-messaging manifest under {app} (world-readable Program Files)", () => {

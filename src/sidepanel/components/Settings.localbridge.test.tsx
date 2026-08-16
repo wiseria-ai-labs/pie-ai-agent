@@ -251,6 +251,53 @@ describe("LocalBridgeSection — install funnel (Slice 4)", () => {
   });
 });
 
+describe("LocalBridgeSection — unallowlisted extension id (#35)", () => {
+  it("shows the wrong-package hint and hides the install card when the id is path-derived", async () => {
+    chromeMock.runtime.id = "oalbbnaognpedempboblkimkapdpbhjl";
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "not_installed",
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    expect(await screen.findByText(/this copy can't connect to pie link/i)).toBeTruthy();
+    expect(screen.getByText(/-edge\.zip is store-only/i)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /install pie link/i })).toBeNull();
+  });
+
+  it("does not show the wrong-package hint for the Edge store id", async () => {
+    chromeMock.runtime.id = "gbfdgfkpglimajnjedphgakmhaplgobf";
+    mockSendMessage({
+      "local-bridge:status": () => ({
+        hasPermission: true,
+        ready: false,
+        installState: "not_installed",
+      }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    expect(await screen.findByRole("link", { name: /install pie link/i })).toBeTruthy();
+    expect(screen.queryByText(/this copy can't connect to pie link/i)).toBeNull();
+  });
+
+  it("does not show the wrong-package hint when connected", async () => {
+    chromeMock.runtime.id = "oalbbnaognpedempboblkimkapdpbhjl";
+    mockSendMessage({
+      "local-bridge:status": () => ({ hasPermission: true, ready: true }),
+      "local-agents:list": () => ({ agents: [] }),
+    });
+
+    render(<LocalBridgeSection />);
+    expect(await screen.findByText(/connected to pie link/i)).toBeTruthy();
+    expect(screen.queryByText(/this copy can't connect to pie link/i)).toBeNull();
+  });
+});
+
 describe("LocalBridgeSection — first-connect troubleshooting (#328)", () => {
   it("shows the troubleshoot block on the first connection failure", async () => {
     // 人工拍板（PR #329 review）：阈值降到 1，首次失败即提示，不再等退避梯子。

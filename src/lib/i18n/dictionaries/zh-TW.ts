@@ -152,6 +152,9 @@ export const zhTWDict = {
       troubleshootRestartExtension: "重啟擴充功能",
       troubleshootFallback:
         "還是連不上？確認選單列有 Pie 圖示，然後完全結束 Chrome（⌘Q，不是關閉視窗）再重新開啟。",
+      wrongExtIdTitle: "目前的安裝包連不上 Pie Link",
+      wrongExtIdBody:
+        "Pie Link 只放行商店穩定 ID。本機請載入帶 key 的 pie-x.y.z.zip，不要載入只給商店用的 -edge.zip。擴充功能頁上的 ID 必須是 gpccjhdgjkmalnepmeclooflliiocfed。",
     },
     searchProvider: {
       caps: "網頁搜尋",

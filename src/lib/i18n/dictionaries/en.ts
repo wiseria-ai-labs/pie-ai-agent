@@ -155,6 +155,9 @@ export const enDict = {
       troubleshootRestartExtension: "Restart extension",
       troubleshootFallback:
         "Still not connecting? Make sure the Pie icon is in the menu bar, then fully quit Chrome (⌘Q — not just closing the window) and reopen it.",
+      wrongExtIdTitle: "This copy can't connect to Pie Link",
+      wrongExtIdBody:
+        "Pie Link only allowlists the Chrome and Edge store IDs. This copy was loaded without the pinned key (the -edge.zip is store-only). Load pie-x.y.z.zip instead — the extension ID on chrome://extensions or edge://extensions must be gpccjhdgjkmalnepmeclooflliiocfed.",
     },
     searchProvider: {
       caps: "Search provider",

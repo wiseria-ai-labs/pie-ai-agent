@@ -30,10 +30,11 @@ macOS `.pkg`（`daemon/install/`）的 Windows 对应物。权威设计：
   **`{app}`（Program Files，全用户可读）**）+ **HKLM** `Run` key（登录自启**托盘**；daemon
   由 host 兜底拉起，spec §4.4）。`allowed_origins` 只收稳定扩展 ID
   `chrome-extension://gpccjhdgjkmalnepmeclooflliiocfed/`（manifest `key` 钉死，与
-  Chrome Web Store 相同）。**不要**把 unpacked 路径推导出的 ID 写进白名单——换目录
-  就变，Pie Link 会再次失明。`-edge.zip` 去掉 `key` 只为过 Edge 商店校验；本机
-  Edge 验收必须加载**带 key 的 Chrome 包**才能对上这条 origin。Edge 商店正式上架
-  后若商店分配了另一个稳定 ID，再加法进白名单，不要用临时 unpacked ID 顶替。
+  Chrome Web Store 相同）**和** Edge Add-ons 商店稳定 ID
+  `chrome-extension://gbfdgfkpglimajnjedphgakmhaplgobf/`（#35，2026-08-16 拍板）。
+  **不要**把 unpacked 路径推导出的 ID 写进白名单——换目录就变，Pie Link 会再次失明。
+  `-edge.zip` 去掉 `key` 只为过 Edge 商店校验；本机 Edge 验收必须加载**带 key 的
+  Chrome 包**才能对上 `gpcc…`。商店用户装的是 `-edge.zip`，走第二条 origin。
   **为什么 HKLM 而非 HKCU**：这是提权的机器级安装（WFP 围栏 + `srt-sandbox` 账户都是机器
   作用域）。若标准用户凭**另一个**管理员账户提权，HKCU / `%LOCALAPPDATA%` 会落到那个管理员的
   hive/profile，而 Chrome 以标准用户身份跑 → 永远读不到 per-user 的 NM manifest。HKLM 的 NM

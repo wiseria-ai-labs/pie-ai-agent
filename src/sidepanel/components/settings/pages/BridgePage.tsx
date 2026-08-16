@@ -4,6 +4,7 @@ import { Switch } from "../../ui/Switch";
 import { AgentBrandIcon } from "../../hitl/agent-brand-icons";
 import { queryBridgeStatus, type BridgeStatus } from "../bridge-status";
 import { groupAgentsByBrand, inferFormKind } from "@/lib/local-agents-prefs";
+import { isAllowlistedExtId } from "@/lib/extension-ids";
 
 // Pie Link 安装包稳定 URL（release latest）——升级卡下载按钮直链（升级用户已知 Pie Link 是什么，直链摩擦最小）。
 // #403：按平台分流——macOS 下 .pkg、Windows 下 setup.exe。旧代码只有 mac .pkg，Windows 用户点
@@ -139,8 +140,13 @@ export function LocalBridgeSection() {
   // 现有「未连接」文案（向后兼容）。
   const installState = status?.installState;
   const notReadyEnabled = enabled && status != null && !status.ready && !showUpgrade;
-  const showInstallCard = notReadyEnabled && installState === "not_installed";
-  const showDoctorHint = notReadyEnabled && installState === "installed_not_running";
+  // Path-derived unpacked id (Edge `-edge.zip` without `key`) is not in
+  // Pie Link `allowed_origins`. Don't send those users down the "install
+  // Pie Link" funnel — the host is fine, the package is wrong.
+  const extId = typeof chrome !== "undefined" ? chrome.runtime?.id : undefined;
+  const showWrongExtIdHint = notReadyEnabled && !!extId && !isAllowlistedExtId(extId);
+  const showInstallCard = notReadyEnabled && installState === "not_installed" && !showWrongExtIdHint;
+  const showDoctorHint = notReadyEnabled && installState === "installed_not_running" && !showWrongExtIdHint;
   // 首连排障块（#328）：开关开、未连、非升级态、且已有连接失败时，在安装卡/doctor 卡下
   // 追加。直给「首次安装需要重启扩展」引导——覆盖「装了、跑了、Chrome 就是连不上」这条
   // 既有卡片没覆盖的失败叙事。旧 SW 不回 failedAttempts → ?? 0 → 不出现（向后兼容）。
@@ -159,7 +165,7 @@ export function LocalBridgeSection() {
             status.protocolMismatch
             ? t("settings.localBridge.statusIncompatible")
             : // 未装/已装未连由下方专用卡片承载文案，状态行留空避免重复。
-              showInstallCard || showDoctorHint
+              showInstallCard || showDoctorHint || showWrongExtIdHint
               ? ""
               : t("settings.localBridge.statusEnabledNotConnected");
 
@@ -211,6 +217,16 @@ export function LocalBridgeSection() {
                     {t("settings.localBridge.upgradeMenubarHint")}
                   </div>
                 )}
+              </div>
+            )}
+            {showWrongExtIdHint && (
+              <div className="flex flex-col gap-2 border-t border-line pt-3">
+                <div className="text-[13px] font-medium text-fg-1">
+                  {t("settings.localBridge.wrongExtIdTitle")}
+                </div>
+                <div className="text-[12px] leading-relaxed text-fg-2">
+                  {t("settings.localBridge.wrongExtIdBody")}
+                </div>
               </div>
             )}
             {showInstallCard && (
