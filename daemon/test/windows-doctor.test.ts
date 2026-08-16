@@ -7,6 +7,8 @@ import {
   runWindowsDoctor,
   NM_HOST_NAME,
   EXPECTED_ORIGIN,
+  EDGE_STORE_EXT_ID,
+  EDGE_STORE_ORIGIN,
   EXT_ID,
   type WindowsDoctorDeps,
 } from "../src/windows-doctor";
@@ -143,7 +145,21 @@ describe("checkNmManifest", () => {
     expect(v.jsonExists).toBe(true);
     expect(v.hostPathExists).toBe(true);
     expect(v.hasExpectedOrigin).toBe(true);
+    expect(v.hasEdgeStoreOrigin).toBe(false);
     expect(v.parseError).toBeUndefined();
+  });
+
+  test("both store origins detected", () => {
+    const v = checkNmManifest("C:\\app\\ai.wiseria.pie.json", {
+      fileExists: () => true,
+      readFile: () =>
+        JSON.stringify({
+          path: "C:\\Program Files\\Pie Link\\pie-host.bat",
+          allowed_origins: [EXPECTED_ORIGIN, EDGE_STORE_ORIGIN],
+        }),
+    });
+    expect(v.hasExpectedOrigin).toBe(true);
+    expect(v.hasEdgeStoreOrigin).toBe(true);
   });
 
   test("missing json reported", () => {
@@ -173,6 +189,7 @@ describe("checkNmManifest", () => {
         JSON.stringify({ path: "C:\\pie-host.bat", allowed_origins: ["chrome-extension://someoneelse/"] }),
     });
     expect(v.hasExpectedOrigin).toBe(false);
+    expect(v.hasEdgeStoreOrigin).toBe(false);
   });
 });
 
@@ -287,8 +304,35 @@ describe("runWindowsDoctor orchestrator", () => {
     expect(r.lines.some((l) => l.includes("host wrapper missing"))).toBe(true);
   });
 
-  test("EXT_ID is the pinned extension id", () => {
+  test("EXT_ID is the pinned Chrome store id", () => {
     expect(EXT_ID).toBe("gpccjhdgjkmalnepmeclooflliiocfed");
+  });
+
+  test("EDGE_STORE_EXT_ID is the Edge Add-ons store id", () => {
+    expect(EDGE_STORE_EXT_ID).toBe("gbfdgfkpglimajnjedphgakmhaplgobf");
+  });
+
+  test("Chrome-only allowed_origins stays ok with a WARN for the missing Edge origin", async () => {
+    const r = await runWindowsDoctor(healthyDeps());
+    expect(r.ok).toBe(true);
+    expect(r.lines.some((l) => l.includes("WARN: allowed_origins is missing"))).toBe(true);
+    expect(r.lines.some((l) => l.includes(EDGE_STORE_ORIGIN))).toBe(true);
+  });
+
+  test("both store origins → ok and no Edge-origin WARN", async () => {
+    const r = await runWindowsDoctor(
+      healthyDeps({
+        readFile: () =>
+          JSON.stringify({
+            name: NM_HOST_NAME,
+            path: "C:\\Program Files\\Pie Link\\pie-host.bat",
+            allowed_origins: [EXPECTED_ORIGIN, EDGE_STORE_ORIGIN],
+          }),
+      }),
+    );
+    expect(r.ok).toBe(true);
+    expect(r.lines.some((l) => l.includes("WARN: allowed_origins is missing"))).toBe(false);
+    expect(r.lines.some((l) => l.includes("Chrome and Edge store ids"))).toBe(true);
   });
 });
 

@@ -85,22 +85,12 @@ jobs:
           (cd dist && zip -rq "../pie-${{ steps.tag.outputs.version }}.zip" .)
           ls -la pie-${{ steps.tag.outputs.version }}.zip
 
-      - name: Package Edge zip
-        # Same build, minus the things Edge's validator objects to — see
-        # scripts/make-edge-package.mjs. Runs after the Chrome zip because it
-        # rewrites dist/ in place.
-        run: |
-          node scripts/make-edge-package.mjs dist
-          (cd dist && zip -rq "../pie-${{ steps.tag.outputs.version }}-edge.zip" .)
-          ls -la pie-${{ steps.tag.outputs.version }}-edge.zip
-
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ steps.tag.outputs.ref }}" \
             "pie-${{ steps.tag.outputs.version }}.zip" \
-            "pie-${{ steps.tag.outputs.version }}-edge.zip" \
             --clobber
 
   # daemon 版本闸：daemon/ 相对上一个 tag 有改动，daemon/package.json 的 version 就必须跟着动。

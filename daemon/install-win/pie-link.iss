@@ -33,9 +33,12 @@
 #ifndef DistDir
   #define DistDir "..\dist"
 #endif
-; Fixed extension id (from the pinned `key` in the extension manifest.json; store build and
-; unpacked build share this id). Verified on a real machine 2026-08-08.
+; Chrome Web Store id (pinned by manifest `key`; keyed unpacked loads share it).
+; Verified on a real machine 2026-08-08.
 #define ExtId "gpccjhdgjkmalnepmeclooflliiocfed"
+; Edge Add-ons store id (Edge rejects `key`, so the store assigns its own stable
+; id). Confirmed 2026-08-16, issue #35. Never add a path-derived unpacked id.
+#define EdgeExtId "gbfdgfkpglimajnjedphgakmhaplgobf"
 #define NmHostName "ai.wiseria.pie"
 
 [Setup]
@@ -139,7 +142,7 @@ begin
     '  "description": "Pie local daemon bridge host",' + #13#10 +
     '  "path": "' + JsonPath(HostBat) + '",' + #13#10 +
     '  "type": "stdio",' + #13#10 +
-    '  "allowed_origins": ["chrome-extension://{#ExtId}/"]' + #13#10 +
+    '  "allowed_origins": ["chrome-extension://{#ExtId}/", "chrome-extension://{#EdgeExtId}/"]' + #13#10 +
     '}' + #13#10;
   SaveStringToFile(GetManifestPath(''), Json, False);
 end;

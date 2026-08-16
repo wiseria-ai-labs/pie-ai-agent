@@ -116,9 +116,11 @@ separada**. A escolha fica salva, então o ícone da barra de ferramentas passa 
 abrir essa janela; você pode mudar a qualquer momento em
 **Configurações → Preferências**.
 
-### Opção 1 — Chrome Web Store (recomendada)
+### Opção 1 — Loja do navegador (recomendada)
 
-Instale pela **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)**, clique em **Add to Chrome** e fixe o Pie na barra de ferramentas. O Chrome mantém tudo atualizado automaticamente.
+**Chrome:** instale pela **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)**, clique em **Add to Chrome** e fixe o Pie na barra de ferramentas. O Chrome mantém tudo atualizado automaticamente.
+
+**Edge:** instale pela **[Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/pie-%C2%B7-opensource-ai-agen/gbfdgfkpglimajnjedphgakmhaplgobf)**. A versão da loja tem o próprio ID estável; o Pie Link já o autoriza.
 
 ### Opção 2 — zip do GitHub Release
 
@@ -126,9 +128,11 @@ Para uma instalação offline ou autogerenciada da mesma versão:
 
 1. Baixe o `pie-x.y.z.zip` mais recente na [página de Releases](https://github.com/wiseria-ai-labs/pie-ai-agent/releases)
 2. Descompacte em uma pasta que você vai manter (o Chrome carrega a partir dela — não apague)
-3. Abra `chrome://extensions` e ative o **Modo do desenvolvedor**
+3. Abra `chrome://extensions` (ou `edge://extensions`) e ative o **Modo do desenvolvedor**
 4. Clique em **Carregar sem compactação** e selecione a pasta
 5. Fixe o Pie na barra de ferramentas e clique no ícone para abrir o painel lateral
+
+> **Edge (carga local):** use este zip, que inclui a `key` que fixa o ID. O ID em `edge://extensions` deve ser `gpccjhdgjkmalnepmeclooflliiocfed`. Um pacote da loja sem a `key` não conecta ao Pie Link.
 
 > **Atualização:** para manter seus chats e chaves salvas, descompacte a nova
 > versão *na mesma pasta* e clique em **↻ recarregar** no cartão do Pie. Não

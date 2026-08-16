@@ -1,4 +1,7 @@
-// Turn a built `dist/` into one Edge Add-ons accepts, in place.
+// Local helper: turn a built `dist/` into a package Edge Add-ons accepts.
+// Not a release asset — GitHub Releases only ship the keyed Chrome zip.
+// Partner Center upload is manual: `pnpm build && node scripts/make-edge-package.mjs dist`
+// then zip `dist/` yourself.
 //
 // Same build, three edits — every one of them something Edge's package
 // validator complains about and Chrome needs (or doesn't care about):
@@ -6,7 +9,7 @@
 //   1. `manifest.key` — a hard REJECTION on Edge Add-ons. Chrome needs it: the
 //      key pins the extension ID (`gpccjhdgjkmalnepmeclooflliiocfed`), and the
 //      Google OAuth redirect URI is registered against that ID.
-//      This zip is store-only. Local Edge load-unpacked must use the Chrome
+//      The output is store-only. Local Edge load-unpacked must use the Chrome
 //      zip (key intact) so Pie Link `allowed_origins` still matches. A
 //      path-derived unpacked ID is unstable and must never be allowlisted.
 //   2. Store copy that names another browser — a warning per locale. Each
@@ -14,7 +17,8 @@
 //   3. `chrome://extensions/shortcuts` in the command hints — not a validator
 //      finding but a dead link on Edge, where the page is `edge://`.
 //
-// Run AFTER the Chrome zip is packaged: this rewrites dist/ destructively.
+// Rewrites dist/ in place. Run against a fresh `pnpm build`, not a dist/
+// you still need for Chrome.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { readdirSync } from "node:fs";
