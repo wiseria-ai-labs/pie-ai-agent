@@ -202,6 +202,7 @@ export const zhTWDict = {
     targetLabel: "收件人",
     contextLabel: "上下文",
     filesLabel: "隨交棒檔案",
+    appContinueHint: "App 只會開啟工作區，需要你在 App 裡發一句繼續。",
     allow: "交棒",
     deny: "取消",
     form: {
@@ -220,6 +221,8 @@ export const zhTWDict = {
     argsNone: "無",
     disclosure:
       "腳本將以你的本機權限在沙箱內執行：寫入僅限本次工作階段的工作區，敏感目錄拒絕讀取，環境變數中的密鑰已剝離。核准後本次工作階段內該 skill 皆可執行腳本。",
+    disclosureNone:
+      "此腳本將以你的使用者帳戶直接執行，沒有額外沙箱。凡是你的帳戶能讀能寫的，它也能。核准後本次工作階段內該 skill 皆可執行腳本。",
     allow: "允許執行",
     deny: "拒絕",
   },

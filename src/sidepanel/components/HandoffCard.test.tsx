@@ -107,4 +107,42 @@ describe("HandoffCard", () => {
     expect(screen.getByText("Hand-off").className).toContain("text-warning");
     expect(container.textContent).not.toContain("handoff_to_agent");
   });
+
+  it("Cursor App uses the open-folder note, not the prefill note", () => {
+    renderCard({
+      payload: {
+        context: "x",
+        fileCount: 0,
+        brands: [
+          {
+            id: "cursor",
+            label: "Cursor",
+            forms: [{ id: "cursor-app", kind: "app" }],
+          },
+        ],
+      },
+      onDecision: vi.fn(),
+    });
+    expect(screen.getByText(/opens this folder/i)).toBeTruthy();
+    expect(screen.queryByText(/prefilled/i)).toBeNull();
+  });
+
+  it("uses form kind, not the id suffix, to decide the note", () => {
+    renderCard({
+      payload: {
+        context: "x",
+        fileCount: 0,
+        brands: [
+          {
+            id: "weird",
+            label: "Weird CLI",
+            forms: [{ id: "weird-app", kind: "terminal" }],
+          },
+        ],
+      },
+      onDecision: vi.fn(),
+    });
+    expect(screen.getByText(/starts automatically/i)).toBeTruthy();
+    expect(screen.queryByText(/prefilled/i)).toBeNull();
+  });
 });

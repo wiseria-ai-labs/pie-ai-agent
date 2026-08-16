@@ -202,6 +202,7 @@ export const zhCNDict = {
     targetLabel: "收件人",
     contextLabel: "上下文",
     filesLabel: "随交棒文件",
+    appContinueHint: "App 只会打开工作区，需要你在 App 里发一句继续。",
     allow: "交棒",
     deny: "取消",
     form: {
@@ -220,6 +221,8 @@ export const zhCNDict = {
     argsNone: "无",
     disclosure:
       "脚本将以你的本机权限在沙箱内运行：写入仅限本次会话的工作区，敏感目录拒绝读取，环境变量中的密钥已剥离。批准后本次会话内该 skill 均可运行脚本。",
+    disclosureNone:
+      "此脚本将以你的用户账户直接运行，没有额外沙箱。凡是你的账户能读能写的，它也能。批准后本次会话内该 skill 均可运行脚本。",
     allow: "允许运行",
     deny: "拒绝",
   },

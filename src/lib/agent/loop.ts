@@ -41,6 +41,7 @@ import { requestFromPanel } from "../panel-request";
 import {
   isBridgeReady,
   bridgeCapabilities,
+  bridgeSkillIsolation,
   requestLocalAgent,
   requestHandoff,
   requestListAgents,
@@ -2024,7 +2025,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // 由 panel 直达 SW，不进 tool schema——LLM 不能自批。
         confirmSkillRun: makeSessionSkillConfirm({
           isApproved: (skillId) => isSkillApprovedInSession(sessionId, skillId),
-          requestConfirm: (p) => requestFromPanel(sessionId, "skill-run-confirm", p),
+          requestConfirm: (p) =>
+            requestFromPanel(sessionId, "skill-run-confirm", {
+              ...p,
+              skillIsolation: bridgeSkillIsolation(),
+            }),
           record: (skillId) => recordSkillApproval(sessionId, skillId),
         }),
         // #330 — daemon-off 时 declares-no-scripts 报错追加 Pie Link 开启引导。

@@ -1,14 +1,12 @@
 import { test, expect } from "bun:test";
+import { runHandoff, safeFileName, buildDeeplinkUrl, HANDOFF_PROMPT } from "../src/handoff";
 import {
-  runHandoff,
-  safeFileName,
   batQuote,
   buildWindowsStartBat,
   windowsHandoffSpawn,
+  windowsOpenApp,
   resolveWindowsTerminal,
-  buildDeeplinkUrl,
-  HANDOFF_PROMPT,
-} from "../src/handoff";
+} from "../src/handoff-win32";
 import { AGENT_CANDIDATES } from "../src/agents";
 import { setLogEnabled } from "../src/log";
 
@@ -105,9 +103,14 @@ test("osascript failure (e.g. TCC Automation denied) throws with manual fallback
     h.spawns.push({ cmd, args, cwd });
     return { stdout: "", exitCode: 1, stderr: "execution error: Not authorized to send Apple events to Terminal. (-1743)" };
   };
-  await expect(runHandoff({ target: "claude", context: "x" }, h.opts)).rejects.toThrow(
-    /failed to open Terminal[\s\S]*start\.command/,
+  const err = await runHandoff({ target: "claude", context: "x" }, h.opts).then(
+    () => null,
+    (e: Error) => e,
   );
+  expect(err).toBeInstanceOf(Error);
+  expect(err!.message).toMatch(/failed to open a terminal/);
+  expect(err!.message).toMatch(/Automation/);
+  expect(err!.message).not.toMatch(/start\.command|pie-handoffs/);
 });
 
 test("rejects unsupported/injected target before building the script or spawning anything", async () => {
@@ -170,14 +173,14 @@ test("safeFileName rejects CLAUDE.md case-insensitively (app-mode reserved file)
   expect(() => safeFileName("claude.md")).toThrow();
 });
 
-test("open-a failure (no deeplink) throws with the dir as manual fallback", async () => {
+test("open-a failure (no deeplink) is semantic (no folder path)", async () => {
   const h = harness();
   h.opts.spawn = async (cmd: string, args: string[], cwd: string) => {
     h.spawns.push({ cmd, args, cwd });
     return { stdout: "", exitCode: 1, stderr: "Unable to find application named 'Cursor'" };
   };
   await expect(runHandoff({ target: "cursor-app", context: "x" }, h.opts)).rejects.toThrow(
-    /failed to open[\s\S]*pie-handoffs/,
+    /failed to open Cursor \(App\)/,
   );
 });
 
@@ -265,14 +268,14 @@ test("deeplink non-zero falls back to open -a and writes convention", async () =
   expect(guide?.content).toContain("Read context.md");
 });
 
-test("deeplink fail + open-a fail throws with the dir as manual fallback", async () => {
+test("deeplink fail + open-a fail is semantic (no folder path)", async () => {
   const h = harness();
   h.opts.spawn = async (cmd: string, args: string[], cwd: string) => {
     h.spawns.push({ cmd, args, cwd });
     return { stdout: "", exitCode: 1, stderr: "Unable to find application named 'Claude'" };
   };
   await expect(runHandoff({ target: "claude-app", context: "x" }, h.opts)).rejects.toThrow(
-    /failed to open[\s\S]*pie-handoffs/,
+    /failed to open Claude Code \(App\)/,
   );
   expect(h.spawns).toHaveLength(2);
 });
@@ -374,7 +377,7 @@ test("win32 terminal: wt 命中时 start 的参数带 wt -d", async () => {
   expect(h.spawns[0].args).toContain("-d");
 });
 
-test("win32 launch failure includes start.bat self-rescue path", async () => {
+test("win32 launch failure is semantic (no script path)", async () => {
   const h = harness();
   h.opts.detect = () => [{
     id: "codex-terminal" as const, label: "Codex (Terminal)", kind: "terminal" as const,
@@ -384,18 +387,105 @@ test("win32 launch failure includes start.bat self-rescue path", async () => {
     h.spawns.push({ cmd, args, cwd });
     return { stdout: "", exitCode: 1, stderr: "start failed" };
   };
-  await expect(
-    runHandoff(
-      { target: "codex-terminal", context: "x" },
-      { ...h.opts, platform: "win32", which: () => null, exists: () => false },
-    ),
-  ).rejects.toThrow(/start\.bat/);
+  const err = await runHandoff(
+    { target: "codex-terminal", context: "x" },
+    { ...h.opts, platform: "win32", which: () => null, exists: () => false },
+  ).then(
+    () => null,
+    (e: Error) => e,
+  );
+  expect(err).toBeInstanceOf(Error);
+  expect(err!.message).toMatch(/failed to open a terminal/);
+  expect(err!.message).not.toMatch(/start\.bat|pie-handoffs/i);
 });
 
-test("win32 app form refuses with manual folder path (no open -a)", async () => {
+const CURSOR_EXE = "C:\\Users\\x\\AppData\\Local\\Programs\\cursor\\Cursor.exe";
+
+function winCursorApp() {
+  return {
+    id: "cursor-app" as const,
+    label: "Cursor (App)",
+    kind: "app" as const,
+    appPaths: [CURSOR_EXE],
+    convention: "AGENTS.md" as const,
+    path: CURSOR_EXE,
+    verified: false as const,
+  };
+}
+
+test("windowsOpenApp: cmd /c start \"\" <exe> <dir> (bare argv, no batQuote)", () => {
+  const s = windowsOpenApp(CURSOR_EXE, "C:\\h\\d");
+  expect(s.cmd).toBe("cmd.exe");
+  expect(s.args).toEqual(["/c", "start", "", CURSOR_EXE, "C:\\h\\d"]);
+  expect(s.args).not.toContain(batQuote(CURSOR_EXE));
+  expect(s.args).not.toContain(batQuote("C:\\h\\d"));
+  expect(s.args).not.toContain("osascript");
+  expect(s.args).not.toContain("-a");
+});
+
+test("win32 app with deeplink template still uses start exe (no mac open)", async () => {
   const h = harness();
+  h.opts.detect = () => [{
+    ...winCursorApp(),
+    id: "codex-app" as const,
+    label: "Codex / ChatGPT (App)",
+    deeplink: { template: "codex://new?prompt={prompt}&path={dir}" },
+  }];
+  const r = await runHandoff(
+    { target: "codex-app", context: "x" },
+    { ...h.opts, platform: "win32" },
+  );
+  expect(r.mode).toBe("app");
+  expect(r.appLaunch).toBe("open-a");
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(true);
+  expect(h.spawns).toHaveLength(1);
+  expect(h.spawns[0].cmd).toBe("cmd.exe");
+  expect(h.spawns.some((s) => s.cmd === "open" || s.args[0]?.startsWith("codex://"))).toBe(false);
+});
+
+test("win32 app: start \"\" <exe> <dir>，写 AGENTS.md，mode=app", async () => {
+  const h = harness();
+  h.opts.detect = () => [winCursorApp()];
+  const r = await runHandoff(
+    { target: "cursor-app", context: "Continue the report" },
+    { ...h.opts, platform: "win32" },
+  );
+  expect(r.mode).toBe("app");
+  expect(h.writes.some((w) => w.path.endsWith("context.md") && w.content === "Continue the report")).toBe(true);
+  const guide = h.writes.find((w) => w.path.endsWith("AGENTS.md"));
+  expect(guide?.content).toContain("Read context.md");
+  expect(h.writes.some((w) => w.path.endsWith("start.command") || w.path.endsWith("start.bat"))).toBe(false);
+  expect(h.spawns).toHaveLength(1);
+  expect(h.spawns[0].cmd).toBe("cmd.exe");
+  expect(h.spawns[0].args).toEqual(["/c", "start", "", CURSOR_EXE, r.dir]);
+  expect(h.spawns.some((s) => s.cmd === "open" || s.cmd === "osascript")).toBe(false);
+});
+
+test("win32 app start 失败：文件已落盘，错误不含路径", async () => {
+  const h = harness();
+  h.opts.detect = () => [winCursorApp()];
+  h.opts.spawn = async (cmd, args, cwd) => {
+    h.spawns.push({ cmd, args, cwd });
+    return { stdout: "", exitCode: 1, stderr: "start failed" };
+  };
   await expect(
-    runHandoff({ target: "claude-app", context: "x" }, { ...h.opts, platform: "win32" }),
-  ).rejects.toThrow(/not supported on Windows yet/);
-  expect(h.spawns).toHaveLength(0);
+    runHandoff({ target: "cursor-app", context: "x" }, { ...h.opts, platform: "win32" }),
+  ).rejects.toThrow(/failed to open Cursor \(App\)/);
+  expect(h.writes.some((w) => w.path.endsWith("context.md"))).toBe(true);
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md"))).toBe(true);
+});
+
+test("darwin launch 源码不提 Windows 唤起", async () => {
+  const src = await Bun.file(new URL("../src/handoff-darwin.ts", import.meta.url)).text();
+  expect(src).not.toContain("cmd.exe");
+  expect(src).not.toContain("start.bat");
+  expect(src).not.toContain("win32");
+});
+
+test("win32 launch 源码不提 mac 唤起", async () => {
+  const src = await Bun.file(new URL("../src/handoff-win32.ts", import.meta.url)).text();
+  expect(src).not.toContain("osascript");
+  expect(src).not.toContain("open -a");
+  expect(src).not.toContain("start.command");
+  expect(src).not.toContain("/Applications");
 });

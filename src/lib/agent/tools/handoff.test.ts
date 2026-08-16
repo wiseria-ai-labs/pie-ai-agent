@@ -30,7 +30,8 @@ describe("handoff_to_agent tool", () => {
     });
     expect(run).toHaveBeenCalledWith({ target: "codex-terminal", context: "do it", files: [{ name: "a.md", content: "x" }] });
     expect(r.success).toBe(true);
-    expect(r.observation).toContain("/Users/x/pie-handoffs/2026-07-07-do-it");
+    expect(r.observation).not.toContain("/Users/x/pie-handoffs/2026-07-07-do-it");
+    expect(r.observation).not.toMatch(/[/\\]pie-handoffs[/\\]/);
     expect(r.observation).toContain("Codex (Terminal)");
   });
 
@@ -39,8 +40,10 @@ describe("handoff_to_agent tool", () => {
     const tool = buildHandoffTool({ run, listAgents: async () => AGENTS, requestConsent: async () => "claude-app" });
     const r = await tool.handler({ context: "do it" }, {} as never);
     expect(r.success).toBe(true);
-    expect(r.observation).toMatch(/send a message/i);
+    expect(r.observation).toMatch(/continue/i);
+    expect(r.observation).toMatch(/opened app/i);
     expect(r.observation).not.toMatch(/prefilled/i);
+    expect(r.observation).not.toMatch(/[/\\]pie-handoffs[/\\]/);
   });
 
   it("deeplink appLaunch mentions the prefilled composer", async () => {
@@ -53,6 +56,7 @@ describe("handoff_to_agent tool", () => {
     const r = await tool.handler({ context: "do it" }, {} as never);
     expect(r.success).toBe(true);
     expect(r.observation).toMatch(/prefilled/i);
+    expect(r.observation).not.toMatch(/[/\\]pie-handoffs[/\\]/);
   });
 
   it("empty detection: structured error, no consent card, no run", async () => {
@@ -61,7 +65,8 @@ describe("handoff_to_agent tool", () => {
     const tool = buildHandoffTool({ run, listAgents: async () => [], requestConsent });
     const r = await tool.handler({ context: "do it" }, {} as never);
     expect(r.success).toBe(false);
-    expect(r.error).toMatch(/no supported local agents/i);
+    expect(r.error).toMatch(/no local agent is available/i);
+    expect(r.error).not.toMatch(/claude|codex/i);
     expect(requestConsent).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
   });

@@ -5,12 +5,14 @@ import {
   WINDOWS_AGENT_CANDIDATES,
   agentCandidatesFor,
   detectAgents,
-  parseShellPath,
+} from "../src/agents";
+import { parseShellPath } from "../src/user-path-darwin";
+import {
   parseWherePath,
   isWindowsAppsStub,
   parseRegQueryPath,
   mergeWindowsPath,
-} from "../src/agents";
+} from "../src/user-path-win32";
 
 test("parseShellPath: takes the last line (rc 噪音在前面)", () => {
   const stdout = "Last login: whatever\n/usr/bin:/opt/homebrew/bin\n";
@@ -216,14 +218,25 @@ test("agentCandidatesFor: win32 → Windows 表；其余 → mac 8 条", () => {
   expect(agentCandidatesFor("linux")).toBe(AGENT_CANDIDATES);
 });
 
-test("Windows 表默认启用（#12 全翻开）；不含 mac app 条目", () => {
+test("Windows 表品牌分组、app 在前；不含 claude-app / 不含 mac 路径", () => {
   expect(WINDOWS_AGENT_CANDIDATES.map((c) => c.id)).toEqual([
     "claude-terminal",
+    "codex-app",
     "codex-terminal",
+    "cursor-app",
     "cursor-terminal",
     "opencode-terminal",
   ]);
-  for (const c of WINDOWS_AGENT_CANDIDATES) expect(c.verified).not.toBe(false);
+  expect(WINDOWS_AGENT_CANDIDATES.some((c) => c.id === "claude-app")).toBe(false);
+  for (const c of WINDOWS_AGENT_CANDIDATES) {
+    if (c.kind === "terminal") expect(c.verified).not.toBe(false);
+    if (c.kind === "app") {
+      expect(c.appPaths?.every((p) => !p.startsWith("/Applications/"))).toBe(true);
+      expect(c.appPaths?.every((p) => p.endsWith(".exe"))).toBe(true);
+    }
+  }
+  expect(WINDOWS_AGENT_CANDIDATES.find((c) => c.id === "cursor-app")?.verified).toBe(true);
+  expect(WINDOWS_AGENT_CANDIDATES.find((c) => c.id === "codex-app")?.verified).toBe(true);
 });
 
 test("detectAgents(win32): where 命中即纳入", () => {
@@ -285,4 +298,30 @@ test("detectAgents(darwin): mac 表不受 verified 过滤影响（历史条目�
     exists: () => false,
   });
   expect(detected.map((a) => a.id)).toContain("claude-terminal");
+});
+
+test("detectAgents(win32): ~ 展开后的 Cursor.exe 算已装；/Applications/Cursor.app 不算", () => {
+  const home = homedir();
+  const cursorExe = `${home}/AppData/Local/Programs/cursor/Cursor.exe`;
+  const detected = detectAgents({
+    platform: "win32",
+    includeUnverified: true,
+    which: () => null,
+    exists: (p) => p === cursorExe || p === "/Applications/Cursor.app",
+  });
+  expect(detected.find((a) => a.id === "cursor-app")?.path).toBe(cursorExe);
+  expect(detected.some((a) => a.path.includes("/Applications/"))).toBe(false);
+});
+
+test("detectAgents(win32): 已验证 app 默认纳入；路径 miss 则不出现", () => {
+  const home = homedir();
+  const cursorExe = `${home}/AppData/Local/Programs/cursor/Cursor.exe`;
+  const chatgptExe = `${home}/AppData/Local/Programs/ChatGPT/ChatGPT.exe`;
+  const exists = (p: string) => p === cursorExe || p === chatgptExe;
+  const shown = detectAgents({ platform: "win32", which: () => null, exists });
+  expect(shown.map((a) => a.id)).toEqual(["codex-app", "cursor-app"]);
+
+  const none = detectAgents({ platform: "win32", which: () => null, exists: () => false });
+  expect(none.map((a) => a.id)).not.toContain("cursor-app");
+  expect(none.map((a) => a.id)).not.toContain("codex-app");
 });

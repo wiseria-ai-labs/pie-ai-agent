@@ -203,7 +203,7 @@ test("applyUpdate: json 指向非白名单域 → 未下载即中止", async () 
 
 test("applyUpdate: 非 macOS 平台直接拒绝", async () => {
   const f = mkFixture();
-  await expect(applyUpdate({ ...baseDeps(f, f.sha), platform: "win32" })).rejects.toThrow(/not supported/);
+  await expect(applyUpdate({ ...baseDeps(f, f.sha), platform: "win32" })).rejects.toThrow(/self-update is not available/);
 });
 
 test("applyUpdate: expectedTeamId 未注入（空）→ fail-closed", async () => {

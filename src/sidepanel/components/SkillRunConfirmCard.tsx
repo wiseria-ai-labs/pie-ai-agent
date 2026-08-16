@@ -27,7 +27,10 @@ const ShieldIcon = () => (
 export function SkillRunConfirmCard({ payload, onDecision }: Props) {
   const t = useT();
   const args = payload.args ?? [];
-
+  const disclosure =
+    payload.skillIsolation === "none"
+      ? t("skillRunConfirm.disclosureNone")
+      : t("skillRunConfirm.disclosure");
   return (
     <HitlCardShell
       register="local"
@@ -65,7 +68,7 @@ export function SkillRunConfirmCard({ payload, onDecision }: Props) {
           )}
         </HitlDetailGroup>
       </HitlDetailBlock>
-      <div className="text-[11px] leading-[17px] text-fg-2">{t("skillRunConfirm.disclosure")}</div>
+      <div className="text-[11px] leading-[17px] text-fg-2">{disclosure}</div>
     </HitlCardShell>
   );
 }

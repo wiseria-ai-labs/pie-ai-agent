@@ -556,6 +556,31 @@ describe("local-bridge", () => {
       expect(mod.bridgeProtocolMismatch()).toBe(false);
     });
 
+    it("stores hello skillIsolation / selfUpdate", async () => {
+      const mod = await import("./local-bridge");
+      mod.initLocalBridge();
+      const helloReq = fakePort.postMessage.mock.calls[0][0] as { id: string };
+      fakePort._emit({
+        id: helloReq.id, ok: true,
+        result: {
+          protocolVersion: PROTOCOL_VERSION,
+          capabilities: ["run_local_agent"],
+          daemonVersion: "0.3.2",
+          skillIsolation: "none",
+          selfUpdate: false,
+        },
+      });
+      await Promise.resolve();
+      expect(mod.bridgeSkillIsolation()).toBe("none");
+      expect(mod.bridgeSelfUpdate()).toBe(false);
+    });
+
+    it("old daemon hello omits isolation / selfUpdate", async () => {
+      const mod = await handshake("0.3.0");
+      expect(mod.bridgeSkillIsolation()).toBeUndefined();
+      expect(mod.bridgeSelfUpdate()).toBeUndefined();
+    });
+
     it("daemonVersion below MIN → needsUpgrade", async () => {
       // 0.2.x（ADR 0007 前，仍带 grant 信封）低于 MIN 0.3.0 → 升级卡引导装新 pkg
       const mod = await handshake("0.2.9");

@@ -29,6 +29,8 @@ describe("run_local_agent tool", () => {
     });
     const r = await tool.handler({ prompt: "do it" }, { tabId: 1 } as never);
     expect(r.success).toBe(false);
+    expect(r.error).toMatch(/no local headless agent is available/i);
+    expect(r.error).not.toMatch(/claude|codex|cursor-agent|opencode/i);
     expect(requestConsent).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
   });
