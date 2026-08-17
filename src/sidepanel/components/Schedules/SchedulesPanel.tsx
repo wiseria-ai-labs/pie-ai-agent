@@ -178,7 +178,7 @@ export default function SchedulesPanel({ onOpenSession, onCreateViaChat }: Props
   const editing = schedules.find((s) => s.id === editingId);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" data-testid="schedules-page">
       {/* Title lives in the contextual TopBar now (single-top-bar invariant);
           this panel keeps only its "new schedule" action, right-aligned. */}
       {!showCreate && !editingId && (

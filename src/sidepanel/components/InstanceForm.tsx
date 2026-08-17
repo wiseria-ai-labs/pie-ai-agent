@@ -218,6 +218,7 @@ export default function InstanceForm(props: Props) {
           <div className="flex flex-col gap-1.5">
             <button
               type="button"
+              data-testid="instance-replace-key"
               onClick={() => setReplacing(true)}
               className="min-w-0 overflow-x-auto whitespace-nowrap rounded-[10px] border border-line bg-field px-3 py-2.5 text-left font-mono text-[13px] text-fg-1 hover:border-fg-3 focus:border-accent-line"
             >
@@ -228,6 +229,7 @@ export default function InstanceForm(props: Props) {
           <div className="flex flex-col gap-1.5">
             <div className="flex gap-1.5">
               <input
+                data-testid="instance-api-key"
                 aria-label={t("instanceForm.apiKeyLabel")}
                 type={showKey ? "text" : "password"}
                 value={apiKey}
@@ -259,6 +261,7 @@ export default function InstanceForm(props: Props) {
       <Field label={t("instanceForm.rpmLimit")} hint="RPM">
         <div className="flex flex-col gap-1.5">
           <input
+            data-testid="instance-rpm"
             aria-label={t("instanceForm.rpmLimit")}
             type="text"
             inputMode="numeric"
@@ -304,13 +307,14 @@ export default function InstanceForm(props: Props) {
       {!props.renderActions && (
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
           {props.mode === "edit" && props.onDelete && (
-            <Button variant="danger" onClick={() => props.onDelete!()}>
+            <Button variant="danger" data-testid="instance-forget" onClick={() => props.onDelete!()}>
               {t("instanceForm.forgetConfig")}
             </Button>
           )}
           <div className="flex-1" />
           <Button
             variant="secondary"
+            data-testid="instance-test"
             loading={testing}
             disabled={!canSave}
             onClick={() => {
@@ -321,6 +325,7 @@ export default function InstanceForm(props: Props) {
           </Button>
           <Button
             variant="primary"
+            data-testid="instance-save"
             disabled={!canSave}
             onClick={() => props.onSave(payload)}
           >

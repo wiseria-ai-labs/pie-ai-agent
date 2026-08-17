@@ -560,6 +560,7 @@ export default function NewConfigWizard(props: Props) {
                 </Button>
                 <Button
                   variant="secondary"
+                  data-testid="instance-test"
                   loading={testing}
                   disabled={!effectiveCanSave}
                   onClick={triggerTest}
@@ -572,6 +573,7 @@ export default function NewConfigWizard(props: Props) {
                 </Button>
                 <Button
                   variant="primary"
+                  data-testid="instance-save"
                   disabled={!effectiveCanSave}
                   onClick={triggerSave}
                 >

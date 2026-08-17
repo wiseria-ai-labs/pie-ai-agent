@@ -71,6 +71,7 @@ export default function CustomProviderFields(props: Props) {
     <div className="flex flex-col gap-4">
       <Field label={t("customProvider.name")} hint={`${props.name.length}/40`}>
         <input
+          data-testid="custom-provider-name"
           value={props.name}
           onChange={(e) => props.onNameChange(e.target.value)}
           maxLength={40}
@@ -81,6 +82,7 @@ export default function CustomProviderFields(props: Props) {
 
       <Field label={t("customProvider.baseUrl")}>
         <input
+          data-testid="custom-provider-baseurl"
           value={props.baseUrl}
           onChange={(e) => props.onBaseUrlChange(e.target.value)}
           placeholder={t("customProvider.baseUrlPlaceholder")}

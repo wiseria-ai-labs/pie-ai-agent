@@ -83,3 +83,22 @@
 ```
 
 结论行只有两种：「自动验收通过，建议人工抽查上列盲区后打 human-approved」或「存在 FAIL，建议打 need-to-solve」。
+
+---
+
+## 发版门（release-smoke）
+
+功能 PR 继续走上面的 per-PR `pilot-<n>-*.mjs`。**打 tag 之前**另跑一份固定产品冒烟，证明旧的基础没被近期合入冲坏。
+
+- 清单：`docs/specs/2026-08-17-release-smoke-checklist.md`（v1 已冻，发现新回归再往里加）
+- 套件：`eval/acceptance/release-smoke/`（`pnpm smoke:release`）
+- 怎么跑、闸怎么判：`eval/acceptance/release-smoke/README.md`
+- 不进 GitHub Actions，不挡日常 PR CI
+
+```
+功能 PR：CI +（该打 need-human-test 的才跑）per-PR acceptance
+        ↓ merge main
+发版候选：本地 pnpm smoke:release → $PIE_ACCEPT_BASE/report/report.md
+        ↓ 人抽查 H 区
+version bump PR → CI → merge → tag → release.yml
+```

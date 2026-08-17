@@ -40,6 +40,7 @@ export default function ModelMetaEditor({ initial, showTools, modelIdReadonly, m
 
         <Field label={t("customProvider.modelId")}>
           <input
+            data-testid="custom-model-id"
             value={draft.id}
             readOnly={modelIdReadonly}
             onChange={(e) => setDraft((prev) => ({ ...prev, id: e.target.value }))}
@@ -99,6 +100,7 @@ export default function ModelMetaEditor({ initial, showTools, modelIdReadonly, m
             {t("common.cancel")}
           </button>
           <button
+            data-testid="custom-model-save"
             onClick={() => onSave(draft)}
             disabled={!draft.id.trim()}
             className="rounded bg-fg-1 px-3 py-1.5 text-[11px] font-medium text-canvas disabled:opacity-30"

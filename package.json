@@ -17,7 +17,8 @@
     "build:eval": "pnpm icons && vite build --mode eval",
     "build:staging": "pnpm icons && vite build --mode staging",
     "verify:no-eval-bridge": "node scripts/assert-no-eval-bridge.mjs",
-    "eval:task": "tsx eval/runner/cli.ts"
+    "eval:task": "tsx eval/runner/cli.ts",
+    "smoke:release": "node eval/acceptance/release-smoke/run.mjs"
   },
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.33.0",
