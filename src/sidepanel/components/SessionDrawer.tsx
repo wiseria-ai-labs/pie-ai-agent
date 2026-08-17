@@ -176,6 +176,7 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
       <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
         <button
           type="button"
+          data-testid="session-unarchive"
           aria-label={t("sessions.unarchiveAria", { title: displayTitle })}
           onClick={() => onUnarchive(id)}
           style={{
@@ -194,6 +195,7 @@ function ArchivedRow({ session, onUnarchive, onDeleteForever }: ArchivedRowProps
         </button>
         <button
           type="button"
+          data-testid="session-delete-forever"
           aria-label={t("sessions.deleteForeverAria", { title: displayTitle })}
           onClick={() => onDeleteForever(id)}
           style={{
@@ -352,6 +354,7 @@ export default function SessionDrawer({
         {/* SHOW ARCHIVED toggle — real collapsible section */}
         <button
           type="button"
+          data-testid="session-show-archived"
           aria-expanded={showArchived}
           aria-controls="archived-session-list"
           onClick={() => setShowArchived((v) => !v)}
@@ -483,6 +486,7 @@ function SessionRowWithDelete({
       {hovered && session.status !== "archived" && (
         <button
           type="button"
+          data-testid="session-archive"
           aria-label={t("sessions.archiveAria", { title: session.title ?? t("sessions.untitled") })}
           title={t("sessions.archiveSession")}
           onClick={(e) => {

@@ -175,6 +175,7 @@ export default function ModelPicker(props: Props) {
     <div ref={wrapRef} className="relative">
       <button
         ref={triggerRef}
+        data-testid="model-picker"
         onClick={() => !props.locked && setOpen(!open)}
         disabled={props.locked}
         className="flex items-center gap-1.5 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
@@ -214,6 +215,7 @@ export default function ModelPicker(props: Props) {
               return (
                 <div key={inst.id} className={isExpanded ? "bg-field" : ""}>
                   <button
+                    data-testid={`model-picker-row-${inst.id}`}
                     onClick={() => toggleProvider(inst)}
                     className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-field"
                   >
@@ -309,6 +311,7 @@ function ExpandedModels(props: {
             r.managed ? (
               <button
                 key={r.id}
+                data-testid={`model-option-${r.id}`}
                 onClick={() => props.onPick(r.id)}
                 className={`flex items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
               >
@@ -340,6 +343,7 @@ function ExpandedModels(props: {
             ) : (
               <button
                 key={r.id}
+                data-testid={`model-option-${r.id}`}
                 onClick={() => props.onPick(r.id)}
                 className={`flex items-center gap-2 px-3.5 py-1.5 pl-7 text-left transition-colors hover:bg-surface ${r.id === props.currentModel ? "bg-surface" : ""}`}
               >

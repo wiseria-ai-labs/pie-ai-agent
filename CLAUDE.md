@@ -58,6 +58,7 @@ BYOK (Bring Your Own Key) Chrome Extension — 用户插入自己的 API key 获
 `.github/workflows/release.yml` 是唯一发布入口。**不要**手动 `gh release upload` 传 zip——除非是已发布 tag 的紧急补救。
 
 发新版流程：
+0. **打 tag 前**在本机跑发版真机冒烟（不进 GitHub Actions，不挡日常 PR CI）：`pnpm build:eval && pnpm build && PIE_ACCEPT_BASE=/tmp/piesmoke pnpm smoke:release`。清单 `docs/specs/2026-08-17-release-smoke-checklist.md`，套件 `eval/acceptance/release-smoke/`，配方与闸见 `docs/agents/auto-acceptance.md`「发版门」。**F/P 全绿 + 人抽查 H 区**之后才 bump / tag。
 1. bump `package.json` 和 `manifest.json` 的 `version`（必须一致），commit。同一 commit/PR 里产出 release notes：`docs/release-notes/v0.x.y.md`（英文，即 GitHub release body 同源）**＋中文版 `v0.x.y.zh-Hans.md`**——官网 changelog 页（pie-website#12）按页面 locale 从 `raw.githubusercontent.com` 的 `main` 分支拉 `v{ver}.{locale}.md`，404 回落英文，所以中文版漏发不报错、但中文用户就只能看英文；其它语言（如 `.ja.md`）可选，同名规则
 2. `git tag v0.x.y && git push origin v0.x.y`
 3. 在 GitHub 上 publish release notes（tag 已存在即可）

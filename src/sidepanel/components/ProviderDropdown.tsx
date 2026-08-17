@@ -68,6 +68,7 @@ export default function ProviderDropdown(props: Props) {
   return (
     <div className="flex flex-col gap-1.5">
       <button
+        data-testid="provider-dropdown"
         aria-label={selectedName ?? t("providerDropdown.selectProvider")}
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 rounded-[10px] border border-line bg-field px-3 py-2.5 text-left text-[13px] text-fg-1"
@@ -108,6 +109,7 @@ export default function ProviderDropdown(props: Props) {
                   return (
                     <button
                       key={p.id}
+                      data-testid={`provider-option-${p.id}`}
                       disabled={configured}
                       onClick={() => {
                         if (configured) return;
@@ -190,6 +192,7 @@ export default function ProviderDropdown(props: Props) {
           {/* Fixed footer */}
           <div className="border-t border-line">
             <button
+              data-testid="provider-new-custom"
               onClick={() => {
                 props.onCreateCustom();
                 setOpen(false);

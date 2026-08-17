@@ -418,12 +418,13 @@ export default function App() {
             onCreateViaChat={(template) => void handleCreateScheduleViaChat(template)}
           />
         ) : view === "skills" ? (
-          <div className="flex-1 overflow-y-auto px-4 py-6">
+          <div className="flex-1 overflow-y-auto px-4 py-6" data-testid="skills-page">
             <SkillsList onRunSkill={(id, name) => void handleRunSkill(id, name)} />
           </div>
         ) : view === "settings" ? (
           <div
             key={settingsPage}
+            data-testid={`settings-page-${settingsPage}`}
             className={`${settingsNavDir === "back" ? "page-enter-back" : "page-enter-fwd"} flex-1 overflow-y-auto px-4 py-6`}
           >
             {settingsPage === "root" ? (

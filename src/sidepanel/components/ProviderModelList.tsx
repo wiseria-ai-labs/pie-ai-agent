@@ -117,6 +117,7 @@ export default function ProviderModelList(props: Props) {
 
       {props.onAddCustom && (
         <button
+          data-testid="add-custom-model"
           onClick={() => setEditing({})}
           className="flex items-center justify-center gap-1.5 rounded-[10px] border-[1.5px] border-dashed border-line px-3 py-2 text-[11px] text-accent hover:border-accent-line"
         >

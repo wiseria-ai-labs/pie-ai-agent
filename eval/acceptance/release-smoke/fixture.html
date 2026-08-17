@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Pie release smoke fixture</title>
+</head>
+<body>
+  <h1 id="smoke-heading">SMOKE-HEADING</h1>
+  <p>Local page for release-smoke L03. The agent must read this heading and click the button.</p>
+  <button id="smoke-target" type="button">smoke target</button>
+  <script>
+    document.getElementById("smoke-target").addEventListener("click", function () {
+      this.dataset.smoked = "1";
+      this.textContent = "smoked";
+    });
+  </script>
+</body>
+</html>
