@@ -559,7 +559,7 @@ test("webUi candidate: dispatches launchWebHandoff, returns appLaunch web, no co
     agentPath: string;
     webUi: { origin: string; argv: readonly string[] };
   }[] = [];
-  const webUi = { origin: "http://127.0.0.1:3080", argv: ["web", "--no-open"] as const };
+  const webUi = { origin: "http://127.0.0.1:3080", argv: ["web"] as const };
   h.opts.detect = () => [{
     id: "claude-app" as const,
     label: "Web UI stand-in",

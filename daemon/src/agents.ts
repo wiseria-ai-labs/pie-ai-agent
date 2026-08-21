@@ -166,7 +166,7 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // （禁止把 headless 命令填进 argv）。verified:false —— 真机过了再进默认可用集。
   { id: "dsh-app", label: "DeepSeek Harness (App)", kind: "app",
     bin: "dsh", binPaths: ["~/.local/bin/dsh"], verified: false,
-    webUi: { origin: "http://127.0.0.1:3080", argv: ["web", "--no-open"] } },
+    webUi: { origin: "http://127.0.0.1:3080", argv: ["web"] } },
   { id: "dsh-terminal", label: "DeepSeek Harness (Terminal)", kind: "terminal", bin: "dsh",
     headlessArgv: ["--profile", "headless", "{prompt}"],
     binPaths: ["~/.local/bin/dsh"], verified: false },

@@ -10,19 +10,25 @@ import { setLogEnabled } from "../src/log";
 
 setLogEnabled(false);
 
-function dshDescribeBody() {
+/** 真机 `POST /api/host.describe` 200 的 value（0.1.0-rc.5；官方 schema 无 `home`）。 */
+function dshDescribeValue() {
+  return {
+    version: "0.0.1",
+    cwd: "/tmp",
+    provider: "deepseek-official",
+    model: "deepseek-v4-flash",
+    attachedSessions: 0,
+    canOpenPath: true,
+  };
+}
+
+function dshDescribeBody(value: Record<string, unknown> = dshDescribeValue()) {
   return {
     type: "server-response",
     rpcId: "r1",
     result: {
       ok: true,
-      value: {
-        version: "0.1.0-rc.6",
-        cwd: "/tmp",
-        attachedSessions: 0,
-        home: "/Users/x",
-        canOpenPath: true,
-      },
+      value,
     },
   };
 }
@@ -74,6 +80,19 @@ test("isDshHostDescribe accepts a real host.describe envelope and rejects lookal
   expect(isDshHostDescribe(dshDescribeBody())).toBe(true);
   expect(isDshHostDescribe({ ok: true })).toBe(false);
   expect(isDshHostDescribe({ type: "server-response", result: { ok: true, value: { version: "1" } } })).toBe(false);
+  const withoutCanOpenPath = { ...dshDescribeValue() };
+  delete (withoutCanOpenPath as { canOpenPath?: boolean }).canOpenPath;
+  expect(isDshHostDescribe(dshDescribeBody(withoutCanOpenPath))).toBe(false);
+  expect(isDshHostDescribe(dshDescribeBody({
+    version: "0.0.1",
+    cwd: "/tmp",
+    attachedSessions: 0,
+    home: "/Users/x",
+  }))).toBe(false);
+});
+
+test("冷启动 argv 是 dsh web，不含 rc.5 会立刻退出的 unknown option", () => {
+  expect([...DSH_WEB_ARGV]).toEqual(["web"]);
 });
 
 test("探活命中：复用已有 Web UI，不 detach 启动，登记 workspace、剪贴板、打开 URL", async () => {
@@ -113,7 +132,7 @@ test("探活命中：复用已有 Web UI，不 detach 启动，登记 workspace�
   expect(spawns).toEqual([{ cmd: "open", args: [DSH_WEB_ORIGIN], cwd: dir }]);
 });
 
-test("探活未命中：detach `dsh web --no-open` 后轮询，再登记 workspace", async () => {
+test("探活未命中：detach `dsh web` 后轮询，再登记 workspace", async () => {
   let describes = 0;
   const detached: { cmd: string; args: string[]; cwd: string }[] = [];
   const clips: string[] = [];

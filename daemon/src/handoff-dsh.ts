@@ -6,8 +6,8 @@
 import type { SpawnFn, DetachSpawnFn } from "./spawn";
 
 export const DSH_WEB_ORIGIN = "http://127.0.0.1:3080";
-/** 官方 README 主路径：`dsh web` 是 `--profile web` 的硬编码别名；`--no-open` 是 web app flag。 */
-export const DSH_WEB_ARGV = ["web", "--no-open"] as const;
+/** 冷启动：`dsh web`。0.1.0-rc.5 的 `dsh web --help` 只有 `--host` / `--port` / `--trusted-host`，多传会立刻退出。 */
+export const DSH_WEB_ARGV = ["web"] as const;
 export const DSH_READY_TIMEOUT_MS = 20_000;
 export const DSH_POLL_INTERVAL_MS = 250;
 export const DSH_FETCH_TIMEOUT_MS = 2_000;
@@ -63,8 +63,8 @@ export function isDshHostDescribe(json: unknown): boolean {
   return (
     typeof v.version === "string" &&
     typeof v.cwd === "string" &&
-    typeof v.home === "string" &&
-    typeof v.attachedSessions === "number"
+    typeof v.attachedSessions === "number" &&
+    typeof v.canOpenPath === "boolean"
   );
 }
 
