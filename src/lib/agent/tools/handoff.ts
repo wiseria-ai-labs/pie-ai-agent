@@ -6,23 +6,34 @@ import { groupAgentsByBrand, inferFormKind } from "@/lib/local-agents-prefs";
 export interface HandoffBrandOption {
   id: string;
   label: string;
-  forms: { id: string; kind: "app" | "terminal" }[];
+  forms: { id: string; kind: "app" | "terminal"; appLaunch?: HandoffResult["appLaunch"] }[];
 }
 
 export function groupHandoffBrands(
-  agents: { id: string; label: string; kind?: "app" | "terminal" }[],
+  agents: {
+    id: string;
+    label: string;
+    kind?: "app" | "terminal";
+    appLaunch?: HandoffResult["appLaunch"];
+  }[],
 ): HandoffBrandOption[] {
   return groupAgentsByBrand(agents).map((b) => ({
     id: b.id,
     label: b.label,
     forms: b.forms.flatMap((f) => {
       const kind = inferFormKind(f.id, f.kind);
-      return kind ? [{ id: f.id, kind }] : [];
+      if (!kind) return [];
+      return [{ id: f.id, kind, ...(f.appLaunch ? { appLaunch: f.appLaunch } : {}) }];
     }),
   }));
 }
 
-export type HandoffAgentOption = { id: string; label: string; kind?: "app" | "terminal" };
+export type HandoffAgentOption = {
+  id: string;
+  label: string;
+  kind?: "app" | "terminal";
+  appLaunch?: HandoffResult["appLaunch"];
+};
 
 export interface HandoffToolDeps {
   run: (p: HandoffParams) => Promise<HandoffResult>;

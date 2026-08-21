@@ -88,6 +88,11 @@ export interface ListAgentsResult {
      * → 消费方回落「非 headless-only」（当作可交棒）。
      */
     interactive?: boolean;
+    /**
+     * app 预期怎么打开。交棒卡据此选文案，不认品牌 id。
+     * 加法演进（PROTOCOL_VERSION 不动）：旧 daemon / terminal 不给 → 卡按 deeplink 文案。
+     */
+    appLaunch?: "deeplink" | "open-a" | "web";
   }[];
 }
 

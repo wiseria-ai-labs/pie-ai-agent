@@ -5,7 +5,7 @@ import type { BridgeResponse, RunLocalAgentParams, HandoffParams, ListAgentsResu
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
 import { runHandoff } from "./handoff";
-import { detectAgents, agentCandidatesFor, candidateIsInteractive } from "./agents";
+import { detectAgents, agentCandidatesFor, candidateAppLaunch, candidateIsInteractive } from "./agents";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded, readSessionFile, deleteSessionWorkspace, sweepSessions } from "./skill-store";
@@ -91,6 +91,8 @@ export async function handleMessage(
             headless: !!c.headlessArgv?.length,
             // handoff 卡片据此排除仅 headless 的 terminal（#41 DSH）。
             interactive: candidateIsInteractive(c),
+            // 交棒卡据此选文案（web / deeplink / open-a），不认品牌 id。
+            appLaunch: candidateAppLaunch(c),
           })),
         };
         return respond({ ok: true, result });

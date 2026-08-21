@@ -1,6 +1,5 @@
 import { test, expect } from "bun:test";
 import { runHandoff, safeFileName, buildDeeplinkUrl, HANDOFF_PROMPT } from "../src/handoff";
-import { DSH_WEB_ARGV, DSH_WEB_ORIGIN, isDshHostDescribe } from "../src/handoff-dsh";
 import {
   batQuote,
   buildWindowsStartBat,
@@ -536,69 +535,6 @@ test("win32 launch 源码不提 mac 唤起", async () => {
   expect(src).not.toContain("/Applications");
 });
 
-function dshApp() {
-  return {
-    id: "dsh-app" as const,
-    label: "DeepSeek Harness (App)",
-    kind: "app" as const,
-    bin: "dsh",
-    binPaths: ["~/.local/bin/dsh"],
-    verified: false as const,
-    path: "/Users/x/.local/bin/dsh",
-  };
-}
-
-function dshDescribeBody() {
-  return {
-    type: "server-response",
-    rpcId: "r1",
-    result: {
-      ok: true,
-      value: {
-        version: "0.1.0-rc.6",
-        cwd: "/tmp",
-        attachedSessions: 0,
-        home: "/Users/x",
-        canOpenPath: true,
-      },
-    },
-  };
-}
-
-function dshWorkspaceBody(created: boolean, path: string) {
-  return {
-    type: "server-response",
-    rpcId: "r2",
-    result: {
-      ok: true,
-      value: {
-        workspace: {
-          workspaceId: "ws-1",
-          path,
-          title: "handoff",
-          sessionIds: [],
-          createdAt: "2026-08-21T00:00:00Z",
-          updatedAt: "2026-08-21T00:00:00Z",
-        },
-        created,
-      },
-    },
-  };
-}
-
-function jsonRes(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-test("isDshHostDescribe accepts a real host.describe envelope and rejects lookalikes", () => {
-  expect(isDshHostDescribe(dshDescribeBody())).toBe(true);
-  expect(isDshHostDescribe({ ok: true })).toBe(false);
-  expect(isDshHostDescribe({ type: "server-response", result: { ok: true, value: { version: "1" } } })).toBe(false);
-});
-
 test("headless-only terminal (no argv) is rejected before any side effect", async () => {
   const h = harness();
   h.opts.detect = () => [{
@@ -615,122 +551,45 @@ test("headless-only terminal (no argv) is rejected before any side effect", asyn
   expect(h.dirs).toHaveLength(0);
 });
 
-test("dsh-app 探活命中：复用已有 Web UI，不 detach 启动，登记 workspace、剪贴板、打开 URL", async () => {
+test("webUi candidate: dispatches launchWebHandoff, returns appLaunch web, no convention file", async () => {
   const h = harness();
-  const fetches: { url: string; body: Record<string, unknown> }[] = [];
-  const detached: { cmd: string; args: string[]; cwd: string }[] = [];
-  const clips: string[] = [];
-  h.opts.detect = () => [dshApp()];
+  const launched: {
+    dir: string;
+    context: string;
+    agentPath: string;
+    webUi: { origin: string; argv: readonly string[] };
+  }[] = [];
+  const webUi = { origin: "http://127.0.0.1:3080", argv: ["web", "--no-open"] as const };
+  h.opts.detect = () => [{
+    id: "claude-app" as const,
+    label: "Web UI stand-in",
+    kind: "app" as const,
+    webUi,
+    path: "/Users/x/.local/bin/dsh",
+  }];
   const r = await runHandoff(
-    { target: "dsh-app", context: "Continue the report" },
+    { target: "claude-app", context: "Continue the report" },
     {
       ...h.opts,
-      fetch: async (url, init) => {
-        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
-        fetches.push({ url: String(url), body });
-        if (String(url).endsWith("/api/host.describe")) return jsonRes(dshDescribeBody());
-        if (String(url).endsWith("/api/workspace.create")) {
-          const path = (body.payload as { path?: string } | undefined)?.path ?? "";
-          return jsonRes(dshWorkspaceBody(false, path));
-        }
-        return jsonRes({}, 404);
-      },
-      detachSpawn: (cmd, args, cwd) => { detached.push({ cmd, args, cwd }); },
-      copyToClipboard: async (text) => { clips.push(text); },
+      launchWebHandoff: async (args) => { launched.push(args); },
     },
   );
   expect(r.mode).toBe("app");
   expect(r.appLaunch).toBe("web");
+  expect(launched).toEqual([{
+    dir: r.dir,
+    context: "Continue the report",
+    agentPath: "/Users/x/.local/bin/dsh",
+    webUi,
+  }]);
   expect(h.writes.some((w) => w.path.endsWith("context.md") && w.content === "Continue the report")).toBe(true);
   expect(h.writes.some((w) => w.path.endsWith("AGENTS.md") || w.path.endsWith("CLAUDE.md"))).toBe(false);
   expect(h.writes.some((w) => w.path.endsWith("start.command"))).toBe(false);
-  expect(detached).toHaveLength(0);
-  const describe = fetches.find((f) => f.url === `${DSH_WEB_ORIGIN}/api/host.describe`);
-  expect(describe?.body).toMatchObject({ type: "client-request", method: "host.describe", payload: {} });
-  const create = fetches.find((f) => f.url === `${DSH_WEB_ORIGIN}/api/workspace.create`);
-  expect(create?.body).toMatchObject({
-    type: "client-request",
-    method: "workspace.create",
-    payload: { path: r.dir },
-  });
-  expect(clips).toEqual(["Continue the report"]);
-  expect(h.spawns).toEqual([{ cmd: "open", args: [DSH_WEB_ORIGIN], cwd: r.dir }]);
-});
-
-test("dsh-app 探活未命中：detach `dsh --profile web --no-open` 后轮询，再登记 workspace", async () => {
-  const h = harness();
-  let describes = 0;
-  const detached: { cmd: string; args: string[]; cwd: string }[] = [];
-  const clips: string[] = [];
-  h.opts.detect = () => [dshApp()];
-  const r = await runHandoff(
-    { target: "dsh-app", context: "brief" },
-    {
-      ...h.opts,
-      fetch: async (url) => {
-        if (String(url).endsWith("/api/host.describe")) {
-          describes++;
-          if (describes === 1) throw new Error("fetch failed");
-          return jsonRes(dshDescribeBody());
-        }
-        if (String(url).endsWith("/api/workspace.create")) {
-          return jsonRes(dshWorkspaceBody(true, "/unused"));
-        }
-        return jsonRes({}, 404);
-      },
-      detachSpawn: (cmd, args, cwd) => { detached.push({ cmd, args, cwd }); },
-      copyToClipboard: async (text) => { clips.push(text); },
-      sleep: async () => {},
-      nowMs: () => 0,
-    },
-  );
-  expect(detached).toEqual([{
-    cmd: "/Users/x/.local/bin/dsh",
-    args: [...DSH_WEB_ARGV],
-    cwd: r.dir,
-  }]);
-  expect(describes).toBeGreaterThanOrEqual(2);
-  expect(clips).toEqual(["brief"]);
-  expect(h.spawns.some((s) => s.cmd === "open" && s.args[0] === DSH_WEB_ORIGIN)).toBe(true);
-});
-
-test("dsh-app 非 dsh 占用 3080：拒绝对不明服务写 workspace，也不 detach", async () => {
-  const h = harness();
-  const detached: unknown[] = [];
-  h.opts.detect = () => [dshApp()];
-  await expect(
-    runHandoff(
-      { target: "dsh-app", context: "x" },
-      {
-        ...h.opts,
-        fetch: async () => jsonRes({ hello: "nginx" }),
-        detachSpawn: () => { detached.push(1); },
-        copyToClipboard: async () => { throw new Error("clipboard must not run"); },
-      },
-    ),
-  ).rejects.toThrow(/not DeepSeek Harness/);
-  expect(detached).toHaveLength(0);
   expect(h.spawns).toHaveLength(0);
 });
 
-test("dsh-app 冷启动超时：描述性错误，不无限挂", async () => {
-  const h = harness();
-  let t = 0;
-  h.opts.detect = () => [dshApp()];
-  await expect(
-    runHandoff(
-      { target: "dsh-app", context: "x" },
-      {
-        ...h.opts,
-        fetch: async () => { throw new Error("fetch failed"); },
-        detachSpawn: () => {},
-        copyToClipboard: async () => { throw new Error("clipboard must not run"); },
-        sleep: async (ms) => { t += ms; },
-        nowMs: () => t,
-        dshReadyTimeoutMs: 400,
-        dshPollIntervalMs: 100,
-      },
-    ),
-  ).rejects.toThrow(/did not become ready at http:\/\/127\.0\.0\.1:3080/);
-  expect(t).toBeGreaterThanOrEqual(400);
+test("runHandoff 源码不按品牌 id 分发 web 编排，也不回落 argv {prompt}", async () => {
+  const src = await Bun.file(new URL("../src/handoff.ts", import.meta.url)).text();
+  expect(src).not.toContain("dsh-app");
+  expect(src).not.toContain('["{prompt}"]');
 });

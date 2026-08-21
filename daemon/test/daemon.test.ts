@@ -205,10 +205,20 @@ test("list_agents returns ALL candidates with installed flag (shape only — det
   const byInteractive = Object.fromEntries(
     out.result.agents.map((a: { id: string; interactive: boolean }) => [a.id, a.interactive]),
   );
+  const byAppLaunch = Object.fromEntries(
+    out.result.agents.map((a: { id: string; appLaunch?: string }) => [a.id, a.appLaunch]),
+  );
   for (const c of candidates) {
     expect(byId[c.id]).toBe(!!c.headlessArgv?.length);
     expect(byInteractive[c.id]).toBe(c.kind === "app" || !!c.argv?.length);
+    if (c.kind === "app") {
+      expect(["deeplink", "open-a", "web"]).toContain(byAppLaunch[c.id]);
+    } else {
+      expect(byAppLaunch[c.id]).toBeUndefined();
+    }
   }
+  if (candidates.some((c) => c.id === "dsh-app")) expect(byAppLaunch["dsh-app"]).toBe("web");
+  expect(byAppLaunch["claude-app"]).toBe("deeplink");
 });
 
 // ── makeBackpressureWriter ──────────────────────────────────────────────────

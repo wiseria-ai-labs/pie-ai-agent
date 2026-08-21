@@ -4,9 +4,11 @@ import {
   AGENT_CANDIDATES,
   WINDOWS_AGENT_CANDIDATES,
   agentCandidatesFor,
+  candidateAppLaunch,
   candidateIsInteractive,
   detectAgents,
 } from "../src/agents";
+import { DSH_WEB_ARGV, DSH_WEB_ORIGIN } from "../src/handoff-dsh";
 import { parseShellPath } from "../src/user-path-darwin";
 import {
   parseWherePath,
@@ -83,10 +85,10 @@ test("各家 headless 契约（已查实的命令 + 跳权限 flag）", () => {
   expect(byId["dsh-terminal"].argv).toBeUndefined();
 });
 
-test("app 候选必须有 convention（无深链或深链回落靠引导文件）；DSH Web UI 例外不靠约定文件预填", () => {
+test("app 候选必须有 convention（无深链或深链回落靠引导文件）；webUi 例外不靠约定文件预填", () => {
   for (const c of [...AGENT_CANDIDATES, ...WINDOWS_AGENT_CANDIDATES]) {
     if (c.kind !== "app") continue;
-    if (c.id === "dsh-app") {
+    if (c.webUi) {
       expect(c.convention).toBeUndefined();
       continue;
     }
@@ -94,11 +96,13 @@ test("app 候选必须有 convention（无深链或深链回落靠引导文件�
   }
 });
 
-test("每条 app 候选必须有深链（ADR 0013）；DSH 是唯一例外（Web UI 编排，无 deeplink.template）", () => {
+test("每条 app 候选必须有深链（ADR 0013）；webUi 是唯一例外（无 deeplink.template）", () => {
   for (const c of [...AGENT_CANDIDATES, ...WINDOWS_AGENT_CANDIDATES]) {
     if (c.kind !== "app") continue;
-    if (c.id === "dsh-app") {
+    if (c.webUi) {
       expect(c.deeplink).toBeUndefined();
+      expect(c.webUi.origin).toBeTruthy();
+      expect(c.webUi.argv.length).toBeGreaterThan(0);
       continue;
     }
     expect(c.deeplink?.template, c.id).toBeTruthy();
@@ -123,7 +127,17 @@ test("dsh 两条 verified:false，检测靠同一 dsh 二进制，Windows 表不
   expect(byId["dsh-terminal"].bin).toBe("dsh");
   expect(byId["dsh-app"].binPaths).toContain("~/.local/bin/dsh");
   expect(byId["dsh-terminal"].binPaths).toContain("~/.local/bin/dsh");
+  expect(byId["dsh-app"].webUi).toEqual({ origin: DSH_WEB_ORIGIN, argv: DSH_WEB_ARGV });
   expect(WINDOWS_AGENT_CANDIDATES.some((c) => c.id.startsWith("dsh-"))).toBe(false);
+});
+
+test("candidateAppLaunch：webUi → web，deeplink → deeplink，其余 app → open-a，terminal 不给", () => {
+  const byId = Object.fromEntries(AGENT_CANDIDATES.map((c) => [c.id, c]));
+  expect(candidateAppLaunch(byId["dsh-app"])).toBe("web");
+  expect(candidateAppLaunch(byId["claude-app"])).toBe("deeplink");
+  expect(candidateAppLaunch(byId["cursor-app"])).toBe("deeplink");
+  expect(candidateAppLaunch(byId["claude-terminal"])).toBeUndefined();
+  expect(candidateAppLaunch({ kind: "app" })).toBe("open-a");
 });
 
 test("claude-app / codex-app 有目录+预填深链；cursor-app 是打开后再发 prompt 深链", () => {
@@ -364,6 +378,22 @@ test("detectAgents(darwin): verified:false 的 dsh 默认排除，即使 bin 在
   });
   expect(detected.map((a) => a.id)).not.toContain("dsh-app");
   expect(detected.map((a) => a.id)).not.toContain("dsh-terminal");
+});
+
+test("detectAgents: PIE_INCLUDE_UNVERIFIED_AGENTS=1 与 includeUnverified 同效", () => {
+  const prev = process.env.PIE_INCLUDE_UNVERIFIED_AGENTS;
+  process.env.PIE_INCLUDE_UNVERIFIED_AGENTS = "1";
+  try {
+    const detected = detectAgents({
+      platform: "darwin",
+      which: (bin) => (bin === "dsh" ? "/Users/x/.local/bin/dsh" : null),
+      exists: () => false,
+    });
+    expect(detected.map((a) => a.id)).toEqual(["dsh-app", "dsh-terminal"]);
+  } finally {
+    if (prev === undefined) delete process.env.PIE_INCLUDE_UNVERIFIED_AGENTS;
+    else process.env.PIE_INCLUDE_UNVERIFIED_AGENTS = prev;
+  }
 });
 
 test("detectAgents(darwin, includeUnverified): 同一 dsh bin 同时检出 app + terminal", () => {

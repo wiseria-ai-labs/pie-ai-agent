@@ -2118,7 +2118,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                     listAgents: async () => {
                       const detected = await requestListAgents();
                       const usable = filterHandoffAgents(detected, await getEnabledLocalAgents());
-                      return usable.map(({ id, label, kind }) => ({ id, label, kind }));
+                      return usable.map(({ id, label, kind, appLaunch }) => ({
+                        id,
+                        label,
+                        kind,
+                        appLaunch,
+                      }));
                     },
                     requestConsent: (p) => requestFromPanel(sessionId, "handoff-to-agent", p),
                   }),

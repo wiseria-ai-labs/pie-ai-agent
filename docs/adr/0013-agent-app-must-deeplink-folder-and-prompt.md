@@ -27,4 +27,4 @@
 - **没有官方协议也编一条**：未验证的 scheme 不能进表（DSH 走 loopback HTTP，不是编一条 `dsh://`）。
 - **Terminal 也改成深链**：Terminal 已经把 prompt 注入 argv 并开跑，不是 App 体验条。
 
-**下游**：`daemon/src/agents.ts` 两张候选表；`bun test` 守「每条 app 必须有 `deeplink.template`，`dsh-app` 除外」。
+**下游**：`daemon/src/agents.ts` 两张候选表（DSH App 挂 `webUi`，`runHandoff` 按有无该字段分发，不认品牌 id）；`bun test` 守「每条 app 必须有 `deeplink.template`，有 `webUi` 的除外」。

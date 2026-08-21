@@ -1,21 +1,15 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { HandoffParams, HandoffResult } from "../../src/types/local-bridge";
-import type { SpawnFn, DetachSpawnFn } from "./spawn";
-import { realSpawn } from "./spawn";
+import type { SpawnFn } from "./spawn";
+import { realDetachSpawn, realSpawn } from "./spawn";
 import type { DetectedAgent } from "./agents";
 import { detectAgents } from "./agents";
 import { paths } from "./paths";
 import { log } from "./log";
 import { launchDarwinHandoff } from "./handoff-darwin";
 import { launchWin32Handoff, windowsOpenDeeplink } from "./handoff-win32";
-import {
-  launchDshWebHandoff,
-  realCopyToClipboard,
-  realDetachSpawn,
-  defaultDshSleep,
-  type DshFetch,
-} from "./handoff-dsh";
+import { defaultDshSleep, launchDshWebHandoff, realCopyToClipboard } from "./handoff-dsh";
 
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
 const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md", "agents.md"]);
@@ -53,6 +47,13 @@ export function safeFileName(name: string): string {
   return base;
 }
 
+export type LaunchWebHandoff = (args: {
+  dir: string;
+  context: string;
+  agentPath: string;
+  webUi: NonNullable<DetectedAgent["webUi"]>;
+}) => Promise<void>;
+
 export async function runHandoff(
   params: HandoffParams,
   opts?: {
@@ -64,13 +65,7 @@ export async function runHandoff(
     platform?: NodeJS.Platform;
     which?: (bin: string) => string | null;
     exists?: (path: string) => boolean;
-    fetch?: DshFetch;
-    detachSpawn?: DetachSpawnFn;
-    copyToClipboard?: (text: string) => Promise<void>;
-    sleep?: (ms: number) => Promise<void>;
-    nowMs?: () => number;
-    dshReadyTimeoutMs?: number;
-    dshPollIntervalMs?: number;
+    launchWebHandoff?: LaunchWebHandoff;
   },
 ): Promise<HandoffResult> {
   const spawn = opts?.spawn ?? realSpawn;
@@ -80,6 +75,21 @@ export async function runHandoff(
   const now = opts?.now ?? (() => new Date().toISOString().slice(0, 10));
   const detect = opts?.detect ?? detectAgents;
   const platform = opts?.platform ?? process.platform;
+  const launchWebHandoff: LaunchWebHandoff =
+    opts?.launchWebHandoff ??
+    (async ({ dir, context, agentPath, webUi }) => {
+      await launchDshWebHandoff(dir, context, {
+        fetch: (input, init) => globalThis.fetch(input, init),
+        detachSpawn: realDetachSpawn,
+        spawn,
+        copyToClipboard: realCopyToClipboard,
+        sleep: defaultDshSleep,
+        now: Date.now,
+        agentPath,
+        origin: webUi.origin,
+        argv: webUi.argv,
+      });
+    });
 
   // params 是 JSON 解析自 socket 的运行时值（daemon.ts 里只是 `as HandoffParams`
   // 断言，编译期类型在运行时不提供任何保证）。target 决定 spawn 什么：闸 =
@@ -104,20 +114,15 @@ export async function runHandoff(
     writeFile(join(dir, safeFileName(f.name)), f.content);
   }
 
-  if (agent.id === "dsh-app") {
+  if (agent.webUi) {
     log("info", "handoff.open_app", {
       dir, target: agent.id, launch: "web", files: (params.files ?? []).length,
     });
-    await launchDshWebHandoff(dir, params.context, {
-      fetch: opts?.fetch ?? ((input, init) => globalThis.fetch(input, init)),
-      detachSpawn: opts?.detachSpawn ?? realDetachSpawn,
-      spawn,
-      copyToClipboard: opts?.copyToClipboard ?? realCopyToClipboard,
-      sleep: opts?.sleep ?? defaultDshSleep,
-      now: opts?.nowMs ?? Date.now,
+    await launchWebHandoff({
+      dir,
+      context: params.context,
       agentPath: agent.path,
-      readyTimeoutMs: opts?.dshReadyTimeoutMs,
-      pollIntervalMs: opts?.dshPollIntervalMs,
+      webUi: agent.webUi,
     });
     return { dir, mode: "app", appLaunch: "web" };
   }
@@ -149,7 +154,7 @@ export async function runHandoff(
     log("info", "handoff.open", { dir, target: agent.id, files: (params.files ?? []).length });
   }
 
-  const argv = (agent.argv ?? ["{prompt}"]).map((a) => a.replace("{prompt}", HANDOFF_PROMPT));
+  const argv = (agent.argv ?? []).map((a) => a.replace("{prompt}", HANDOFF_PROMPT));
   const io = { spawn, writeFile, which: opts?.which, exists: opts?.exists };
   if (platform === "win32") {
     await launchWin32Handoff(agent, dir, argv, io);

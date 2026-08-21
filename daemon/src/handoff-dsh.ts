@@ -4,10 +4,10 @@
  * 剪贴板写入 brief → 打开浏览器。composer 不预填。
  */
 import type { SpawnFn, DetachSpawnFn } from "./spawn";
-import { realDetachSpawn } from "./spawn";
 
 export const DSH_WEB_ORIGIN = "http://127.0.0.1:3080";
-export const DSH_WEB_ARGV = ["--profile", "web", "--no-open"] as const;
+/** 官方 README 主路径：`dsh web` 是 `--profile web` 的硬编码别名；`--no-open` 是 web app flag。 */
+export const DSH_WEB_ARGV = ["web", "--no-open"] as const;
 export const DSH_READY_TIMEOUT_MS = 20_000;
 export const DSH_POLL_INTERVAL_MS = 250;
 export const DSH_FETCH_TIMEOUT_MS = 2_000;
@@ -25,6 +25,8 @@ export interface DshHandoffIO {
   sleep: (ms: number) => Promise<void>;
   now: () => number;
   agentPath: string;
+  origin: string;
+  argv: readonly string[];
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
 }
@@ -68,11 +70,12 @@ export function isDshHostDescribe(json: unknown): boolean {
 
 async function dshPost(
   fetchFn: DshFetch,
+  origin: string,
   method: string,
   payload: unknown,
 ): Promise<{ httpOk: boolean; json: unknown }> {
   const body = clientRequest(method, payload);
-  const res = await fetchFn(`${DSH_WEB_ORIGIN}/api/${method}`, {
+  const res = await fetchFn(`${origin}/api/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -87,9 +90,9 @@ async function dshPost(
   return { httpOk: res.ok, json };
 }
 
-async function probe(fetchFn: DshFetch): Promise<Probe> {
+async function probe(fetchFn: DshFetch, origin: string): Promise<Probe> {
   try {
-    const { httpOk, json } = await dshPost(fetchFn, "host.describe", {});
+    const { httpOk, json } = await dshPost(fetchFn, origin, "host.describe", {});
     if (httpOk && isDshHostDescribe(json)) return "dsh";
     return "other";
   } catch {
@@ -97,25 +100,32 @@ async function probe(fetchFn: DshFetch): Promise<Probe> {
   }
 }
 
+function occupiedPortError(origin: string): Error {
+  return new Error(
+    `${origin} answered but is not DeepSeek Harness; refusing to register a workspace there`,
+  );
+}
+
 async function waitUntilDsh(io: DshHandoffIO): Promise<void> {
   const timeout = io.readyTimeoutMs ?? DSH_READY_TIMEOUT_MS;
   const interval = io.pollIntervalMs ?? DSH_POLL_INTERVAL_MS;
   const deadline = io.now() + timeout;
   while (io.now() < deadline) {
-    const status = await probe(io.fetch);
+    const status = await probe(io.fetch, io.origin);
     if (status === "dsh") return;
+    if (status === "other") throw occupiedPortError(io.origin);
     await io.sleep(interval);
   }
   throw new Error(
-    `DeepSeek Harness Web UI did not become ready at ${DSH_WEB_ORIGIN} within ${timeout}ms`,
+    `DeepSeek Harness Web UI did not become ready at ${io.origin} within ${timeout}ms`,
   );
 }
 
-async function workspaceCreate(fetchFn: DshFetch, path: string): Promise<void> {
+async function workspaceCreate(fetchFn: DshFetch, origin: string, path: string): Promise<void> {
   let httpOk: boolean;
   let json: unknown;
   try {
-    ({ httpOk, json } = await dshPost(fetchFn, "workspace.create", { path }));
+    ({ httpOk, json } = await dshPost(fetchFn, origin, "workspace.create", { path }));
   } catch (e) {
     throw new Error(
       `DeepSeek Harness workspace.create failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -168,19 +178,17 @@ export async function launchDshWebHandoff(
   context: string,
   io: DshHandoffIO,
 ): Promise<void> {
-  const status = await probe(io.fetch);
+  const status = await probe(io.fetch, io.origin);
   if (status === "other") {
-    throw new Error(
-      `${DSH_WEB_ORIGIN} answered but is not DeepSeek Harness; refusing to register a workspace there`,
-    );
+    throw occupiedPortError(io.origin);
   }
   if (status === "down") {
-    io.detachSpawn(io.agentPath, [...DSH_WEB_ARGV], dir);
+    io.detachSpawn(io.agentPath, [...io.argv], dir);
     await waitUntilDsh(io);
   }
-  await workspaceCreate(io.fetch, dir);
+  await workspaceCreate(io.fetch, io.origin, dir);
   await io.copyToClipboard(context);
-  const opened = await io.spawn("open", [DSH_WEB_ORIGIN], dir);
+  const opened = await io.spawn("open", [io.origin], dir);
   if (opened.exitCode !== 0) {
     const detail = (opened.stderr ?? "").trim().slice(0, 200);
     throw new Error(
@@ -190,5 +198,3 @@ export async function launchDshWebHandoff(
     );
   }
 }
-
-export { realDetachSpawn };

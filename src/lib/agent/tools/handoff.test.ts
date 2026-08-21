@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildHandoffTool } from "./handoff";
+import { buildHandoffTool, groupHandoffBrands } from "./handoff";
 
 const AGENTS = [
   { id: "claude-app", label: "Claude Code (App)" },
@@ -44,6 +44,20 @@ describe("handoff_to_agent tool", () => {
     expect(r.observation).toMatch(/opened app/i);
     expect(r.observation).not.toMatch(/prefilled/i);
     expect(r.observation).not.toMatch(/[/\\]pie-handoffs[/\\]/);
+  });
+
+  it("groupHandoffBrands forwards appLaunch onto forms", () => {
+    expect(
+      groupHandoffBrands([
+        { id: "dsh-app", label: "DeepSeek Harness (App)", kind: "app", appLaunch: "web" },
+      ]),
+    ).toEqual([
+      {
+        id: "dsh",
+        label: "DeepSeek Harness",
+        forms: [{ id: "dsh-app", kind: "app", appLaunch: "web" }],
+      },
+    ]);
   });
 
   it("web appLaunch says the Web UI opened, workspace registered, brief on clipboard — not prefilled", async () => {
