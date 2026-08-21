@@ -5,7 +5,7 @@ import type { BridgeResponse, RunLocalAgentParams, HandoffParams, ListAgentsResu
 import { paths } from "./paths";
 import { runLocalAgent } from "./run-local-agent"; // Task 4
 import { runHandoff } from "./handoff";
-import { detectAgents, agentCandidatesFor } from "./agents";
+import { detectAgents, agentCandidatesFor, candidateIsInteractive } from "./agents";
 import { decodeNdjsonLines } from "./framing";
 import { log } from "./log";
 import { readSkillFile, writeSkill, listSkillsMerged, resolveSkillRoot, deleteSkillGuarded, readSessionFile, deleteSessionWorkspace, sweepSessions } from "./skill-store";
@@ -82,13 +82,15 @@ export async function handleMessage(
       try {
         const detected = new Set(detectAgents().map((a) => a.id));
         const result: ListAgentsResult = {
-          agents: agentCandidatesFor().map(({ id, label, kind, headlessArgv }) => ({
-            id,
-            label,
-            kind,
-            installed: detected.has(id),
+          agents: agentCandidatesFor().map((c) => ({
+            id: c.id,
+            label: c.label,
+            kind: c.kind,
+            installed: detected.has(c.id),
             // run_local_agent 卡片据此只列可作 headless 后端者；与 daemon 校验闸同一真源。
-            headless: !!headlessArgv?.length,
+            headless: !!c.headlessArgv?.length,
+            // handoff 卡片据此排除仅 headless 的 terminal（#41 DSH）。
+            interactive: candidateIsInteractive(c),
           })),
         };
         return respond({ ok: true, result });

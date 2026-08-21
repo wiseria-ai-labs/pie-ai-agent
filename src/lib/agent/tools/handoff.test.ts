@@ -46,6 +46,26 @@ describe("handoff_to_agent tool", () => {
     expect(r.observation).not.toMatch(/[/\\]pie-handoffs[/\\]/);
   });
 
+  it("web appLaunch says the Web UI opened, workspace registered, brief on clipboard — not prefilled", async () => {
+    const run = vi.fn(async () => ({
+      dir: "/Users/x/pie-handoffs/2026-07-07-do-it",
+      mode: "app" as const,
+      appLaunch: "web" as const,
+    }));
+    const tool = buildHandoffTool({
+      run,
+      listAgents: async () => [{ id: "dsh-app", label: "DeepSeek Harness (App)", kind: "app" as const }],
+      requestConsent: async () => "dsh-app",
+    });
+    const r = await tool.handler({ context: "do it" }, {} as never);
+    expect(r.success).toBe(true);
+    expect(r.observation).toMatch(/Web UI/i);
+    expect(r.observation).toMatch(/clipboard/i);
+    expect(r.observation).toMatch(/workspace/i);
+    expect(r.observation).not.toMatch(/prefilled/i);
+    expect(r.observation).not.toMatch(/[/\\]pie-handoffs[/\\]/);
+  });
+
   it("deeplink appLaunch mentions the prefilled composer", async () => {
     const run = vi.fn(async () => ({
       dir: "/Users/x/pie-handoffs/2026-07-07-do-it",

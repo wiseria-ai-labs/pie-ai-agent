@@ -50,7 +50,7 @@ import {
   requestKillSkillRun,
   requestReadSessionFile,
 } from "@/background/local-bridge";
-import { filterUsableAgents, filterHeadlessBackends, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
+import { filterHandoffAgents, filterHeadlessBackends, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
 import { buildRunLocalAgentTool } from "./tools/local-agent";
 import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
@@ -2117,7 +2117,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                     run: (p) => requestHandoff(p),
                     listAgents: async () => {
                       const detected = await requestListAgents();
-                      const usable = filterUsableAgents(detected, await getEnabledLocalAgents());
+                      const usable = filterHandoffAgents(detected, await getEnabledLocalAgents());
                       return usable.map(({ id, label, kind }) => ({ id, label, kind }));
                     },
                     requestConsent: (p) => requestFromPanel(sessionId, "handoff-to-agent", p),

@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { HandoffParams, HandoffResult } from "../../src/types/local-bridge";
-import type { SpawnFn } from "./spawn";
+import type { SpawnFn, DetachSpawnFn } from "./spawn";
 import { realSpawn } from "./spawn";
 import type { DetectedAgent } from "./agents";
 import { detectAgents } from "./agents";
@@ -9,6 +9,13 @@ import { paths } from "./paths";
 import { log } from "./log";
 import { launchDarwinHandoff } from "./handoff-darwin";
 import { launchWin32Handoff, windowsOpenDeeplink } from "./handoff-win32";
+import {
+  launchDshWebHandoff,
+  realCopyToClipboard,
+  realDetachSpawn,
+  defaultDshSleep,
+  type DshFetch,
+} from "./handoff-dsh";
 
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
 const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md", "agents.md"]);
@@ -57,6 +64,13 @@ export async function runHandoff(
     platform?: NodeJS.Platform;
     which?: (bin: string) => string | null;
     exists?: (path: string) => boolean;
+    fetch?: DshFetch;
+    detachSpawn?: DetachSpawnFn;
+    copyToClipboard?: (text: string) => Promise<void>;
+    sleep?: (ms: number) => Promise<void>;
+    nowMs?: () => number;
+    dshReadyTimeoutMs?: number;
+    dshPollIntervalMs?: number;
   },
 ): Promise<HandoffResult> {
   const spawn = opts?.spawn ?? realSpawn;
@@ -77,12 +91,35 @@ export async function runHandoff(
   if (!agent) {
     throw new Error(`unsupported handoff target: ${JSON.stringify(params.target)}`);
   }
+  if (agent.kind === "terminal" && !agent.argv?.length) {
+    throw new Error(
+      `handoff target "${agent.id}" is headless-only and cannot open an interactive session`,
+    );
+  }
 
   const dir = join(paths.handoffsDir, `${now()}-${slugify(params.context)}`);
   ensureDir(dir);
   writeFile(join(dir, "context.md"), params.context);
   for (const f of params.files ?? []) {
     writeFile(join(dir, safeFileName(f.name)), f.content);
+  }
+
+  if (agent.id === "dsh-app") {
+    log("info", "handoff.open_app", {
+      dir, target: agent.id, launch: "web", files: (params.files ?? []).length,
+    });
+    await launchDshWebHandoff(dir, params.context, {
+      fetch: opts?.fetch ?? ((input, init) => globalThis.fetch(input, init)),
+      detachSpawn: opts?.detachSpawn ?? realDetachSpawn,
+      spawn,
+      copyToClipboard: opts?.copyToClipboard ?? realCopyToClipboard,
+      sleep: opts?.sleep ?? defaultDshSleep,
+      now: opts?.nowMs ?? Date.now,
+      agentPath: agent.path,
+      readyTimeoutMs: opts?.dshReadyTimeoutMs,
+      pollIntervalMs: opts?.dshPollIntervalMs,
+    });
+    return { dir, mode: "app", appLaunch: "web" };
   }
 
   if (agent.kind === "app") {

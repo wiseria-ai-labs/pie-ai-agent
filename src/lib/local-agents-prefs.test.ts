@@ -7,6 +7,7 @@ import {
   normalizeEnabledBrands,
   isAgentUsable,
   filterUsableAgents,
+  filterHandoffAgents,
   filterHeadlessBackends,
   applyToggle,
   groupAgentsByBrand,
@@ -27,6 +28,8 @@ describe("brand identity helpers", () => {
     expect(brandIdFromFormId("codex-app")).toBe("codex");
     expect(brandIdFromFormId("opencode-terminal")).toBe("opencode");
     expect(brandIdFromFormId("pi-terminal")).toBe("pi");
+    expect(brandIdFromFormId("dsh-app")).toBe("dsh");
+    expect(brandIdFromFormId("dsh-terminal")).toBe("dsh");
     expect(brandIdFromFormId("claude")).toBe("claude");
   });
 
@@ -131,6 +134,55 @@ describe("filterHeadlessBackends (run_local_agent 卡片后端预筛)", () => {
       { id: "pi-terminal", label: "Pi (Terminal)", installed: true, kind: "terminal" as const },
     ];
     expect(filterHeadlessBackends(oldDaemon, null).map((a) => a.id)).toEqual(["pi-terminal"]);
+  });
+
+  it("includes dsh-terminal as a headless backend", () => {
+    const detected = [
+      { id: "dsh-app", label: "DeepSeek Harness (App)", installed: true, kind: "app" as const, headless: false },
+      { id: "dsh-terminal", label: "DeepSeek Harness (Terminal)", installed: true, kind: "terminal" as const, headless: true },
+    ];
+    expect(filterHeadlessBackends(detected, null).map((a) => a.id)).toEqual(["dsh-terminal"]);
+  });
+});
+
+describe("filterHandoffAgents (交棒卡：排除仅 headless)", () => {
+  const DSH = [
+    {
+      id: "dsh-app",
+      label: "DeepSeek Harness (App)",
+      installed: true,
+      kind: "app" as const,
+      interactive: true,
+    },
+    {
+      id: "dsh-terminal",
+      label: "DeepSeek Harness (Terminal)",
+      installed: true,
+      kind: "terminal" as const,
+      interactive: false,
+    },
+    {
+      id: "claude-terminal",
+      label: "Claude Code (Terminal)",
+      installed: true,
+      kind: "terminal" as const,
+      interactive: true,
+    },
+  ];
+
+  it("keeps the DSH app form and other interactive terminals; drops headless-only dsh-terminal", () => {
+    expect(filterHandoffAgents(DSH, null).map((a) => a.id)).toEqual(["dsh-app", "claude-terminal"]);
+  });
+
+  it("old daemon omitting interactive still lists installed terminals (not headless-only)", () => {
+    const oldDaemon = [
+      { id: "claude-app", installed: true, kind: "app" as const },
+      { id: "claude-terminal", installed: true, kind: "terminal" as const },
+    ];
+    expect(filterHandoffAgents(oldDaemon, null).map((a) => a.id)).toEqual([
+      "claude-app",
+      "claude-terminal",
+    ]);
   });
 });
 

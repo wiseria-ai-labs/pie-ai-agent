@@ -196,13 +196,18 @@ test("list_agents returns ALL candidates with installed flag (shape only — det
     expect(typeof a.installed).toBe("boolean");
     expect(["app", "terminal"]).toContain(a.kind); // #270: wire 加法字段
     expect(typeof a.headless).toBe("boolean"); // #307: run_local_agent 后端可选性
+    expect(typeof a.interactive).toBe("boolean"); // #41: 仅 headless 的 terminal 不进交棒卡
   }
   // headless 与候选表 headlessArgv 对齐——run_local_agent 卡片据此选后端。
   const byId = Object.fromEntries(
     out.result.agents.map((a: { id: string; headless: boolean }) => [a.id, a.headless]),
   );
+  const byInteractive = Object.fromEntries(
+    out.result.agents.map((a: { id: string; interactive: boolean }) => [a.id, a.interactive]),
+  );
   for (const c of candidates) {
     expect(byId[c.id]).toBe(!!c.headlessArgv?.length);
+    expect(byInteractive[c.id]).toBe(c.kind === "app" || !!c.argv?.length);
   }
 });
 

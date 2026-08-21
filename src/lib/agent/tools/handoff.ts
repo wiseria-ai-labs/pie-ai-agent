@@ -115,6 +115,8 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
         result.mode === "app"
           ? result.appLaunch === "deeplink"
             ? `The app was opened; the composer was prefilled with a short prompt. The user must send it to start the local agent.`
+            : result.appLaunch === "web"
+              ? `The Web UI was opened and the handoff directory was registered as a workspace. The brief is on the clipboard; if the UI is still on another workspace, choose this one, then paste and send.`
             : `The app was opened; send a continue message in the opened app to start the local agent.`
           : `An interactive terminal session was opened and is already running.`;
       return {
