@@ -135,7 +135,7 @@ describe("HandoffCard", () => {
     expect(screen.getByText(/prefilled/i)).toBeTruthy();
   });
 
-  it("web launch form does not claim a prefilled composer; mentions clipboard and workspace", () => {
+  it("web launch form says the task starts immediately; no prefilled composer or clipboard paste", () => {
     renderCard({
       payload: {
         context: "x",
@@ -151,7 +151,8 @@ describe("HandoffCard", () => {
       onDecision: vi.fn(),
     });
     expect(screen.queryByText(/prefilled/i)).toBeNull();
-    expect(screen.getByText(/clipboard/i)).toBeTruthy();
+    expect(screen.queryByText(/clipboard/i)).toBeNull();
+    expect(screen.getByText(/starts immediately/i)).toBeTruthy();
     expect(screen.getByText(/workspace/i)).toBeTruthy();
   });
 

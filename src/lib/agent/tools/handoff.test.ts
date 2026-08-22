@@ -60,7 +60,7 @@ describe("handoff_to_agent tool", () => {
     ]);
   });
 
-  it("web appLaunch says the Web UI opened, workspace registered, brief on clipboard — not prefilled", async () => {
+  it("web appLaunch says the brief was sent and the task is running — not prefilled, not clipboard", async () => {
     const run = vi.fn(async () => ({
       dir: "/Users/x/pie-handoffs/2026-07-07-do-it",
       mode: "app" as const,
@@ -74,8 +74,10 @@ describe("handoff_to_agent tool", () => {
     const r = await tool.handler({ context: "do it" }, {} as never);
     expect(r.success).toBe(true);
     expect(r.observation).toMatch(/Web UI/i);
-    expect(r.observation).toMatch(/clipboard/i);
+    expect(r.observation).toMatch(/sent to a new session/i);
+    expect(r.observation).toMatch(/already running/i);
     expect(r.observation).toMatch(/workspace/i);
+    expect(r.observation).not.toMatch(/clipboard/i);
     expect(r.observation).not.toMatch(/prefilled/i);
     expect(r.observation).not.toMatch(/[/\\]pie-handoffs[/\\]/);
   });

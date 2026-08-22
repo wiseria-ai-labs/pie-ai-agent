@@ -119,7 +119,7 @@ export interface HandoffResult {
   /**
    * 加法（PROTOCOL_VERSION 不动）：app 实际怎么打开的。
    * deeplink = 官方深链预填了引导语；open-a = `open -a` / 回落 / Cursor；
-   * web = DeepSeek Harness Web UI（已打开、已登记 workspace、brief 在剪贴板，composer 未预填）。
+   * web = DeepSeek Harness Web UI（已打开、已登记 workspace、brief 已 session.prompt 代发，任务在跑；界面可能还停在别的 session）。
    * 旧 daemon 缺省 / 未知取值 → 消费方按 open-a（不要谎称预填）。
    */
   appLaunch?: "deeplink" | "open-a" | "web";

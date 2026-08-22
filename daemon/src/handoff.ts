@@ -9,7 +9,7 @@ import { paths } from "./paths";
 import { log } from "./log";
 import { launchDarwinHandoff } from "./handoff-darwin";
 import { launchWin32Handoff, windowsOpenDeeplink } from "./handoff-win32";
-import { defaultDshSleep, launchDshWebHandoff, realCopyToClipboard } from "./handoff-dsh";
+import { defaultDshSleep, launchDshWebHandoff } from "./handoff-dsh";
 
 /** 我们在 handoff 目录里写死的文件名——用户传的文件不许撞它们。 */
 const RESERVED = new Set(["context.md", "start.command", "start.bat", "claude.md", "agents.md"]);
@@ -82,7 +82,6 @@ export async function runHandoff(
         fetch: (input, init) => globalThis.fetch(input, init),
         detachSpawn: realDetachSpawn,
         spawn,
-        copyToClipboard: realCopyToClipboard,
         sleep: defaultDshSleep,
         now: Date.now,
         agentPath,

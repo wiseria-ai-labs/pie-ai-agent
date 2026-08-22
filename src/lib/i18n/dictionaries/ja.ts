@@ -219,7 +219,7 @@ export const jaDict = {
       noteTerminal: "引き継ぎ後、ターミナルが自動で開始します。",
       noteApp: "App が開き、短い案内が入力済みです。送信してください（Claude は先にフォルダ確認します）。",
       noteAppOpen: "App がそのフォルダを開きます。一文送ると開始します。",
-      noteAppWeb: "Web UI が開き、このフォルダは workspace として登録済みです。brief はクリップボードにあります。別の workspace のままだったらこちらを選んでから貼り付けて送信してください。",
+      noteAppWeb: "Web UI が開き、新しい session ですぐにタスクが始まります。別の workspace のままだったら、こちらを選ぶと実行中の内容が見えます。",
     },
   },
   skillRunConfirm: {

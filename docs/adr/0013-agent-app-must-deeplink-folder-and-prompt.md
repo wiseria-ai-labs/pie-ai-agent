@@ -14,10 +14,10 @@
 | ADR 0013 原文 | DSH 例外 |
 | --- | --- |
 | 官方一条深链，带目录 + 预填 prompt | 打开 `http://127.0.0.1:3080`（默认端口） |
-| 预填 composer、不发送 | 不预填。交棒正文写入 `context.md`，并拷进系统剪贴板，用户自行粘贴发送 |
-| 未验证 scheme 不准进表 | 允许 daemon 调本机 loopback 的内部 `POST /api/workspace.create`（无协议版本，真机验证；破了再跟） |
+| 预填 composer、不发送 | 不预填。`workspace.create` 后 `session.create` + `session.prompt`（`mode: queue`）把 brief 当用户消息发出，任务立刻开跑 |
+| 未验证 scheme 不准进表 | 允许 daemon 调本机 loopback 的内部 `POST /api/workspace.create`、`session.create`、`session.prompt`（无协议版本，真机验证；破了再跟） |
 
-已开着的 Web UI 不会自动切到新 workspace（无 `workspace.select`）。用户要点一次 Choose workspace。产品接受。把 `dsh web` 当普通 App、不登记 workspace 的路径仍然否决。
+已开着的 Web UI 不会自动切到新 workspace（无 `workspace.select`；当前 session 是浏览器 `localStorage`）。用户要点一次新 session 才能看见已经在跑的任务。产品接受。把 `dsh web` 当普通 App、不登记 workspace 的路径仍然否决。
 
 其余 app 仍守原文：必须有 `deeplink.template`。
 

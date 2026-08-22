@@ -215,7 +215,7 @@ export const zhCNDict = {
       noteTerminal: "交棒后终端会自动开跑。",
       noteApp: "交棒后 App 打开并预填引导语，需你发送（Claude 会先确认目录）。",
       noteAppOpen: "App 已打开该目录，需发送一句才能开跑。",
-      noteAppWeb: "会打开 Web UI，并已把该目录登记为 workspace；brief 在剪贴板。若界面还在别的 workspace，先选这一份再粘贴发送。",
+      noteAppWeb: "会打开 Web UI，并立刻在新 session 里发出任务。若界面还停在别的 workspace，点这一份就能看到已经在跑。",
     },
   },
   skillRunConfirm: {

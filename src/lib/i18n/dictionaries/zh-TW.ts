@@ -215,7 +215,7 @@ export const zhTWDict = {
       noteTerminal: "交棒後終端機會自動開跑。",
       noteApp: "交棒後 App 開啟並預填引導語，需你傳送（Claude 會先確認目錄）。",
       noteAppOpen: "App 已開啟該目錄，需傳送一句才能開跑。",
-      noteAppWeb: "會開啟 Web UI，並已把該目錄登記為 workspace；brief 在剪貼簿。若介面還在別的 workspace，先選這一份再貼上傳送。",
+      noteAppWeb: "會開啟 Web UI，並立刻在新 session 裡送出任務。若介面還停在別的 workspace，點這一份就能看到已經在跑。",
     },
   },
   skillRunConfirm: {
