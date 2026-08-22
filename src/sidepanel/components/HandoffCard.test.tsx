@@ -135,6 +135,27 @@ describe("HandoffCard", () => {
     expect(screen.getByText(/prefilled/i)).toBeTruthy();
   });
 
+  it("web launch form says the task starts immediately; no prefilled composer or clipboard paste", () => {
+    renderCard({
+      payload: {
+        context: "x",
+        fileCount: 0,
+        brands: [
+          {
+            id: "dsh",
+            label: "DeepSeek Harness",
+            forms: [{ id: "dsh-app", kind: "app", appLaunch: "web" }],
+          },
+        ],
+      },
+      onDecision: vi.fn(),
+    });
+    expect(screen.queryByText(/prefilled/i)).toBeNull();
+    expect(screen.queryByText(/clipboard/i)).toBeNull();
+    expect(screen.getByText(/starts immediately/i)).toBeTruthy();
+    expect(screen.getByText(/workspace/i)).toBeTruthy();
+  });
+
   it("uses form kind, not the id suffix, to decide the note", () => {
     renderCard({
       payload: {

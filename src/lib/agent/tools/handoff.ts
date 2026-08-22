@@ -6,23 +6,34 @@ import { groupAgentsByBrand, inferFormKind } from "@/lib/local-agents-prefs";
 export interface HandoffBrandOption {
   id: string;
   label: string;
-  forms: { id: string; kind: "app" | "terminal" }[];
+  forms: { id: string; kind: "app" | "terminal"; appLaunch?: HandoffResult["appLaunch"] }[];
 }
 
 export function groupHandoffBrands(
-  agents: { id: string; label: string; kind?: "app" | "terminal" }[],
+  agents: {
+    id: string;
+    label: string;
+    kind?: "app" | "terminal";
+    appLaunch?: HandoffResult["appLaunch"];
+  }[],
 ): HandoffBrandOption[] {
   return groupAgentsByBrand(agents).map((b) => ({
     id: b.id,
     label: b.label,
     forms: b.forms.flatMap((f) => {
       const kind = inferFormKind(f.id, f.kind);
-      return kind ? [{ id: f.id, kind }] : [];
+      if (!kind) return [];
+      return [{ id: f.id, kind, ...(f.appLaunch ? { appLaunch: f.appLaunch } : {}) }];
     }),
   }));
 }
 
-export type HandoffAgentOption = { id: string; label: string; kind?: "app" | "terminal" };
+export type HandoffAgentOption = {
+  id: string;
+  label: string;
+  kind?: "app" | "terminal";
+  appLaunch?: HandoffResult["appLaunch"];
+};
 
 export interface HandoffToolDeps {
   run: (p: HandoffParams) => Promise<HandoffResult>;
@@ -115,6 +126,8 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
         result.mode === "app"
           ? result.appLaunch === "deeplink"
             ? `The app was opened; the composer was prefilled with a short prompt. The user must send it to start the local agent.`
+            : result.appLaunch === "web"
+              ? `The Web UI was opened, the handoff directory was registered as a workspace, and the brief was sent to a new session (the task is already running). If the UI is still on another workspace, choose this one to see it.`
             : `The app was opened; send a continue message in the opened app to start the local agent.`
           : `An interactive terminal session was opened and is already running.`;
       return {

@@ -163,6 +163,24 @@ test("explicit target pointing at an app form (no headlessArgv) → descriptive 
   ).rejects.toThrow(/is not an installed headless agent/);
 });
 
+test("dsh-terminal headless argv: --profile headless + raw prompt (no skip-permissions)", async () => {
+  let seen: { cmd: string; args: string[] } | null = null;
+  const r = await runLocalAgent(
+    { target: "dsh-terminal", prompt: "do the thing" },
+    {
+      spawn: async (cmd, args) => {
+        seen = { cmd, args };
+        return { stdout: "dsh reply", exitCode: 0 };
+      },
+      ensureDir: () => {},
+      detect: () => [detected("dsh-terminal", "/abs/dsh")],
+    },
+  );
+  expect(seen!.cmd).toBe("/abs/dsh");
+  expect(seen!.args).toEqual(["--profile", "headless", "do the thing"]);
+  expect(r.backend).toEqual({ id: "dsh-terminal", label: "DeepSeek Harness (Terminal)" });
+});
+
 test("substitutes {prompt} into the backend's headless argv as a single raw arg", async () => {
   let seenArgs: string[] = [];
   const fakeSpawn = async (_cmd: string, args: string[]) => {

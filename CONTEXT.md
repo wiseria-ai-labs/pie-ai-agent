@@ -57,7 +57,7 @@ _Avoid_: round-trip, 把 `open -a` / `start` / handoff 绝对路径写成产品�
 _Avoid_: 用一份路径表同时描述两个平台
 
 **agent brand**:
-用户心智里的一个本地 Agent——Claude / Codex / Cursor / OpenCode / Pi。设置开关、启用偏好、确认卡上的「选哪个 Agent」都按品牌。任一形态检出即该品牌可用。
+用户心智里的一个本地 Agent——Claude / Codex / Cursor / OpenCode / Pi / DeepSeek Harness。设置开关、启用偏好、确认卡上的「选哪个 Agent」都按品牌。任一形态检出即该品牌可用。
 _Avoid_: 把 App / Terminal 当成两个 Agent；用 provider / model 指本地 Agent
 
 **agent form**:

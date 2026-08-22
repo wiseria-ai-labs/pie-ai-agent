@@ -220,6 +220,7 @@ export const es419Dict = {
       noteTerminal: "La sesión de terminal se inicia automáticamente.",
       noteApp: "La app se abre con una instrucción breve ya escrita; tú la envías (Claude pide confirmar la carpeta).",
       noteAppOpen: "La app abre esa carpeta; envía un mensaje para empezar.",
+      noteAppWeb: "Se abre la interfaz web y la tarea empieza de inmediato en una sesión nueva. Si la UI sigue en otro workspace, elige este para verla en marcha.",
     },
   },
   skillRunConfirm: {

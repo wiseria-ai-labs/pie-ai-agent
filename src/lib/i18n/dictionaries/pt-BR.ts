@@ -220,6 +220,7 @@ export const ptBRDict = {
       noteTerminal: "A sessão do terminal começa automaticamente.",
       noteApp: "O app abre com um aviso curto já preenchido; você envia (o Claude pede para confirmar a pasta).",
       noteAppOpen: "O app abre essa pasta; envie uma mensagem para começar.",
+      noteAppWeb: "A interface web abre e a tarefa começa imediatamente numa sessão nova. Se a UI ainda estiver em outro workspace, escolha este para vê-la em execução.",
     },
   },
   skillRunConfirm: {

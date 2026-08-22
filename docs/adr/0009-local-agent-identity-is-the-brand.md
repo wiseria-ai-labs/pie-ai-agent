@@ -1,6 +1,6 @@
 # 本地 Agent 的用户身份是品牌，形态只是交棒外壳
 
-**决定**：设置、启用偏好、确认卡上的「选哪个 Agent」都以**品牌**（Claude / Codex / Cursor / OpenCode / Pi）为身份。App / Terminal 是该品牌的**形态**，只在交棒确认卡、且两种都装了时才选。daemon 候选表与 `handoff_to_agent.target` 仍是形态 id。
+**决定**：设置、启用偏好、确认卡上的「选哪个 Agent」都以**品牌**（Claude / Codex / Cursor / OpenCode / Pi / DeepSeek Harness）为身份。App / Terminal 是该品牌的**形态**，只在交棒确认卡、且两种都装了时才选。daemon 候选表与 `handoff_to_agent.target` 仍是形态 id。
 
 **为什么**：用户要的是「我用不用 Claude」，不是「我用不用 Claude 的哪一层壳」。检出任意形态即品牌可用。形态选择是一次交棒的事，不是设置项。
 
