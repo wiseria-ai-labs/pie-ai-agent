@@ -34,7 +34,6 @@ vi.mock("../../background/image-cache", () => ({
 }));
 vi.mock("../files/output-store", () => ({ putArtifact: vi.fn() }));
 vi.mock("./tools/screenshot", () => ({
-  resetTaskBudget: vi.fn(),
   dispatchCaptureVisibleTab: vi.fn(),
   dispatchCaptureFullPageTab: vi.fn(),
 }));

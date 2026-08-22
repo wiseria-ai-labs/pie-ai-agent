@@ -363,7 +363,7 @@ USE WHEN:
   {
     name: "capture_video_frame",
     description:
-      "Seek the page's primary HTML5 video to `timeSeconds` (omit to capture the current position) and capture a JPEG of the visible tab. Use to inspect what is on screen at a chapter / transcript timestamp. Shares the 5-screenshot-per-task budget. Fails with blank_or_drm_frame on a black/DRM frame — do not invent the picture. Requires a vision model.",
+      "Seek the page's primary HTML5 video to `timeSeconds` (omit to capture the current position) and capture a JPEG of the visible tab. Use to inspect what is on screen at a chapter / transcript timestamp. Fails with blank_or_drm_frame on a black/DRM frame — do not invent the picture. Requires a vision model.",
     parameters: {
       type: "object",
       properties: {

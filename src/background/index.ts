@@ -1187,10 +1187,6 @@ async function handleResumeRequest(
     ...(current.instanceId ? {} : { instanceId: resumeSel.instanceId, model: resumeSel.model }),
   }));
 
-  // Phase 5 — Task 12: mint a fresh taskId for the resumed loop so the
-  // per-task screenshot budget and pre-capture keys are fresh.
-  const resumeTaskId = crypto.randomUUID();
-
   // M3-U2 — same pin injection as chat-start path. checkPinnedDrift
   // already validated the pin against current tab state above; the loop
   // itself will re-check on every iteration.
@@ -1234,8 +1230,6 @@ async function handleResumeRequest(
     // Resume path restores currentFocusTabId from persisted agent state.
     pinnedTabs: resumeMeta.pinnedTabs ?? [],
     initialFocusTabId: agent.currentFocusTabId ?? resumeMeta.pinnedTabs?.[0]?.tabId,
-    // Phase 5 — per-task screenshot budget key.
-    taskId: resumeTaskId,
     // M3-U4 (TOCTOU fix) — refresh per dispatch; see chat-start twin.
     refreshCrossSessionPinnedTabIds: () =>
       getCrossSessionPinnedTabIds(sessionId, runningSessionIds),
@@ -1613,10 +1607,6 @@ async function handleChatStream(
         ? getEffectivePinMode(sessionMeta, synthAgent ?? null)
         : ("auto" as const);
 
-    // Phase 5 — Task 12: mint a fresh taskId for the per-task screenshot
-    // budget and pre-capture keys.
-    const chatTaskId = crypto.randomUUID();
-
     await runAgentLoop({
       emit: (m) => port.postMessage(m),
       task,
@@ -1634,8 +1624,6 @@ async function handleChatStream(
       // upgrade at line 1035), so pinnedTabs[] reflects the upgraded state.
       pinnedTabs: sessionMeta?.pinnedTabs ?? [],
       initialFocusTabId: sessionMeta?.pinnedTabs?.[0]?.tabId,
-      // Phase 5 — per-task screenshot budget key.
-      taskId: chatTaskId,
       // M3-U4 (TOCTOU fix) — refresh the cross-session pinned-tab
       // registry per tool dispatch. The frozen snapshot here would miss
       // sessions created mid-loop.

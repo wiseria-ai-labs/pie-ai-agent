@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  dispatchCaptureVisibleTab, _resetBudgetForTests, resetTaskBudget,
+  dispatchCaptureVisibleTab,
   dispatchCaptureFullPageTab,
 } from "./screenshot";
 
 beforeEach(() => {
-  _resetBudgetForTests();
   // Spread existing chrome mock from setup.ts to preserve storage/runtime,
   // then override .tabs with the focused mock for this file.
   (globalThis as any).chrome = {
@@ -28,7 +27,6 @@ describe("dispatchCaptureVisibleTab", () => {
   it("returns post-resize ImageAttachment", async () => {
     const res = await dispatchCaptureVisibleTab({
       sessionId: "s1",
-      taskId: "t1",
       pinnedTabId: 42,
     });
     expect(res.ok).toBe(true);
@@ -48,79 +46,35 @@ describe("dispatchCaptureVisibleTab", () => {
     });
     const res = await dispatchCaptureVisibleTab({
       sessionId: "s1",
-      taskId: "t1",
       pinnedTabId: 42,
     });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toBe("pinned-tab-not-visible");
   });
 
-  it("enforces per-task budget of 5 captures", async () => {
-    for (let i = 0; i < 5; i++) {
+  it("allows more than 5 captures in one task", async () => {
+    for (let i = 0; i < 6; i++) {
       const r = await dispatchCaptureVisibleTab({
         sessionId: "s1",
-        taskId: "t1",
         pinnedTabId: 42,
       });
       expect(r.ok).toBe(true);
     }
-    const r6 = await dispatchCaptureVisibleTab({
-      sessionId: "s1",
-      taskId: "t1",
-      pinnedTabId: 42,
-    });
-    expect(r6.ok).toBe(false);
-    if (!r6.ok) expect(r6.reason).toBe("screenshot-budget-exceeded");
   });
 
-  it("budget resets per-task — new taskId gets fresh quota", async () => {
-    for (let i = 0; i < 5; i++) {
-      await dispatchCaptureVisibleTab({ sessionId: "s1", taskId: "t1", pinnedTabId: 42 });
-    }
-    const fresh = await dispatchCaptureVisibleTab({
-      sessionId: "s1",
-      taskId: "t2",
-      pinnedTabId: 42,
-    });
-    expect(fresh.ok).toBe(true);
-  });
-
-  it("rejects 'capture-failed' when chrome.tabs.captureVisibleTab throws AND does not consume budget", async () => {
+  it("rejects 'capture-failed' when chrome.tabs.captureVisibleTab throws", async () => {
     (globalThis as any).chrome.tabs.captureVisibleTab.mockRejectedValueOnce(
       new Error("API call failed"),
     );
     const res = await dispatchCaptureVisibleTab({
-      sessionId: "s1", taskId: "t1", pinnedTabId: 42,
+      sessionId: "s1", pinnedTabId: 42,
     });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toBe("capture-failed");
-    // After the failed capture, the LLM still has all 5 captures available
-    // (failed captures must NOT consume quota).
-    for (let i = 0; i < 5; i++) {
-      const r = await dispatchCaptureVisibleTab({
-        sessionId: "s1", taskId: "t1", pinnedTabId: 42,
-      });
-      expect(r.ok).toBe(true);
-    }
-  });
-
-  it("resetTaskBudget frees per-task quota mid-budget-exhaustion", async () => {
-    for (let i = 0; i < 5; i++) {
-      await dispatchCaptureVisibleTab({ sessionId: "s1", taskId: "t1", pinnedTabId: 42 });
-    }
-    // Budget exhausted on t1
-    const exhausted = await dispatchCaptureVisibleTab({
-      sessionId: "s1", taskId: "t1", pinnedTabId: 42,
+    const next = await dispatchCaptureVisibleTab({
+      sessionId: "s1", pinnedTabId: 42,
     });
-    expect(exhausted.ok).toBe(false);
-    if (!exhausted.ok) expect(exhausted.reason).toBe("screenshot-budget-exceeded");
-
-    // resetTaskBudget releases t1
-    resetTaskBudget("t1");
-    const fresh = await dispatchCaptureVisibleTab({
-      sessionId: "s1", taskId: "t1", pinnedTabId: 42,
-    });
-    expect(fresh.ok).toBe(true);
+    expect(next.ok).toBe(true);
   });
 });
 
@@ -142,7 +96,7 @@ describe("dispatchCaptureFullPageTab", () => {
       detach: vi.fn(async () => {}),
     } as never));
     const res = await dispatchCaptureFullPageTab(
-      { sessionId: "s1", taskId: "t1", pinnedTabId: 42 },
+      { sessionId: "s1", pinnedTabId: 42 },
       { acquireSession: acquireMock },
     );
     expect(res.ok).toBe(true);
@@ -162,7 +116,7 @@ describe("dispatchCaptureFullPageTab", () => {
       throw new Error("cdp attach failed");
     });
     const res = await dispatchCaptureFullPageTab(
-      { sessionId: "s1", taskId: "t1", pinnedTabId: 42 },
+      { sessionId: "s1", pinnedTabId: 42 },
       { acquireSession: acquireMock },
     );
     expect(res.ok).toBe(false);
@@ -177,7 +131,7 @@ describe("dispatchCaptureFullPageTab", () => {
       detach: vi.fn(async () => {}),
     } as never));
     const res = await dispatchCaptureFullPageTab(
-      { sessionId: "s1", taskId: "t1", pinnedTabId: 42 },
+      { sessionId: "s1", pinnedTabId: 42 },
       { acquireSession: acquireMock },
     );
     expect(res.ok).toBe(false);
@@ -192,30 +146,28 @@ describe("dispatchCaptureFullPageTab", () => {
       detach: vi.fn(async () => {}),
     } as never));
     const res = await dispatchCaptureFullPageTab(
-      { sessionId: "s1", taskId: "t1", pinnedTabId: 42 },
+      { sessionId: "s1", pinnedTabId: 42 },
       { acquireSession: acquireMock },
     );
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toBe("capture-failed");
   });
 
-  it("shares the per-task budget with capture_visible_tab", async () => {
-    // 5 visible captures consume budget — full-page now exceeds.
+  it("succeeds after prior visible-tab captures", async () => {
     for (let i = 0; i < 5; i++) {
-      await dispatchCaptureVisibleTab({ sessionId: "s1", taskId: "t1", pinnedTabId: 42 });
+      await dispatchCaptureVisibleTab({ sessionId: "s1", pinnedTabId: 42 });
     }
     const acquireMock = vi.fn(async () => ({
-      send: vi.fn(), detach: vi.fn(),
+      send: vi.fn(async () => ({ data: "A".repeat(8) })),
+      detach: vi.fn(),
       ownerToken: { sessionId: "s1", tabId: 42 },
       tabId: 42, generationId: 1, isAlive: true, detachedReason: null,
     } as never));
     const res = await dispatchCaptureFullPageTab(
-      { sessionId: "s1", taskId: "t1", pinnedTabId: 42 },
+      { sessionId: "s1", pinnedTabId: 42 },
       { acquireSession: acquireMock },
     );
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.reason).toBe("screenshot-budget-exceeded");
-    // acquireMock should NOT have been called when budget is exhausted
-    expect(acquireMock).not.toHaveBeenCalled();
+    expect(res.ok).toBe(true);
+    expect(acquireMock).toHaveBeenCalled();
   });
 });
