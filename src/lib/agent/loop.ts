@@ -4,7 +4,7 @@ import type { ChatMessage } from "../model-router";
 import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
 import { putArtifact } from "../files/output-store";
-import { resetTaskBudget, dispatchCaptureVisibleTab, dispatchCaptureFullPageTab, type CdpAcquirer } from "./tools/screenshot";
+import { dispatchCaptureVisibleTab, dispatchCaptureFullPageTab } from "./tools/screenshot";
 import { dispatchCaptureVideoFrame } from "./tools/video-frame";
 import { hydrateAttachments } from "./image-hydration";
 import {
@@ -207,15 +207,6 @@ export interface AgentLoopContext {
    * Absent / empty → fall back to a fresh env seed.
    */
   resumedActiveToolGroups?: string[];
-  /**
-   * Phase 5 — unique identifier for this task invocation, used to key
-   * the per-task screenshot budget (screenshot.ts `budgetByTask`).
-   * Optional for backward compatibility; when absent, resetTaskBudget
-   * is skipped (no budget was allocated).
-   * Task 12 makes this required by passing a SW-generated UUID when
-   * dispatching the agent loop.
-   */
-  taskId?: string;
   /**
    * v1.5 multi-pin — full set of pinned tabs owned by this session.
    * Index 0 is the chat-start capture; later indices are open_url
@@ -1355,12 +1346,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     sendAgentDone(emit, { ...msg, sessionId });
 
     // Phase 5 — R13 path (a): evict image cache on any terminal state.
-    // Also free the per-task screenshot budget so a future task on the
-    // same session starts with a fresh 5/task quota.
     evictSession(sessionId);
-    if (ctx.taskId) {
-      resetTaskBudget(ctx.taskId);
-    }
 
     // U3 / AD1 fix — synthesize assistant turn and fold it into the tombstone
     // write so both changes land in ONE atomic write to session_${id}_agent.
@@ -2630,7 +2616,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             continue;
           }
 
-          const captureCtx = { sessionId, taskId: ctx.taskId ?? sessionId, pinnedTabId };
+          const captureCtx = { sessionId, pinnedTabId };
           const outcome = tc.name === "capture_video_frame"
             ? await dispatchCaptureVideoFrame(captureCtx, (tc.args ?? {}) as { timeSeconds?: unknown })
             : tc.name === "capture_visible_tab"

@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { dispatchCaptureVideoFrame, seekPrimaryMedia, isMostlyBlackImage } from "./video-frame";
-import { _resetBudgetForTests } from "./screenshot";
 
 beforeEach(() => {
-  _resetBudgetForTests();
   (globalThis as unknown as { chrome: unknown }).chrome = {
     ...((globalThis as unknown as { chrome?: object }).chrome ?? {}),
     tabs: {
@@ -43,7 +41,7 @@ describe("seekPrimaryMedia", () => {
 describe("dispatchCaptureVideoFrame", () => {
   it("seeks then captures a JPEG", async () => {
     const res = await dispatchCaptureVideoFrame(
-      { sessionId: "s1", taskId: "t1", pinnedTabId: 7 },
+      { sessionId: "s1", pinnedTabId: 7 },
       { timeSeconds: 12.5 },
     );
     expect(res.ok).toBe(true);
@@ -60,7 +58,7 @@ describe("dispatchCaptureVideoFrame", () => {
       { result: { ok: false, reason: "no_video" } },
     ]);
     const res = await dispatchCaptureVideoFrame(
-      { sessionId: "s1", taskId: "t1", pinnedTabId: 7 },
+      { sessionId: "s1", pinnedTabId: 7 },
       { timeSeconds: 3 },
     );
     expect(res.ok).toBe(false);
@@ -74,7 +72,7 @@ describe("dispatchCaptureVideoFrame", () => {
       windowId: 1,
     });
     const res = await dispatchCaptureVideoFrame(
-      { sessionId: "s1", taskId: "t1", pinnedTabId: 7 },
+      { sessionId: "s1", pinnedTabId: 7 },
       { timeSeconds: 1 },
     );
     expect(res.ok).toBe(false);
@@ -83,7 +81,7 @@ describe("dispatchCaptureVideoFrame", () => {
 
   it("rejects a non-numeric timeSeconds", async () => {
     const res = await dispatchCaptureVideoFrame(
-      { sessionId: "s1", taskId: "t1", pinnedTabId: 7 },
+      { sessionId: "s1", pinnedTabId: 7 },
       { timeSeconds: "soon" },
     );
     expect(res.ok).toBe(false);
