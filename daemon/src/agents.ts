@@ -163,13 +163,13 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
 
   // DeepSeek Harness（#41）：mac-first。App = 本机 Web UI（不是 .app bundle，检测走同一
   // `dsh` 二进制）；无 ADR 0013 深链，handoff 走 loopback 编排。Terminal = 仅 headless
-  // （禁止把 headless 命令填进 argv）。verified:false —— 真机过了再进默认可用集。
+  // （禁止把 headless 命令填进 argv）。2026-08-22 mac 真机过（dsh 0.1.1-rc.2：Web UI 交棒 + headless run）→ verified:true 进默认可用集；Windows 表仍不含。
   { id: "dsh-app", label: "DeepSeek Harness (App)", kind: "app",
-    bin: "dsh", binPaths: ["~/.local/bin/dsh"], verified: false,
+    bin: "dsh", binPaths: ["~/.local/bin/dsh"], verified: true,
     webUi: { origin: "http://127.0.0.1:3080", argv: ["web"] } },
   { id: "dsh-terminal", label: "DeepSeek Harness (Terminal)", kind: "terminal", bin: "dsh",
     headlessArgv: ["--profile", "headless", "{prompt}"],
-    binPaths: ["~/.local/bin/dsh"], verified: false },
+    binPaths: ["~/.local/bin/dsh"], verified: true },
 ];
 
 /**

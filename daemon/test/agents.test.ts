@@ -119,10 +119,10 @@ test("candidateIsInteractive：app 与有 argv 的 terminal 为真；仅 headles
   expect(candidateIsInteractive(byId["claude-app"])).toBe(true);
 });
 
-test("dsh 两条 verified:false，检测靠同一 dsh 二进制，Windows 表不含 DSH", () => {
+test("dsh 两条 verified:true（mac 真机过），检测靠同一 dsh 二进制，Windows 表不含 DSH", () => {
   const byId = Object.fromEntries(AGENT_CANDIDATES.map((c) => [c.id, c]));
-  expect(byId["dsh-app"].verified).toBe(false);
-  expect(byId["dsh-terminal"].verified).toBe(false);
+  expect(byId["dsh-app"].verified).toBe(true);
+  expect(byId["dsh-terminal"].verified).toBe(true);
   expect(byId["dsh-app"].bin).toBe("dsh");
   expect(byId["dsh-terminal"].bin).toBe("dsh");
   expect(byId["dsh-app"].binPaths).toContain("~/.local/bin/dsh");
@@ -370,14 +370,13 @@ test("detectAgents(darwin): mac 表不受 verified 过滤影响（历史条目�
   expect(detected.map((a) => a.id)).toContain("claude-terminal");
 });
 
-test("detectAgents(darwin): verified:false 的 dsh 默认排除，即使 bin 在 PATH", () => {
+test("detectAgents(darwin): dsh 已 verified，bin 在 PATH 即默认检出", () => {
   const detected = detectAgents({
     platform: "darwin",
     which: (bin) => (bin === "dsh" ? "/Users/x/.local/bin/dsh" : null),
     exists: () => false,
   });
-  expect(detected.map((a) => a.id)).not.toContain("dsh-app");
-  expect(detected.map((a) => a.id)).not.toContain("dsh-terminal");
+  expect(detected.map((a) => a.id)).toEqual(["dsh-app", "dsh-terminal"]);
 });
 
 test("detectAgents: PIE_INCLUDE_UNVERIFIED_AGENTS=1 与 includeUnverified 同效", () => {
