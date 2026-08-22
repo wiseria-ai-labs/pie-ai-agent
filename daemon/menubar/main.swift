@@ -292,6 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var isUpdating = false
 
     func applicationDidFinishLaunching(_: Notification) {
+        terminateOlderInstances()
         ensureDaemonRunning()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = pieTemplateIcon()
@@ -358,6 +359,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             _ = Self.launchctl(["bootout", "gui/\(getuid())/ai.wiseria.pie"])
         }
         NSApp.terminate(nil)
+    }
+
+    /// 单实例守卫：pkg 升级的 postinstall 只能 unload launchd job，杀不掉 LaunchServices
+    /// 启动的旧实例（用户从 Apps/Finder/open 打开的那种），load 出新实例后就是两个托盘图标；
+    /// 且 bundle 被 pkg 原子替换（换 inode）后 LS 不再把新旧当同一个 app 去重。上位的新实例
+    /// 把比自己早启动的同 bundle id 实例请退：terminate（quit 事件）3s 不应则 forceTerminate。
+    /// ponytail: 只终结 launchDate 早于自己的实例——同一时刻并发启动会互不相杀而双活；真实
+    /// 场景（升级/重开）时间差都在秒级以上，不为极端并发上锁。
+    private func terminateOlderInstances() {
+        let me = NSRunningApplication.current
+        let myStart = me.launchDate ?? Date()
+        let bid = Bundle.main.bundleIdentifier ?? "ai.wiseria.pie.menubar"
+        for other in NSRunningApplication.runningApplications(withBundleIdentifier: bid)
+        where other.processIdentifier != me.processIdentifier
+            && (other.launchDate ?? .distantPast) < myStart {
+            other.terminate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                if !other.isTerminated { other.forceTerminate() }
+            }
+        }
     }
 
     /// Launchpad 重开 app 时把 daemon 一并拉起。已在跑时 bootstrap 报错，忽略即幂等。
