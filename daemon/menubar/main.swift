@@ -75,6 +75,10 @@ enum L10n {
             "en": "Update now", "zh-CN": "点此更新", "zh-TW": "點此更新",
             "ja": "今すぐ更新", "es-419": "Actualizar ahora", "pt-BR": "Atualizar agora",
         ],
+        "later": [
+            "en": "Later", "zh-CN": "稍后", "zh-TW": "稍後",
+            "ja": "後で", "es-419": "Más tarde", "pt-BR": "Mais tarde",
+        ],
         "newVersion": [
             "en": "New version", "zh-CN": "有新版", "zh-TW": "有新版",
             "ja": "新しいバージョン", "es-419": "Nueva versión", "pt-BR": "Nova versão",
@@ -439,22 +443,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let alert = NSAlert()
                 if r == nil {
                     alert.messageText = L10n.t("checkFailed")
+                    alert.runModal()
                 } else if available, let latest = latest {
+                    // 「点此更新」必须是真按钮——曾放在 informativeText 里当纯文本，看着能点、
+                    // 点了没反应，用户得回托盘菜单才能真正触发更新。
                     alert.messageText = "\(L10n.t("newVersion")) v\(latest)"
-                    alert.informativeText = L10n.t("updateNow")
+                    alert.addButton(withTitle: L10n.t("updateNow"))
+                    alert.addButton(withTitle: L10n.t("later"))
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        self.startUpdate()
+                    }
                 } else {
                     alert.messageText = L10n.t("upToDate")
+                    alert.runModal()
                 }
-                alert.runModal()
             }
         }
     }
 
-    // #403：点「点此更新」——apply_update 换文件 → launchctl kickstart -k 重启 daemon 跑新
-    // 二进制 → 刷新缓存。任一步失败弹 NSAlert 给原因（三道硬闸失败即中止、不替换）。
-    @objc func applyUpdateNow() {
+    @objc func applyUpdateNow() { startUpdate() }
+
+    // #403：更新执行统一入口（托盘菜单「点此更新」与检查更新弹窗按钮共用）——apply_update
+    // 换文件 → launchctl kickstart -k 重启 daemon 跑新二进制 → 刷新缓存。执行期间浮一个
+    // 不定进度小窗（apply_update 是单请求、wire 无进度事件，诚实表达就是转圈 + 「更新中…」）。
+    // 任一步失败弹 NSAlert 给原因（三道硬闸失败即中止、不替换）。
+    private func startUpdate() {
         guard !isUpdating else { return }
         isUpdating = true
+        showUpdateProgress()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let (result, error) = queryDaemonEnvelope("apply_update")
             var kickstarted = false
@@ -465,6 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.isUpdating = false
+                self.hideUpdateProgress()
                 let alert = NSAlert()
                 if let result = result {
                     let ver = result["version"] as? String ?? "?"
@@ -485,6 +502,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 alert.runModal()
             }
         }
+    }
+
+    // 更新进度小窗：无关闭按钮（更新中途不给关）、浮层级、orderFrontRegardless 不抢焦点也可见。
+    private var progressWindow: NSWindow?
+
+    private func showUpdateProgress() {
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.startAnimation(nil)
+        let label = NSTextField(labelWithString: L10n.t("updating"))
+        let stack = NSStackView(views: [spinner, label])
+        stack.orientation = .horizontal
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 18, left: 24, bottom: 18, right: 24)
+        let win = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        win.title = "Pie Link"
+        win.contentView = stack
+        win.setContentSize(stack.fittingSize)
+        win.center()
+        win.level = .floating
+        win.isReleasedWhenClosed = false
+        win.orderFrontRegardless()
+        progressWindow = win
+    }
+
+    private func hideUpdateProgress() {
+        progressWindow?.close()
+        progressWindow = nil
     }
 
     private func disabled(_ title: String) -> NSMenuItem {
