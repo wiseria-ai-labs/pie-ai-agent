@@ -203,6 +203,7 @@ export const zhCNDict = {
     title: "交棒给本地 Agent（交互式）？",
     semanticsNote: "任务将移交本地 agent，结果不返回此对话。",
     targetLabel: "收件人",
+    openingLabel: "开场白",
     contextLabel: "上下文",
     filesLabel: "随交棒文件",
     appContinueHint: "App 只会打开工作区，需要你在 App 里发一句继续。",

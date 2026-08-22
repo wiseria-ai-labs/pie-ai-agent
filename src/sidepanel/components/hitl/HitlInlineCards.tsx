@@ -61,6 +61,7 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
           payload={
             request.payload as {
               context: string;
+              opening?: string;
               fileCount: number;
               brands: {
                 id: string;

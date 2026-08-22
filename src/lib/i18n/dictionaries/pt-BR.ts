@@ -208,6 +208,7 @@ export const ptBRDict = {
     title: "Repassar para um agente local (interativo)?",
     semanticsNote: "A tarefa passa para o seu agente local; os resultados não voltam para esta conversa.",
     targetLabel: "Destinatário",
+    openingLabel: "Mensagem inicial",
     contextLabel: "Contexto",
     filesLabel: "Arquivos a preparar",
     appContinueHint: "O app só abre o espaço de trabalho; envie um continue no app para começar.",

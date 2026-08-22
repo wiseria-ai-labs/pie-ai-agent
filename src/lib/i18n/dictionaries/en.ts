@@ -212,6 +212,7 @@ export const enDict = {
     title: "Hand off to a local agent (interactive)?",
     semanticsNote: "The task moves to your local agent; results are not returned to this conversation.",
     targetLabel: "Recipient",
+    openingLabel: "Opening",
     contextLabel: "Context",
     filesLabel: "Files to stage",
     appContinueHint: "The app only opens the workspace — send a continue message there to start.",

@@ -208,6 +208,7 @@ export const es419Dict = {
     title: "¿Delegar a un agente local (interactivo)?",
     semanticsNote: "La tarea pasa a tu agente local; los resultados no vuelven a esta conversación.",
     targetLabel: "Destinatario",
+    openingLabel: "Mensaje inicial",
     contextLabel: "Contexto",
     filesLabel: "Archivos a preparar",
     appContinueHint: "La app solo abre el espacio de trabajo; envía un continue en la app para empezar.",

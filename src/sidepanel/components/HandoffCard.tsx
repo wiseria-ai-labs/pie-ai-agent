@@ -11,7 +11,7 @@ import { AgentSelect } from "./hitl/AgentSelect";
 import type { HandoffBrandOption } from "@/lib/agent/tools/handoff";
 
 interface Props {
-  payload: { context: string; fileCount: number; brands: HandoffBrandOption[] };
+  payload: { context: string; opening?: string; fileCount: number; brands: HandoffBrandOption[] };
   onDecision: (target: string | null) => void;
 }
 
@@ -28,8 +28,8 @@ const HandoffIcon = () => (
 
 /**
  * 交棒授权卡（#270 迁 HitlCardShell，warning 档）：用户在此选收件人（LLM 不能选
- * ——收件人选择与授权是同一步）。context 原文渲染，让用户看到将写入 context.md
- * 的内容。与 run_local_agent 卡的语义区分：任务移交出去，结果不回来。
+ * ——收件人选择与授权是同一步）。context 原文渲染；有 opening 时一并展示将预填
+ * 的短指令。与 run_local_agent 卡的语义区分：任务移交出去，结果不回来。
  */
 export function HandoffCard({ payload, onDecision }: Props) {
   const t = useT();
@@ -108,6 +108,13 @@ export function HandoffCard({ payload, onDecision }: Props) {
       </div>
       <p className="text-[12px] leading-relaxed text-fg-3">{formNote}</p>
       <HitlDetailBlock>
+        {payload.opening ? (
+          <HitlDetailGroup label={t("handoff.openingLabel")}>
+            <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[17px] text-fg-2">
+              {payload.opening}
+            </pre>
+          </HitlDetailGroup>
+        ) : null}
         <HitlDetailGroup label={t("handoff.contextLabel")}>
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[17px] text-fg-2">
             {payload.context}

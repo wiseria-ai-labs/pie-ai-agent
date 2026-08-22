@@ -1,6 +1,6 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
-import type { HandoffParams, HandoffResult } from "@/types/local-bridge";
+import { normalizeHandoffOpening, type HandoffParams, type HandoffResult } from "@/types/local-bridge";
 import { groupAgentsByBrand, inferFormKind } from "@/lib/local-agents-prefs";
 
 export interface HandoffBrandOption {
@@ -45,6 +45,7 @@ export interface HandoffToolDeps {
    */
   requestConsent: (p: {
     context: string;
+    opening?: string;
     fileCount: number;
     brands: HandoffBrandOption[];
   }) => Promise<string | null>;
@@ -73,6 +74,13 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
           description:
             "A markdown brief for the local agent: what was done so far and what to continue. Written to context.md.",
         },
+        opening: {
+          type: "string",
+          description:
+            "A short 1–3 sentence first instruction for the local agent (composer / argv / convention file). " +
+            "Say what to do next. Details, completed work, and file notes belong in `context`. " +
+            "Do not copy `context` into `opening`. Omit to use the default pointer at context.md.",
+        },
         files: {
           type: "array",
           description: "Optional files to stage into the handoff directory alongside context.md.",
@@ -91,10 +99,11 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
       additionalProperties: false,
     },
     handler: async (args: unknown, _ctx: ToolHandlerContext): Promise<ActionResult> => {
-      const a = (args ?? {}) as { context?: unknown; files?: unknown };
+      const a = (args ?? {}) as { context?: unknown; opening?: unknown; files?: unknown };
       if (typeof a.context !== "string" || a.context.trim() === "") {
         return { success: false, error: "handoff_to_agent: `context` is required (non-empty string)." };
       }
+      const opening = normalizeHandoffOpening(a.opening);
       const files = Array.isArray(a.files)
         ? (a.files as { name: string; content: string }[])
         : undefined;
@@ -108,13 +117,19 @@ export function buildHandoffTool(deps: HandoffToolDeps): Tool {
       }
       const target = await deps.requestConsent({
         context: a.context,
+        ...(opening ? { opening } : {}),
         fileCount: files?.length ?? 0,
         brands,
       });
       if (target == null) {
         return { success: false, error: "User declined the hand-off." };
       }
-      const result = await deps.run({ target, context: a.context, files });
+      const result = await deps.run({
+        target,
+        context: a.context,
+        ...(opening ? { opening } : {}),
+        files,
+      });
       // fire-and-forget：无 untrusted 内容回传。observation 只报语义（谁、何种形态），
       // 不带宿主机路径（ADR 0012）。deeplink 才说 composer 已预填，回落 / Cursor 不谎称。
       const form = brands.flatMap((b) => b.forms).find((f) => f.id === target);

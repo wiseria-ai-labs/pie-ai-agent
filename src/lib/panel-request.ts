@@ -23,6 +23,7 @@ export interface PanelRequestMap {
   "handoff-to-agent": {
     req: {
       context: string;
+      opening?: string;
       fileCount: number;
       brands: {
         id: string;

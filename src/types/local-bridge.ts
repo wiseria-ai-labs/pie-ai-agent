@@ -105,8 +105,28 @@ export interface HandoffParams {
   target: string;
   /** markdown brief，daemon 落盘为 context.md 供交互式 session 读取 */
   context: string;
+  /**
+   * 加法（PROTOCOL_VERSION 不动）：给本地 agent 的短开场（1–3 句）。
+   * 进深链 `q`/`prompt`、terminal argv、约定文件。空/缺省 → daemon 回落固定引导句。
+   * 超长截到 `HANDOFF_OPENING_MAX_CHARS`。`context` 仍整段落进 context.md。
+   * 旧 daemon 忽略此字段，继续固定句。
+   */
+  opening?: string;
   /** 可选：随交棒 stage 进 handoff 目录的文件（名字取 basename，防遍历） */
   files?: { name: string; content: string }[];
+}
+
+/** 交棒 opening 上限。远低于 Claude 深链 `q` 截断，也避开过长 URL。 */
+export const HANDOFF_OPENING_MAX_CHARS = 500;
+
+/** 空 / 非字符串 → undefined；超长截到 `HANDOFF_OPENING_MAX_CHARS`。 */
+export function normalizeHandoffOpening(opening: unknown): string | undefined {
+  if (typeof opening !== "string") return undefined;
+  const trimmed = opening.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > HANDOFF_OPENING_MAX_CHARS
+    ? trimmed.slice(0, HANDOFF_OPENING_MAX_CHARS)
+    : trimmed;
 }
 export interface HandoffResult {
   /**
