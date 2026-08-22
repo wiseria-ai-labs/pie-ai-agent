@@ -326,6 +326,12 @@ namespace PieLink
                     ["en"] = "Download failed.", ["zh-CN"] = "下载失败。", ["zh-TW"] = "下載失敗。",
                     ["ja"] = "ダウンロードに失敗しました。", ["es-419"] = "La descarga falló.", ["pt-BR"] = "Falha no download.",
                 },
+                ["downloading"] = new Dictionary<string, string>
+                {
+                    ["en"] = "Downloading update…", ["zh-CN"] = "正在下载更新…", ["zh-TW"] = "正在下載更新…",
+                    ["ja"] = "更新をダウンロード中…", ["es-419"] = "Descargando la actualización…",
+                    ["pt-BR"] = "Baixando a atualização…",
+                },
             };
     }
 
@@ -830,7 +836,18 @@ namespace PieLink
 
         // #403「检查更新」= 读 pie-link-latest.json，与当前版本比较；有新版则下载 setup.exe（URL 白名单
         // + sha256 校验）并运行（Inno 覆盖安装，一次 UAC）。UAC 在 Windows 省不掉，daemon 自更新不走这条。
+        private bool _updating;
+
         private void CheckForUpdates(DaemonClient.Status status)
+        {
+            // 进度窗开着时 UI 线程仍在泵消息，托盘菜单还能再点进来——挡掉并发第二次。
+            if (_updating) return;
+            _updating = true;
+            try { CheckForUpdatesCore(status); }
+            finally { _updating = false; }
+        }
+
+        private void CheckForUpdatesCore(DaemonClient.Status status)
         {
             var latest = Updater.FetchLatest();
             if (latest == null)
@@ -852,7 +869,7 @@ namespace PieLink
                 L10n.T("updateTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (answer != DialogResult.Yes) return;
 
-            var installer = Updater.DownloadInstaller(latest);
+            var installer = DownloadInstallerWithProgress(latest);
             if (installer == null)
             {
                 MessageBox.Show(L10n.T("downloadFailed"), L10n.T("updateTitle"),
@@ -868,6 +885,46 @@ namespace PieLink
             {
                 MessageBox.Show(ex.Message, L10n.T("updateTitle"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+        }
+
+        // 下载进度小窗（对齐 mac 顶栏的更新进度窗）：marquee 进度条 + 「正在下载更新…」，下载挪到
+        // 线程池，完成后关窗返回安装器路径。此前 DownloadInstaller 同步跑在 UI 线程——点了「是」
+        // 之后几十 MB 全程无任何反馈、托盘也无响应，慢网络下是几十秒的死寂。
+        // ponytail: marquee 不定进度；真实百分比要换 DownloadFileAsync + 进度事件，有需要再升级。
+        private static string DownloadInstallerWithProgress(Updater.Latest latest)
+        {
+            string installer = null;
+            using (var dlg = new Form())
+            {
+                dlg.Text = L10n.T("updateTitle");
+                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dlg.ControlBox = false;
+                dlg.MinimizeBox = false;
+                dlg.MaximizeBox = false;
+                dlg.ShowInTaskbar = false;
+                dlg.StartPosition = FormStartPosition.CenterScreen;
+                dlg.TopMost = true;
+                dlg.ClientSize = new Size(320, 72);
+                var label = new Label { Text = L10n.T("downloading"), AutoSize = true, Location = new Point(16, 12) };
+                var bar = new ProgressBar
+                {
+                    Style = ProgressBarStyle.Marquee,
+                    MarqueeAnimationSpeed = 30,
+                    Location = new Point(16, 38),
+                    Size = new Size(288, 18),
+                };
+                dlg.Controls.Add(label);
+                dlg.Controls.Add(bar);
+                dlg.Shown += (_, __) => ThreadPool.QueueUserWorkItem(state =>
+                {
+                    var path = Updater.DownloadInstaller(latest);
+                    // 窗口被系统级手段关掉（Alt+F4 绕过无 ControlBox）时按取消对待：丢结果、不崩。
+                    try { dlg.BeginInvoke((Action)(() => { installer = path; dlg.Close(); })); }
+                    catch { }
+                });
+                dlg.ShowDialog();
+            }
+            return installer;
         }
 
         // 「修复沙箱」= 提权依次跑 windows-uninstall + windows-install，跑完自动再诊断一次让用户看结果。
