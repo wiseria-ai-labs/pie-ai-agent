@@ -40,7 +40,13 @@ export function HandoffCard({ payload, onDecision }: Props) {
   const selectedForm = brand?.forms.find((f) => f.id === formId) ?? brand?.forms[0];
   const showFormSegment = (brand?.forms.length ?? 0) === 2;
   const formNote =
-    selectedForm?.kind === "terminal" ? t("handoff.form.noteTerminal") : t("handoff.form.noteApp");
+    selectedForm?.kind === "terminal"
+      ? t("handoff.form.noteTerminal")
+      : selectedForm?.appLaunch === "web"
+        ? t("handoff.form.noteAppWeb")
+        : selectedForm?.appLaunch === "open-a"
+          ? t("handoff.form.noteAppOpen")
+          : t("handoff.form.noteApp");
 
   const onBrand = (id: string) => {
     setBrandId(id);

@@ -109,9 +109,11 @@ Brave など。
 記憶され、以降はツールバーアイコンからもそのウィンドウが開きます。**設定 → 環境設定**
 でいつでも変更できます。
 
-### 方法 1 —— Chrome ウェブストア（推奨）
+### 方法 1 —— ブラウザのストア（推奨）
 
-**[Chrome ウェブストア](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)** からインストールし、**Add to Chrome** をクリックして Pie をツールバーに固定します。Chrome が自動で最新に保ちます。
+**Chrome：** **[Chrome ウェブストア](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)** からインストールし、**Add to Chrome** をクリックして Pie をツールバーに固定します。Chrome が自動で最新に保ちます。
+
+**Edge：** **[Edge アドオン](https://microsoftedge.microsoft.com/addons/detail/pie-%C2%B7-opensource-ai-agen/gbfdgfkpglimajnjedphgakmhaplgobf)** からインストールします。ストア版には独自の安定 ID があり、Pie Link はそれを許可しています。
 
 ### 方法 2 —— GitHub Release の zip
 
@@ -119,9 +121,11 @@ Brave など。
 
 1. [Releases ページ](https://github.com/wiseria-ai-labs/pie-ai-agent/releases)から最新の `pie-x.y.z.zip` をダウンロード
 2. 残しておくフォルダーに解凍します（Chrome はこのフォルダーから読み込みます —— 削除しないこと）
-3. `chrome://extensions` を開き、**デベロッパーモード**をオンにします
+3. `chrome://extensions`（または `edge://extensions`）を開き、**デベロッパーモード**をオンにします
 4. **パッケージ化されていない拡張機能を読み込む**をクリックし、そのフォルダーを選びます
 5. Pie をツールバーに固定し、アイコンをクリックしてサイドパネルを開きます
+
+> **Edge（ローカル読み込み）：** この zip（key 付き）を使ってください。拡張機能ページの ID は `gpccjhdgjkmalnepmeclooflliiocfed` である必要があります。key を外したストア用パッケージを展開読み込みすると Pie Link に接続できません。
 
 > **アップグレード：** チャットや保存した key を残すには、新しいリリースを**同じ
 > フォルダーに**解凍し、Pie のカードの **↻ 再読み込み** をクリックします。**削除**は

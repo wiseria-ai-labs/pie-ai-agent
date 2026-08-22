@@ -219,6 +219,7 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
           <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg-1">{t("settings.myConfigs.title")}</span>
           {!showWizard && (
             <button
+              data-testid="models-new-config"
               onClick={() => setShowWizard(true)}
               className="flex h-8 items-center gap-2 rounded-control border border-line bg-transparent px-3 text-[12px] text-accent transition-colors hover:bg-field"
             >

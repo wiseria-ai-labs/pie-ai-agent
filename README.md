@@ -113,9 +113,11 @@ right-click any page and choose **Open Pie in a separate window**. The choice
 is remembered, so the toolbar icon uses that window from then on — and you can
 change it any time under **Settings → Preferences**.
 
-### Option 1 — Chrome Web Store (recommended)
+### Option 1 — Browser store (recommended)
 
-Install from the **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)**, click **Add to Chrome**, and pin Pie to the toolbar. Chrome keeps it updated automatically.
+**Chrome:** install from the **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)**, click **Add to Chrome**, and pin Pie to the toolbar. Chrome keeps it updated automatically.
+
+**Edge:** install from **[Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/pie-%C2%B7-opensource-ai-agen/gbfdgfkpglimajnjedphgakmhaplgobf)**. The store build has its own stable ID; Pie Link allowlists it.
 
 ### Option 2 — GitHub Release zip
 
@@ -123,9 +125,11 @@ For an offline or self-managed install of the same build:
 
 1. Download the latest `pie-x.y.z.zip` from the [Releases page](https://github.com/wiseria-ai-labs/pie-ai-agent/releases)
 2. Unzip it to a folder you'll keep (Chrome loads from this folder — don't delete it)
-3. Open `chrome://extensions`, turn on **Developer mode**
+3. Open `chrome://extensions` (or `edge://extensions`), turn on **Developer mode**
 4. Click **Load unpacked** and select the folder
 5. Pin Pie to the toolbar and click the icon to open the side panel
+
+> **Edge (local load):** use this zip. It includes the `key` that pins the extension ID Pie Link allowlists (`gpccjhdgjkmalnepmeclooflliiocfed`). A keyless store package will not connect to Pie Link.
 
 > **Upgrading:** to keep your chats and saved keys, unzip the new release
 > *into the same folder* and click **↻ reload** on Pie's card. Don't click

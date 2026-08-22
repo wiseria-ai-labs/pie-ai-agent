@@ -39,7 +39,7 @@
 
 ## 配方与坑（不遵守必踩）
 
-- **扩展 ID 是商店固定 ID** `gpccjhdgjkmalnepmeclooflliiocfed`（manifest 带 `key`，不由路径推导）。
+- **扩展 ID 是商店固定 ID** `gpccjhdgjkmalnepmeclooflliiocfed`（manifest 带 `key`，不由路径推导）。本机 Edge 验收必须加载带 key 的 Chrome zip，不要加载去 key 的商店包。Edge Add-ons 正式 ID 是 `gbfdgfkpglimajnjedphgakmhaplgobf`（只给商店包；Playwright 仍用 Chrome ID）。
 - **NM manifest 位置**：`<user-data-dir>/NativeMessagingHosts/ai.wiseria.pie.json`（跟随 `--user-data-dir`，**不是** `~/Library/Application Support/Chromium/...`）；`path` 指向 host-wrapper，`allowed_origins` 用上面的固定 ID。每个 profile 启动前写入。
 - **locale 钉死**：launch 传 `locale:'en-US'` + `--lang=en-US`，否则 UI 跟系统语言走、文本断言全挂。
 - **seedConfig 三坑**（eval bridge 只服务 SW loop，panel 不认）：
@@ -83,3 +83,22 @@
 ```
 
 结论行只有两种：「自动验收通过，建议人工抽查上列盲区后打 human-approved」或「存在 FAIL，建议打 need-to-solve」。
+
+---
+
+## 发版门（release-smoke）
+
+功能 PR 继续走上面的 per-PR `pilot-<n>-*.mjs`。**打 tag 之前**另跑一份固定产品冒烟，证明旧的基础没被近期合入冲坏。
+
+- 清单：`docs/specs/2026-08-17-release-smoke-checklist.md`（v1 已冻，发现新回归再往里加）
+- 套件：`eval/acceptance/release-smoke/`（`pnpm smoke:release`）
+- 怎么跑、闸怎么判：`eval/acceptance/release-smoke/README.md`
+- 不进 GitHub Actions，不挡日常 PR CI
+
+```
+功能 PR：CI +（该打 need-human-test 的才跑）per-PR acceptance
+        ↓ merge main
+发版候选：本地 pnpm smoke:release → $PIE_ACCEPT_BASE/report/report.md
+        ↓ 人抽查 H 区
+version bump PR → CI → merge → tag → release.yml
+```

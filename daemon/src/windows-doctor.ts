@@ -11,10 +11,14 @@ import path from "path";
 
 /** Native-messaging host name (registry subkey leaf + manifest json basename). */
 export const NM_HOST_NAME = "ai.wiseria.pie";
-/** Fixed extension id (pinned in the extension manifest `key`; store + unpacked share it). */
+/** Chrome Web Store id (pinned in the extension manifest `key`; keyed unpacked shares it). */
 export const EXT_ID = "gpccjhdgjkmalnepmeclooflliiocfed";
-/** allowed_origins entry Chrome/Edge require in the NM manifest. */
+/** Edge Add-ons store id (Edge rejects `key`; store assigns a stable id). Issue #35. */
+export const EDGE_STORE_EXT_ID = "gbfdgfkpglimajnjedphgakmhaplgobf";
+/** allowed_origins entry the Chrome store / keyed unpacked build uses. */
 export const EXPECTED_ORIGIN = `chrome-extension://${EXT_ID}/`;
+/** allowed_origins entry the Edge Add-ons store build uses. */
+export const EDGE_STORE_ORIGIN = `chrome-extension://${EDGE_STORE_EXT_ID}/`;
 
 /** The two browsers whose native-messaging host keys the installer writes (HKLM, machine-wide). */
 export interface NmBrowser {
@@ -136,13 +140,16 @@ export interface ManifestVerdict {
   hostPath: string | null;
   /** The host-wrapper path exists on disk. */
   hostPathExists: boolean;
-  /** `allowed_origins` contains the fixed EXT_ID origin. */
+  /** `allowed_origins` contains the Chrome store EXT_ID origin. */
   hasExpectedOrigin: boolean;
+  /** `allowed_origins` contains the Edge Add-ons store origin. Missing is a
+   *  warn on new installs, not an error — old Pie Link json only had Chrome. */
+  hasEdgeStoreOrigin: boolean;
 }
 
 /**
  * Validate a native-messaging manifest at `jsonPath`: the json exists + parses, its `path`
- * (host wrapper) exists on disk, and `allowed_origins` carries the fixed EXT_ID origin. IO is
+ * (host wrapper) exists on disk, and `allowed_origins` carries the Chrome store origin. IO is
  * injected (`fileExists` / `readFile`) so this is unit-testable off-Windows.
  */
 export function checkNmManifest(
@@ -150,7 +157,13 @@ export function checkNmManifest(
   io: { fileExists(p: string): boolean; readFile(p: string): string },
 ): ManifestVerdict {
   if (!io.fileExists(jsonPath)) {
-    return { jsonExists: false, hostPath: null, hostPathExists: false, hasExpectedOrigin: false };
+    return {
+      jsonExists: false,
+      hostPath: null,
+      hostPathExists: false,
+      hasExpectedOrigin: false,
+      hasEdgeStoreOrigin: false,
+    };
   }
   let parsed: unknown;
   try {
@@ -162,6 +175,7 @@ export function checkNmManifest(
       hostPath: null,
       hostPathExists: false,
       hasExpectedOrigin: false,
+      hasEdgeStoreOrigin: false,
     };
   }
   const obj = (parsed ?? {}) as { path?: unknown; allowed_origins?: unknown };
@@ -172,6 +186,7 @@ export function checkNmManifest(
     hostPath,
     hostPathExists: hostPath != null && io.fileExists(hostPath),
     hasExpectedOrigin: origins.some((o) => o === EXPECTED_ORIGIN),
+    hasEdgeStoreOrigin: origins.some((o) => o === EDGE_STORE_ORIGIN),
   };
 }
 
@@ -359,8 +374,18 @@ function checkNmBrowser(
         flipOk(true);
         errors.push(`allowed_origins is missing ${EXPECTED_ORIGIN}`);
       }
+      if (!m.hasEdgeStoreOrigin) {
+        // Warn only: old Pie Link json only listed the Chrome origin. Edge
+        // Add-ons users need a reinstall to pick up EDGE_STORE_ORIGIN. Chrome
+        // still connects, so this must not flip `ok`.
+        lines.push(`  WARN: allowed_origins is missing ${EDGE_STORE_ORIGIN} (reinstall Pie Link to connect the Edge store build)`);
+      }
       if (m.hostPathExists && m.hasExpectedOrigin) {
-        lines.push("  manifest OK (host wrapper present, allowed_origins carries the extension id)");
+        lines.push(
+          m.hasEdgeStoreOrigin
+            ? "  manifest OK (host wrapper present, allowed_origins carries the Chrome and Edge store ids)"
+            : "  manifest OK (host wrapper present, allowed_origins carries the extension id)",
+        );
         okDetail = `HKLM -> ${hklm}`;
       }
     }

@@ -43,6 +43,8 @@ describe("AgentBrandIcon", () => {
     expect(svgOf("cursor-terminal").getAttribute("data-brand")).toBe("cursor");
     expect(svgOf("opencode-terminal").getAttribute("data-brand")).toBe("opencode");
     expect(svgOf("pi-terminal").getAttribute("data-brand")).toBe("pi");
+    expect(svgOf("dsh-app").getAttribute("data-brand")).toBe("dsh");
+    expect(svgOf("dsh-terminal").getAttribute("data-brand")).toBe("dsh");
   });
 
   it("Pi 的 P 形靠 evenodd 挖洞，丢了就变实心块", () => {

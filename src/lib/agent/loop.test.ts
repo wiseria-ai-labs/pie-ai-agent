@@ -7,6 +7,7 @@ import {
   buildSessionAgentSnapshot,
   buildSessionAgentTombstone,
   buildDoneSnapshot,
+  buildAbortTaskActiveClear,
   collectCrossSessionConflicts,
   chatMessageToAgentMessage,
   resolveFocusedPin,
@@ -287,6 +288,132 @@ describe("buildDoneSnapshot — abort preserves history, others tombstone", () =
     } as SessionAgentState["contextUsage"];
     const snap = buildDoneSnapshot("success", false, "s", usage);
     expect(snap!.contextUsage).toEqual(usage);
+  });
+});
+
+// Issue #21 回归 (v1.4.0) — abort 跳过 tombstone 写入（保留 resume seed），
+// 但任务开始时写下的 taskActive=true 必须清掉：第一步边界前 abort 的会话
+// （存储 stepIndex 仍为 0）否则会在下一次 recovery 扫描被误标 failed，
+// composer 永久禁用。buildAbortTaskActiveClear 是 emitDone abort 分支的
+// 清理写入构造器。
+describe("buildAbortTaskActiveClear — abort must not leave taskActive dangling", () => {
+  it("no record / flag absent / flag already false → null (no redundant write)", () => {
+    expect(buildAbortTaskActiveClear(null)).toBeNull();
+    expect(
+      buildAbortTaskActiveClear({
+        agentMessages: [],
+        pendingInstructions: [],
+        stepIndex: 0,
+        hasImageContent: false,
+      }),
+    ).toBeNull();
+    expect(
+      buildAbortTaskActiveClear({
+        agentMessages: [],
+        pendingInstructions: [],
+        stepIndex: 0,
+        hasImageContent: false,
+        taskActive: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("first-step abort (stepIndex=0, taskActive=true) → cleared, other fields intact", () => {
+    const usage = {
+      lastInputTokens: 10,
+      lastOutputTokens: 2,
+      totalInputTokens: 10,
+      totalOutputTokens: 2,
+    } as SessionAgentState["contextUsage"];
+    const clear = buildAbortTaskActiveClear({
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+      lastTaskSynth: "prior synth",
+      contextUsage: usage,
+    });
+    expect(clear).not.toBeNull();
+    expect(clear!.taskActive).toBe(false);
+    expect("taskActive" in clear!).toBe(true);
+    expect(clear!.stepIndex).toBe(0);
+    expect(clear!.lastTaskSynth).toBe("prior synth");
+    expect(clear!.contextUsage).toEqual(usage);
+  });
+
+  it("omits pendingInstructions so a mid-abort queued instruction survives the merge", () => {
+    const clear = buildAbortTaskActiveClear({
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+    });
+    // 省略而非携带（同 buildSessionAgentSnapshot 约定）：merge 时以存储里的
+    // 新值为准，emitDone 早先读到的旧数组不得回写。
+    expect("pendingInstructions" in clear!).toBe(false);
+  });
+
+  it("mid-task abort (stepIndex>0) → history preserved, flag cleared", () => {
+    const history = [
+      { role: "user", content: "task" },
+      { role: "assistant", content: "step 1" },
+    ] as SessionAgentState["agentMessages"];
+    const clear = buildAbortTaskActiveClear({
+      agentMessages: history,
+      pendingInstructions: [],
+      stepIndex: 3,
+      hasImageContent: false,
+      taskActive: true,
+    });
+    expect(clear!.agentMessages).toEqual(history);
+    expect(clear!.stepIndex).toBe(3);
+    expect(clear!.taskActive).toBe(false);
+  });
+
+  it("merge — first-step shape hits the tombstone branch: taskActive=false lands, storage pendingInstructions/approvedSkillIds preserved", () => {
+    const existing: SessionAgentState = {
+      agentMessages: [],
+      pendingInstructions: [
+        { chatMessageId: "pi-1", content: "queued while aborting", createdAt: 1 },
+      ],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+      approvedSkillIds: ["skill-a"],
+    };
+    const merged = mergeSessionAgentSnapshot(
+      existing,
+      buildAbortTaskActiveClear(existing)!,
+    );
+    expect(merged.taskActive).toBe(false);
+    expect(merged.pendingInstructions).toEqual(existing.pendingInstructions);
+    expect(merged.approvedSkillIds).toEqual(["skill-a"]);
+    // 净效果 = 修好后 recovery 的判据：stepIndex=0 && !taskActive → no-op，
+    // 会话保持 active，composer 可继续输入。
+    expect(merged.stepIndex).toBe(0);
+  });
+
+  it("merge — mid-task shape hits the non-tombstone branch: history kept, flag cleared", () => {
+    const existing: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "task" }] as SessionAgentState["agentMessages"],
+      pendingInstructions: [
+        { chatMessageId: "pi-2", content: "queued while aborting", createdAt: 2 },
+      ],
+      stepIndex: 2,
+      hasImageContent: false,
+      taskActive: true,
+    };
+    const merged = mergeSessionAgentSnapshot(
+      existing,
+      buildAbortTaskActiveClear(existing)!,
+    );
+    expect(merged.taskActive).toBe(false);
+    expect(merged.stepIndex).toBe(2);
+    expect(merged.agentMessages).toEqual(existing.agentMessages);
+    // snapshot 不带 pendingInstructions → spread 保留存储值。
+    expect(merged.pendingInstructions).toEqual(existing.pendingInstructions);
   });
 });
 

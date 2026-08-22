@@ -28,7 +28,7 @@ export interface PanelRequestMap {
       brands: {
         id: string;
         label: string;
-        forms: { id: string; kind: "app" | "terminal" }[];
+        forms: { id: string; kind: "app" | "terminal"; appLaunch?: "deeplink" | "open-a" | "web" }[];
       }[];
     };
     res: string | null; // 用户选中的形态 id（claude-app 等）；null = 拒绝

@@ -114,9 +114,11 @@ La elección se recuerda, así que el ícono de la barra de herramientas abrirá
 esa ventana desde entonces; puedes cambiarlo cuando quieras en
 **Configuración → Preferencias**.
 
-### Opción 1 — Chrome Web Store (recomendada)
+### Opción 1 — Tienda del navegador (recomendada)
 
-Instala desde **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)**, haz clic en **Add to Chrome** y fija Pie en la barra de herramientas. Chrome lo mantiene actualizado automáticamente.
+**Chrome:** instala desde **[Chrome Web Store](https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed)**, haz clic en **Add to Chrome** y fija Pie en la barra de herramientas. Chrome lo mantiene actualizado automáticamente.
+
+**Edge:** instala desde **[Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/pie-%C2%B7-opensource-ai-agen/gbfdgfkpglimajnjedphgakmhaplgobf)**. La versión de la tienda tiene su propio ID estable; Pie Link ya lo autoriza.
 
 ### Opción 2 — zip de GitHub Release
 
@@ -124,9 +126,11 @@ Para una instalación offline o autogestionada de la misma versión:
 
 1. Descarga el `pie-x.y.z.zip` más reciente desde la [página de Releases](https://github.com/wiseria-ai-labs/pie-ai-agent/releases)
 2. Descomprímelo en una carpeta que vayas a conservar (Chrome carga desde ella — no la borres)
-3. Abre `chrome://extensions` y activa el **Modo de desarrollador**
+3. Abre `chrome://extensions` (o `edge://extensions`) y activa el **Modo de desarrollador**
 4. Haz clic en **Cargar descomprimida** y selecciona la carpeta
 5. Fija Pie en la barra de herramientas y haz clic en el ícono para abrir el panel lateral
+
+> **Edge (carga local):** usa este zip, que incluye la `key` que fija el ID. El ID en `edge://extensions` debe ser `gpccjhdgjkmalnepmeclooflliiocfed`. Un paquete de tienda sin `key` no conectará con Pie Link.
 
 > **Actualizar:** para conservar tus chats y claves guardadas, descomprime la
 > nueva versión *en la misma carpeta* y haz clic en **↻ recargar** en la tarjeta

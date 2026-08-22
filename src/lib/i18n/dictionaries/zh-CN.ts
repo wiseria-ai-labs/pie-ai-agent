@@ -152,6 +152,9 @@ export const zhCNDict = {
       troubleshootRestartExtension: "重启扩展",
       troubleshootFallback:
         "还是连不上？确认菜单栏有 Pie 图标，然后完全退出 Chrome（⌘Q，不是关闭窗口）再重新打开。",
+      wrongExtIdTitle: "当前安装包连不上 Pie Link",
+      wrongExtIdBody:
+        "Pie Link 只放行商店稳定 ID。本机请加载带 key 的 pie-x.y.z.zip，不要加载去 key 的商店包。扩展页上的 ID 必须是 gpccjhdgjkmalnepmeclooflliiocfed。",
     },
     searchProvider: {
       caps: "网页搜索",
@@ -213,6 +216,7 @@ export const zhCNDict = {
       noteTerminal: "交棒后终端会自动开跑。",
       noteApp: "交棒后 App 打开并预填引导语，需你发送（Claude 会先确认目录）。",
       noteAppOpen: "App 已打开该目录，需发送一句才能开跑。",
+      noteAppWeb: "会打开 Web UI，并立刻在新 session 里发出任务。若界面还停在别的 workspace，点这一份就能看到已经在跑。",
     },
   },
   skillRunConfirm: {

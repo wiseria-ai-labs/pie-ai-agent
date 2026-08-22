@@ -4,6 +4,9 @@ export type SpawnFn = (
   cwd: string,
 ) => Promise<{ stdout: string; exitCode: number; stderr?: string }>;
 
+/** Fire-and-forget spawn：不 await 退出（DSH `dsh web` 是长驻进程）。 */
+export type DetachSpawnFn = (cmd: string, args: string[], cwd: string) => void;
+
 /** Win11 会把 console 子系统子进程弹成 Windows Terminal / PowerShell 窗。所有 spawn 必须带。 */
 export const HIDE_CONSOLE = { windowsHide: true } as const;
 
@@ -29,4 +32,16 @@ export const realSpawn: SpawnFn = async (cmd, args, cwd) => {
   ]);
   const exitCode = await proc.exited;
   return { stdout, exitCode, stderr };
+};
+
+export const realDetachSpawn: DetachSpawnFn = (cmd, args, cwd) => {
+  const proc = Bun.spawn([cmd, ...args], {
+    cwd,
+    env: { ...process.env, PWD: cwd },
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+    ...HIDE_CONSOLE,
+  });
+  proc.unref();
 };

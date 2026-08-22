@@ -50,7 +50,7 @@ import {
   requestKillSkillRun,
   requestReadSessionFile,
 } from "@/background/local-bridge";
-import { filterUsableAgents, filterHeadlessBackends, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
+import { filterHandoffAgents, filterHeadlessBackends, getEnabledLocalAgents } from "@/lib/local-agents-prefs";
 import { buildRunLocalAgentTool } from "./tools/local-agent";
 import { buildHandoffTool } from "./tools/handoff";
 import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool } from "./tools/files";
@@ -792,6 +792,33 @@ export function buildDoneSnapshot(
 }
 
 /**
+ * Issue #21 回归修复 — abort 路径的 taskActive 清理写入。
+ *
+ * abort（非 image）时 buildDoneSnapshot 按设计返回 null（跳过 tombstone，
+ * 保留最后一次 per-step snapshot 供续接），但 loop 此刻已优雅退出，任务
+ * 开始时写入的 `taskActive: true` 不能跟着留下：第一步边界前 abort（存储
+ * stepIndex 仍为 0）的会话会在下一次 recovery 扫描（panel 重开 / SW 冷启动）
+ * 命中 `stepIndex === 0 && taskActive` 分支被误标 failed，composer 随之
+ * 永久禁用。taskActive 只该在非优雅死亡（SW / panel 被杀，finally 没跑）
+ * 时存活——那种情况下本函数根本没机会执行，Issue #21 的判据不受影响。
+ *
+ * 返回 null 表示无需写入（无记录，或 flag 本就非 true）。返回值刻意省略
+ * `pendingInstructions`（同 buildSessionAgentSnapshot 的省略约定 + cast）：
+ * abort 瞬间用户可能正在排队新指令，携带 emitDone 早先读到的旧值会在
+ * merge 时盖掉刚落盘的排队项；省略后 mergeSessionAgentSnapshot 两个分支
+ * 都会保留存储里的新值。
+ *
+ * 纯函数，便于单测（emitDone 闭包本身耦合 Chrome 不可单测）。
+ */
+export function buildAbortTaskActiveClear(
+  prev: SessionAgentState | null,
+): SessionAgentState | null {
+  if (!prev?.taskActive) return null;
+  const { pendingInstructions: _omitted, ...rest } = prev;
+  return { ...rest, taskActive: false } as SessionAgentState;
+}
+
+/**
  * v1.5 — pure helper: merge a fresh per-step snapshot with the existing
  * persisted SessionAgentState so fields written between snapshots survive
  * the per-step boundary.
@@ -1362,6 +1389,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         ctx.onStepSnapshot(doneSnapshot).catch((e) => {
           console.warn(`[agent] done snapshot failed for session=${ctx.sessionId}:`, e);
         });
+      } else {
+        // Issue #21 回归 — abort 跳过 tombstone 但必须清 taskActive，否则
+        // stepIndex=0 的 abort 会被 recovery 当成「第一步被打断」误标 failed。
+        const clearSnapshot = buildAbortTaskActiveClear(prev);
+        if (clearSnapshot) {
+          ctx.onStepSnapshot(clearSnapshot).catch((e) => {
+            console.warn(`[agent] taskActive clear failed for session=${ctx.sessionId}:`, e);
+          });
+        }
       }
     }
   };
@@ -2081,8 +2117,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                     run: (p) => requestHandoff(p),
                     listAgents: async () => {
                       const detected = await requestListAgents();
-                      const usable = filterUsableAgents(detected, await getEnabledLocalAgents());
-                      return usable.map(({ id, label, kind }) => ({ id, label, kind }));
+                      const usable = filterHandoffAgents(detected, await getEnabledLocalAgents());
+                      return usable.map(({ id, label, kind, appLaunch }) => ({
+                        id,
+                        label,
+                        kind,
+                        appLaunch,
+                      }));
                     },
                     requestConsent: (p) => requestFromPanel(sessionId, "handoff-to-agent", p),
                   }),

@@ -157,6 +157,9 @@ export const es419Dict = {
       troubleshootRestartExtension: "Reiniciar extensión",
       troubleshootFallback:
         "¿Sigue sin conectar? Asegúrate de que el ícono de Pie esté en la barra de menú y luego cierra Chrome por completo (⌘Q, no solo la ventana) y vuelve a abrirlo.",
+      wrongExtIdTitle: "Esta copia no puede conectar con Pie Link",
+      wrongExtIdBody:
+        "Pie Link solo autoriza los ID estables de las tiendas de Chrome y Edge. Esta copia se cargó sin la clave fijada. Carga pie-x.y.z.zip: el ID en chrome://extensions o edge://extensions debe ser gpccjhdgjkmalnepmeclooflliiocfed.",
     },
     searchProvider: {
       caps: "Proveedor de búsqueda",
@@ -218,6 +221,7 @@ export const es419Dict = {
       noteTerminal: "La sesión de terminal se inicia automáticamente.",
       noteApp: "La app se abre con una instrucción breve ya escrita; tú la envías (Claude pide confirmar la carpeta).",
       noteAppOpen: "La app abre esa carpeta; envía un mensaje para empezar.",
+      noteAppWeb: "Se abre la interfaz web y la tarea empieza de inmediato en una sesión nueva. Si la UI sigue en otro workspace, elige este para verla en marcha.",
     },
   },
   skillRunConfirm: {

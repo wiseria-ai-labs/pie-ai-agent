@@ -82,6 +82,17 @@ export interface ListAgentsResult {
      * 加法演进（PROTOCOL_VERSION 不动）：旧 daemon 不给此字段 → 消费方回落 kind === "terminal" 代理。
      */
     headless?: boolean;
+    /**
+     * 该 agent 可作 handoff_to_agent 的交互式目标（app，或 terminal 且有交互 argv）。
+     * 仅 headless 的 terminal 为 false。加法演进（PROTOCOL_VERSION 不动）：旧 daemon 不给此字段
+     * → 消费方回落「非 headless-only」（当作可交棒）。
+     */
+    interactive?: boolean;
+    /**
+     * app 预期怎么打开。交棒卡据此选文案，不认品牌 id。
+     * 加法演进（PROTOCOL_VERSION 不动）：旧 daemon / terminal 不给 → 卡按 deeplink 文案。
+     */
+    appLaunch?: "deeplink" | "open-a" | "web";
   }[];
 }
 
@@ -127,10 +138,11 @@ export interface HandoffResult {
   mode: "terminal" | "app";
   /**
    * 加法（PROTOCOL_VERSION 不动）：app 实际怎么打开的。
-   * deeplink = 官方深链预填了引导语；open-a = `open -a` / 回落 / Cursor。
-   * 旧 daemon 缺省 → 消费方按 open-a（不要谎称预填）。
+   * deeplink = 官方深链预填了引导语；open-a = `open -a` / 回落 / Cursor；
+   * web = DeepSeek Harness Web UI（已打开、已登记 workspace、brief 已 session.prompt 代发，任务在跑；界面可能还停在别的 session）。
+   * 旧 daemon 缺省 / 未知取值 → 消费方按 open-a（不要谎称预填）。
    */
-  appLaunch?: "deeplink" | "open-a";
+  appLaunch?: "deeplink" | "open-a" | "web";
 }
 
 // ── skill_fs ──────────────────────────────────────────────────────────

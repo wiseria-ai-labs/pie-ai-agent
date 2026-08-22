@@ -44,7 +44,7 @@ export function normalizeEnabledBrands(enabled: string[] | null): string[] | nul
 
 /** 单形态可用谓词 = 已安装 且 其品牌已启用（null 偏好 = 已安装全启用）。
  *  唯一真源：settings 列表的 enabled 标注（background/index.ts）与 handoff
- *  过滤（filterUsableAgents）都走这里，两处永不漂移。 */
+ *  品牌闸（filterHandoffAgents → isAgentUsable）都走这里，两处永不漂移。 */
 export function isAgentUsable(
   a: { id: string; installed: boolean },
   enabled: string[] | null,
@@ -53,12 +53,19 @@ export function isAgentUsable(
   return a.installed && (brands == null || brands.includes(brandIdFromFormId(a.id)));
 }
 
-/** handoff 卡片可用列表 = 已安装 ∩ 品牌已启用（null = 已安装全启用）。 */
+/** 设置页列表 = 已安装 ∩ 品牌已启用（null = 已安装全启用）。交棒另走 filterHandoffAgents。 */
 export function filterUsableAgents<T extends { id: string; installed: boolean }>(
   detected: T[],
   enabled: string[] | null,
 ): T[] {
   return detected.filter((a) => isAgentUsable(a, enabled));
+}
+
+/** handoff 卡片 = 已安装 ∩ 品牌已启用 ∩ 可交互。旧 daemon 缺 `interactive` → 当作可交棒。 */
+export function filterHandoffAgents<
+  T extends { id: string; installed: boolean; interactive?: boolean },
+>(detected: T[], enabled: string[] | null): T[] {
+  return filterUsableAgents(detected, enabled).filter((a) => a.interactive ?? true);
 }
 
 /** run_local_agent 卡片可选后端 = 已安装 ∩ 品牌已启用 ∩ 可作 headless 后端。

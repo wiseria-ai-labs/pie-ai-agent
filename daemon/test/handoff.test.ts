@@ -28,7 +28,7 @@ function harness() {
     detect: () =>
       AGENT_CANDIDATES.map((c) => ({
         ...c,
-        path: c.kind === "app" ? c.appPaths![0] : `/Users/x/.local/bin/${c.bin}`,
+        path: c.appPaths?.[0] ?? `/Users/x/.local/bin/${c.bin}`,
       })), // 默认全"已装"，带出绝对路径
   };
   return { writes, dirs, spawns, opts };
@@ -592,4 +592,63 @@ test("win32 launch 源码不提 mac 唤起", async () => {
   expect(src).not.toContain("open -a");
   expect(src).not.toContain("start.command");
   expect(src).not.toContain("/Applications");
+});
+
+test("headless-only terminal (no argv) is rejected before any side effect", async () => {
+  const h = harness();
+  h.opts.detect = () => [{
+    id: "dsh-terminal" as const,
+    label: "DeepSeek Harness (Terminal)",
+    kind: "terminal" as const,
+    bin: "dsh",
+    headlessArgv: ["--profile", "headless", "{prompt}"],
+    path: "/Users/x/.local/bin/dsh",
+  }];
+  await expect(runHandoff({ target: "dsh-terminal", context: "x" }, h.opts)).rejects.toThrow(/headless-only/);
+  expect(h.writes).toHaveLength(0);
+  expect(h.spawns).toHaveLength(0);
+  expect(h.dirs).toHaveLength(0);
+});
+
+test("webUi candidate: dispatches launchWebHandoff, returns appLaunch web, no convention file", async () => {
+  const h = harness();
+  const launched: {
+    dir: string;
+    context: string;
+    agentPath: string;
+    webUi: { origin: string; argv: readonly string[] };
+  }[] = [];
+  const webUi = { origin: "http://127.0.0.1:3080", argv: ["web"] as const };
+  h.opts.detect = () => [{
+    id: "claude-app" as const,
+    label: "Web UI stand-in",
+    kind: "app" as const,
+    webUi,
+    path: "/Users/x/.local/bin/dsh",
+  }];
+  const r = await runHandoff(
+    { target: "claude-app", context: "Continue the report" },
+    {
+      ...h.opts,
+      launchWebHandoff: async (args) => { launched.push(args); },
+    },
+  );
+  expect(r.mode).toBe("app");
+  expect(r.appLaunch).toBe("web");
+  expect(launched).toEqual([{
+    dir: r.dir,
+    context: "Continue the report",
+    agentPath: "/Users/x/.local/bin/dsh",
+    webUi,
+  }]);
+  expect(h.writes.some((w) => w.path.endsWith("context.md") && w.content === "Continue the report")).toBe(true);
+  expect(h.writes.some((w) => w.path.endsWith("AGENTS.md") || w.path.endsWith("CLAUDE.md"))).toBe(false);
+  expect(h.writes.some((w) => w.path.endsWith("start.command"))).toBe(false);
+  expect(h.spawns).toHaveLength(0);
+});
+
+test("runHandoff 源码不按品牌 id 分发 web 编排，也不回落 argv {prompt}", async () => {
+  const src = await Bun.file(new URL("../src/handoff.ts", import.meta.url)).text();
+  expect(src).not.toContain("dsh-app");
+  expect(src).not.toContain('["{prompt}"]');
 });

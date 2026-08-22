@@ -183,8 +183,13 @@ function defaultConnect(info: { name: string }) {
   return port;
 }
 
+const DEFAULT_EXT_ID = "gpccjhdgjkmalnepmeclooflliiocfed";
+
 const runtime = {
   __ports: [] as FakePort[],
+  /** Pinned Chrome store id by default so LocalBridge tests don't trip the
+   *  wrong-package hint. Tests can overwrite `chromeMock.runtime.id`. */
+  id: DEFAULT_EXT_ID,
   connect: vi.fn(defaultConnect),
   getPlatformInfo: vi.fn().mockResolvedValue({ os: "mac" }),
   getURL: vi.fn((p: string) => `chrome-extension://test/${p}`),
@@ -382,6 +387,7 @@ beforeEach(() => {
   runtime.connect.mockImplementation(defaultConnect);
   runtime.sendMessage.mockClear();
   runtime.reload.mockClear();
+  runtime.id = DEFAULT_EXT_ID;
   // SW 连接服务单例：每个测试隔离。
   __resetSwPort();
   tabs.__activeTab = null;

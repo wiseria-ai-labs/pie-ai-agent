@@ -34,12 +34,17 @@ export interface AgentCandidate {
     | "cursor-app"
     | "cursor-terminal"
     | "opencode-terminal"
-    | "pi-terminal";
+    | "pi-terminal"
+    | "dsh-app"
+    | "dsh-terminal";
   label: string;
   kind: "app" | "terminal";
   /** terminal：检测用的 bin 名（spawn 用 DetectedAgent.path，不是这个） */
   bin?: string;
-  /** terminal：argv 模板，"{prompt}" 占位。位置参数 vs flag 的差异只是数据。 */
+  /**
+   * terminal：交互式 argv 模板，"{prompt}" 占位。位置参数 vs flag 的差异只是数据。
+   * 缺省 = 仅 headless（handoff 拒、交棒卡不列出；必须另有 headlessArgv）。
+   */
   argv?: string[];
   /**
    * terminal：headless（非交互，一次性跑完回传 stdout）的 argv 模板，"{prompt}" 占位。
@@ -74,14 +79,22 @@ export interface AgentCandidate {
   /** app：目录内的约定引导文件名（无深链或深链回落时靠它引导）。 */
   convention?: "CLAUDE.md" | "AGENTS.md";
   /**
-   * app **必填**（ADR 0013）：打开 App + 预填工作目录 + 预填提示词。
+   * app：打开 App + 预填工作目录 + 预填提示词（ADR 0013）。
    * 优先一条官方深链（`{prompt}` / `{dir}` 占位，插入前 URL-encode）。
    * `afterOpen`：官方链没有 folder（Cursor），先打开目录再发 prompt 深链。
-   * 没有可验证的这条路径，就不要加 App 行。
+   * DeepSeek Harness 是唯一例外：无官方深链，走 `webUi` 本机 loopback 编排（见 ADR 0013）。
    */
   deeplink?: {
     template: string;
     afterOpen?: boolean;
+  };
+  /**
+   * app：本机 loopback Web UI（ADR 0013 例外）。有此字段 = `runHandoff` 走 web
+   * 编排，不是 deeplink / `open -a`。origin 是探活与打开的地址；argv 是冷启动参数。
+   */
+  webUi?: {
+    origin: string;
+    argv: readonly string[];
   };
   /**
    * `false` = 该条命令/路径尚未在对应平台真机验证过——**detectAgents 默认排除**
@@ -147,6 +160,16 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
     // flag。不带 --approve：那个 flag 的真实语义是「信任项目本地文件（AGENTS.md 等）for this run」，
     // 不是自动放行工具调用；Pie 新建的 workspace 也不该默认 trust 本地文件。
     headlessArgv: ["-p", "{prompt}"] },
+
+  // DeepSeek Harness（#41）：mac-first。App = 本机 Web UI（不是 .app bundle，检测走同一
+  // `dsh` 二进制）；无 ADR 0013 深链，handoff 走 loopback 编排。Terminal = 仅 headless
+  // （禁止把 headless 命令填进 argv）。verified:false —— 真机过了再进默认可用集。
+  { id: "dsh-app", label: "DeepSeek Harness (App)", kind: "app",
+    bin: "dsh", binPaths: ["~/.local/bin/dsh"], verified: false,
+    webUi: { origin: "http://127.0.0.1:3080", argv: ["web"] } },
+  { id: "dsh-terminal", label: "DeepSeek Harness (Terminal)", kind: "terminal", bin: "dsh",
+    headlessArgv: ["--profile", "headless", "{prompt}"],
+    binPaths: ["~/.local/bin/dsh"], verified: false },
 ];
 
 /**
@@ -223,7 +246,23 @@ export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
     headlessArgv: ["run", "--auto", "{prompt}"], verified: true },
 ];
 
-/** 平台分支的候选表（纯函数，可测）：win32 → Windows 表；其余 → mac 8 条。 */
+/** 平台分支的候选表（纯函数，可测）：win32 → Windows 表；其余 → mac 表。 */
+
+/** handoff / list_agents `interactive`：app，或 terminal 且声明了交互 argv。仅 headless 的 terminal 为 false。 */
+export function candidateIsInteractive(c: { kind: "app" | "terminal"; argv?: string[] }): boolean {
+  return c.kind === "app" || (c.argv?.length ?? 0) > 0;
+}
+
+/** list_agents / 交棒卡：app 的预期 launch。terminal 不给。由候选表字段推导，不认品牌 id。 */
+export function candidateAppLaunch(
+  c: Pick<AgentCandidate, "kind" | "webUi" | "deeplink">,
+): "deeplink" | "open-a" | "web" | undefined {
+  if (c.kind !== "app") return undefined;
+  if (c.webUi) return "web";
+  if (c.deeplink) return "deeplink";
+  return "open-a";
+}
+
 export function agentCandidatesFor(
   platform: NodeJS.Platform = process.platform,
 ): readonly AgentCandidate[] {
@@ -258,7 +297,10 @@ export interface DetectOpts {
   which?: (bin: string) => string | null;
   exists?: (path: string) => boolean;
   platform?: NodeJS.Platform;
-  /** true = 连 `verified:false` 的草案条目也纳入（供 need-human-test 逐条点亮用）；默认排除。 */
+  /**
+   * true = 连 `verified:false` 的草案条目也纳入（供 need-human-test 逐条点亮用）；默认排除。
+   * 未传时读环境变量 `PIE_INCLUDE_UNVERIFIED_AGENTS=1`（Step4 验收机点亮 DSH 用，不必改表）。
+   */
   includeUnverified?: boolean;
   /** Windows app：注入 Uninstall 表。测试传入；生产 win32 现读注册表。 */
   uninstall?: UninstallEntry[];
@@ -277,8 +319,10 @@ export function detectAgents(opts?: DetectOpts): DetectedAgent[] {
   const userPath = opts?.which ? "" : getUserPath(platform); // 注入 which 时不必探 PATH
   const which = opts?.which ?? makeWhich(platform, userPath);
   const exists = opts?.exists ?? existsSync;
+  const includeUnverified =
+    opts?.includeUnverified ?? process.env.PIE_INCLUDE_UNVERIFIED_AGENTS === "1";
   const candidates = agentCandidatesFor(platform).filter(
-    (c) => opts?.includeUnverified || c.verified !== false,
+    (c) => includeUnverified || c.verified !== false,
   );
   if (platform === "win32") {
     const injected = !!(opts?.exists || opts?.which);

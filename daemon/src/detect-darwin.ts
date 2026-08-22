@@ -5,6 +5,19 @@
 import { homedir } from "os";
 import type { AgentCandidate, DetectedAgent } from "./agents";
 
+function resolveBinPath(
+  c: AgentCandidate,
+  exists: (path: string) => boolean,
+  which: (bin: string) => string | null,
+): string | null {
+  if (!c.bin) return null;
+  return (
+    which(c.bin) ??
+    c.binPaths?.map((p) => p.replace(/^~/, homedir())).find((p) => exists(p)) ??
+    null
+  );
+}
+
 export function detectDarwinAgents(
   candidates: readonly AgentCandidate[],
   exists: (path: string) => boolean,
@@ -14,10 +27,9 @@ export function detectDarwinAgents(
   for (const c of candidates) {
     const path =
       c.kind === "app"
-        ? (c.appPaths!.map((p) => p.replace(/^~/, homedir())).find((p) => exists(p)) ?? null)
-        : (which(c.bin!) ??
-          c.binPaths?.map((p) => p.replace(/^~/, homedir())).find((p) => exists(p)) ??
-          null);
+        ? (c.appPaths?.map((p) => p.replace(/^~/, homedir())).find((p) => exists(p)) ??
+          resolveBinPath(c, exists, which))
+        : resolveBinPath(c, exists, which);
     if (path) out.push({ ...c, path });
   }
   return out;

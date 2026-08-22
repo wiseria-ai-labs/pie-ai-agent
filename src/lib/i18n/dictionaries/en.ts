@@ -155,6 +155,9 @@ export const enDict = {
       troubleshootRestartExtension: "Restart extension",
       troubleshootFallback:
         "Still not connecting? Make sure the Pie icon is in the menu bar, then fully quit Chrome (⌘Q — not just closing the window) and reopen it.",
+      wrongExtIdTitle: "This copy can't connect to Pie Link",
+      wrongExtIdBody:
+        "Pie Link only allowlists the Chrome and Edge store IDs. This copy was loaded without the pinned key. Load the regular pie-x.y.z.zip instead — the extension ID on chrome://extensions or edge://extensions must be gpccjhdgjkmalnepmeclooflliiocfed.",
     },
     searchProvider: {
       caps: "Search provider",
@@ -222,6 +225,7 @@ export const enDict = {
       noteTerminal: "The terminal session starts automatically.",
       noteApp: "The app opens with a short prompt prefilled; you send it to start (Claude asks to confirm the folder first).",
       noteAppOpen: "The app opens this folder; send a message there to start.",
+      noteAppWeb: "The Web UI opens and the task starts immediately in a new session. If the UI is still on another workspace, choose this one to see it running.",
     },
   },
   skillRunConfirm: {

@@ -217,7 +217,10 @@ export interface SessionAgentState {
    * Issue #21 — task has started but may not have persisted a first-step
    * snapshot yet. `runAgentLoop` sets this true before entering the first
    * ReAct iteration; `buildSessionAgentTombstone` explicitly clears it to
-   * false. Recovery uses it to distinguish "first-step HITL card interrupted"
+   * false, and the abort path (which skips the tombstone to preserve the
+   * resume seed) clears it via `buildAbortTaskActiveClear` — a graceful loop
+   * exit must never leave the flag set, else recovery bricks the session.
+   * Recovery uses it to distinguish "first-step HITL card interrupted"
    * from "task ended cleanly (tombstone)" — both have `stepIndex === 0`.
    *
    * A task interrupted at its first step carries zero history, so it can't be

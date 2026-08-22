@@ -1044,6 +1044,7 @@ After the skill completes, briefly summarize what was created (the user will see
             {t("chat.noApiKeyDescription")}
           </p>
           <button
+            data-testid="chat-open-settings"
             onClick={onOpenSettings}
             className="rounded-md bg-fg-1 px-4 py-2 text-[13px] font-medium text-canvas hover:opacity-90"
           >
@@ -2036,6 +2037,7 @@ function Composer({
         <div className="flex flex-col gap-2 rounded-card border border-line bg-field px-3.5 py-3 transition-colors focus-within:border-accent">
           {/* Top row: textarea full width */}
           <textarea
+            data-testid="chat-composer"
             value={input}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
@@ -2135,6 +2137,7 @@ function Composer({
               <>
                 <button
                   type="button"
+                  data-testid="chat-stop"
                   onClick={onStop}
                   aria-label={stopArmed ? t("chat.cancelConfirm") : t("chat.cancelRunningTask")}
                   title={stopArmed ? t("chat.cancelConfirm") : t("chat.cancelRunningTask")}
@@ -2357,6 +2360,7 @@ function PieSendButton({
   return (
     <button
       type="button"
+      data-testid="chat-send"
       onClick={onClick}
       disabled={disabled}
       aria-label={label}

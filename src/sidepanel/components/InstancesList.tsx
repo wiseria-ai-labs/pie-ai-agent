@@ -35,6 +35,8 @@ export default function InstancesList(props: Props) {
             <div
               role="button"
               tabIndex={0}
+              data-testid={`instance-row-${inst.id}`}
+              data-provider={inst.provider}
               onClick={() => props.onToggleExpand(inst.id)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
