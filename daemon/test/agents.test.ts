@@ -119,7 +119,7 @@ test("candidateIsInteractive：app 与有 argv 的 terminal 为真；仅 headles
   expect(candidateIsInteractive(byId["claude-app"])).toBe(true);
 });
 
-test("dsh 两条 verified:true（mac 真机过），检测靠同一 dsh 二进制，Windows 表不含 DSH", () => {
+test("dsh 两条 verified:true（双平台真机过），检测靠同一 dsh 二进制；Windows 表同样两条走 npm dsh.cmd", () => {
   const byId = Object.fromEntries(AGENT_CANDIDATES.map((c) => [c.id, c]));
   expect(byId["dsh-app"].verified).toBe(true);
   expect(byId["dsh-terminal"].verified).toBe(true);
@@ -128,7 +128,14 @@ test("dsh 两条 verified:true（mac 真机过），检测靠同一 dsh 二进�
   expect(byId["dsh-app"].binPaths).toContain("~/.local/bin/dsh");
   expect(byId["dsh-terminal"].binPaths).toContain("~/.local/bin/dsh");
   expect(byId["dsh-app"].webUi).toEqual({ origin: DSH_WEB_ORIGIN, argv: DSH_WEB_ARGV });
-  expect(WINDOWS_AGENT_CANDIDATES.some((c) => c.id.startsWith("dsh-"))).toBe(false);
+  const win = Object.fromEntries(WINDOWS_AGENT_CANDIDATES.map((c) => [c.id, c]));
+  expect(win["dsh-app"].verified).toBe(true);
+  expect(win["dsh-terminal"].verified).toBe(true);
+  expect(win["dsh-app"].binPaths).toEqual(["~/AppData/Roaming/npm/dsh.cmd"]);
+  expect(win["dsh-terminal"].binPaths).toEqual(["~/AppData/Roaming/npm/dsh.cmd"]);
+  expect(win["dsh-app"].webUi).toEqual(byId["dsh-app"].webUi);
+  expect(win["dsh-terminal"].headlessArgv).toEqual(byId["dsh-terminal"].headlessArgv);
+  expect(win["dsh-terminal"].argv).toBeUndefined();
 });
 
 test("candidateAppLaunch：webUi → web，deeplink → deeplink，其余 app → open-a，terminal 不给", () => {
@@ -297,12 +304,14 @@ test("Windows 表品牌分组、app 在前；不含 mac 路径", () => {
     "cursor-app",
     "cursor-terminal",
     "opencode-terminal",
+    "dsh-app",
+    "dsh-terminal",
   ]);
   for (const c of WINDOWS_AGENT_CANDIDATES) {
     if (c.kind === "terminal") expect(c.verified).not.toBe(false);
     if (c.kind === "app") {
-      expect(c.appPaths?.every((p) => !p.startsWith("/Applications/"))).toBe(true);
-      expect(c.appPaths?.every((p) => p.endsWith(".exe"))).toBe(true);
+      expect(c.appPaths?.every((p) => !p.startsWith("/Applications/")) ?? true).toBe(true);
+      expect(c.appPaths?.every((p) => p.endsWith(".exe")) ?? true).toBe(true);
     }
   }
   expect(WINDOWS_AGENT_CANDIDATES.find((c) => c.id === "cursor-app")?.verified).toBe(true);
