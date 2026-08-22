@@ -401,9 +401,9 @@ export async function startDaemon(): Promise<void> {
       },
     });
   } catch (e) {
-    // 单实例互斥兜底：socket 已被在跑的 daemon 占用（mac unix socket = EADDRINUSE）
-    // → 干净退出，把地盘让给现有实例，别抛栈污染日志。Windows 侧的主判定在上面的
-    // pipeAlreadyServed（Bun 那条路径不抛异常、直接 panic，走不到这里）。
+    // 单实例互斥兜底：Windows named pipe 被占时 Bun.listen 可能抛 EADDRINUSE。
+    // mac/linux unix socket 的主判定在 claimIpc 探活（Bun/uSockets 会先 unlink 再
+    // bind，听不到 EADDRINUSE）。这条保留给探活与 listen 之间的竞态。
     if (isAddrInUseError(e)) {
       log("info", "daemon.already_running", { ipc: paths.ipcPath });
       return;
