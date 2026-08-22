@@ -76,6 +76,9 @@ launchctl asuser "$USER_UID" launchctl load "$LA_DIR/ai.wiseria.pie.plist"
 
 # 顶栏 app：登录自启 + 装完立即启动（图标出现 = 安装成功反馈）
 if [ -d "/Applications/Pie Link.app" ]; then
+  # 旧实例可能不是 launchd 拉起的（用户从 Apps/Finder 打开过）——下面的 unload 碰不到它，
+  # load 后就会出现两个托盘图标。先按进程名把该用户的存量实例全杀掉再拉新的。
+  pkill -U "$USER_UID" -x "Pie Link" 2>/dev/null || true
   cp "$(dirname "$0")/ai.wiseria.pie.menubar.plist.template" "$LA_DIR/ai.wiseria.pie.menubar.plist"
   chown "$CONSOLE_USER" "$LA_DIR/ai.wiseria.pie.menubar.plist"
   launchctl asuser "$USER_UID" launchctl unload "$LA_DIR/ai.wiseria.pie.menubar.plist" 2>/dev/null || true
