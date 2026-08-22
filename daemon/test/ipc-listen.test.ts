@@ -1,6 +1,7 @@
 import { test, expect, beforeAll } from "bun:test";
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { claimIpc, pipeAlreadyServed } from "../src/ipc-listen";
+import { isAddrInUseError } from "../src/daemon-launcher";
 import { computePaths, type Paths } from "../src/paths";
 import { setLogEnabled } from "../src/log";
 
@@ -27,15 +28,22 @@ function rmSock(path: string): void {
   }
 }
 
-test("Bun.listen 在 unix socket 上会静默 unlink 抢占，不抛 EADDRINUSE", async () => {
+test("unix socket 被占时 Bun.listen 的行为随版本变 —— 所以互斥不能建立在它抛不抛上", async () => {
   const path = uniqueSock("steal");
   rmSock(path);
   const a = Bun.listen({ unix: path, socket: { data() {} } });
   let b: ReturnType<typeof Bun.listen> | undefined;
   try {
-    // 后来者成功 listen = 把路径抢走；先来者变成不可达僵尸。这就是 mac 互斥不能靠 EADDRINUSE 的事实。
-    b = Bun.listen({ unix: path, socket: { data() {} } });
+    // 两种都见过：Bun 1.3.11 静默 unlink 抢占（先来者变不可达僵尸），CI 上更新的 Bun 抛
+    // EADDRINUSE。断言哪一种都会在对方的 Bun 上红（本测试就这么红过一次），而 claimIpc
+    // 的正确性本就不该依赖它——它先探活。这里只钉住两种行为共有的那条：路径上有活体在听。
+    try {
+      b = Bun.listen({ unix: path, socket: { data() {} } });
+    } catch (err) {
+      expect(isAddrInUseError(err)).toBe(true);
+    }
     expect(await pipeAlreadyServed(path)).toBe(true);
+    expect(await claimIpc(unixPaths(path))).toBe("already_running");
   } finally {
     b?.stop(true);
     a.stop(true);
