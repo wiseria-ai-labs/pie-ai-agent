@@ -163,7 +163,7 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
 
   // DeepSeek Harness（#41）：mac-first。App = 本机 Web UI（不是 .app bundle，检测走同一
   // `dsh` 二进制）；无 ADR 0013 深链，handoff 走 loopback 编排。Terminal = 仅 headless
-  // （禁止把 headless 命令填进 argv）。2026-08-22 mac 真机过（dsh 0.1.1-rc.2：Web UI 交棒 + headless run）→ verified:true 进默认可用集；Windows 表仍不含。
+  // （禁止把 headless 命令填进 argv）。2026-08-22 mac 真机过（dsh 0.1.1-rc.2：Web UI 交棒 + headless run）→ verified:true 进默认可用集；Windows 表同样两条（npm 全局 dsh.cmd）。
   { id: "dsh-app", label: "DeepSeek Harness (App)", kind: "app",
     bin: "dsh", binPaths: ["~/.local/bin/dsh"], verified: true,
     webUi: { origin: "http://127.0.0.1:3080", argv: ["web"] } },
@@ -244,6 +244,16 @@ export const WINDOWS_AGENT_CANDIDATES: readonly AgentCandidate[] = [
       "~/AppData/Roaming/npm/opencode.cmd",
     ],
     headlessArgv: ["run", "--auto", "{prompt}"], verified: true },
+
+  // DeepSeek Harness Windows 半：npm 全局包 @deepseek-ai/dsh → %APPDATA%\npm\dsh.cmd。
+  // 与 mac 同构：App = 本机 Web UI（无安装包，靠同一 dsh.cmd 检出，detect-win32 走 bin 回落）；
+  // Terminal 仅 headless。浏览器打开走 cmd /c start（handoff-dsh 按平台分发）。
+  { id: "dsh-app", label: "DeepSeek Harness (App)", kind: "app",
+    bin: "dsh", binPaths: ["~/AppData/Roaming/npm/dsh.cmd"], verified: true,
+    webUi: { origin: "http://127.0.0.1:3080", argv: ["web"] } },
+  { id: "dsh-terminal", label: "DeepSeek Harness (Terminal)", kind: "terminal", bin: "dsh",
+    headlessArgv: ["--profile", "headless", "{prompt}"],
+    binPaths: ["~/AppData/Roaming/npm/dsh.cmd"], verified: true },
 ];
 
 /** 平台分支的候选表（纯函数，可测）：win32 → Windows 表；其余 → mac 表。 */

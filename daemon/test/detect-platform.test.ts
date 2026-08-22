@@ -74,3 +74,23 @@ test("win32 检测不认 /Applications，只走 uninstall / appx / win appPaths"
   );
   expect(viaReg[0]?.path).toBe("C:\\Program Files\\cursor\\Cursor.exe");
 });
+
+test("win32 app 无 appPaths 走 bin / binPaths 回落（DSH Web UI 无安装包、无注册表项）", () => {
+  const dsh = {
+    id: "dsh-app", label: "DeepSeek Harness (App)", kind: "app" as const,
+    bin: "dsh", binPaths: ["~/AppData/Roaming/npm/dsh.cmd"],
+    webUi: { origin: "http://127.0.0.1:3080", argv: ["web"] as const },
+  };
+  expect(detectWindowsAgents([dsh], () => false, () => null, [], [])).toHaveLength(0);
+  const viaWhere = detectWindowsAgents(
+    [dsh], () => false,
+    (bin) => (bin === "dsh" ? "C:\\Users\\x\\AppData\\Roaming\\npm\\dsh.cmd" : null),
+    [], [],
+  );
+  expect(viaWhere.map((a) => a.path)).toEqual(["C:\\Users\\x\\AppData\\Roaming\\npm\\dsh.cmd"]);
+  const viaBinPath = detectWindowsAgents(
+    [dsh], (p) => p.endsWith("AppData/Roaming/npm/dsh.cmd"), () => null, [], [],
+  );
+  expect(viaBinPath).toHaveLength(1);
+  expect(viaBinPath[0].id).toBe("dsh-app");
+});

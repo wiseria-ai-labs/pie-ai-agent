@@ -5,6 +5,7 @@
  * 界面不会自动切到新 session（无 workspace.select）；任务已经在跑。
  */
 import type { SpawnFn, DetachSpawnFn } from "./spawn";
+import { windowsOpenDeeplink } from "./handoff-win32";
 
 export const DSH_WEB_ORIGIN = "http://127.0.0.1:3080";
 /** 冷启动：`dsh web`。0.1.0-rc.5 的 `dsh web --help` 只有 `--host` / `--port` / `--trusted-host`，多传会立刻退出。 */
@@ -32,6 +33,8 @@ export interface DshHandoffIO {
   readyTimeoutMs?: number;
   pollIntervalMs?: number;
   sessionWaitMs?: number;
+  /** 打开浏览器的方式随平台：win32 = `cmd /c start "" <url>`，其余 = `open <url>`。缺省 process.platform。 */
+  platform?: NodeJS.Platform;
 }
 
 type Probe = "dsh" | "down" | "other";
@@ -265,7 +268,11 @@ export async function launchDshWebHandoff(
   const workspaceId = await workspaceCreate(io.fetch, io.origin, dir);
   // 先打开 UI：cold start / reload 会 connectWorkspace → mint blank 并选中。
   // 再代发进那条 blank，界面就会停在工作中的 session。
-  const opened = await io.spawn("open", [io.origin], dir);
+  const launch =
+    (io.platform ?? process.platform) === "win32"
+      ? windowsOpenDeeplink(io.origin)
+      : { cmd: "open", args: [io.origin] };
+  const opened = await io.spawn(launch.cmd, launch.args, dir);
   if (opened.exitCode !== 0) {
     const detail = (opened.stderr ?? "").trim().slice(0, 200);
     throw new Error(

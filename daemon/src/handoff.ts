@@ -92,6 +92,7 @@ export async function runHandoff(
         agentPath,
         origin: webUi.origin,
         argv: webUi.argv,
+        platform,
       });
     });
 

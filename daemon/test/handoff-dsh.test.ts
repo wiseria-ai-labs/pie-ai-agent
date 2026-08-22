@@ -369,3 +369,17 @@ test("spawn 之后 probe 变成 other：立刻失败，不空转到超时", asyn
   ).rejects.toThrow(/not DeepSeek Harness/);
   expect(t).toBeLessThan(20_000);
 });
+
+test("win32：打开 Web UI 走 cmd /c start \"\" <url>，不是 mac 的 open", async () => {
+  const spawns: { cmd: string; args: string[]; cwd: string }[] = [];
+  const dir = "C:\\Users\\x\\pie-handoffs\\2026-08-22-continue-the-report";
+  await launchDshWebHandoff(dir, "Continue the report", baseIo({
+    fetch: happyDshFetch([]),
+    platform: "win32",
+    spawn: async (cmd, args, cwd) => {
+      spawns.push({ cmd, args, cwd });
+      return { stdout: "", exitCode: 0 };
+    },
+  }));
+  expect(spawns).toEqual([{ cmd: "cmd.exe", args: ["/c", "start", "", DSH_WEB_ORIGIN], cwd: dir }]);
+});
