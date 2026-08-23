@@ -155,7 +155,10 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
     headlessArgv: ["run", "--auto", "{prompt}"] },
 
   // pi（badlogic/pi-mono coding agent）：位置参数，`pi "<prompt>"`。
+  // binPaths：pi 也是 npm 全局包，落点同 dsh（本机实证 /opt/homebrew/bin/pi）。
+  // 没有兜底时 PATH 探测一失败它就整条消失，而 Pi 只有 terminal 一种形态 = 整个品牌不见。
   { id: "pi-terminal", label: "Pi (Terminal)", kind: "terminal", bin: "pi", argv: ["{prompt}"],
+    binPaths: ["/opt/homebrew/bin/pi", "/usr/local/bin/pi", "~/.local/bin/pi"],
     // headless: `pi -p "<prompt>"`。-p（非交互）模式本就没有工具审批门控，工具直跑，无需任何跳权限
     // flag。不带 --approve：那个 flag 的真实语义是「信任项目本地文件（AGENTS.md 等）for this run」，
     // 不是自动放行工具调用；Pie 新建的 workspace 也不该默认 trust 本地文件。
@@ -164,12 +167,18 @@ export const AGENT_CANDIDATES: readonly AgentCandidate[] = [
   // DeepSeek Harness（#41）：mac-first。App = 本机 Web UI（不是 .app bundle，检测走同一
   // `dsh` 二进制）；无 ADR 0013 深链，handoff 走 loopback 编排。Terminal = 仅 headless
   // （禁止把 headless 命令填进 argv）。2026-08-22 mac 真机过（dsh 0.1.1-rc.2：Web UI 交棒 + headless run）→ verified:true 进默认可用集；Windows 表同样两条（npm 全局 dsh.cmd）。
+  // binPaths：dsh 官方装法是 npm 全局包 `@deepseek-ai/dsh`，落点是 `$(npm prefix -g)/bin/dsh`
+  // ——Apple Silicon homebrew node 下即 /opt/homebrew/bin/dsh（本机实证的 symlink），Intel /
+  // 官方 node pkg 下是 /usr/local/bin/dsh。`~/.local/bin/dsh` 只是手工安装的可能落点，
+  // 单列它等于没有兜底（Windows 半边写的 %APPDATA%\npm 才是对的那种）。
   { id: "dsh-app", label: "DeepSeek Harness (App)", kind: "app",
-    bin: "dsh", binPaths: ["~/.local/bin/dsh"], verified: true,
+    bin: "dsh", binPaths: ["/opt/homebrew/bin/dsh", "/usr/local/bin/dsh", "~/.local/bin/dsh"],
+    verified: true,
     webUi: { origin: "http://127.0.0.1:3080", argv: ["web"] } },
   { id: "dsh-terminal", label: "DeepSeek Harness (Terminal)", kind: "terminal", bin: "dsh",
     headlessArgv: ["--profile", "headless", "{prompt}"],
-    binPaths: ["~/.local/bin/dsh"], verified: true },
+    binPaths: ["/opt/homebrew/bin/dsh", "/usr/local/bin/dsh", "~/.local/bin/dsh"],
+    verified: true },
 ];
 
 /**
