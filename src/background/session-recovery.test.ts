@@ -224,6 +224,75 @@ describe("detectAndMarkPaused — Issue #21 first-step interrupt (taskActive)", 
     expect(stats.failed).toBe(0);
     expect((await getSessionMeta(meta.id))!.status).toBe("paused");
   });
+
+  it("stepIndex=0 && taskActive=true with only a user message → still failed", async () => {
+    const meta = await createSession({
+      messages: [{ role: "user", content: "hello" }],
+    });
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+    });
+
+    const stats = await detectAndMarkPaused({ skipGuard: true });
+
+    expect(stats.failed).toBe(1);
+    expect((await getSessionMeta(meta.id))!.status).toBe("failed");
+  });
+});
+
+// Issue #59 — a successful pure-text (or done-tool) turn already produced a
+// reply in SessionMeta.messages, but the tombstone may not have landed yet
+// (fire-and-forget window / SW idle). Recovery must NOT brick that session:
+// failed→active is illegal, so a false-positive markFailed permanently
+// disables the composer.
+describe("detectAndMarkPaused — Issue #59 already-replied false positive", () => {
+  it("active + assistant in messages + leftover taskActive → stay active", async () => {
+    const meta = await createSession({
+      messages: [
+        { role: "user", content: "create the issue" },
+        { role: "assistant", content: "Done. Issue #59 created." },
+      ],
+    });
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+    });
+
+    const stats = await detectAndMarkPaused({ skipGuard: true });
+
+    expect(stats.failed).toBe(0);
+    expect(stats.paused).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("active");
+  });
+
+  it("active + agent-summary in messages + leftover taskActive → stay active", async () => {
+    const meta = await createSession({
+      messages: [
+        { role: "user", content: "summarize" },
+        { role: "agent-summary", success: true, summary: "done", stepCount: 2 },
+      ],
+    });
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+    });
+
+    const stats = await detectAndMarkPaused({ skipGuard: true });
+
+    expect(stats.failed).toBe(0);
+    expect(stats.paused).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("active");
+  });
 });
 
 describe("detectAndMarkPaused — recoveryGuard", () => {
@@ -501,6 +570,46 @@ describe("transitionPortInFlightSessionsToPaused — per-port subset", () => {
 
     expect(stats.failed).toBe(1);
     expect(stats.paused).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("failed");
+  });
+
+  it("Issue #59 — leftover taskActive with assistant already in messages → stay active", async () => {
+    const meta = await createSession({
+      messages: [
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "hi there" },
+      ],
+    });
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+    });
+
+    const stats = await transitionPortInFlightSessionsToPaused([meta.id]);
+
+    expect(stats.failed).toBe(0);
+    expect(stats.paused).toBe(0);
+    expect((await getSessionMeta(meta.id))!.status).toBe("active");
+  });
+
+  it("Issue #21 — leftover taskActive with only a user message → still failed", async () => {
+    const meta = await createSession({
+      messages: [{ role: "user", content: "hello" }],
+    });
+    await setSessionAgent(meta.id, {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+    });
+
+    const stats = await transitionPortInFlightSessionsToPaused([meta.id]);
+
+    expect(stats.failed).toBe(1);
     expect((await getSessionMeta(meta.id))!.status).toBe("failed");
   });
 });

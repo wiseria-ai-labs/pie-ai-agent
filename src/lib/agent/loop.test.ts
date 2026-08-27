@@ -15,6 +15,7 @@ import {
   createStepPinView,
   mergeSessionAgentSnapshot,
   mergeContextUsage,
+  withContextUsage,
   buildFirstTurnReadPageHint,
   buildSeededTaskContent,
   prependTimeToLastUserMessage,
@@ -2022,6 +2023,56 @@ describe("issue #59 — mergeContextUsage", () => {
     expect(next).not.toHaveProperty("lastCachedTokens");
     expect(next).not.toHaveProperty("lastPromptTotalTokens");
     expect(next).not.toHaveProperty("totalCachedTokens");
+  });
+});
+
+// Session-failed-after-pure-text (#59): usage persist must overlay contextUsage
+// onto the current record, never invent `{ stepIndex: 0, taskActive: true }`
+// from a metric write (that signature is Issue #21's first-step interrupt).
+describe("withContextUsage — overlay usage without inventing #21 signature", () => {
+  const usage = {
+    totalInputTokens: 100,
+    totalOutputTokens: 20,
+    lastInputTokens: 100,
+    lastOutputTokens: 20,
+  };
+
+  it("null cur → tombstone-shaped default with taskActive:false", () => {
+    const next = withContextUsage(null, usage);
+    expect(next.taskActive).toBe(false);
+    expect(next.stepIndex).toBe(0);
+    expect(next.contextUsage).toEqual(usage);
+    expect(next.agentMessages).toEqual([]);
+  });
+
+  it("preserves existing taskActive / stepIndex (in-flight first step still #21-detectable)", () => {
+    const cur: SessionAgentState = {
+      agentMessages: [],
+      pendingInstructions: [],
+      stepIndex: 0,
+      hasImageContent: false,
+      taskActive: true,
+    };
+    const next = withContextUsage(cur, usage);
+    expect(next.taskActive).toBe(true);
+    expect(next.stepIndex).toBe(0);
+    expect(next.contextUsage).toEqual(usage);
+  });
+
+  it("does not drop unrelated fields on a live snapshot", () => {
+    const cur: SessionAgentState = {
+      agentMessages: [{ role: "user", content: "hi" }],
+      pendingInstructions: [],
+      stepIndex: 2,
+      hasImageContent: true,
+      taskActive: true,
+      currentFocusTabId: 7,
+    };
+    const next = withContextUsage(cur, usage);
+    expect(next.currentFocusTabId).toBe(7);
+    expect(next.hasImageContent).toBe(true);
+    expect(next.stepIndex).toBe(2);
+    expect(next.contextUsage).toEqual(usage);
   });
 });
 

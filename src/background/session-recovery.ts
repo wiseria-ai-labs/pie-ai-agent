@@ -1,5 +1,6 @@
 import {
   getSessionAgent,
+  getSessionMeta,
   listSessionIndex,
   markFailed,
   markFailedAndScrub,
@@ -7,6 +8,27 @@ import {
 } from "@/lib/sessions/storage";
 import { getConfig, setConfig } from "@/lib/idb/config-store";
 import { listRunningRuns, updateRun } from "@/lib/schedules/store";
+import type { DisplayMessage } from "@/types";
+
+/**
+ * Issue #59 — a successful turn (pure-text assistant bubble or done-tool
+ * agent-summary) already produced a reply in SessionMeta.messages. Recovery
+ * must not treat leftover `taskActive && stepIndex === 0` as a first-step
+ * HITL interrupt when that history is present: the tombstone is merely
+ * late, and `failed → active` is not a legal transition so a false
+ * markFailed permanently disables the composer.
+ *
+ * Genuine first-step interrupts still fail: pendingConfirm (step 1) or
+ * messages that are empty / user-only.
+ */
+export function messagesShowCompletedReply(
+  messages: DisplayMessage[] | undefined,
+): boolean {
+  if (!messages || messages.length === 0) return false;
+  return messages.some(
+    (m) => m.role === "assistant" || m.role === "agent-summary",
+  );
+}
 
 /**
  * M1-U5 — SW cold-start recovery: detect in-flight tasks that died
@@ -132,6 +154,10 @@ export async function detectAndMarkPaused(
       // per-step snapshot exists (stepIndex still 0). Zero history =
       // unresumable, so mark failed rather than leaving the session `active`
       // (which strands it without any resume affordance).
+      // Issue #59 — skip if the session already produced a reply; leftover
+      // taskActive is a late tombstone, not a first-step interrupt.
+      const meta = await getSessionMeta(entry.id);
+      if (messagesShowCompletedReply(meta?.messages)) continue;
       const ok = await markFailed(entry.id);
       if (ok) stats.failed += 1;
     }
@@ -201,7 +227,9 @@ export async function markOrphanRunsInterrupted(): Promise<{ interrupted: number
  *      the closing port; the request is unhonorable post-disconnect).
  *   2. else stepIndex > 0 → markPaused (in-flight, user-resumable via R10).
  *   3. else taskActive (Issue #21) → markFailed (interrupted at first step,
- *      zero history, unresumable — e.g. a first-step HITL card).
+ *      zero history, unresumable — e.g. a first-step HITL card), UNLESS
+ *      SessionMeta.messages already has an assistant / agent-summary
+ *      (Issue #59: late tombstone after a successful reply — leave active).
  *   4. else (tombstone, stepIndex===0 && !taskActive) → no-op (finished cleanly).
  *
  * No 30s guard: this is a user-driven event, not an idempotent SW wake-up
@@ -248,6 +276,9 @@ export async function transitionPortInFlightSessionsToPaused(
         // per-step snapshot exists yet (stepIndex still 0), typically because
         // a first-step HITL card suspended it. Zero history = unresumable, so
         // fail rather than paused (a Resume button here would error).
+        // Issue #59 — skip if the session already produced a reply.
+        const meta = await getSessionMeta(sid);
+        if (messagesShowCompletedReply(meta?.messages)) continue;
         const ok = await markFailed(sid);
         if (ok) stats.failed += 1;
       }

@@ -921,6 +921,37 @@ export function mergeContextUsage(
 }
 
 /**
+ * Overlay merged `contextUsage` onto the current agent record.
+ *
+ * A metric write must never invent Issue #21's first-step-interrupt
+ * signature (`stepIndex === 0 && taskActive`). If no record exists yet,
+ * persist usage on a tombstone-shaped default with `taskActive: false`.
+ * When a record exists, every other field (including a live `taskActive`)
+ * is preserved — the in-flight first step stays #21-detectable until the
+ * awaited tombstone clears it.
+ *
+ * Do not route this through `mergeSessionAgentSnapshot`: a usage-only
+ * overlay with `stepIndex === 0` and empty `agentMessages` would trip the
+ * tombstone branch and wipe carry-over fields.
+ *
+ * Exported for unit testing.
+ */
+export function withContextUsage(
+  cur: SessionAgentState | null,
+  nextUsage: NonNullable<SessionAgentState["contextUsage"]>,
+): SessionAgentState {
+  if (cur) return { ...cur, contextUsage: nextUsage };
+  return {
+    agentMessages: [],
+    pendingInstructions: [],
+    stepIndex: 0,
+    hasImageContent: false,
+    taskActive: false,
+    contextUsage: nextUsage,
+  };
+}
+
+/**
  * v1.5 — pure helper: given pinnedTabs[] and a currentFocusTabId, resolve
  * which tab the loop should snapshot and operate on this iteration.
  *
@@ -1302,15 +1333,17 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // distinguish "task in flight at SW death" (stepIndex > 0) from "task
   // already finished, no resume needed" (stepIndex = 0). Without this,
   // a long-completed task's stepIndex would linger in storage and
-  // M1-U5 would falsely flag the session as paused. Fire-and-forget,
-  // matching the per-step snapshot pattern.
+  // M1-U5 would falsely flag the session as paused.
+  // Issue #59 — the tombstone / taskActive-clear MUST be awaited so
+  // handleChatStream's finally (inFlight delete + keepAlive.maybeStop)
+  // cannot run while `taskActive: true` is still on disk. Per-step
+  // snapshots stay fire-and-forget; only the terminal write is blocking.
   // M2-U2 P1-11 — emitDone auto-injects sessionId so every exit path
   // carries the routing field without requiring each call site to repeat it.
   //
   // U3 — each emitDone call site passes `terminationReason` so
   // synthesizeAgentTurnText can discriminate the 5 paths. The synth is
-  // fired fire-and-forget (no await) after sendAgentDone and before the
-  // tombstone snapshot, matching the step-snapshot fire-and-forget pattern.
+  // folded into the same awaited tombstone write.
   const emitDone = async (
     msg: Omit<AgentDoneTaskMessage, "sessionId">,
     terminationReason: TerminationReason = "abort",
@@ -1371,19 +1404,22 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         synth,
         prev?.contextUsage,
       );
-      if (doneSnapshot) {
-        ctx.onStepSnapshot(doneSnapshot).catch((e) => {
-          console.warn(`[agent] done snapshot failed for session=${ctx.sessionId}:`, e);
-        });
-      } else {
-        // Issue #21 回归 — abort 跳过 tombstone 但必须清 taskActive，否则
-        // stepIndex=0 的 abort 会被 recovery 当成「第一步被打断」误标 failed。
-        const clearSnapshot = buildAbortTaskActiveClear(prev);
-        if (clearSnapshot) {
-          ctx.onStepSnapshot(clearSnapshot).catch((e) => {
-            console.warn(`[agent] taskActive clear failed for session=${ctx.sessionId}:`, e);
-          });
+      try {
+        if (doneSnapshot) {
+          await ctx.onStepSnapshot(doneSnapshot);
+        } else {
+          // Issue #21 回归 — abort 跳过 tombstone 但必须清 taskActive，否则
+          // stepIndex=0 的 abort 会被 recovery 当成「第一步被打断」误标 failed。
+          const clearSnapshot = buildAbortTaskActiveClear(prev);
+          if (clearSnapshot) {
+            await ctx.onStepSnapshot(clearSnapshot);
+          }
         }
+      } catch (e) {
+        console.warn(
+          `[agent] ${doneSnapshot ? "done snapshot" : "taskActive clear"} failed for session=${ctx.sessionId}:`,
+          e,
+        );
       }
     }
   };
@@ -2303,13 +2339,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         try {
           const cur = await getSessionAgent(sessionId);
           const nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage);
-          const base: SessionAgentState = cur ?? {
-            agentMessages: [],
-            pendingInstructions: [],
-            stepIndex: 0,
-            hasImageContent: false,
-          };
-          await setSessionAgent(sessionId, { ...base, contextUsage: nextUsage });
+          await setSessionAgent(sessionId, withContextUsage(cur, nextUsage));
           try {
             emit(
               withSession(
@@ -2458,15 +2488,19 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // stale (stepIndex > 0) snapshot might still be in storage.
         // Write a tombstone here so a chat-only round following a
         // completed agent task also clears in-flight markers.
-        // Issue #59 — carry over contextUsage to preserve token counts.
+        // Carry over contextUsage to preserve token counts.
+        // Issue #59 — await the tombstone so keepAlive.maybeStop cannot
+        // fire while taskActive is still true on disk.
         if (ctx.onStepSnapshot) {
           const prev = await getSessionAgent(sessionId);
-          ctx.onStepSnapshot(buildSessionAgentTombstone(undefined, prev?.contextUsage)).catch((e) => {
+          try {
+            await ctx.onStepSnapshot(buildSessionAgentTombstone(undefined, prev?.contextUsage));
+          } catch (e) {
             console.warn(
               `[agent] tombstone (pure-text) failed for session=${ctx.sessionId}:`,
               e,
             );
-          });
+          }
         }
         return;
       }

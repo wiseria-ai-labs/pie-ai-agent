@@ -358,6 +358,74 @@ describe("runAgentLoop — maxSteps hard cap (Task 5.3)", () => {
   });
 });
 
+// Issue #59 — pure-text end used to fire-and-forget the tombstone, so
+// handleChatStream's finally could keepAlive.maybeStop() (and the SW could
+// idle) while taskActive was still true. Recovery then false-positived #21.
+describe("runAgentLoop — Issue #59 pure-text tombstone is awaited", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("awaits onStepSnapshot tombstone before returning (taskActive:false has landed)", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const snaps: Array<{ taskActive?: boolean; stepIndex: number }> = [];
+    let snapshotSettled = false;
+    const onStepSnapshot = vi.fn(async (snap: { taskActive?: boolean; stepIndex: number }) => {
+      await new Promise((r) => setTimeout(r, 25));
+      snaps.push(snap);
+      snapshotSettled = true;
+    });
+
+    await runAgentLoop({
+      emit: vi.fn(),
+      task: "Say hello",
+      modelConfig: {
+        provider: "openai",
+        model: "gpt-4o",
+        apiKey: "sk-test",
+        vision: false,
+      },
+      signal: new AbortController().signal,
+      sessionId: "test-tombstone-await",
+      pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+      initialFocusTabId: 1,
+      onStepSnapshot,
+    });
+
+    expect(snapshotSettled).toBe(true);
+    expect(onStepSnapshot).toHaveBeenCalled();
+    const last = snaps.at(-1);
+    expect(last?.taskActive).toBe(false);
+    expect(last?.stepIndex).toBe(0);
+  });
+
+  it("tombstone rejection is swallowed — loop still resolves", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const onStepSnapshot = vi.fn(async () => {
+      throw new Error("idb down");
+    });
+
+    await expect(
+      runAgentLoop({
+        emit: vi.fn(),
+        task: "Say hello",
+        modelConfig: {
+          provider: "openai",
+          model: "gpt-4o",
+          apiKey: "sk-test",
+          vision: false,
+        },
+        signal: new AbortController().signal,
+        sessionId: "test-tombstone-reject",
+        pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+        initialFocusTabId: 1,
+        onStepSnapshot,
+      }),
+    ).resolves.toBeUndefined();
+    expect(onStepSnapshot).toHaveBeenCalled();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Provider RPM 限流 Task 4 — ratelimit-wait 转发
 // ---------------------------------------------------------------------------
