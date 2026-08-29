@@ -43,3 +43,6 @@ __pycache__/
 .claude/*
 # ...except shared plugin config, which Claude Code on the web reads to auto-install plugins
 !.claude/settings.json
+
+# Local-only commercialization / pricing design docs (never committed)
+docs/private/
