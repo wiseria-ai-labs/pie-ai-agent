@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Menu, Plus, AlarmClock, Zap, ArrowLeft, Pin, Star, ChevronDown } from "lucide-react";
+import { Menu, Plus, AlarmClock, Telescope, Zap, ArrowLeft, Pin, Star, ChevronDown } from "lucide-react";
 import { IconButton } from "./ui/IconButton";
 import { Popover } from "./ui/Popover";
 import { useAnchorRect } from "./ui/useAnchorRect";
@@ -7,7 +7,7 @@ import PinnedTabDropdown from "./PinnedTabDropdown";
 import { usePinDisplay } from "@/sidepanel/hooks/usePinDisplay";
 import { useT } from "@/lib/i18n";
 
-export type AppView = "agent" | "schedules" | "skills" | "settings";
+export type AppView = "agent" | "schedules" | "research" | "skills" | "settings";
 export type SettingsPage =
   | "root"
   | "models"
@@ -39,7 +39,9 @@ export interface TopBarProps {
   pendingCount: number;
   onToggleDrawer: () => void;
   onNewSession: () => void;
-  onNavigate: (v: "schedules" | "skills") => void;
+  onNavigate: (v: "schedules" | "research" | "skills") => void;
+  /** Managed account signed in — Research is a Pro-gated surface. */
+  showResearch?: boolean;
   onBack: () => void;
   pinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> | null;
   pinMode: "auto" | "task" | "user" | null;
@@ -58,6 +60,7 @@ export default function TopBar({
   onToggleDrawer,
   onNewSession,
   onNavigate,
+  showResearch = false,
   onBack,
   pinnedTabs,
   pinMode,
@@ -81,11 +84,13 @@ export default function TopBar({
     ? sessionTitle
     : view === "schedules"
       ? t("schedules.title")
-      : view === "skills"
-        ? t("topbar.skills")
-        : settingsPage === "root"
-          ? t("settings.title")
-          : t(SETTINGS_PAGE_TITLE_KEY[settingsPage]);
+      : view === "research"
+        ? t("research.title")
+        : view === "skills"
+          ? t("topbar.skills")
+          : settingsPage === "root"
+            ? t("settings.title")
+            : t(SETTINGS_PAGE_TITLE_KEY[settingsPage]);
 
   const showFnButtons = view !== "settings";
 
@@ -146,6 +151,17 @@ export default function TopBar({
               icon={<AlarmClock {...ICON} />}
               onClick={() => onNavigate("schedules")}
             />
+            {showResearch && (
+              <IconButton
+                data-testid="topbar-research"
+                size="sm"
+                aria-label={t("research.title")}
+                aria-pressed={view === "research"}
+                active={view === "research"}
+                icon={<Telescope {...ICON} />}
+                onClick={() => onNavigate("research")}
+              />
+            )}
             <IconButton
               data-testid="topbar-skills"
               size="sm"

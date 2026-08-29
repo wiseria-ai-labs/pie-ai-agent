@@ -57,6 +57,19 @@ describe("TopBar 六态", () => {
     expect(p.onNavigate).toHaveBeenCalledWith("schedules");
   });
 
+  it("未登录 managed 时不渲染 research 入口；showResearch 时渲染并可切到研究页", () => {
+    const p = make();
+    render(<TopBar {...p} />);
+    expect(screen.queryByTestId("topbar-research")).toBeNull();
+    cleanup();
+    const q = make({ showResearch: true, view: "research" });
+    render(<TopBar {...q} />);
+    expect(screen.getByTestId("topbar-research").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Research")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("topbar-schedules"));
+    expect(q.onNavigate).toHaveBeenCalledWith("schedules");
+  });
+
   it("settings 根页：back + 标题，无 schedules/skills 按钮", () => {
     render(<TopBar {...make({ view: "settings" })} />);
     expect(screen.getByTestId("topbar-back")).toBeTruthy();

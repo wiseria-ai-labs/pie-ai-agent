@@ -13,7 +13,8 @@ import CustomRulesPage from "@/sidepanel/components/settings/pages/CustomRulesPa
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import type { ThemeMode } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
-import { getInstance } from "@/lib/instances";
+import ResearchPanel from "@/sidepanel/components/research/ResearchPanel";
+import { getInstance, listInstances } from "@/lib/instances";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
@@ -41,6 +42,7 @@ import type { SessionIndexEntry } from "@/lib/sessions/types";
  */
 export default function App() {
   const [view, setView] = useState<AppView>("agent");
+  const [showResearch, setShowResearch] = useState(false);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("root");
   // Slide direction for the settings root ↔ sub-page swap: drilling in slides
   // from the right, going back slides from the left (page-enter-* classes).
@@ -127,6 +129,18 @@ export default function App() {
     setPendingCount(await getPendingConfirmCount());
   }, []);
 
+  const refreshResearchGate = useCallback(async () => {
+    try {
+      const insts = await listInstances();
+      const on = insts.some((i) => i.provider === "managed" && Boolean(i.apiKey));
+      setShowResearch(on);
+      if (!on) setView((v) => (v === "research" ? "agent" : v));
+    } catch {
+      setShowResearch(false);
+      setView((v) => (v === "research" ? "agent" : v));
+    }
+  }, []);
+
   useEffect(() => {
     // M2-U4: opportunistic 30-day hard-delete sweep on sidepanel mount.
     // Fire-and-forget — does not block mount or session loading.
@@ -147,7 +161,8 @@ export default function App() {
     })();
 
     loadProviderLabel();
-  }, [refreshSessionIndex, refreshPendingCount]);
+    void refreshResearchGate();
+  }, [refreshSessionIndex, refreshPendingCount, refreshResearchGate]);
 
   // ── Deep-link: website "Subscribe" → managed-subscribe screen ──────────────
   // The SW stashes a one-shot intent in chrome.storage.session when it opens the
@@ -200,6 +215,7 @@ export default function App() {
   // / active_instance_id) and instance config (instances: instance_*).
   useStoreChange("instances", () => {
     loadProviderLabel();
+    void refreshResearchGate();
   });
   useStoreChange("config", (c) => {
     if (c.id === "theme-mode") {
@@ -373,6 +389,7 @@ export default function App() {
         onToggleDrawer={() => setDrawerOpen((v) => !v)}
         onNewSession={() => void handleNewSession()}
         onNavigate={(v) => setView(view === v ? "agent" : v)}
+        showResearch={showResearch}
         onBack={goBack}
         pinnedTabs={session.pinnedTabs}
         pinMode={session.pinMode ?? null}
@@ -417,6 +434,8 @@ export default function App() {
             onOpenSession={(id) => void handleOpenSessionFromSchedule(id)}
             onCreateViaChat={(template) => void handleCreateScheduleViaChat(template)}
           />
+        ) : view === "research" ? (
+          <ResearchPanel />
         ) : view === "skills" ? (
           <div className="flex-1 overflow-y-auto px-4 py-6" data-testid="skills-page">
             <SkillsList onRunSkill={(id, name) => void handleRunSkill(id, name)} />
