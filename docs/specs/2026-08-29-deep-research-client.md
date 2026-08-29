@@ -12,7 +12,7 @@
 - 非 Pro 用户看到的是 paywall + 内置示例报告；不提供免费试用。
 - **服务端是真相源**：列表来自 `GET /research`，本地只缓存；跨设备可见的细节后续另做。
 
-## 2. 服务端契约（v2.6，`ACCOUNT_BASE`，Bearer apiKey）
+## 2. 服务端契约（v2.7，`ACCOUNT_BASE`，Bearer apiKey）
 
 | 端点 | 请求 | 响应 / 错误 |
 |---|---|---|
