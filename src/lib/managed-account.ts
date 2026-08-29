@@ -1,5 +1,5 @@
 import { ACCOUNT_BASE } from "./managed-config";
-import type { Entitlement, ModelInfo, PricingInfo } from "./managed-auth";
+import type { Entitlement, ModelInfo, PricingInfo, ResearchQuotaWindow } from "./managed-auth";
 import type { FeedbackEnv } from "./feedback";
 import { getLocale } from "./i18n";
 import { setConfig, getAllConfig } from "./idb/config-store";
@@ -131,6 +131,29 @@ function normalizePricing(raw: unknown): PricingInfo | undefined {
   return { currency, monthly, annual: { amount: annualAmount, perMonthAmount, savePercent } };
 }
 
+function normalizeResearchQuota(raw: unknown): ResearchQuotaWindow | undefined {
+  if (raw == null || typeof raw !== "object") return undefined;
+  const q = raw as Record<string, unknown>;
+  const num = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  const weekly = num(q.weekly);
+  const used = num(q.used);
+  const resetAt = num(q.resetAt);
+  if (weekly == null || used == null || resetAt == null) return undefined;
+  return { weekly, used, resetAt };
+}
+
+function normalizeQuota(raw: unknown, plan: Entitlement["plan"]): Entitlement["quota"] {
+  if (raw == null || typeof raw !== "object") return null;
+  const q = raw as Record<string, unknown>;
+  const { research: rawResearch, ...rest } = q;
+  const out = { ...rest } as NonNullable<Entitlement["quota"]>;
+  // plan:none 时 research 恒为 undefined（Pro 独占字段，免费态不下发）。
+  const research = plan === "none" ? undefined : normalizeResearchQuota(rawResearch);
+  if (research) out.research = research;
+  return out;
+}
+
 /** 容忍后端缺字段/新激活边缘：补齐 v2.1 安全默认，绝不抛。 */
 export function normalizeEntitlement(raw: unknown): Entitlement {
   const r = (raw ?? {}) as Record<string, unknown>;
@@ -141,7 +164,7 @@ export function normalizeEntitlement(raw: unknown): Entitlement {
     plan,
     email: typeof r.email === "string" ? r.email : "",
     subscription: normalizeSubscription(r.subscription),
-    quota: (r.quota as Entitlement["quota"]) ?? null,
+    quota: normalizeQuota(r.quota, plan),
     models: Array.isArray(r.models) ? (r.models as unknown[]).map(normalizeModel) : [],
     ...(introOffer ? { introOffer } : {}),
     ...(pricing ? { pricing } : {}),

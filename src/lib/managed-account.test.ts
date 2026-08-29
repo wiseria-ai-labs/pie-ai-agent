@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   getCachedEntitlement, getEntitlement, openCheckout, openPortal,
   cachedManagedModel, redeem, RedeemError, submitFeedback, FeedbackError,
-  hydrateEntitlementCache, _clearEntitlementCacheForTests,
+  hydrateEntitlementCache, _clearEntitlementCacheForTests, normalizeEntitlement,
 } from "./managed-account";
 import { getConfig, setConfig } from "./idb/config-store";
 import { _resetForTests } from "./idb/db";
@@ -203,6 +203,37 @@ describe("managed-account", () => {
       pricing: { currency: "usd", monthly: { amount: 0 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } } };
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
     expect((await getEntitlement("sk-pr6", { fetchFn, locale: "en" })).pricing).toBeUndefined();
+  });
+
+  it("normalizeEntitlement：quota.research 在 plan:active 时透传 {weekly,used,resetAt}", () => {
+    const ent = normalizeEntitlement({
+      plan: "active", email: "u@x.com", subscription: null,
+      quota: { weekly: { usedFraction: 0.2, resetAt: 1 }, research: { weekly: 5, used: 1, resetAt: 99 } },
+      models: [],
+    });
+    expect(ent.quota).toEqual({
+      weekly: { usedFraction: 0.2, resetAt: 1 },
+      research: { weekly: 5, used: 1, resetAt: 99 },
+    });
+  });
+
+  it("normalizeEntitlement：无 quota.research 时字段缺省", () => {
+    const ent = normalizeEntitlement({
+      plan: "active", email: "u@x.com", subscription: null,
+      quota: { weekly: { usedFraction: 0.2, resetAt: 1 } },
+      models: [],
+    });
+    expect(ent.quota?.research).toBeUndefined();
+    expect(ent.quota).toEqual({ weekly: { usedFraction: 0.2, resetAt: 1 } });
+  });
+
+  it("normalizeEntitlement：plan:none 时丢弃 quota.research（即使后端误发）", () => {
+    const ent = normalizeEntitlement({
+      plan: "none", email: "u@x.com", subscription: null,
+      quota: { research: { weekly: 5, used: 0, resetAt: 99 } },
+      models: [],
+    });
+    expect(ent.quota?.research).toBeUndefined();
   });
 
   it("normalizeEntitlement：无 pricing → absent", async () => {

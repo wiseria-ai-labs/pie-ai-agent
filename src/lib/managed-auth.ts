@@ -6,6 +6,12 @@ export interface QuotaWindow {
   usedFraction: number;
   resetAt: number;
 }
+/** Deep Research 周额度（Pro 独占）。plan:none 时 entitlement.quota.research 为 undefined。 */
+export interface ResearchQuotaWindow {
+  weekly: number;
+  used: number;
+  resetAt: number;
+}
 export interface SubscriptionInfo {
   planName: string;
   currentPeriodEnd: number | null;
@@ -37,8 +43,9 @@ export interface Entitlement {
   email: string;
   /** plan==none 时为 null；blocked 时非 null（供更新支付）。 */
   subscription: SubscriptionInfo | null;
-  /** plan!=active 时为 null；具名窗口 map（P3 可加 fiveHour）。 */
-  quota: { weekly?: QuotaWindow } | null;
+  /** plan!=active 时为 null；具名窗口 map（P3 可加 fiveHour）。
+   *  `research` 为可选 Pro 独占额度；plan:none 时 normalize 为 undefined。 */
+  quota: { weekly?: QuotaWindow; research?: ResearchQuotaWindow } | null;
   /** 仅 plan==active 非空。 */
   models: ModelInfo[];
   /** 仅"从未订过"且后端 feature 开时下发；客户端据此打"首月半价"徽标。缺省=无促销。 */

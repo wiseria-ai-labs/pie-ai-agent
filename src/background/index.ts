@@ -71,6 +71,7 @@ import {
   type SchedulerDeps,
 } from "@/lib/schedules/scheduler";
 import { handleScheduleNotificationClick } from "@/lib/schedules/notify";
+import { handleResearchPollAlarm } from "@/lib/research-poll";
 import { setScheduleRunDep } from "@/lib/agent/tools/schedule-meta";
 import { handleScheduleAction } from "@/lib/schedules/action-handler";
 import { SCHEDULE_ACTION_MESSAGE, type ScheduleActionMessage } from "@/lib/schedules/panel-actions";
@@ -294,7 +295,10 @@ chrome.permissions.onRemoved.addListener((p) => {
 if (chrome.alarms) {
   chrome.alarms.onAlarm.addListener((alarm) => {
     void scheduleStartupReady
-      .then(() => handleAlarm(alarm.name, schedulerDeps))
+      .then(() => {
+        void handleResearchPollAlarm(alarm.name);
+        return handleAlarm(alarm.name, schedulerDeps);
+      })
       .catch((e) => {
         console.warn(`[sw] handleAlarm(${alarm.name}) failed:`, e);
       });
