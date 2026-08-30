@@ -438,6 +438,34 @@ describe("estimateTokens — thinking block counts toward budget", () => {
   });
 });
 
+describe("estimateTokens — remote_tool args+output count like tool_result", () => {
+  it("counts args and output toward the estimate", () => {
+    const args = "A".repeat(100);
+    const output = "B".repeat(200);
+    const resultContent = args + output;
+    const withResult: AgentMessage[] = [
+      { role: "user", content: [{ type: "tool_result", toolUseId: "t1", content: resultContent }] },
+    ];
+    const withRemote: AgentMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "remote_tool",
+            callId: "c1",
+            name: "web_search",
+            args,
+            output,
+            wire: "responses",
+            item: {},
+          },
+        ],
+      },
+    ];
+    expect(estimateTokens(withRemote)).toBe(estimateTokens(withResult));
+  });
+});
+
 describe("applyTokenBudget — image-bearing turn drop semantics unchanged", () => {
   it("image turns drop in age order (oldest first), no special preservation", async () => {
     // Spec: image cache lifecycle handles eviction, NOT the budget. The budget

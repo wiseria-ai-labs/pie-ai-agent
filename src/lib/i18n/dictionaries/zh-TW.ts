@@ -411,6 +411,7 @@ export const zhTWDict = {
     queued: "排隊中",
     error: "錯誤",
     ok: "成功",
+    remote: "遠端",
     nonSerializable: "(無法序列化)",
   },
   agentStepGroup: {

@@ -69,3 +69,19 @@ describe("AgentStepLine — image rendering (issue follow-up to #35/#39)", () =>
     expect(screen.getByRole("img", { name: /screenshot/i })).toBeTruthy();
   });
 });
+
+describe("AgentStepLine — remote step", () => {
+  it("shows the remote badge and keeps observation collapsed by default", () => {
+    render(
+      <AgentStepLine
+        tool="web_search"
+        args={{ q: "pie" }}
+        status="ok"
+        observation="long remote output that must stay folded"
+        remote
+      />,
+    );
+    expect(screen.getByText("remote")).toBeTruthy();
+    expect(screen.queryByText("long remote output that must stay folded")).toBeNull();
+  });
+});

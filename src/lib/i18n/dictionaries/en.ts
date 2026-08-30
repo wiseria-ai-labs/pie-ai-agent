@@ -420,6 +420,7 @@ export const enDict = {
     queued: "queued",
     error: "error",
     ok: "ok",
+    remote: "remote",
     nonSerializable: "(non-serializable)",
   },
   agentStepGroup: {

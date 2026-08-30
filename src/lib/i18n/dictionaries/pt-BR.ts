@@ -416,6 +416,7 @@ export const ptBRDict = {
     queued: "na fila",
     error: "erro",
     ok: "ok",
+    remote: "remoto",
     nonSerializable: "(não serializável)",
   },
   agentStepGroup: {

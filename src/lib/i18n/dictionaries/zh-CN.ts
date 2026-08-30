@@ -411,6 +411,7 @@ export const zhCNDict = {
     queued: "排队中",
     error: "错误",
     ok: "成功",
+    remote: "远程",
     nonSerializable: "(不可序列化)",
   },
   agentStepGroup: {
