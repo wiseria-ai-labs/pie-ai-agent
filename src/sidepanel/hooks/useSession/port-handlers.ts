@@ -162,11 +162,17 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       const { stepIndex, tool, args, resolvedElement, status, observation, image, progress, remote } = msg;
       const tail = nextMessages.length - 1;
       const last = tail >= 0 ? nextMessages[tail] : null;
+      // Remote steps are emitted once at status "ok" and never in-place-updated.
+      // stepIndex is the loop iteration, so two same-named remotes in one turn
+      // (Hermes multi-tool / consecutive OpenRouter web_search) share it —
+      // matching on stepIndex+tool would collapse them into one row.
       const matchesTail =
         last &&
         last.role === "agent-step" &&
         last.stepIndex === stepIndex &&
-        last.tool === tool;
+        last.tool === tool &&
+        !remote &&
+        !last.remote;
 
       const stepEntry: DisplayMessage = {
         role: "agent-step",

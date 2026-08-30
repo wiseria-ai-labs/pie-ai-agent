@@ -2523,6 +2523,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // write to land synchronously before panel ever sees chat-done.
       if (completedToolCalls.length === 0) {
         if (hasRemoteTools) {
+          // Snapshot is only for eval-bridge's offline trace (eval-bridge.ts
+          // keeps the last non-empty agentMessages). The tombstone ~30 lines
+          // below writes agentMessages:[] and wipes storage; panel history
+          // is not this path.
           const assistantBlocks: ContentBlock[] = assembleAssistantBlocks(
             thinkingBlocks,
             accumulatedText,

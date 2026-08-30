@@ -165,6 +165,40 @@ describe("agent-step", () => {
     expect(slot.messages[0]).toMatchObject({ status: "ok", observation: "clicked" });
   });
 
+  it("appends a second same-name remote step at the same stepIndex (does not collapse)", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    const remoteStep = (observation: string): PortMessageToPanel =>
+      ({
+        type: "agent-step",
+        sessionId: "s1",
+        stepIndex: 1,
+        tool: "web_search",
+        args: { q: observation },
+        status: "ok",
+        remote: true,
+        observation,
+      }) as PortMessageToPanel;
+    handleMessage(remoteStep("first"));
+    handleMessage(remoteStep("second"));
+    const messages = deps.slotsRef.current.get("s1")!.messages;
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: "agent-step",
+      stepIndex: 1,
+      tool: "web_search",
+      remote: true,
+      observation: "first",
+    });
+    expect(messages[1]).toMatchObject({
+      role: "agent-step",
+      stepIndex: 1,
+      tool: "web_search",
+      remote: true,
+      observation: "second",
+    });
+  });
+
   it("appends a new step when stepIndex differs", () => {
     const deps = makeDeps();
     deps.slotsRef.current.set("s1", {
