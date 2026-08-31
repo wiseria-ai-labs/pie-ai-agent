@@ -1494,3 +1494,173 @@ describe("Chat — 单任务只起一次 AGENT 表头", () => {
     expect(screen.getAllByText("AGENT").length).toBe(2);
   });
 });
+
+describe("Chat — stick-to-bottom follow / jump-to-bottom (#76)", () => {
+  const history: DisplayMessage[] = [
+    { role: "user", content: "hello" },
+    { role: "assistant", content: "A long previous reply. ".repeat(20) },
+  ];
+
+  function stubScroll(
+    el: HTMLElement,
+    metrics: { height: number; client: number; top: number },
+  ) {
+    Object.defineProperties(el, {
+      scrollHeight: { configurable: true, get: () => metrics.height },
+      clientHeight: { configurable: true, get: () => metrics.client },
+      scrollTop: {
+        configurable: true,
+        get: () => metrics.top,
+        set: (v: number) => {
+          metrics.top = v;
+        },
+      },
+    });
+  }
+
+  async function renderStreaming(
+    streamingText = "partial",
+    extra?: Partial<UseSession>,
+  ) {
+    seedProvider("anthropic");
+    const view = render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({
+          messages: history,
+          streaming: true,
+          streamingText,
+          ...extra,
+        })}
+      />,
+    );
+    await screen.findByTitle(/Cancel running task/i);
+    return view;
+  }
+
+  it("does not show the jump button while following the tail", async () => {
+    await renderStreaming();
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeNull();
+  });
+
+  it("pauses follow and shows the button after a scroll-up during streaming", async () => {
+    const view = await renderStreaming("partial");
+    const box = screen.getByTestId("chat-messages");
+    const metrics = { height: 2000, client: 400, top: 1600 };
+    stubScroll(box, metrics);
+    metrics.top = 200;
+    fireEvent.scroll(box);
+
+    expect(await screen.findByRole("button", { name: /jump to latest/i })).toBeTruthy();
+    expect(screen.getByText("New messages")).toBeTruthy();
+
+    view.rerender(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({
+          messages: history,
+          streaming: true,
+          streamingText: "partial and more tokens",
+        })}
+      />,
+    );
+    await screen.findByText(/partial and more tokens/i);
+    expect(metrics.top).toBe(200);
+  });
+
+  it("does not show the button when an idle transcript is scrolled up (no new content)", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ messages: history, streaming: false })}
+      />,
+    );
+    await screen.findByRole("button", { name: /more tools/i });
+    const box = screen.getByTestId("chat-messages");
+    const metrics = { height: 2000, client: 400, top: 1600 };
+    stubScroll(box, metrics);
+    metrics.top = 200;
+    fireEvent.scroll(box);
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeNull();
+  });
+
+  it("clicking the button jumps to the tail and resumes auto-follow", async () => {
+    const view = await renderStreaming("partial");
+    const box = screen.getByTestId("chat-messages");
+    const metrics = { height: 2000, client: 400, top: 1600 };
+    stubScroll(box, metrics);
+    metrics.top = 200;
+    fireEvent.scroll(box);
+    fireEvent.click(await screen.findByRole("button", { name: /jump to latest/i }));
+    expect(metrics.top).toBe(2000);
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeNull();
+
+    view.rerender(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({
+          messages: history,
+          streaming: true,
+          streamingText: "partial and more",
+        })}
+      />,
+    );
+    await waitFor(() => expect(metrics.top).toBe(2000));
+  });
+
+  it("scrolling back within the threshold hides the button and resumes follow", async () => {
+    const view = await renderStreaming("partial");
+    const box = screen.getByTestId("chat-messages");
+    const metrics = { height: 2000, client: 400, top: 1600 };
+    stubScroll(box, metrics);
+    metrics.top = 200;
+    fireEvent.scroll(box);
+    await screen.findByRole("button", { name: /jump to latest/i });
+
+    metrics.top = 2000 - 400 - 60;
+    fireEvent.scroll(box);
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeNull();
+
+    view.rerender(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({
+          messages: history,
+          streaming: true,
+          streamingText: "partial and more",
+        })}
+      />,
+    );
+    await waitFor(() => expect(metrics.top).toBe(2000));
+  });
+
+  it("keeps the button after streaming ends until the user returns to the tail", async () => {
+    const view = await renderStreaming("partial");
+    const box = screen.getByTestId("chat-messages");
+    const metrics = { height: 2000, client: 400, top: 1600 };
+    stubScroll(box, metrics);
+    metrics.top = 200;
+    fireEvent.scroll(box);
+    await screen.findByRole("button", { name: /jump to latest/i });
+
+    view.rerender(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({
+          messages: [...history, { role: "assistant", content: "partial done" }],
+          streaming: false,
+          streamingText: "",
+        })}
+      />,
+    );
+    expect(await screen.findByRole("button", { name: /jump to latest/i })).toBeTruthy();
+    expect(screen.getByText("Jump to bottom")).toBeTruthy();
+  });
+});

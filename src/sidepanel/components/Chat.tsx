@@ -22,7 +22,8 @@ import { processPickedFile } from "@/lib/files/process-picked-file";
 import { fileAttachmentToWrapper } from "@/lib/files/inject";
 import { CollapsibleText } from "./CollapsibleText";
 import { FileChip } from "./FileChip";
-import { QuoteGlyph } from "./icons";
+import { ChevronGlyph, QuoteGlyph } from "./icons";
+import { isNearBottom } from "./chat-scroll";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
 import { buildRewindInput } from "@/sidepanel/hooks/useSession/rewind";
 import { swPort } from "@/lib/sw-connection/manager";
@@ -252,8 +253,15 @@ export default function Chat({
   // its summary — an instant jump to the unchanged position is a no-op, so the
   // visible "re-scroll" wobble is gone. Scrolling up to read mid-stream is no
   // longer hijacked back to the bottom.
+  //
+  // atBottomRef stays a ref so streaming chunks don't re-render just to
+  // recompute follow. The jump-to-bottom button needs a render, so showJump
+  // flips only on the paused↔following edges (and once when unseen content
+  // first arrives) — never per token.
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+  const unseenRef = useRef(false);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   // Phase 5 image input state
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -406,8 +414,28 @@ export default function Chat({
     void loadEnabledSkillsForSlash();
   });
 
+  const markUnseen = () => {
+    if (unseenRef.current) return;
+    unseenRef.current = true;
+    setShowJumpToBottom(true);
+  };
+
+  const clearUnseen = () => {
+    if (!unseenRef.current) return;
+    unseenRef.current = false;
+    setShowJumpToBottom(false);
+  };
+
   useEffect(() => {
-    if (!atBottomRef.current) return;
+    atBottomRef.current = true;
+    clearUnseen();
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!atBottomRef.current) {
+      markUnseen();
+      return;
+    }
     const c = scrollContainerRef.current;
     if (c) c.scrollTop = c.scrollHeight;
   }, [messages, streamingText, panelRequest?.requestId]);
@@ -415,7 +443,23 @@ export default function Chat({
   const handleMessagesScroll = () => {
     const c = scrollContainerRef.current;
     if (!c) return;
-    atBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight <= 60;
+    const near = isNearBottom(c);
+    atBottomRef.current = near;
+    if (near) {
+      clearUnseen();
+      return;
+    }
+    // Wheel / trackpad / scrollbar / touch all land here via `scroll`.
+    // During an in-flight stream the tail is already unseen the moment the
+    // user leaves it; otherwise wait for the next content change.
+    if (streaming) markUnseen();
+  };
+
+  const jumpToBottom = () => {
+    atBottomRef.current = true;
+    clearUnseen();
+    const c = scrollContainerRef.current;
+    if (c) c.scrollTop = c.scrollHeight;
   };
 
   useEffect(() => {
@@ -1093,10 +1137,12 @@ After the skill completes, briefly summarize what was created (the user will see
         </div>
       )}
 
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scrollContainerRef}
+        data-testid="chat-messages"
         onScroll={handleMessagesScroll}
-        className="flex-1 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto"
       >
         {messages.length === 0 && !streaming && !pageChanged ? (
           <EmptyState listening={input.length > 0} />
@@ -1264,6 +1310,21 @@ After the skill completes, briefly summarize what was created (the user will see
             <div ref={messagesEndRef} />
           </div>
         )}
+      </div>
+      {showJumpToBottom && (
+        <button
+          type="button"
+          onClick={jumpToBottom}
+          aria-label={t("chat.jumpToBottomAria")}
+          className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] text-fg-1 shadow-sm hover:border-fg-3"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
+          {streaming ? t("chat.jumpToBottomNew") : t("chat.jumpToBottom")}
+          <span className="inline-flex rotate-90" aria-hidden>
+            <ChevronGlyph size={11} />
+          </span>
+        </button>
+      )}
       </div>
 
       {/* Phase 5 — hidden file input, wired to fileInputRef */}
