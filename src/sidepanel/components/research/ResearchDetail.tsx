@@ -1,28 +1,16 @@
 import { useEffect, useState } from "react";
-import { cancelResearch, getResearch, type ResearchPhase, type ResearchRun } from "@/lib/managed-research";
+import { cancelResearch, getResearch, type ResearchRun } from "@/lib/managed-research";
 import { downloadResearchMarkdown, researchDownloadFilename } from "@/lib/research-download";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "../ui/Button";
 import { ManagedStatusPill } from "../ManagedStatusPill";
 import MarkdownContent from "../Markdown";
 import { PILL_TONE, TERMINAL_STATUSES, statusLabel } from "./status";
+import ResearchTimeline from "./Timeline";
 
 export const DETAIL_POLL_MS = 5000;
 
-const PHASES: ResearchPhase[] = ["plan", "gather", "synthesize"];
-
 type T = ReturnType<typeof useI18n>["t"];
-
-function phaseLabel(phase: ResearchPhase, t: T): string {
-  switch (phase) {
-    case "plan":
-      return t("research.phasePlan");
-    case "gather":
-      return t("research.phaseGather");
-    case "synthesize":
-      return t("research.phaseSynthesize");
-  }
-}
 
 /** Page-open poll: GET /research/:id every 5s; cleanup on unmount (leave page). */
 export function useResearchRun(apiKey: string, id: string): {
@@ -83,6 +71,21 @@ function DoneReport({
 }) {
   return (
     <div className="flex flex-col gap-4">
+      {run.subQuestions && run.subQuestions.length > 0 && (
+        <div
+          data-testid="research-process-collapsed"
+          className="flex items-center gap-2.5 rounded-[10px] bg-surface px-3 py-2.5"
+        >
+          <span className="flex shrink-0 items-center gap-1">
+            {[0, 1, 2].map((i) => (
+              <span key={i} className="size-1.5 rounded-full bg-success" />
+            ))}
+          </span>
+          <span className="flex-1 text-[12px] leading-[17px] text-fg-2">
+            {t("research.processDone", { n: run.subQuestions.length })}
+          </span>
+        </div>
+      )}
       {run.report && (
         <div data-testid="research-report" className="text-[13px] text-fg-1">
           <div className="caps mb-2 text-fg-3">{t("research.report")}</div>
@@ -177,6 +180,7 @@ export default function ResearchDetail({
   onBack,
   onSendToChat,
   staticRun,
+  startedAt,
 }: {
   apiKey?: string;
   id?: string;
@@ -184,11 +188,21 @@ export default function ResearchDetail({
   onSendToChat?: (markdown: string) => void;
   /** Preloaded run — skip fetch/poll/cancel (built-in sample reports). */
   staticRun?: ResearchRun;
+  /** 列表里那条 run 的 createdAt，用于显示已用时长；没有就不显示计时。 */
+  startedAt?: string;
 }) {
   if (staticRun) {
     return <StaticResearchDetail run={staticRun} onBack={onBack} />;
   }
-  return <LiveResearchDetail apiKey={apiKey!} id={id!} onBack={onBack} onSendToChat={onSendToChat} />;
+  return (
+    <LiveResearchDetail
+      apiKey={apiKey!}
+      id={id!}
+      onBack={onBack}
+      onSendToChat={onSendToChat}
+      startedAt={startedAt}
+    />
+  );
 }
 
 function LiveResearchDetail({
@@ -196,11 +210,14 @@ function LiveResearchDetail({
   id,
   onBack,
   onSendToChat,
+  startedAt,
 }: {
   apiKey: string;
   id: string;
   onBack: () => void;
   onSendToChat?: (markdown: string) => void;
+  /** 列表里那条 run 的 createdAt，用于显示已用时长；没有就不显示计时。 */
+  startedAt?: string;
 }) {
   const { t } = useI18n();
   const { run, loadError, setRun, setLoadError } = useResearchRun(apiKey, id);
@@ -251,7 +268,11 @@ function LiveResearchDetail({
         <>
           <div className="flex flex-col gap-2">
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1 text-[14px] font-medium leading-[20px] text-fg-1">
+              <div
+                className={`min-w-0 flex-1 text-[14px] font-medium leading-[20px] ${
+                  run.status === "done" ? "text-fg-2" : "text-fg-1"
+                }`}
+              >
                 {run.question}
               </div>
               <ManagedStatusPill tone={PILL_TONE[run.status]} label={statusLabel(run.status, t)} />
@@ -262,30 +283,7 @@ function LiveResearchDetail({
             <div className="text-[12px] text-fg-2">{t("research.waiting")}</div>
           )}
 
-          {run.status === "running" && (
-            <div className="flex flex-col gap-2" data-testid="research-progress">
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px]">
-                {PHASES.map((phase, i) => {
-                  const current = run.phase ?? "plan";
-                  const idx = PHASES.indexOf(current);
-                  const done = i < idx;
-                  const active = phase === current;
-                  const cls = active ? "font-medium text-accent" : done ? "text-success" : "text-fg-3";
-                  return (
-                    <span key={phase} className="inline-flex items-center gap-1.5">
-                      {i > 0 && <span className="text-fg-3">·</span>}
-                      <span data-testid={`research-phase-${phase}`} className={cls}>
-                        {phaseLabel(phase, t)}
-                      </span>
-                    </span>
-                  );
-                })}
-              </div>
-              <div data-testid="research-sources" className="text-[12px] text-fg-2">
-                {t("research.sourcesFound", { n: run.sourcesFound })}
-              </div>
-            </div>
-          )}
+          {run.status === "running" && <ResearchTimeline run={run} startedAt={startedAt} />}
 
           {run.status === "done" && <DoneReport run={run} t={t} onSendToChat={onSendToChat} />}
 

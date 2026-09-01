@@ -109,6 +109,38 @@ describe("getResearch", () => {
     const fetchFn = fail(status);
     await expect(getResearch(KEY, "run_1", { fetchFn, locale: "en" })).rejects.toMatchObject({ code, status });
   });
+
+  // 契约 v2.8：两个字段都是可选的，后端未升级时必须整字段消失而不是变成空数组，
+  // 否则详情页会渲染一个空的子问题清单而不是退回三步态。
+  it("omits subQuestions / recentSources when the backend doesn't send them", async () => {
+    const res = await getResearch(KEY, "run_1", { fetchFn: ok(run), locale: "en" });
+    expect(res.subQuestions).toBeUndefined();
+    expect(res.recentSources).toBeUndefined();
+  });
+
+  it("parses v2.8 subQuestions / recentSources and defends against junk", async () => {
+    const fetchFn = ok({
+      ...run,
+      subQuestions: [
+        { q: "a", status: "done", sources: 6 },
+        { q: "b", status: "skipped", sources: 0, error: "tavily 502" },
+        { q: "c", status: "bogus", sources: "3" },
+        {},
+      ],
+      recentSources: [{ title: "T", url: "https://x.dev/a", domain: "x.dev" }, {}],
+    });
+    const res = await getResearch(KEY, "run_1", { fetchFn, locale: "en" });
+    expect(res.subQuestions).toEqual([
+      { q: "a", status: "done", sources: 6 },
+      { q: "b", status: "skipped", sources: 0, error: "tavily 502" },
+      { q: "c", status: "pending", sources: 0 }, // 未知 status / 非数字 sources 落回安全值
+      { q: "", status: "pending", sources: 0 },
+    ]);
+    expect(res.recentSources).toEqual([
+      { title: "T", url: "https://x.dev/a", domain: "x.dev" },
+      { title: "", url: "", domain: "" },
+    ]);
+  });
 });
 
 describe("cancelResearch", () => {

@@ -226,14 +226,61 @@ describe("ResearchPanel detail", () => {
     expect(await screen.findByTestId("research-detail")).toBeTruthy();
   }
 
-  it("renders running progress: phases, sources, and cancel", async () => {
+  it("renders the three-phase timeline and cancel (no v2.8 fields)", async () => {
     await openDetail(run({ id: "r1", status: "running", phase: "gather", sourcesFound: 7 }));
-    expect(screen.getByTestId("research-progress")).toBeTruthy();
-    expect(screen.getByTestId("research-phase-plan").textContent).toBe("Planning");
-    expect(screen.getByTestId("research-phase-gather").textContent).toBe("Gathering sources");
-    expect(screen.getByTestId("research-phase-synthesize").textContent).toBe("Writing report");
-    expect(screen.getByTestId("research-sources").textContent).toMatch(/7 sources found/);
+    const progress = screen.getByTestId("research-progress");
+    expect(progress.textContent).toMatch(/Planning/);
+    expect(progress.textContent).toMatch(/Gathering sources/);
+    expect(progress.textContent).toMatch(/Writing report/);
+    // subQuestions 缺失 → 退回旧的来源计数 caption，不渲染子问题清单
+    expect(progress.textContent).toMatch(/7 sources found/);
+    expect(screen.queryByTestId("research-subquestions")).toBeNull();
+    expect(screen.queryByTestId("research-recent-sources")).toBeNull();
     expect(screen.getByTestId("research-cancel")).toBeTruthy();
+  });
+
+  // 后端在 plan 阶段（plan 列还没写）会下发 subQuestions: []。空数组是 truthy，
+  // 若不当作「没有」处理，gather 行会既没有清单也没有来源计数——是空的。
+  it("treats an empty subQuestions array as absent, not as an empty list", async () => {
+    await openDetail(
+      run({ id: "r1c", status: "running", phase: "plan", sourcesFound: 0, subQuestions: [], recentSources: [] }),
+    );
+    expect(screen.getByTestId("research-progress").textContent).toMatch(/0 sources found/);
+    expect(screen.queryByTestId("research-subquestions")).toBeNull();
+    expect(screen.queryByTestId("research-recent-sources")).toBeNull();
+  });
+
+  it("expands sub-questions and the recent-source feed when v2.8 fields are present", async () => {
+    await openDetail(
+      run({
+        id: "r1b",
+        status: "running",
+        phase: "gather",
+        sourcesFound: 18,
+        subQuestions: [
+          { q: "What it is", status: "done", sources: 6 },
+          { q: "Who builds it", status: "active", sources: 0 },
+          { q: "How it differs", status: "pending", sources: 0 },
+          { q: "Open source", status: "skipped", sources: 0, error: "tavily 502" },
+        ],
+        recentSources: [
+          { title: "A Survey", url: "https://arxiv.org/abs/1", domain: "arxiv.org" },
+        ],
+      }),
+    );
+    const subs = screen.getByTestId("research-subquestions");
+    expect(subs.textContent).toMatch(/What it is/);
+    expect(subs.textContent).toMatch(/6 sources/);
+    expect(subs.textContent).toMatch(/searching/);
+    expect(subs.textContent).toMatch(/skipped/);
+    expect(screen.getByTestId("research-sub-active")).toBeTruthy();
+    expect(screen.getByTestId("research-sub-skipped")).toBeTruthy();
+    // 子问题清单接管后不再重复渲染 "N sources found" caption
+    expect(screen.getByTestId("research-progress").textContent).not.toMatch(/sources found/);
+    const feed = screen.getByTestId("research-recent-sources");
+    expect(feed.textContent).toMatch(/A Survey/);
+    expect(feed.textContent).toMatch(/arxiv\.org/);
+    expect(feed.textContent).toMatch(/18/);
   });
 
   it("renders a done report and reference list", async () => {
@@ -244,8 +291,15 @@ describe("ResearchPanel detail", () => {
         report: "# Findings\nHello.",
         references: [{ n: 1, title: "Pie site", url: "https://pie.chat" }],
         sourcesFound: 1,
+        subQuestions: [
+          { q: "a", status: "done", sources: 1 },
+          { q: "b", status: "done", sources: 0 },
+        ],
       }),
     );
+    // 完成后时间轴收成一行，把版面让给报告
+    expect(screen.queryByTestId("research-progress")).toBeNull();
+    expect(screen.getByTestId("research-process-collapsed").textContent).toMatch(/all 2 directions done/);
     expect(screen.getByTestId("research-report")).toBeTruthy();
     expect(screen.getByTestId("markdown").textContent).toBe("# Findings\nHello.");
     const refs = screen.getByTestId("research-references");

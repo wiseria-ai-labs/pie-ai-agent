@@ -303,6 +303,7 @@ export default function ResearchPanel({
           apiKey={apiKey}
           id={selectedId}
           onSendToChat={onSendToChat}
+          startedAt={runs.find((r) => r.id === selectedId)?.createdAt}
           onBack={() => {
             setSelectedId(null);
             if (apiKey) void loadList(apiKey);

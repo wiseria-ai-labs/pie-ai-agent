@@ -18,6 +18,23 @@ export interface ResearchReference {
   url: string;
 }
 
+/** 契约 v2.8：gather 阶段的子问题进度。字段缺失时详情页退回三步时间轴。 */
+export type ResearchSubStatus = "pending" | "active" | "done" | "skipped";
+
+export interface ResearchSubQuestion {
+  q: string;
+  status: ResearchSubStatus;
+  sources: number;
+  error?: string;
+}
+
+/** 契约 v2.8：最近拿到的来源（后端已解析 domain，客户端不解析 URL）。 */
+export interface ResearchSource {
+  title: string;
+  url: string;
+  domain: string;
+}
+
 export interface ResearchRun {
   id: string;
   question: string;
@@ -27,6 +44,10 @@ export interface ResearchRun {
   report?: string;
   references?: ResearchReference[];
   error?: string;
+  /** v2.8，可选：后端未升级时省略。 */
+  subQuestions?: ResearchSubQuestion[];
+  /** v2.8，可选：最多 3 条，新的在前。 */
+  recentSources?: ResearchSource[];
 }
 
 export interface ManagedResearchDeps {
@@ -94,6 +115,36 @@ function normalizeReferences(raw: unknown): ResearchReference[] | undefined {
   });
 }
 
+const SUB_STATUSES: ReadonlySet<string> = new Set(["pending", "active", "done", "skipped"]);
+
+function normalizeSubQuestions(raw: unknown): ResearchSubQuestion[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.map((item) => {
+    const r = (item ?? {}) as Record<string, unknown>;
+    const sub: ResearchSubQuestion = {
+      q: typeof r.q === "string" ? r.q : "",
+      status: typeof r.status === "string" && SUB_STATUSES.has(r.status)
+        ? (r.status as ResearchSubStatus)
+        : "pending",
+      sources: typeof r.sources === "number" && Number.isFinite(r.sources) ? r.sources : 0,
+    };
+    if (typeof r.error === "string") sub.error = r.error;
+    return sub;
+  });
+}
+
+function normalizeSources(raw: unknown): ResearchSource[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.map((item) => {
+    const r = (item ?? {}) as Record<string, unknown>;
+    return {
+      title: typeof r.title === "string" ? r.title : "",
+      url: typeof r.url === "string" ? r.url : "",
+      domain: typeof r.domain === "string" ? r.domain : "",
+    };
+  });
+}
+
 function normalizeSummary(raw: unknown): ResearchRunSummary {
   const r = (raw ?? {}) as Record<string, unknown>;
   const summary: ResearchRunSummary = {
@@ -121,6 +172,10 @@ function normalizeRun(raw: unknown): ResearchRun {
   if (typeof r.report === "string") run.report = r.report;
   if (references) run.references = references;
   if (typeof r.error === "string") run.error = r.error;
+  const subQuestions = normalizeSubQuestions(r.subQuestions);
+  if (subQuestions) run.subQuestions = subQuestions;
+  const recentSources = normalizeSources(r.recentSources);
+  if (recentSources) run.recentSources = recentSources;
   return run;
 }
 
