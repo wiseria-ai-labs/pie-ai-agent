@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { Entitlement } from "@/lib/managed-auth";
 import { ResearchError, type ResearchRun, type ResearchRunSummary } from "@/lib/managed-research";
-import ResearchPanel from "./ResearchPanel";
+import { publishChange } from "@/lib/store-bus";
+import ResearchPanel, { hasResearchAccess } from "./ResearchPanel";
 import { useResearchRun } from "./ResearchDetail";
+import { SAMPLE_IDS, loadSample } from "./samples";
 
 const mocks = vi.hoisted(() => ({
   listInstances: vi.fn(),
@@ -79,6 +81,14 @@ const entitlement: Entitlement = {
     weekly: { usedFraction: 0.2, resetAt: RESET_AT },
     research: { weekly: 5, used: 2, resetAt: RESET_AT },
   },
+  models: [],
+};
+
+const noneEnt: Entitlement = {
+  plan: "none",
+  email: "u@x.com",
+  subscription: null,
+  quota: { weekly: { usedFraction: 0, resetAt: RESET_AT } },
   models: [],
 };
 
@@ -381,5 +391,113 @@ describe("ResearchPanel send to chat + download", () => {
       ),
     );
     expect(expectedName).toMatch(/^What is Pie-\d{4}-\d{2}-\d{2}\.md$/);
+  });
+});
+
+describe("hasResearchAccess", () => {
+  it("requires plan:active and quota.research", () => {
+    expect(hasResearchAccess(null)).toBe(false);
+    expect(hasResearchAccess(noneEnt)).toBe(false);
+    expect(hasResearchAccess({ ...entitlement, quota: { weekly: entitlement.quota!.weekly } })).toBe(false);
+    expect(hasResearchAccess(entitlement)).toBe(true);
+  });
+});
+
+describe("ResearchPanel paywall", () => {
+  it("plan:none shows paywall and sample list, not the composer or run list", async () => {
+    mocks.getEntitlement.mockResolvedValue(noneEnt);
+    render(<ResearchPanel />);
+    expect(await screen.findByTestId("research-paywall")).toBeTruthy();
+    expect(screen.getByTestId("research-samples")).toBeTruthy();
+    for (const id of SAMPLE_IDS) {
+      expect(screen.getByTestId(`research-sample-${id}`)).toBeTruthy();
+    }
+    expect(screen.queryByTestId("research-question")).toBeNull();
+    expect(screen.queryByTestId("research-empty")).toBeNull();
+    expect(screen.queryByTestId("research-start")).toBeNull();
+    expect(mocks.listResearch).not.toHaveBeenCalled();
+  });
+
+  it("no managed login at all still reaches the paywall and samples", async () => {
+    mocks.listInstances.mockResolvedValue([]);
+    render(<ResearchPanel />);
+    expect(await screen.findByTestId("research-paywall")).toBeTruthy();
+    expect(screen.getByTestId("research-samples")).toBeTruthy();
+    expect(mocks.getEntitlement).not.toHaveBeenCalled();
+    expect(mocks.listResearch).not.toHaveBeenCalled();
+  });
+
+  it("plan:active does not show the paywall", async () => {
+    render(<ResearchPanel />);
+    expect(await screen.findByTestId("research-question")).toBeTruthy();
+    expect(screen.queryByTestId("research-paywall")).toBeNull();
+    expect(screen.queryByTestId("research-samples")).toBeNull();
+  });
+
+  it("clicking a sample renders it in the shared detail view without cancel or polling", async () => {
+    mocks.getEntitlement.mockResolvedValue(noneEnt);
+    render(<ResearchPanel />);
+    fireEvent.click(await screen.findByTestId("research-sample-ai-regulation"));
+    expect(await screen.findByTestId("research-detail")).toBeTruthy();
+    expect(screen.getByTestId("research-report")).toBeTruthy();
+    expect(screen.getByTestId("markdown").textContent).toMatch(/placeholder/i);
+    expect(screen.getByText(loadSample("ai-regulation", "en").title)).toBeTruthy();
+    expect(screen.queryByTestId("research-cancel")).toBeNull();
+    expect(mocks.getResearch).not.toHaveBeenCalled();
+    expect(mocks.cancelResearch).not.toHaveBeenCalled();
+  });
+
+  it("switches from paywall to the live list when entitlement becomes active", async () => {
+    mocks.getEntitlement.mockResolvedValue(noneEnt);
+    mocks.getCachedEntitlement.mockReturnValue(noneEnt);
+    render(<ResearchPanel />);
+    expect(await screen.findByTestId("research-paywall")).toBeTruthy();
+
+    mocks.getCachedEntitlement.mockReturnValue(entitlement);
+    act(() => publishChange("config", "put", "managed_entitlement_sk-v"));
+
+    // Longest chain in the file (paywall → store event → refetch → list);
+    // the default 1s findBy timeout flakes on a cold transform cache.
+    expect(await screen.findByTestId("research-question", {}, { timeout: 5000 })).toBeTruthy();
+    expect(screen.queryByTestId("research-paywall")).toBeNull();
+    await waitFor(() => expect(mocks.listResearch).toHaveBeenCalledTimes(1));
+  });
+
+  it("subscribe routes out to settings instead of signing in here", async () => {
+    // Signing in from this page used to skip provider-instance creation:
+    // the page unlocked but no key existed to run research with.
+    const onOpenSubscribe = vi.fn();
+    mocks.getEntitlement.mockResolvedValue(noneEnt);
+    render(<ResearchPanel onOpenSubscribe={onOpenSubscribe} />);
+    expect(screen.queryByTestId("research-paywall-redeem")).toBeNull();
+    fireEvent.click(await screen.findByTestId("research-paywall-subscribe"));
+    expect(onOpenSubscribe).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/no active subscription/i)).toBeNull();
+    expect(screen.getByTestId("research-paywall")).toBeTruthy();
+  });
+
+  it("signed-out visitor still sees the intro-offer badge (no entitlement to ask)", async () => {
+    mocks.listInstances.mockResolvedValue([]);
+    render(<ResearchPanel />);
+    const btn = await screen.findByTestId("research-paywall-subscribe");
+    expect(btn.textContent).toMatch(/50% off/i);
+  });
+
+  it("hides the badge for a signed-in user the backend deemed ineligible", async () => {
+    mocks.getEntitlement.mockResolvedValue(noneEnt);
+    render(<ResearchPanel />);
+    const btn = await screen.findByTestId("research-paywall-subscribe");
+    expect(btn.textContent).not.toMatch(/off/i);
+  });
+
+  it("sample cards carry the opening paragraph and the front-matter run stats", async () => {
+    mocks.getEntitlement.mockResolvedValue(noneEnt);
+    render(<ResearchPanel />);
+    const card = await screen.findByTestId("research-sample-ai-regulation");
+    const sample = loadSample("ai-regulation", "en");
+    expect(sample.stats).toBeTruthy();
+    expect(card.textContent).toContain(sample.summary);
+    expect(card.textContent).toContain(`${sample.stats!.sources} sources`);
+    expect(card.textContent).toContain(`${sample.stats!.minutes} min`);
   });
 });

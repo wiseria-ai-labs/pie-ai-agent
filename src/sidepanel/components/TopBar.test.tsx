@@ -57,12 +57,12 @@ describe("TopBar 六态", () => {
     expect(p.onNavigate).toHaveBeenCalledWith("schedules");
   });
 
-  it("未登录 managed 时不渲染 research 入口；showResearch 时渲染并可切到研究页", () => {
+  it("research 入口对所有用户常显（未登录点进去是 paywall），可切到研究页", () => {
     const p = make();
     render(<TopBar {...p} />);
-    expect(screen.queryByTestId("topbar-research")).toBeNull();
+    expect(screen.getByTestId("topbar-research")).toBeTruthy();
     cleanup();
-    const q = make({ showResearch: true, view: "research" });
+    const q = make({ view: "research" });
     render(<TopBar {...q} />);
     expect(screen.getByTestId("topbar-research").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("Research")).toBeTruthy();

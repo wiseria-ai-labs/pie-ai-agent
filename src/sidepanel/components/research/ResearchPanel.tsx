@@ -10,13 +10,20 @@ import {
 import { trackResearchRun } from "@/lib/research-poll";
 import { formatResetDate } from "@/lib/managed-format";
 import type { Entitlement } from "@/lib/managed-auth";
+import { onStoreChange } from "@/lib/store-bus";
 import { useI18n, type DictKey } from "@/lib/i18n";
 import { Button } from "../ui/Button";
 import { Collapse } from "../ui/Collapse";
 import { ManagedStatusPill } from "../ManagedStatusPill";
 import { useAnimatedList } from "../ui/AnimatedList";
 import ResearchDetail from "./ResearchDetail";
+import ResearchPaywall from "./ResearchPaywall";
+import { listSamples, loadSample, sampleToRun, type SampleId } from "./samples";
 import { PILL_TONE, statusLabel } from "./status";
+
+export function hasResearchAccess(ent: Entitlement | null | undefined): boolean {
+  return ent?.plan === "active" && ent.quota?.research != null;
+}
 
 const QUESTION_MAX = 2000;
 const FOCUS_MAX = 500;
@@ -93,12 +100,15 @@ export default function ResearchPanel({
   openId,
   onOpenIdConsumed,
   onSendToChat,
+  onOpenSubscribe,
 }: {
   initialQuestion?: string;
   onPrefillConsumed?: () => void;
   openId?: string;
   onOpenIdConsumed?: () => void;
   onSendToChat?: (markdown: string) => void;
+  /** Routes to Settings → Models, the one place that owns sign-in + checkout. */
+  onOpenSubscribe?: () => void;
 } = {}) {
   const { t, locale } = useI18n();
   const listRef = useAnimatedList<HTMLDivElement>();
@@ -108,6 +118,8 @@ export default function ResearchPanel({
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<DictKey | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sampleId, setSampleId] = useState<SampleId | null>(null);
+  const [entReady, setEntReady] = useState(false);
 
   const [question, setQuestion] = useState("");
   const [focus, setFocus] = useState("");
@@ -138,23 +150,40 @@ export default function ResearchPanel({
       setApiKey(key);
       if (!key) {
         setLoading(false);
+        setEntReady(true);
         return;
       }
       const cached = getCachedEntitlement(key);
       if (cached) setEnt(cached);
-      void getEntitlement(key)
-        .then((next) => {
-          if (alive) setEnt(next);
-        })
-        .catch(() => {
-          /* quota is decorative; list still works */
-        });
-      await loadList(key);
+      try {
+        const next = await getEntitlement(key);
+        if (alive) setEnt(next);
+      } catch {
+        /* lock is UX-only; missing entitlement → paywall */
+      } finally {
+        if (alive) setEntReady(true);
+      }
     })();
     return () => {
       alive = false;
     };
-  }, [loadList]);
+  }, []);
+
+  const unlocked = hasResearchAccess(ent);
+
+  useEffect(() => {
+    if (!apiKey || !unlocked) return;
+    void loadList(apiKey);
+  }, [apiKey, unlocked, loadList]);
+
+  useEffect(() => {
+    if (!apiKey) return;
+    return onStoreChange("config", (c) => {
+      if (!c.id?.startsWith("managed_entitlement_")) return;
+      const next = getCachedEntitlement(apiKey);
+      if (next) setEnt(next);
+    });
+  }, [apiKey]);
 
   useEffect(() => {
     if (initialQuestion == null) return;
@@ -199,6 +228,70 @@ export default function ResearchPanel({
   const quota = ent?.quota?.research;
   const remaining = quota ? Math.max(0, quota.weekly - quota.used) : null;
   const weekday = quota ? formatWeekday(quota.resetAt, locale) : null;
+  // Parse on demand: samples are dead weight for unlocked users, and the real
+  // reports that replace the placeholders are tens of KB each.
+  if (sampleId) {
+    return (
+      <div className="flex-1 overflow-y-auto px-4 py-5" data-testid="research-page">
+        <ResearchDetail
+          staticRun={sampleToRun(loadSample(sampleId, locale))}
+          onBack={() => setSampleId(null)}
+        />
+      </div>
+    );
+  }
+
+  if (!entReady && !ent) {
+    return (
+      <div className="flex-1 overflow-y-auto px-4 py-5" data-testid="research-page">
+        <div className="text-[12px] text-fg-3">{t("common.loading")}</div>
+      </div>
+    );
+  }
+
+  if (!unlocked) {
+    const samples = listSamples(locale);
+    return (
+      <div className="flex-1 overflow-y-auto px-4 py-5" data-testid="research-page">
+        <div className="flex flex-col gap-7 pt-2">
+          <ResearchPaywall entitlement={ent} onOpenSubscribe={() => onOpenSubscribe?.()} />
+          <div data-testid="research-samples" className="flex flex-col gap-2.5">
+            <div className="text-[11px] font-medium leading-4 tracking-[0.02em] text-fg-3">
+              {t("research.paywall.samples")}
+            </div>
+            {samples.map((sample) => (
+              <button
+                key={sample.id}
+                type="button"
+                data-testid={`research-sample-${sample.id}`}
+                onClick={() => setSampleId(sample.id)}
+                className="flex w-full flex-col gap-2.5 rounded-xl border border-line bg-surface px-3.5 pb-3 pt-3.5 text-left transition-colors hover:border-fg-3/60"
+              >
+                <span className="text-[13px] font-medium leading-[19px] text-fg-1">
+                  {sample.title}
+                </span>
+                {sample.summary && (
+                  <span className="line-clamp-3 text-[12px] leading-[18px] text-fg-2">
+                    {sample.summary}
+                  </span>
+                )}
+                <span className="flex items-center gap-2 pt-[3px]">
+                  <span className="flex-1 font-mono text-[11px] leading-[15px] text-fg-3">
+                    {sample.stats
+                      ? t("research.paywall.sampleMeta", { ...sample.stats })
+                      : ""}
+                  </span>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0 text-fg-3/70" aria-hidden>
+                    <path d="M4.5 2.5L8 6l-3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (selectedId && apiKey) {
     return (

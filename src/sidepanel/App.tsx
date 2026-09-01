@@ -42,7 +42,7 @@ import type { SessionIndexEntry } from "@/lib/sessions/types";
  */
 export default function App() {
   const [view, setView] = useState<AppView>("agent");
-  const [showResearch, setShowResearch] = useState(false);
+  const [hasManagedKey, setHasManagedKey] = useState(false);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("root");
   // Slide direction for the settings root ↔ sub-page swap: drilling in slides
   // from the right, going back slides from the left (page-enter-* classes).
@@ -131,15 +131,14 @@ export default function App() {
     setPendingCount(await getPendingConfirmCount());
   }, []);
 
+  // Gates the composer shortcut only — the research tab itself is always
+  // visible so BYOK users can reach the paywall and the sample reports.
   const refreshResearchGate = useCallback(async () => {
     try {
       const insts = await listInstances();
-      const on = insts.some((i) => i.provider === "managed" && Boolean(i.apiKey));
-      setShowResearch(on);
-      if (!on) setView((v) => (v === "research" ? "agent" : v));
+      setHasManagedKey(insts.some((i) => i.provider === "managed" && Boolean(i.apiKey)));
     } catch {
-      setShowResearch(false);
-      setView((v) => (v === "research" ? "agent" : v));
+      setHasManagedKey(false);
     }
   }, []);
 
@@ -398,7 +397,6 @@ export default function App() {
         onToggleDrawer={() => setDrawerOpen((v) => !v)}
         onNewSession={() => void handleNewSession()}
         onNavigate={(v) => setView(view === v ? "agent" : v)}
-        showResearch={showResearch}
         onBack={goBack}
         pinnedTabs={session.pinnedTabs}
         pinMode={session.pinMode ?? null}
@@ -438,7 +436,7 @@ export default function App() {
                 : undefined
             }
             onDeepResearch={
-              showResearch
+              hasManagedKey
                 ? (text) => {
                     setResearchPrefill(text);
                     setView("research");
@@ -460,6 +458,10 @@ export default function App() {
             onSendToChat={(markdown) => {
               setChatPrefill(markdown);
               setView("agent");
+            }}
+            onOpenSubscribe={() => {
+              openSettings("models");
+              setSubscribeNonce((n) => n + 1);
             }}
           />
         ) : view === "skills" ? (

@@ -41,7 +41,6 @@ export interface TopBarProps {
   onNewSession: () => void;
   onNavigate: (v: "schedules" | "research" | "skills") => void;
   /** Managed account signed in — Research is a Pro-gated surface. */
-  showResearch?: boolean;
   onBack: () => void;
   pinnedTabs: ReadonlyArray<{ tabId: number; origin: string }> | null;
   pinMode: "auto" | "task" | "user" | null;
@@ -60,7 +59,6 @@ export default function TopBar({
   onToggleDrawer,
   onNewSession,
   onNavigate,
-  showResearch = false,
   onBack,
   pinnedTabs,
   pinMode,
@@ -151,17 +149,15 @@ export default function TopBar({
               icon={<AlarmClock {...ICON} />}
               onClick={() => onNavigate("schedules")}
             />
-            {showResearch && (
-              <IconButton
-                data-testid="topbar-research"
-                size="sm"
-                aria-label={t("research.title")}
-                aria-pressed={view === "research"}
-                active={view === "research"}
-                icon={<Telescope {...ICON} />}
-                onClick={() => onNavigate("research")}
-              />
-            )}
+            <IconButton
+              data-testid="topbar-research"
+              size="sm"
+              aria-label={t("research.title")}
+              aria-pressed={view === "research"}
+              active={view === "research"}
+              icon={<Telescope {...ICON} />}
+              onClick={() => onNavigate("research")}
+            />
             <IconButton
               data-testid="topbar-skills"
               size="sm"
