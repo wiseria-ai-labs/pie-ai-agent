@@ -763,6 +763,9 @@ export const enDict = {
     references: "References",
     backToList: "Back to list",
     waiting: "Waiting to start…",
+    composerShortcut: "Deep research",
+    sendToChat: "Send to chat",
+    download: "Download .md",
     error: {
       quotaExceeded: "Weekly research quota used up. Resets {date}.",
       quotaExceededNoDate: "Weekly research quota used up.",

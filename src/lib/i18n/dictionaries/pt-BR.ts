@@ -758,6 +758,9 @@ export const ptBRDict = {
     references: "References",
     backToList: "Back to list",
     waiting: "Waiting to start…",
+    composerShortcut: "Pesquisa profunda",
+    sendToChat: "Enviar para o chat",
+    download: "Baixar .md",
     error: {
       quotaExceeded: "Weekly research quota used up. Resets {date}.",
       quotaExceededNoDate: "Weekly research quota used up.",

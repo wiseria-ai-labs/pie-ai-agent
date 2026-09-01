@@ -87,7 +87,19 @@ async function resolveManagedApiKey(): Promise<string | null> {
   }
 }
 
-export default function ResearchPanel() {
+export default function ResearchPanel({
+  initialQuestion,
+  onPrefillConsumed,
+  openId,
+  onOpenIdConsumed,
+  onSendToChat,
+}: {
+  initialQuestion?: string;
+  onPrefillConsumed?: () => void;
+  openId?: string;
+  onOpenIdConsumed?: () => void;
+  onSendToChat?: (markdown: string) => void;
+} = {}) {
   const { t, locale } = useI18n();
   const listRef = useAnimatedList<HTMLDivElement>();
   const [apiKey, setApiKey] = useState<string | null>(null);
@@ -144,6 +156,21 @@ export default function ResearchPanel() {
     };
   }, [loadList]);
 
+  useEffect(() => {
+    if (initialQuestion == null) return;
+    setQuestion(initialQuestion.slice(0, QUESTION_MAX));
+    onPrefillConsumed?.();
+  // Consume once per prefill value; parent passes a fresh callback each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuestion]);
+
+  useEffect(() => {
+    if (!openId) return;
+    setSelectedId(openId);
+    onOpenIdConsumed?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId]);
+
   async function handleStart() {
     if (!apiKey || submitting) return;
     const q = question.trim();
@@ -182,6 +209,7 @@ export default function ResearchPanel() {
         <ResearchDetail
           apiKey={apiKey}
           id={selectedId}
+          onSendToChat={onSendToChat}
           onBack={() => {
             setSelectedId(null);
             if (apiKey) void loadList(apiKey);

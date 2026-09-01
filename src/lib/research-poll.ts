@@ -1,13 +1,13 @@
 import { getResearch, type ResearchRun } from "./managed-research";
 import { listInstances } from "./instances";
 import { getConfig, setConfig } from "./idb/config-store";
+import { RESEARCH_NOTIF_PREFIX } from "./research-notif";
 
 /** SW chrome.alarms 名：固定单 alarm，周期 1 分钟。 */
 export const RESEARCH_POLL_ALARM = "pie-research-poll";
 
 const STORAGE_KEY = "research_in_progress_ids";
 const PERIOD_MINUTES = 1;
-const RESEARCH_NOTIF_PREFIX = "research-done:";
 
 export interface ResearchPollDeps {
   fetchFn?: typeof fetch;

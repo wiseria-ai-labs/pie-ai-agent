@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { cancelResearch, getResearch, type ResearchPhase, type ResearchRun } from "@/lib/managed-research";
+import { downloadResearchMarkdown, researchDownloadFilename } from "@/lib/research-download";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "../ui/Button";
 import { ManagedStatusPill } from "../ManagedStatusPill";
@@ -74,10 +75,12 @@ export default function ResearchDetail({
   apiKey,
   id,
   onBack,
+  onSendToChat,
 }: {
   apiKey: string;
   id: string;
   onBack: () => void;
+  onSendToChat?: (markdown: string) => void;
 }) {
   const { t } = useI18n();
   const { run, loadError, setRun, setLoadError } = useResearchRun(apiKey, id);
@@ -170,6 +173,37 @@ export default function ResearchDetail({
                 <div data-testid="research-report" className="text-[13px] text-fg-1">
                   <div className="caps mb-2 text-fg-3">{t("research.report")}</div>
                   <MarkdownContent content={run.report} />
+                </div>
+              )}
+              {run.report && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {onSendToChat && (
+                    <Button
+                      data-testid="research-send-to-chat"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onSendToChat(run.report!)}
+                    >
+                      {t("research.sendToChat")}
+                    </Button>
+                  )}
+                  <Button
+                    data-testid="research-download"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      void downloadResearchMarkdown(
+                        researchDownloadFilename(run.question),
+                        run.report!,
+                      ).catch((e) => {
+                        const m = e instanceof Error ? e.message : String(e);
+                        if (/canceled|cancelled/i.test(m)) return;
+                        console.warn("[research] download failed:", e);
+                      });
+                    }}
+                  >
+                    {t("research.download")}
+                  </Button>
                 </div>
               )}
               {run.references && run.references.length > 0 && (

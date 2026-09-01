@@ -757,6 +757,9 @@ export const zhCNDict = {
     references: "参考文献",
     backToList: "返回列表",
     waiting: "等待开始…",
+    composerShortcut: "深度研究",
+    sendToChat: "发送到对话",
+    download: "下载 .md",
     error: {
       quotaExceeded: "本周研究次数已用完，{date} 重置。",
       quotaExceededNoDate: "本周研究次数已用完。",

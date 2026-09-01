@@ -757,6 +757,9 @@ export const jaDict = {
     references: "References",
     backToList: "Back to list",
     waiting: "Waiting to start…",
+    composerShortcut: "ディープリサーチ",
+    sendToChat: "チャットに送る",
+    download: "Download .md",
     error: {
       quotaExceeded: "Weekly research quota used up. Resets {date}.",
       quotaExceededNoDate: "Weekly research quota used up.",

@@ -72,6 +72,8 @@ import {
 } from "@/lib/schedules/scheduler";
 import { handleScheduleNotificationClick } from "@/lib/schedules/notify";
 import { handleResearchPollAlarm } from "@/lib/research-poll";
+import { handleResearchNotificationClick } from "@/background/research-onclick";
+import { RESEARCH_NOTIF_PREFIX } from "@/lib/research-notif";
 import { setScheduleRunDep } from "@/lib/agent/tools/schedule-meta";
 import { handleScheduleAction } from "@/lib/schedules/action-handler";
 import { SCHEDULE_ACTION_MESSAGE, type ScheduleActionMessage } from "@/lib/schedules/panel-actions";
@@ -312,6 +314,12 @@ if (chrome.alarms) {
 // may not provide chrome.notifications).
 if (chrome.notifications) {
   chrome.notifications.onClicked.addListener((notificationId) => {
+    if (notificationId.startsWith(RESEARCH_NOTIF_PREFIX)) {
+      handleResearchNotificationClick(notificationId).catch((e) => {
+        console.warn(`[sw] handleResearchNotificationClick(${notificationId}) failed:`, e);
+      });
+      return;
+    }
     handleScheduleNotificationClick(notificationId).catch((e) => {
       console.warn(`[sw] handleScheduleNotificationClick(${notificationId}) failed:`, e);
     });

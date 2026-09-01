@@ -122,6 +122,9 @@ interface ChatProps {
    *  Click triggers a recording-start; the panel switches to RecordingMode on
    *  the next broadcast. */
   onStartRecording?: () => void;
+  /** Deep Research shortcut (managed signed-in only). Copies current input
+   *  to the research composer without sending or clearing it. */
+  onDeepResearch?: (text: string) => void;
 }
 
 function filterAndSortSkillsForSlash(
@@ -165,6 +168,7 @@ export default function Chat({
   pendingRecording,
   onPendingRecordingConsumed,
   onStartRecording,
+  onDeepResearch,
 }: ChatProps) {
   const {
     ready,
@@ -1491,6 +1495,7 @@ After the skill completes, briefly summarize what was created (the user will see
         onPasteFiles={(files) => void addPickedFiles(files)}
         onDropFiles={(files) => void addPickedFiles(files)}
         onStartRecording={onStartRecording}
+        onDeepResearch={onDeepResearch}
         recordingDisabled={pendingRecording !== null}
         instances={instances}
         currentInstanceId={currentInstanceId}
@@ -1948,6 +1953,7 @@ function Composer({
   onPasteFiles,
   onDropFiles,
   onStartRecording,
+  onDeepResearch,
   recordingDisabled,
   pickerActive,
   onPickElement,
@@ -1988,6 +1994,7 @@ function Composer({
    *  Click triggers recording-start; the panel switches to RecordingMode
    *  on the next broadcast (no UI feedback inside Composer is needed). */
   onStartRecording?: () => void;
+  onDeepResearch?: (text: string) => void;
   /** Disabled while a pendingRecording chip is sitting in the input
    *  (you'd send the existing chip first) or when no active session. */
   recordingDisabled?: boolean;
@@ -2111,6 +2118,7 @@ function Composer({
               supportsVision={supportsVision}
               attachmentCount={attachmentCount}
               onStartRecording={onStartRecording}
+              onDeepResearch={onDeepResearch ? () => onDeepResearch(input) : undefined}
               recordingDisabled={recordingDisabled || streaming}
             />
             <div className="flex-1" />
@@ -2193,6 +2201,7 @@ function ToolsMenu({
   supportsVision,
   attachmentCount,
   onStartRecording,
+  onDeepResearch,
   recordingDisabled,
 }: {
   onPickElement?: () => void;
@@ -2201,6 +2210,7 @@ function ToolsMenu({
   supportsVision: boolean;
   attachmentCount: number;
   onStartRecording?: () => void;
+  onDeepResearch?: () => void;
   recordingDisabled?: boolean;
 }) {
   const t = useT();
@@ -2308,6 +2318,37 @@ function ToolsMenu({
             </svg>
             <span>{t("chat.files.attachFile")}</span>
           </button>
+          {onDeepResearch && (
+            <button
+              type="button"
+              data-testid="chat-deep-research"
+              aria-label={t("research.composerShortcut")}
+              onClick={() => {
+                setOpen(false);
+                onDeepResearch();
+              }}
+              title={t("research.composerShortcut")}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-fg-1 hover:bg-field"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="flex-shrink-0"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20l-3-3" />
+                <path d="M11 8v6M8 11h6" />
+              </svg>
+              <span>{t("research.composerShortcut")}</span>
+            </button>
+          )}
           {onStartRecording && (
             <button
               type="button"

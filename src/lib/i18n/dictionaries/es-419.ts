@@ -758,6 +758,9 @@ export const es419Dict = {
     references: "References",
     backToList: "Back to list",
     waiting: "Waiting to start…",
+    composerShortcut: "Investigación profunda",
+    sendToChat: "Enviar al chat",
+    download: "Descargar .md",
     error: {
       quotaExceeded: "Weekly research quota used up. Resets {date}.",
       quotaExceededNoDate: "Weekly research quota used up.",

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   trackResearchRun: vi.fn(),
   getEntitlement: vi.fn(),
   getCachedEntitlement: vi.fn(),
+  onSendToChat: vi.fn(),
 }));
 
 vi.mock("@/lib/instances", () => ({
@@ -113,6 +114,7 @@ beforeEach(() => {
   mocks.getEntitlement.mockResolvedValue(entitlement);
   mocks.trackResearchRun.mockResolvedValue(undefined);
   mocks.cancelResearch.mockResolvedValue(undefined);
+  mocks.onSendToChat.mockReset();
 });
 
 describe("ResearchPanel list", () => {
@@ -318,5 +320,66 @@ describe("ResearchPanel detail", () => {
       await Promise.resolve();
     });
     expect(mocks.getResearch.mock.calls.length).toBe(afterTerminal);
+  });
+});
+
+describe("ResearchPanel composer shortcut + notification open", () => {
+  it("prefills the question from the composer shortcut without starting a run", async () => {
+    render(<ResearchPanel initialQuestion="AI regulation in 2026" />);
+    const box = await screen.findByTestId("research-question") as HTMLTextAreaElement;
+    expect(box.value).toBe("AI regulation in 2026");
+    expect(mocks.startResearch).not.toHaveBeenCalled();
+  });
+
+  it("opens the matching run detail when given openId", async () => {
+    mocks.listResearch.mockResolvedValue([
+      summary({ id: "run_x", question: "What is Pie?", status: "done" }),
+    ]);
+    mocks.getResearch.mockResolvedValue(
+      run({ id: "run_x", status: "done", report: "# Findings\nHello." }),
+    );
+    render(<ResearchPanel openId="run_x" />);
+    expect(await screen.findByTestId("research-detail")).toBeTruthy();
+    expect(await screen.findByTestId("research-report")).toBeTruthy();
+  });
+});
+
+describe("ResearchPanel send to chat + download", () => {
+  async function openDone() {
+    mocks.listResearch.mockResolvedValue([
+      summary({ id: "r2", question: "What is Pie?", status: "done" }),
+    ]);
+    mocks.getResearch.mockResolvedValue(
+      run({
+        id: "r2",
+        status: "done",
+        report: "# Findings\nHello.",
+        sourcesFound: 1,
+      }),
+    );
+    render(<ResearchPanel onSendToChat={mocks.onSendToChat} />);
+    fireEvent.click(await screen.findByTestId("research-row-r2"));
+    expect(await screen.findByTestId("research-detail")).toBeTruthy();
+  }
+
+  it("send to chat hands the report markdown to the callback and does not auto-start", async () => {
+    await openDone();
+    fireEvent.click(screen.getByTestId("research-send-to-chat"));
+    expect(mocks.onSendToChat).toHaveBeenCalledWith("# Findings\nHello.");
+    expect(mocks.startResearch).not.toHaveBeenCalled();
+  });
+
+  it("download uses the first 40 characters of the question plus the date", async () => {
+    const { chromeMock } = await import("@/test/setup");
+    const { researchDownloadFilename } = await import("@/lib/research-download");
+    await openDone();
+    fireEvent.click(screen.getByTestId("research-download"));
+    const expectedName = researchDownloadFilename("What is Pie?");
+    await waitFor(() =>
+      expect(chromeMock.downloads.download).toHaveBeenCalledWith(
+        expect.objectContaining({ filename: expectedName }),
+      ),
+    );
+    expect(expectedName).toMatch(/^What is Pie-\d{4}-\d{2}-\d{2}\.md$/);
   });
 });

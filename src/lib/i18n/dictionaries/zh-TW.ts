@@ -757,6 +757,9 @@ export const zhTWDict = {
     references: "References",
     backToList: "Back to list",
     waiting: "Waiting to start…",
+    composerShortcut: "深度研究",
+    sendToChat: "傳送到對話",
+    download: "下載 .md",
     error: {
       quotaExceeded: "Weekly research quota used up. Resets {date}.",
       quotaExceededNoDate: "Weekly research quota used up.",

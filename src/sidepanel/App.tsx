@@ -23,7 +23,7 @@ import RecordingMode from "@/sidepanel/components/RecordingMode";
 import { listSessionIndex, getPendingConfirmCount } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
-import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
+import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE, parseResearchDetailDeeplink } from "@/lib/deeplink";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 
@@ -49,6 +49,8 @@ export default function App() {
   const [settingsNavDir, setSettingsNavDir] = useState<"fwd" | "back">("fwd");
   const [providerLabel, setProviderLabel] = useState<string | null>(null);
   const [chatPrefill, setChatPrefill] = useState<string | undefined>(undefined);
+  const [researchPrefill, setResearchPrefill] = useState<string | undefined>(undefined);
+  const [researchOpenId, setResearchOpenId] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -172,10 +174,17 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     const consume = (val: unknown) => {
-      if (val !== DEEPLINK_MANAGED_SUBSCRIBE) return;
+      if (val === DEEPLINK_MANAGED_SUBSCRIBE) {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        openSettings("models");
+        setSubscribeNonce((n) => n + 1);
+        return;
+      }
+      const researchId = parseResearchDetailDeeplink(val);
+      if (!researchId) return;
       void chrome.storage.session.remove(DEEPLINK_KEY);
-      openSettings("models");
-      setSubscribeNonce((n) => n + 1);
+      setResearchOpenId(researchId);
+      setView("research");
     };
     void chrome.storage.session
       .get(DEEPLINK_KEY)
@@ -428,6 +437,14 @@ export default function App() {
                 ? recording.startRecording
                 : undefined
             }
+            onDeepResearch={
+              showResearch
+                ? (text) => {
+                    setResearchPrefill(text);
+                    setView("research");
+                  }
+                : undefined
+            }
           />
         ) : view === "schedules" ? (
           <SchedulesPanel
@@ -435,7 +452,16 @@ export default function App() {
             onCreateViaChat={(template) => void handleCreateScheduleViaChat(template)}
           />
         ) : view === "research" ? (
-          <ResearchPanel />
+          <ResearchPanel
+            initialQuestion={researchPrefill}
+            onPrefillConsumed={() => setResearchPrefill(undefined)}
+            openId={researchOpenId}
+            onOpenIdConsumed={() => setResearchOpenId(undefined)}
+            onSendToChat={(markdown) => {
+              setChatPrefill(markdown);
+              setView("agent");
+            }}
+          />
         ) : view === "skills" ? (
           <div className="flex-1 overflow-y-auto px-4 py-6" data-testid="skills-page">
             <SkillsList onRunSkill={(id, name) => void handleRunSkill(id, name)} />

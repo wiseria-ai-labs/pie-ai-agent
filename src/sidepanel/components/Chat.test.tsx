@@ -1494,3 +1494,39 @@ describe("Chat — 单任务只起一次 AGENT 表头", () => {
     expect(screen.getAllByText("AGENT").length).toBe(2);
   });
 });
+
+describe("Chat — deep research shortcut", () => {
+  it("copies the current composer text without sending or clearing it", async () => {
+    seedProvider("anthropic");
+    const onDeepResearch = vi.fn();
+    const sendMock = vi.fn();
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession({ sendMessage: sendMock })}
+        onDeepResearch={onDeepResearch}
+      />,
+    );
+    const textarea = await screen.findByTestId("chat-composer") as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "AI regulation in 2026" } });
+    fireEvent.click(await screen.findByRole("button", { name: /more tools/i }));
+    fireEvent.click(await screen.findByTestId("chat-deep-research"));
+    expect(onDeepResearch).toHaveBeenCalledWith("AI regulation in 2026");
+    expect(textarea.value).toBe("AI regulation in 2026");
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("hides the shortcut when onDeepResearch is not provided (managed not signed in)", async () => {
+    seedProvider("anthropic");
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        session={makeSession()}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /more tools/i }));
+    expect(screen.queryByTestId("chat-deep-research")).toBeNull();
+  });
+});
