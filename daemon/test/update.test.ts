@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { spawnSync } from "child_process";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, chmodSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -12,6 +13,9 @@ import {
   checkUpdate,
   applyUpdate,
   RELEASES_URL_PREFIX,
+  PIE_LINK_APP_PATH,
+  findTopLevelApp,
+  defaultUnzipToBundle,
   type UpdateDeps,
 } from "../src/update";
 import { DAEMON_VERSION } from "../src/version";
@@ -32,10 +36,37 @@ test("compareVersions: 三段 semver 各方向", () => {
 test("parseLatest: 合法结构通过，畸形即抛", () => {
   const good = { version: "1.2.3", macos: { url: "u", sha256: "s" }, windows: { url: "u", sha256: "s" } };
   expect(parseLatest(good)).toEqual(good);
+  expect(parseLatest(good).app).toBeUndefined();
   expect(() => parseLatest(null)).toThrow();
   expect(() => parseLatest({ version: "1.2.3" })).toThrow(); // 缺 macos/windows
   expect(() => parseLatest({ version: 1, macos: { url: "u", sha256: "s" }, windows: { url: "u", sha256: "s" } })).toThrow();
   expect(() => parseLatest({ version: "1.2.3", macos: { url: "u" }, windows: { url: "u", sha256: "s" } })).toThrow();
+});
+
+test("parseLatest: 带 app 的新 json + 未知字段不炸（老 daemon 加法演进；未知字段忽略）", () => {
+  const raw = {
+    version: "1.2.3",
+    macos: { url: "u", sha256: "s" },
+    windows: { url: "u", sha256: "s" },
+    app: { url: "https://example/app.zip", sha256: "abc" },
+    experimental: true,
+  };
+  const r = parseLatest(raw);
+  expect(r.version).toBe("1.2.3");
+  expect(r.macos).toEqual({ url: "u", sha256: "s" });
+  expect(r.app).toEqual({ url: "https://example/app.zip", sha256: "abc" });
+  expect("experimental" in r).toBe(false);
+});
+
+test("parseLatest: app 存在但形状不对即抛", () => {
+  const base = { version: "1.2.3", macos: { url: "u", sha256: "s" }, windows: { url: "u", sha256: "s" } };
+  expect(() => parseLatest({ ...base, app: { url: "u" } })).toThrow(/malformed/);
+  expect(() => parseLatest({ ...base, app: "nope" })).toThrow(/malformed/);
+  expect(() => parseLatest({ ...base, app: null })).toThrow(/malformed/);
+});
+
+test("PIE_LINK_APP_PATH is hardcoded (RPC 不得覆盖)", () => {
+  expect(PIE_LINK_APP_PATH).toBe("/Applications/Pie Link.app");
 });
 
 test("isAllowedUpdateUrl: 只放行 releases 前缀", () => {
@@ -148,7 +179,13 @@ function baseDeps(f: ReturnType<typeof mkFixture>, sha: string): Partial<UpdateD
     fetchBytes: async () => f.binBytes,
     unzipToBinary: f.unzip,
     codesignVerify: () => true,
+    codesignVerifyDeep: () => true,
     codesignInfo: () => `TeamIdentifier=${TEAM}`,
+    // 无 app 字段时不会用到；给一个不会碰到 /Applications 的桩，防止误伤真机。
+    appPath: join(f.binDir, "unused-Pie Link.app"),
+    unzipToBundle: () => {
+      throw new Error("unzipToBundle stub missing (json should not have app)");
+    },
   };
 }
 
@@ -158,6 +195,8 @@ test("applyUpdate: 三闸全过 → 原子替换 ~/.pie/bin/pie，回新版本�
   expect(r.version).toBe("999.0.0");
   expect(r.path).toBe(join(f.binDir, "pie"));
   expect(readFileSync(join(f.binDir, "pie"), "utf8")).toBe("NEW-BINARY-CONTENT");
+  expect(r.appUpdated).toBe(false); // 老 json 无 app → 跳过、不报错
+  expect(r.appError).toBeUndefined();
 });
 
 test("applyUpdate: sha256 不符 → 中止且不替换", async () => {
@@ -221,4 +260,205 @@ test("checkUpdate: latest 缺失（404 等）冒泡为错误", async () => {
       },
     }),
   ).rejects.toThrow(/404/);
+});
+
+// ── #419 app bundle（daemon 当 ShipIt）────────────────────────────────
+
+const appZipUrl = `${RELEASES_URL_PREFIX}download/pie-link-app.zip`;
+
+function leftovers(appsDir: string): string[] {
+  return readdirSync(appsDir).filter((n) => n.startsWith(".pie-"));
+}
+
+function mkAppWorld(): {
+  appsDir: string;
+  appPath: string;
+  appBytes: Uint8Array;
+  appSha: string;
+  unzipToBundle: UpdateDeps["unzipToBundle"];
+} {
+  const appsDir = mkdtempSync(join(tmpdir(), "pie-app-upd-"));
+  const appPath = join(appsDir, "Pie Link.app");
+  mkdirSync(appPath, { recursive: true });
+  writeFileSync(join(appPath, "marker"), "OLD-APP");
+  const appBytes = new TextEncoder().encode("NEW-APP-ZIP-BYTES");
+  const unzipToBundle: UpdateDeps["unzipToBundle"] = (_zip, dest) => {
+    mkdirSync(dest, { recursive: true });
+    const extracted = join(dest, "Pie Link.app");
+    mkdirSync(extracted, { recursive: true });
+    writeFileSync(join(extracted, "marker"), "NEW-APP");
+    return extracted;
+  };
+  return { appsDir, appPath, appBytes, appSha: sha256Hex(appBytes), unzipToBundle };
+}
+
+function withApp(
+  f: ReturnType<typeof mkFixture>,
+  app: ReturnType<typeof mkAppWorld>,
+  sha = app.appSha,
+): Partial<UpdateDeps> {
+  return {
+    ...baseDeps(f, f.sha),
+    appPath: app.appPath,
+    unzipToBundle: app.unzipToBundle,
+    codesignVerifyDeep: () => true,
+    fetchJson: async () => ({
+      version: "999.0.0",
+      macos: { url: goodUrl, sha256: f.sha },
+      windows: { url: `${RELEASES_URL_PREFIX}download/pie-link-setup.exe`, sha256: "x" },
+      app: { url: appZipUrl, sha256: sha },
+    }),
+    fetchBytes: async (url: string) => (url.includes("pie-link-app") ? app.appBytes : f.binBytes),
+  };
+}
+
+test("applyUpdate: latest 带 app → daemon + bundle 都换，无残留", async () => {
+  const f = mkFixture();
+  const app = mkAppWorld();
+  const r = await applyUpdate(withApp(f, app));
+  expect(r.version).toBe("999.0.0");
+  expect(r.appUpdated).toBe(true);
+  expect(r.appError).toBeUndefined();
+  expect(readFileSync(join(f.binDir, "pie"), "utf8")).toBe("NEW-BINARY-CONTENT");
+  expect(readFileSync(join(app.appPath, "marker"), "utf8")).toBe("NEW-APP");
+  expect(leftovers(app.appsDir)).toEqual([]);
+});
+
+test("applyUpdate: 无 app 的老 json → 只更新 daemon、不报错、不动 bundle", async () => {
+  const f = mkFixture();
+  const app = mkAppWorld();
+  const r = await applyUpdate({ ...baseDeps(f, f.sha), appPath: app.appPath });
+  expect(r.appUpdated).toBe(false);
+  expect(r.appError).toBeUndefined();
+  expect(readFileSync(join(f.binDir, "pie"), "utf8")).toBe("NEW-BINARY-CONTENT");
+  expect(readFileSync(join(app.appPath, "marker"), "utf8")).toBe("OLD-APP");
+  expect(leftovers(app.appsDir)).toEqual([]);
+});
+
+test("applyUpdate: app.url 非白名单 → daemon 成功、app 中止、字节不变、无残留", async () => {
+  const f = mkFixture();
+  const app = mkAppWorld();
+  let appFetched = false;
+  const r = await applyUpdate({
+    ...withApp(f, app),
+    fetchJson: async () => ({
+      version: "999.0.0",
+      macos: { url: goodUrl, sha256: f.sha },
+      windows: { url: `${RELEASES_URL_PREFIX}download/pie-link-setup.exe`, sha256: "x" },
+      app: { url: "https://evil.example.com/app.zip", sha256: app.appSha },
+    }),
+    fetchBytes: async (url: string) => {
+      if (url.includes("evil") || url.includes("pie-link-app")) {
+        appFetched = true;
+        return app.appBytes;
+      }
+      return f.binBytes;
+    },
+  });
+  expect(r.appUpdated).toBe(false);
+  expect(r.appError).toMatch(/allowlist/);
+  expect(appFetched).toBe(false);
+  expect(readFileSync(join(f.binDir, "pie"), "utf8")).toBe("NEW-BINARY-CONTENT");
+  expect(readFileSync(join(app.appPath, "marker"), "utf8")).toBe("OLD-APP");
+  expect(leftovers(app.appsDir)).toEqual([]);
+});
+
+test("applyUpdate: app.sha256 不符 → daemon 成功、bundle 不变、无残留", async () => {
+  const f = mkFixture();
+  const app = mkAppWorld();
+  const r = await applyUpdate(withApp(f, app, "0".repeat(64)));
+  expect(r.appUpdated).toBe(false);
+  expect(r.appError).toMatch(/sha256/);
+  expect(readFileSync(join(f.binDir, "pie"), "utf8")).toBe("NEW-BINARY-CONTENT");
+  expect(readFileSync(join(app.appPath, "marker"), "utf8")).toBe("OLD-APP");
+  expect(leftovers(app.appsDir)).toEqual([]);
+});
+
+test("applyUpdate: app 未签名（Team ID 不符）→ daemon 成功、bundle 不变、无残留", async () => {
+  const f = mkFixture();
+  const app = mkAppWorld();
+  const r = await applyUpdate({
+    ...withApp(f, app),
+    codesignInfo: (p) => (p.endsWith(".app") ? "TeamIdentifier=not set" : `TeamIdentifier=${TEAM}`),
+  });
+  expect(r.appUpdated).toBe(false);
+  expect(r.appError).toMatch(/TeamIdentifier|unsigned/);
+  expect(readFileSync(join(app.appPath, "marker"), "utf8")).toBe("OLD-APP");
+  expect(leftovers(app.appsDir)).toEqual([]);
+});
+
+test("applyUpdate: app codesign --verify --deep 失败 → daemon 成功、bundle 不变、无残留", async () => {
+  const f = mkFixture();
+  const app = mkAppWorld();
+  const r = await applyUpdate({ ...withApp(f, app), codesignVerifyDeep: () => false });
+  expect(r.appUpdated).toBe(false);
+  expect(r.appError).toMatch(/codesign/);
+  expect(readFileSync(join(f.binDir, "pie"), "utf8")).toBe("NEW-BINARY-CONTENT");
+  expect(readFileSync(join(app.appPath, "marker"), "utf8")).toBe("OLD-APP");
+  expect(leftovers(app.appsDir)).toEqual([]);
+});
+
+test("applyUpdate: /Applications 不可写 → daemon 成功、appUpdated:false + appError、无残留", async () => {
+  const f = mkFixture();
+  const app = mkAppWorld();
+  chmodSync(app.appsDir, 0o555);
+  try {
+    const r = await applyUpdate(withApp(f, app));
+    expect(r.appUpdated).toBe(false);
+    expect(r.appError).toMatch(/EACCES|permission denied|EPERM/i);
+    expect(readFileSync(join(f.binDir, "pie"), "utf8")).toBe("NEW-BINARY-CONTENT");
+    expect(readFileSync(join(app.appPath, "marker"), "utf8")).toBe("OLD-APP");
+    expect(leftovers(app.appsDir)).toEqual([]);
+  } finally {
+    chmodSync(app.appsDir, 0o755);
+  }
+});
+
+test("applyUpdate: latest.json 里的 appPath 字段被忽略（不是 RPC/json 合同）", async () => {
+  const f = mkFixture();
+  const app = mkAppWorld();
+  const r = await applyUpdate({
+    ...withApp(f, app),
+    fetchJson: async () => ({
+      version: "999.0.0",
+      macos: { url: goodUrl, sha256: f.sha },
+      windows: { url: `${RELEASES_URL_PREFIX}download/pie-link-setup.exe`, sha256: "x" },
+      app: { url: appZipUrl, sha256: app.appSha },
+      appPath: "/tmp/evil.app",
+    }),
+  });
+  expect(r.appUpdated).toBe(true);
+  expect(readFileSync(join(app.appPath, "marker"), "utf8")).toBe("NEW-APP");
+  expect(existsSync("/tmp/evil.app")).toBe(false);
+});
+
+test("findTopLevelApp: 顶层 .app，跳过 __MACOSX，不钻进 Contents/MacOS", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pie-app-tree-"));
+  mkdirSync(join(dir, "__MACOSX"), { recursive: true });
+  mkdirSync(join(dir, "Pie Link.app", "Contents", "MacOS"), { recursive: true });
+  writeFileSync(join(dir, "Pie Link.app", "Contents", "MacOS", "pie"), "MACHO");
+  writeFileSync(join(dir, "__MACOSX", "junk"), "x");
+  expect(findTopLevelApp(dir)).toBe(join(dir, "Pie Link.app"));
+});
+
+test("findTopLevelApp: 无顶层 .app 即抛", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pie-app-empty-"));
+  mkdirSync(join(dir, "__MACOSX"), { recursive: true });
+  expect(() => findTopLevelApp(dir)).toThrow(/no \.app/);
+});
+
+test("defaultUnzipToBundle: 真 ditto 解出顶层 .app（darwin）", () => {
+  if (process.platform !== "darwin") return;
+  const root = mkdtempSync(join(tmpdir(), "pie-ditto-app-"));
+  const app = join(root, "Pie Link.app");
+  mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
+  writeFileSync(join(app, "Contents", "MacOS", "pie"), "FAKE-MACHO");
+  const zip = join(root, "app.zip");
+  const packed = spawnSync("/usr/bin/ditto", ["-c", "-k", "--keepParent", app, zip], { encoding: "utf8" });
+  expect(packed.status).toBe(0);
+  const dest = join(root, "out");
+  const found = defaultUnzipToBundle(zip, dest);
+  expect(found).toBe(join(dest, "Pie Link.app"));
+  expect(found.includes("MacOS")).toBe(false);
+  expect(existsSync(join(found, "Contents", "MacOS", "pie"))).toBe(true);
 });

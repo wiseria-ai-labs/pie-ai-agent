@@ -144,9 +144,11 @@ jobs:
     runs-on: macos-14
     needs: daemon-version-gate
     # #403：把版本号 + macOS 自更新物 zip 的 sha256 暴露给 daemon-latest-json 汇总 job。
+    # #419：再加 app_sha（pie-link-app.zip），写进 latest.json 的 app.sha256。
     outputs:
       version: ${{ steps.dv.outputs.version }}
       macos_sha: ${{ steps.zipsha.outputs.sha }}
+      app_sha: ${{ steps.appsha.outputs.sha }}
     steps:
       - name: Resolve tag
         id: tag
@@ -200,6 +202,11 @@ jobs:
         # #403 自更新 sha256 硬闸的期望值来源：release-pkg.sh 产出的已签名 pie-darwin-universal.zip。
         run: echo "sha=$(shasum -a 256 daemon/dist/pie-darwin-universal.zip | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
+      - name: Hash macOS app zip
+        id: appsha
+        # #419 顶栏 bundle sha256 硬闸的期望值来源：release-pkg.sh 产出的已签名 pie-link-app.zip。
+        run: echo "sha=$(shasum -a 256 daemon/dist/pie-link-app.zip | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -209,12 +216,13 @@ jobs:
             "daemon/dist/pie-link-${{ steps.dv.outputs.version }}.pkg" \
             pie-link.pkg \
             "daemon/dist/pie-darwin-universal.zip" \
+            "daemon/dist/pie-link-app.zip" \
             --clobber
 
       - name: Verify pkg + update-zip assets reachable
         run: |
           sleep 5
-          for asset in pie-link.pkg pie-darwin-universal.zip; do
+          for asset in pie-link.pkg pie-darwin-universal.zip pie-link-app.zip; do
             curl -fsSIL -o /dev/null --retry 3 --retry-delay 5 --retry-all-errors \
               "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.ref }}/$asset"
           done
@@ -344,15 +352,17 @@ jobs:
         run: |
           VER="${{ needs.build-daemon-pkg.outputs.version }}"
           MAC_SHA="${{ needs.build-daemon-pkg.outputs.macos_sha }}"
+          APP_SHA="${{ needs.build-daemon-pkg.outputs.app_sha }}"
           WIN_SHA="${{ needs.build-daemon-win.outputs.windows_sha }}"
           BASE="https://github.com/${{ github.repository }}/releases/latest/download"
-          [ -n "$VER" ] && [ -n "$MAC_SHA" ] && [ -n "$WIN_SHA" ] || {
-            echo "::error::missing version/sha inputs (VER=$VER MAC_SHA=$MAC_SHA WIN_SHA=$WIN_SHA)"; exit 1; }
+          [ -n "$VER" ] && [ -n "$MAC_SHA" ] && [ -n "$APP_SHA" ] && [ -n "$WIN_SHA" ] || {
+            echo "::error::missing version/sha inputs (VER=$VER MAC_SHA=$MAC_SHA APP_SHA=$APP_SHA WIN_SHA=$WIN_SHA)"; exit 1; }
           cat > pie-link-latest.json <<EOF
           {
             "version": "$VER",
             "macos": { "url": "$BASE/pie-darwin-universal.zip", "sha256": "$MAC_SHA" },
-            "windows": { "url": "$BASE/pie-link-setup.exe", "sha256": "$WIN_SHA" }
+            "windows": { "url": "$BASE/pie-link-setup.exe", "sha256": "$WIN_SHA" },
+            "app": { "url": "$BASE/pie-link-app.zip", "sha256": "$APP_SHA" }
           }
           EOF
           cat pie-link-latest.json

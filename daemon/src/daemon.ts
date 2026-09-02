@@ -249,6 +249,8 @@ export async function handleMessage(
       }
     }
     case "apply_update": {
+      // #419：params 故意不读。app 路径硬编码在 daemon 内，调用方不能传路径
+      // （否则 apply_update 成任意路径写原语；同 #303 grantApproved 不进 schema）。
       try {
         return respond({ ok: true, result: await applyUpdate() });
       } catch (e) {

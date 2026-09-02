@@ -354,6 +354,11 @@ export interface PieLinkLatest {
   version: string;
   macos: { url: string; sha256: string };
   windows: { url: string; sha256: string };
+  /**
+   * #419 加法：顶栏 `.app` bundle 的 zip。缺省 = 老 json，只更新 daemon。
+   * 老 daemon 读到此字段会忽略（parseLatest 只校验 version/macos/windows）。
+   */
+  app?: { url: string; sha256: string };
 }
 
 /** check_update 结果：当前 vs 最新版本比较。 */
@@ -379,6 +384,14 @@ export interface ApplyUpdateResult {
    * @deprecated ADR 0012：绝对路径不是协议合同。daemon 仍回填，新客户端不得依赖。
    */
   path: string;
+  /**
+   * #419：true = `/Applications/Pie Link.app` 已整体替换。
+   * false = 跳过（老 json 无 `app`）或失败（见 `appError`）。
+   * app 路径硬编码，RPC 入参不得带任何路径字段。
+   */
+  appUpdated: boolean;
+  /** app 替换失败原因。缺省 = 无 `app` 字段而跳过，或替换成功。 */
+  appError?: string;
 }
 
 /** shutdown 结果：runtime 已接受停止请求，回包后自行退出。 */

@@ -26,7 +26,13 @@ export function parseLatest(raw: unknown): PieLinkLatest {
   if (!o || typeof o.version !== "string" || !okPlat(o.macos) || !okPlat(o.windows)) {
     throw new Error("malformed pie-link-latest.json");
   }
-  return { version: o.version, macos: o.macos, windows: o.windows };
+  const latest: PieLinkLatest = { version: o.version, macos: o.macos, windows: o.windows };
+  // #419：app 缺省合法（老 json）；存在则必须是 {url, sha256}，否则抛。其它未知字段忽略。
+  if ("app" in o && o.app !== undefined) {
+    if (!okPlat(o.app)) throw new Error("malformed pie-link-latest.json");
+    latest.app = o.app;
+  }
+  return latest;
 }
 
 export function isAllowedUpdateUrl(url: string): boolean {
@@ -65,14 +71,23 @@ export function validateUpdateBinary(c: BinaryChecks): { ok: boolean; reason?: s
   return { ok: true };
 }
 
+/** 顶栏 bundle 安装路径。硬编码，RPC 入参不得覆盖（否则 apply_update 成任意路径写原语）。单测经 UpdateDeps.appPath 注入。 */
+export const PIE_LINK_APP_PATH = "/Applications/Pie Link.app";
+
 export interface UpdateDeps {
   fetchJson: (url: string) => Promise<unknown>;
   fetchBytes: (url: string) => Promise<Uint8Array>;
   codesignVerify: (binPath: string) => boolean;
+  /** bundle 用 `codesign --verify --deep --strict`（#419）。 */
+  codesignVerifyDeep: (bundlePath: string) => boolean;
   codesignInfo: (binPath: string) => string;
   unzipToBinary: (zipPath: string, destDir: string) => string;
+  /** 解出顶层 `.app` 目录，不 walk 进 Contents/MacOS。 */
+  unzipToBundle: (zipPath: string, destDir: string) => string;
   platform: NodeJS.Platform;
   binDir: string;
+  /** 生产 = PIE_LINK_APP_PATH；仅单测注入。永不从 RPC 读取。 */
+  appPath: string;
   expectedTeamId: string;
 }
 
