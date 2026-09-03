@@ -7,6 +7,7 @@ import { ManagedStatusPill } from "../ManagedStatusPill";
 import MarkdownContent from "../Markdown";
 import { PILL_TONE, TERMINAL_STATUSES, statusLabel } from "./status";
 import ResearchTimeline from "./Timeline";
+import { isHttpUrl } from "./http-url";
 
 export const DETAIL_POLL_MS = 5000;
 
@@ -129,16 +130,21 @@ function DoneReport({
           <ul className="flex flex-col gap-1.5">
             {run.references.map((ref) => {
               const title = ref.title || ref.url;
+              const label = `[${ref.n}] ${title} — ${ref.url}`;
               return (
                 <li key={ref.n} className="text-[12px] leading-[18px] text-fg-2">
-                  <a
-                    href={ref.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent underline decoration-accent/40 hover:decoration-accent"
-                  >
-                    [{ref.n}] {title} — {ref.url}
-                  </a>
+                  {isHttpUrl(ref.url) ? (
+                    <a
+                      href={ref.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent underline decoration-accent/40 hover:decoration-accent"
+                    >
+                      {label}
+                    </a>
+                  ) : (
+                    <span>{label}</span>
+                  )}
                 </li>
               );
             })}

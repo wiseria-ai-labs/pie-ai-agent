@@ -309,6 +309,38 @@ describe("ResearchPanel detail", () => {
     expect(link?.getAttribute("target")).toBe("_blank");
   });
 
+  it("does not render javascript: reference urls as links", async () => {
+    await openDetail(
+      run({
+        id: "r-js-ref",
+        status: "done",
+        report: "# x",
+        references: [{ n: 1, title: "Evil", url: "javascript:alert(1)" }],
+        sourcesFound: 1,
+      }),
+    );
+    const refs = screen.getByTestId("research-references");
+    expect(refs.textContent).toMatch(/\[1\] Evil — javascript:alert\(1\)/);
+    expect(refs.querySelector("a")).toBeNull();
+    expect(refs.innerHTML).not.toMatch(/href=["']javascript:/i);
+  });
+
+  it("does not render javascript: recentSources as links", async () => {
+    await openDetail(
+      run({
+        id: "r-js-src",
+        status: "running",
+        phase: "gather",
+        sourcesFound: 1,
+        recentSources: [{ title: "Evil", url: "javascript:alert(1)", domain: "evil" }],
+      }),
+    );
+    const feed = screen.getByTestId("research-recent-sources");
+    expect(feed.textContent).toMatch(/Evil/);
+    expect(feed.querySelector("a")).toBeNull();
+    expect(feed.innerHTML).not.toMatch(/href=["']javascript:/i);
+  });
+
   it("renders failed_system copy", async () => {
     await openDetail(run({ id: "r3", status: "failed_system", sourcesFound: 0 }));
     expect(screen.getByTestId("research-failed").textContent).toMatch(/doesn't count against your quota/i);
