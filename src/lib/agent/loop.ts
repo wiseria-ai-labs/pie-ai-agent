@@ -1274,6 +1274,8 @@ export function collectCrossSessionConflicts(
  * Key Technical Decisions on the redaction split.
  */
 function redactArgsForPanel(toolName: string, args: unknown): unknown {
+  // Unknown (including peer-executed remote) names pass through; only keyboard
+  // tool args.text is redacted. Do not throw on unregistered names.
   if (!isKeyboardToolName(toolName)) return args;
   if (!args || typeof args !== "object") return args;
   const a = args as Record<string, unknown>;
@@ -1283,6 +1285,14 @@ function redactArgsForPanel(toolName: string, args: unknown): unknown {
     text: undefined,
     _redactedTextLength: (a.text as string).length,
   };
+}
+
+function argsForPanel(args: string): unknown {
+  try {
+    return args ? JSON.parse(args) : {};
+  } catch {
+    return args;
+  }
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
@@ -2186,6 +2196,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         { id: string; name: string; argsAccum: string }
       >();
       const completedToolCalls: Array<{ id: string; name: string; args: unknown }> = [];
+      // Arrival-ordered tool_use / remote_tool blocks for this assistant turn.
+      const turnBlocks: ContentBlock[] = [];
 
       console.log("[sw][debug] streamChat entering", {
         provider: modelConfig.provider,
@@ -2249,8 +2261,46 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               name: pending.name,
               args: parsedArgs,
             });
+            turnBlocks.push({
+              type: "tool_use",
+              id: pending.id,
+              name: pending.name,
+              input: parsedArgs,
+            });
             openToolCalls.delete(event.index);
           }
+        } else if (event.type === "remote-tool") {
+          for (const [index, pending] of openToolCalls) {
+            if (pending.id === event.callId) {
+              openToolCalls.delete(index);
+              break;
+            }
+          }
+          const completedIdx = completedToolCalls.findIndex((tc) => tc.id === event.callId);
+          if (completedIdx >= 0) completedToolCalls.splice(completedIdx, 1);
+          const remoteBlock: ContentBlock = {
+            type: "remote_tool",
+            callId: event.callId,
+            name: event.name,
+            args: event.args,
+            output: event.output,
+            wire: "responses",
+            item: event.item,
+          };
+          const replaceIdx = turnBlocks.findIndex(
+            (b) => b.type === "tool_use" && b.id === event.callId,
+          );
+          if (replaceIdx >= 0) turnBlocks[replaceIdx] = remoteBlock;
+          else turnBlocks.push(remoteBlock);
+          emitStep({
+            type: "agent-step",
+            stepIndex,
+            tool: event.name,
+            args: redactArgsForPanel(event.name, argsForPanel(event.args)),
+            status: "ok",
+            remote: true,
+            observation: event.output,
+          });
         } else if (event.type === "done") {
           lastStopReason = event.stopReason;
           // Issue #59 — capture real provider-reported usage for the ring.
@@ -2390,9 +2440,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       if (signal.aborted) return; // → finally with reason-based summary
 
       // 截断兜底（factor 2）：max_tokens 触顶时不静默当作"任务完成"。
+      const hasRemoteTools = turnBlocks.some((b) => b.type === "remote_tool");
       const completion = classifyStreamCompletion({
         stopReason: lastStopReason,
-        hasToolCalls: completedToolCalls.length > 0,
+        hasToolCalls: completedToolCalls.length > 0 || hasRemoteTools,
         hasText: accumulatedText.trim().length > 0,
       });
       if (completion === "truncated-empty") {
@@ -2471,6 +2522,34 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // stale pinMode='task'. Awaiting onTaskDone first forces the SW
       // write to land synchronously before panel ever sees chat-done.
       if (completedToolCalls.length === 0) {
+        if (hasRemoteTools) {
+          // Snapshot is only for eval-bridge's offline trace (eval-bridge.ts
+          // keeps the last non-empty agentMessages). The tombstone ~30 lines
+          // below writes agentMessages:[] and wipes storage; panel history
+          // is not this path.
+          const assistantBlocks: ContentBlock[] = assembleAssistantBlocks(
+            thinkingBlocks,
+            accumulatedText,
+            turnBlocks,
+          );
+          history.push({ role: "assistant", content: assistantBlocks });
+          if (ctx.onStepSnapshot) {
+            const snapshot = buildSessionAgentSnapshot(
+              history,
+              stepIndex,
+              hasImageContent,
+              [...activeToolGroups],
+            );
+            try {
+              await ctx.onStepSnapshot(snapshot);
+            } catch (e) {
+              console.warn(
+                `[agent] snapshot (remote-tool) failed for session=${ctx.sessionId} step=${stepIndex}:`,
+                e,
+              );
+            }
+          }
+        }
         if (ctx.onTaskDone) {
           try {
             await ctx.onTaskDone();
@@ -2505,11 +2584,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         return;
       }
 
-      // Build the assistant message with all tool_use blocks (+ optional text + thinking blocks)
+      // Build the assistant message with tool_use / remote_tool in arrival order
+      // (+ optional text + thinking blocks).
       const assistantBlocks: ContentBlock[] = assembleAssistantBlocks(
         thinkingBlocks,
         accumulatedText,
-        completedToolCalls,
+        turnBlocks,
       );
 
       // Collect tool_result blocks for the user turn

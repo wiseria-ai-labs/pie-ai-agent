@@ -280,6 +280,8 @@ export type DisplayMessage =
       resolvedElement?: ResolvedElement;
       status: "pending" | "ok" | "error";
       observation?: string;
+      /** Peer-executed (router/gateway) step; render as a read-only remote row. */
+      remote?: true;
       /** Phase 5 follow-up — for screenshot tool steps (capture_visible_tab /
        *  capture_fullpage_tab). Carries the post-resize JPEG bytes that were
        *  fed to the LLM so the panel can render the same image alongside the
@@ -367,6 +369,8 @@ export interface AgentStepMessage {
   resolvedElement?: ResolvedElement;
   status: "pending" | "ok" | "error";
   observation?: string;
+  /** Peer (router/gateway) already executed this step; not a local tool. */
+  remote?: true;
   /** Set when `tool` resolves to a skill (built-in or user-stored). Allows
    *  Chat UI to badge agent-authored skill calls and audit logs to filter
    *  by origin. Absent for non-skill tools (built-in BUILT_IN_TOOLS, keyboard,

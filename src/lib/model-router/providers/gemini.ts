@@ -48,6 +48,7 @@ function toGeminiContents(messages: AgentMessage[]): GeminiContent[] {
         result.push({ role: "function", parts: [{ functionResponse: { name: idToName.get(block.toolUseId) ?? block.toolUseId, response: { content: block.content } } }] });
         continue;
       }
+      // remote_tool is Responses-wire only — drop on Gemini.
     }
     if (parts.length > 0) result.push({ role, parts });
   }

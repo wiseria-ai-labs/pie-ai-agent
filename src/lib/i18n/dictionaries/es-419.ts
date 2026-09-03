@@ -416,6 +416,7 @@ export const es419Dict = {
     queued: "en cola",
     error: "error",
     ok: "ok",
+    remote: "remoto",
     nonSerializable: "(no serializable)",
   },
   agentStepGroup: {

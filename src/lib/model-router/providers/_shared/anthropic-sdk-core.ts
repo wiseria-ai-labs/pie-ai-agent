@@ -107,38 +107,44 @@ function toSdkParams(messages: AgentMessage[]): {
       out.push({ role: msg.role, content: msg.content });
       continue;
     }
-    const blocks = msg.content.map((block: ContentBlock) => {
+    const blocks: Anthropic.ContentBlockParam[] = [];
+    for (const block of msg.content) {
+      if (block.type === "remote_tool") continue;
       if (block.type === "image") {
-        return {
-          type: "image" as const,
+        blocks.push({
+          type: "image",
           source: {
-            type: "base64" as const,
+            type: "base64",
             media_type: block.source.mediaType,
             data: block.source.data,
           },
-        };
+        });
+        continue;
       }
       if (block.type === "tool_result") {
-        return {
-          type: "tool_result" as const,
+        blocks.push({
+          type: "tool_result",
           tool_use_id: block.toolUseId,
           content: block.content,
           ...(block.isError !== undefined ? { is_error: block.isError } : {}),
-        };
+        });
+        continue;
       }
       if (block.type === "tool_use") {
-        return { type: "tool_use" as const, id: block.id, name: block.name, input: block.input };
+        blocks.push({ type: "tool_use", id: block.id, name: block.name, input: block.input as Anthropic.ToolUseBlockParam["input"] });
+        continue;
       }
       if (block.type === "thinking") {
-        return {
+        blocks.push({
           type: "thinking" as const,
           thinking: block.thinking,
           ...(block.signature ? { signature: block.signature } : {}),
-        };
+        } as Anthropic.ContentBlockParam);
+        continue;
       }
-      return { type: "text" as const, text: block.text };
-    });
-    out.push({ role: msg.role, content: blocks as Anthropic.ContentBlockParam[] });
+      blocks.push({ type: "text", text: block.text });
+    }
+    out.push({ role: msg.role, content: blocks });
   }
 
   return { system: systemParts.length ? systemParts.join("\n\n") : undefined, messages: out };
@@ -361,3 +367,5 @@ export async function* streamChatAnthropicSdk(
     };
   }
 }
+
+export { toSdkParams as _toSdkParamsForTest };

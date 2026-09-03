@@ -90,6 +90,28 @@ describe("Gemini wire converter", () => {
       parts: [{ functionResponse: { name: "orphan_id", response: { content: "ok" } } }],
     });
   });
+
+  it("drops remote_tool blocks without throwing", () => {
+    const msgs: AgentMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "hi" },
+          {
+            type: "remote_tool",
+            callId: "c1",
+            name: "web_search",
+            args: "{}",
+            output: "ok",
+            wire: "responses",
+            item: { type: "web_search_call" },
+          },
+        ],
+      },
+    ];
+    const wire = _toGeminiContentsForTest(msgs);
+    expect(wire).toEqual([{ role: "model", parts: [{ text: "hi" }] }]);
+  });
 });
 
 describe("Gemini streamChat", () => {

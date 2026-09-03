@@ -77,6 +77,7 @@ function toWireMessages(messages: AgentMessage[]): OpenAIWireMessage[] {
             },
           });
         }
+        // remote_tool is Responses-wire only — drop on chat/completions.
       }
       const assistantContent = textParts.length > 0 ? textParts.join("") : null;
       const wireMsg: OpenAIWireMessage = { role: "assistant", content: assistantContent };

@@ -34,6 +34,7 @@ export interface AgentStepData {
   observation?: string;
   image?: AgentStepImageExtras;
   progress?: AgentStepProgress;
+  remote?: true;
 }
 
 interface AgentStepGroupProps {
@@ -84,6 +85,7 @@ export default function AgentStepGroup({
                   observation={s.observation}
                   image={s.image}
                   progress={s.progress}
+                  remote={s.remote}
                 />
               ))}
             </div>
@@ -102,6 +104,7 @@ export default function AgentStepGroup({
         observation={currentStep.observation}
         image={currentStep.image}
         progress={currentStep.progress}
+        remote={currentStep.remote}
       />
     </div>
   );

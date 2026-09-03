@@ -35,6 +35,8 @@ interface AgentStepLineProps {
    *  details block renders the same image alongside the text observation. */
   image?: AgentStepImageExtras;
   progress?: AgentStepProgress;
+  /** Peer-executed step (router / gateway). Read-only; output stays collapsed. */
+  remote?: true;
 }
 
 export default function AgentStepLine({
@@ -46,6 +48,7 @@ export default function AgentStepLine({
   defaultExpanded = false,
   image,
   progress,
+  remote,
 }: AgentStepLineProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const t = useT();
@@ -59,7 +62,7 @@ export default function AgentStepLine({
         aria-label={expanded ? t("agentStep.collapse") : t("agentStep.expand")}
         className="flex w-full items-center gap-2 text-left text-[12px]"
       >
-        <StatusDot status={status} />
+        <StatusDot status={status} remote={remote} />
         <span className={statusTextClass(status)}>
           {status === "pending" ? (
             <>
@@ -77,6 +80,11 @@ export default function AgentStepLine({
             <code className="font-mono text-fg-1">{tool}</code>
           )}
         </span>
+        {remote && (
+          <span className="flex-shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
+            {t("agentStep.remote")}
+          </span>
+        )}
         <span
           aria-hidden="true"
           className="inline-block flex-shrink-0 text-fg-3 transition-transform duration-200"
@@ -148,7 +156,7 @@ export default function AgentStepLine({
   );
 }
 
-function StatusDot({ status }: { status: "pending" | "ok" | "error" }) {
+function StatusDot({ status, remote }: { status: "pending" | "ok" | "error"; remote?: true }) {
   const tLoc = useT();
   if (status === "pending") {
     return (
@@ -175,6 +183,16 @@ function StatusDot({ status }: { status: "pending" | "ok" | "error" }) {
             strokeLinecap="round"
           />
         </svg>
+      </span>
+    );
+  }
+  if (remote) {
+    return (
+      <span
+        aria-label={tLoc("agentStep.remote")}
+        className="flex h-3 w-3 flex-shrink-0 items-center justify-center text-[10px] leading-none text-fg-3"
+      >
+        ↗
       </span>
     );
   }

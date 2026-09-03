@@ -415,6 +415,7 @@ export const jaDict = {
     queued: "待機中",
     error: "エラー",
     ok: "OK",
+    remote: "リモート",
     nonSerializable: "(シリアライズ不可)",
   },
   agentStepGroup: {

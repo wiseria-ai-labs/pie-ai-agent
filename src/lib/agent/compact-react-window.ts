@@ -129,6 +129,7 @@ function serializeStepMsg(msg: AgentMessage): string {
     if (b.type === "text") parts.push(b.text);
     else if (b.type === "tool_use") parts.push(`Action: ${b.name}(${JSON.stringify(b.input)})`);
     else if (b.type === "tool_result") parts.push(`Result: ${b.content}`);
+    else if (b.type === "remote_tool") parts.push(`Remote: ${b.name}(${b.args})\nResult: ${b.output}`);
   }
   return parts.join("\n");
 }

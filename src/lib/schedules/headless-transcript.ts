@@ -74,6 +74,7 @@ export class HeadlessTranscript {
           resolvedElement: msg.resolvedElement,
           status: msg.status,
           observation: msg.observation,
+          ...(msg.remote && { remote: true as const }),
         };
         const tail = this.messages.length - 1;
         const last = tail >= 0 ? this.messages[tail] : null;

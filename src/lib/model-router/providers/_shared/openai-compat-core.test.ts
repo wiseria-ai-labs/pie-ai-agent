@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { streamChatOpenAICompat } from "./openai-compat-core";
+import { streamChatOpenAICompat, _toWireMessagesForTest } from "./openai-compat-core";
 import type { ModelConfig } from "@/lib/model-router";
 import type { StreamEvent } from "@/lib/model-router/types";
 
@@ -215,5 +215,28 @@ describe("openai-compat-core — cache-aware usage", () => {
     ]);
     expect(usage).toEqual({ inputTokens: 1000, outputTokens: 5 });
     expect(usage).not.toHaveProperty("cachedTokens");
+  });
+});
+
+describe("openai-compat-core remote_tool", () => {
+  it("drops remote_tool blocks without throwing", () => {
+    const wire = _toWireMessagesForTest([
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "hi" },
+          {
+            type: "remote_tool",
+            callId: "c1",
+            name: "web_search",
+            args: "{}",
+            output: "ok",
+            wire: "responses",
+            item: { type: "web_search_call" },
+          },
+        ],
+      },
+    ]);
+    expect(wire).toEqual([{ role: "assistant", content: "hi" }]);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { streamChatAnthropicSdk } from "./anthropic-sdk-core";
+import { streamChatAnthropicSdk, _toSdkParamsForTest } from "./anthropic-sdk-core";
 import type { ModelConfig } from "@/lib/model-router";
 import type { AgentMessage, ToolDefinition, StreamEvent } from "../../types";
 
@@ -377,5 +377,28 @@ describe("anthropic-sdk-core max_tokens 解析", () => {
     const cap = captureBody();
     await collect(streamChatAnthropicSdk(config(), [{ role: "user", content: "hi" }]));
     expect(cap.body().max_tokens).toBe(32_768);
+  });
+});
+
+describe("anthropic-sdk-core remote_tool", () => {
+  it("drops remote_tool blocks without throwing", () => {
+    const { messages } = _toSdkParamsForTest([
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "hi" },
+          {
+            type: "remote_tool",
+            callId: "c1",
+            name: "web_search",
+            args: "{}",
+            output: "ok",
+            wire: "responses",
+            item: { type: "web_search_call" },
+          },
+        ],
+      },
+    ]);
+    expect(messages).toEqual([{ role: "assistant", content: [{ type: "text", text: "hi" }] }]);
   });
 });

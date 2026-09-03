@@ -34,7 +34,27 @@ export interface ThinkingBlock {
   signature?: string;
 }
 
-export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock | ThinkingBlock;
+/**
+ * A tool step the peer (router / agent gateway) already executed.
+ * Opaque `item` is replayed on the same wire; other wires drop the block.
+ */
+export interface RemoteToolBlock {
+  type: "remote_tool";
+  callId: string;
+  name: string;
+  args: string;
+  output: string;
+  wire: "responses";
+  item: unknown;
+}
+
+export type ContentBlock =
+  | TextBlock
+  | ToolUseBlock
+  | ToolResultBlock
+  | ImageBlock
+  | ThinkingBlock
+  | RemoteToolBlock;
 
 // AgentMessage IR — LLM-facing message type (parallel to ChatMessage, never exposed to Panel)
 // system role is constrained to string-only at type level
@@ -59,6 +79,8 @@ export type StreamEvent =
   | { type: "tool-call-start"; id: string; index: number; name: string }
   | { type: "tool-call-delta"; index: number; argsDelta: string }
   | { type: "tool-call-end"; index: number }
+  /** One completed peer-executed tool step (not for the local agent loop). */
+  | { type: "remote-tool"; callId: string; name: string; args: string; output: string; item: unknown }
   | {
       type: "done";
       stopReason?: "end" | "tool_calls" | "length";

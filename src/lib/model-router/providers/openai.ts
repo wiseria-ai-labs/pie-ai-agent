@@ -26,7 +26,63 @@ type ContentPart =
 type InputItem =
   | { role: string; content: ContentPart[] }
   | { type: "function_call"; call_id: string; name: string; arguments: string }
-  | { type: "function_call_output"; call_id: string; output: string };
+  | { type: "function_call_output"; call_id: string; output: string }
+  | Record<string, unknown>;
+
+const REMOTE_SERVER_ITEM_TYPES = new Set([
+  "mcp_call",
+  "web_search_call",
+  "file_search_call",
+  "code_interpreter_call",
+  "shell_call",
+  "image_generation_call",
+]);
+
+function isRemoteServerItemType(type: unknown): type is string {
+  return typeof type === "string" && (REMOTE_SERVER_ITEM_TYPES.has(type) || type.startsWith("openrouter:"));
+}
+
+/** Stringify a Responses item field for the StreamEvent / IR (item itself is kept opaque). */
+function stringifyRemoteValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => {
+        if (part && typeof part === "object" && "text" in part && typeof (part as { text: unknown }).text === "string") {
+          return (part as { text: string }).text;
+        }
+        return typeof part === "string" ? part : JSON.stringify(part);
+      })
+      .join("");
+  }
+  return JSON.stringify(value);
+}
+
+function remoteToolArgs(item: Record<string, unknown>): string {
+  if (typeof item.arguments === "string") return item.arguments;
+  if (item.arguments != null) return stringifyRemoteValue(item.arguments);
+  return JSON.stringify(item.action ?? {});
+}
+
+function remoteToolOutput(item: Record<string, unknown>): string {
+  return stringifyRemoteValue(item.output ?? item.error ?? "");
+}
+
+function pushRemoteToolItem(item: unknown, into: InputItem[]): void {
+  if (item == null || typeof item !== "object") return;
+  const rec = item as Record<string, unknown>;
+  if ("function_call" in rec && "function_call_output" in rec) {
+    if (rec.function_call && typeof rec.function_call === "object") {
+      into.push(rec.function_call as InputItem);
+    }
+    if (rec.function_call_output && typeof rec.function_call_output === "object") {
+      into.push(rec.function_call_output as InputItem);
+    }
+    return;
+  }
+  into.push(rec);
+}
 
 function toInputItems(messages: AgentMessage[]): InputItem[] {
   const result: InputItem[] = [];
@@ -39,20 +95,22 @@ function toInputItems(messages: AgentMessage[]): InputItem[] {
     }
     if (msg.role === "assistant") {
       const textParts: string[] = [];
-      const calls: InputItem[] = [];
+      const items: InputItem[] = [];
       for (const block of content) {
         if (block.type === "text") textParts.push(block.text);
         else if (block.type === "tool_use") {
-          calls.push({
+          items.push({
             type: "function_call",
             call_id: block.id,
             name: block.name,
             arguments: typeof block.input === "string" ? block.input : JSON.stringify(block.input ?? {}),
           });
+        } else if (block.type === "remote_tool") {
+          pushRemoteToolItem(block.item, items);
         }
       }
       if (textParts.length > 0) result.push({ role: "assistant", content: [{ type: "output_text", text: textParts.join("") }] });
-      result.push(...calls);
+      result.push(...items);
     } else if (msg.role === "user") {
       const parts: ContentPart[] = [];
       const textParts: string[] = [];
@@ -126,10 +184,37 @@ export async function* streamChat(
   }
 
   // function_call 的流式 args delta 以 item_id（fc_…）为键，tool-call 事件以
-  // 递增 index 为键 —— 用 map 桥接两套 id。
+  // 递增 index 为键 —— 用 map 桥接两套 id。index 用单调计数器，不能用
+  // Map.size：转成 remote 后会从 map 删除，size 回落会撞号。
   const indexByItemId = new Map<string, number>();
-  let sawToolCall = false;
+  let nextToolIndex = 0;
+  /** Still-local function_call item ids (removed when a matching function_call_output arrives). */
+  const localItemIds = new Set<string>();
+  const fcByCallId = new Map<string, { itemId: string; index: number; item: Record<string, unknown> }>();
+  const pendingFcOutputs = new Map<string, Record<string, unknown>>();
   let usage: Extract<StreamEvent, { type: "done" }>["usage"];
+
+  const hasPendingLocalTools = () => localItemIds.size > 0;
+
+  const emitRemoteFromFcOutput = function* (outputItem: Record<string, unknown>): Generator<StreamEvent> {
+    const callId = typeof outputItem.call_id === "string" ? outputItem.call_id : "";
+    if (!callId) return;
+    const fc = fcByCallId.get(callId);
+    if (!fc) return;
+    const name = typeof fc.item.name === "string" ? fc.item.name : "function_call";
+    yield {
+      type: "remote-tool",
+      callId,
+      name,
+      args: remoteToolArgs(fc.item),
+      output: remoteToolOutput(outputItem),
+      item: { function_call: fc.item, function_call_output: outputItem },
+    };
+    localItemIds.delete(fc.itemId);
+    indexByItemId.delete(fc.itemId);
+    fcByCallId.delete(callId);
+    pendingFcOutputs.delete(callId);
+  };
   // Responses API usage: input_tokens INCLUDES the cached portion; the cached
   // count itself lives in input_tokens_details.cached_tokens.
   const readUsage = (
@@ -165,11 +250,20 @@ export async function* streamChat(
           break;
         case "response.output_item.added":
           if (data.item?.type === "function_call") {
-            const index = indexByItemId.size;
-            indexByItemId.set(data.item.id ?? `#${index}`, index);
-            sawToolCall = true;
+            const index = nextToolIndex++;
+            const itemId = data.item.id ?? `#${index}`;
+            const item = data.item as Record<string, unknown>;
+            indexByItemId.set(itemId, index);
+            localItemIds.add(itemId);
+            if (typeof data.item.call_id === "string") {
+              fcByCallId.set(data.item.call_id, { itemId, index, item });
+            }
             yield { type: "tool-call-start", id: data.item.call_id, index, name: data.item.name };
             if (data.item.arguments) yield { type: "tool-call-delta", index, argsDelta: data.item.arguments };
+          } else if (data.item?.type === "function_call_output") {
+            const outputItem = data.item as Record<string, unknown>;
+            const callId = typeof outputItem.call_id === "string" ? outputItem.call_id : "";
+            if (callId) pendingFcOutputs.set(callId, outputItem);
           }
           break;
         case "response.function_call_arguments.delta": {
@@ -179,18 +273,46 @@ export async function* streamChat(
         }
         case "response.output_item.done":
           if (data.item?.type === "function_call") {
-            const index = indexByItemId.get(data.item.id ?? "");
+            const itemId = data.item.id ?? "";
+            const index = indexByItemId.get(itemId);
             if (index !== undefined) yield { type: "tool-call-end", index };
+            if (typeof data.item.call_id === "string") {
+              const prev = fcByCallId.get(data.item.call_id);
+              fcByCallId.set(data.item.call_id, {
+                itemId: itemId || prev?.itemId || `#${index ?? 0}`,
+                index: index ?? prev?.index ?? 0,
+                item: data.item as Record<string, unknown>,
+              });
+            }
+          } else if (data.item?.type === "function_call_output") {
+            yield* emitRemoteFromFcOutput(data.item as Record<string, unknown>);
+          } else if (isRemoteServerItemType(data.item?.type)) {
+            const item = data.item as Record<string, unknown>;
+            const name = typeof item.name === "string" ? item.name : String(item.type);
+            const callId =
+              (typeof item.call_id === "string" && item.call_id) ||
+              (typeof item.id === "string" && item.id) ||
+              name;
+            yield {
+              type: "remote-tool",
+              callId,
+              name,
+              args: remoteToolArgs(item),
+              output: remoteToolOutput(item),
+              item,
+            };
           }
           break;
         case "response.completed":
           readUsage(data.response);
-          yield { type: "done", stopReason: sawToolCall ? "tool_calls" : "end", usage };
+          for (const leftover of pendingFcOutputs.values()) yield* emitRemoteFromFcOutput(leftover);
+          yield { type: "done", stopReason: hasPendingLocalTools() ? "tool_calls" : "end", usage };
           return;
         case "response.incomplete": {
           readUsage(data.response);
+          for (const leftover of pendingFcOutputs.values()) yield* emitRemoteFromFcOutput(leftover);
           const truncated = data.response?.incomplete_details?.reason === "max_output_tokens";
-          yield { type: "done", stopReason: truncated ? "length" : sawToolCall ? "tool_calls" : "end", usage };
+          yield { type: "done", stopReason: truncated ? "length" : hasPendingLocalTools() ? "tool_calls" : "end", usage };
           return;
         }
         case "response.failed":
@@ -203,8 +325,9 @@ export async function* streamChat(
     }
     if (signal?.aborted) return;
     // 流在 response.completed 之前断掉（网络中断等）：兜底收尾，别让 loop 悬死。
+    for (const leftover of pendingFcOutputs.values()) yield* emitRemoteFromFcOutput(leftover);
     for (const [, index] of indexByItemId) yield { type: "tool-call-end", index };
-    yield { type: "done", stopReason: sawToolCall ? "tool_calls" : "end", usage };
+    yield { type: "done", stopReason: hasPendingLocalTools() ? "tool_calls" : "end", usage };
   } catch (e) {
     if (signal?.aborted) return;
     yield { type: "error", error: `Stream error: ${e instanceof Error ? e.message : "connection lost"}`, kind: "network" };

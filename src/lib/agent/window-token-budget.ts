@@ -71,6 +71,7 @@ function extractText(msg: AgentMessage): string {
     else if (b.type === "thinking") parts.push(b.thinking);
     else if (b.type === "tool_use") parts.push(JSON.stringify(b.input));
     else if (b.type === "tool_result") parts.push(b.content);
+    else if (b.type === "remote_tool") parts.push(b.args, b.output);
   }
   return parts.join("");
 }
