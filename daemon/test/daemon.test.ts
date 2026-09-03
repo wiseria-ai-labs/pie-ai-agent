@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { unlinkSync } from "node:fs";
+import { unlinkSync, existsSync } from "node:fs";
 import { handleMessage, pipeAlreadyServed, processSocketChunk } from "../src/daemon";
 import { PROTOCOL_VERSION } from "../../src/types/local-bridge";
 import { setLogEnabled } from "../src/log";
@@ -55,14 +55,33 @@ test("check_update is a known method (network failure → structured error, not 
   }
 });
 
-// apply_update 同理是认得的 method；非 macOS / 校验失败都走 apply_update_failed，
-// 绝不回 unknown_method。
+// apply_update 同理是认得的 method。stub fetch：真走 applyUpdate 会下 zip，单测不能碰
+// ~/.pie/bin 或 /Applications/Pie Link.app。
+async function applyUpdateWithFetchStub(params: unknown): Promise<ReturnType<typeof JSON.parse>> {
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    throw new Error("test: fetch disabled");
+  }) as unknown as typeof fetch;
+  try {
+    const out = await handleMessage(JSON.stringify({ id: "u2", method: "apply_update", params }));
+    return JSON.parse(out);
+  } finally {
+    globalThis.fetch = orig;
+  }
+}
+
 test("apply_update is a known method (aborts with structured error, not unknown_method)", async () => {
-  const out = await handleMessage(JSON.stringify({ id: "u2", method: "apply_update", params: {} }));
-  const res = JSON.parse(out);
+  const res = await applyUpdateWithFetchStub({});
   expect(res.id).toBe("u2");
   expect(res.ok).toBe(false);
   expect(res.error.code).toBe("apply_update_failed");
+});
+
+test("apply_update discards params.path (app path is not an RPC input)", async () => {
+  const res = await applyUpdateWithFetchStub({ path: "/tmp/evil.app", appPath: "/tmp/evil.app" });
+  expect(res.ok).toBe(false);
+  expect(res.error.code).toBe("apply_update_failed");
+  expect(existsSync("/tmp/evil.app")).toBe(false);
 });
 
 // ── D10 版本闸：v1 客户端拒 run_skill_script（授权模型破坏，引导升级扩展）───────

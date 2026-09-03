@@ -45,6 +45,14 @@ codesign --force --deep --options runtime --timestamp \
   --sign "$APP_ID" "$ROOT/dist/Pie Link.app"
 codesign --verify --strict "$ROOT/dist/Pie Link.app"
 
+# 2.6) #419 顶栏 app 自更新物：已签名 bundle 打成 zip（daemon 当 ShipIt 下载 → 三闸 →
+# 整 bundle rename 覆盖 /Applications/Pie Link.app）。固定名，release.yml 写进
+# pie-link-latest.json 的 app.url，靠 /latest/download/ 稳定命中。
+# 明确不对 app zip 公证：程序化 write 出来的文件不带 com.apple.quarantine，
+# Gatekeeper 不做首次运行检查；我们自己的闸只验 codesign 签名 + TeamIdentifier，
+# 不看公证 ticket。加一轮 notarytool submit --wait 只是白花 CI 时间。
+ditto -c -k --keepParent "$ROOT/dist/Pie Link.app" "$ROOT/dist/pie-link-app.zip"
+
 # 3) 组 pkg（unsigned）→ productsign
 "$ROOT/install/build-pkg.sh" "$EXT_ID" "$VERSION" "$ROOT/dist/pie-universal" "$ROOT/dist/Pie Link.app"
 mv "$ROOT/dist/pie-link-$VERSION.pkg" "$ROOT/dist/pie-link-$VERSION-unsigned.pkg"

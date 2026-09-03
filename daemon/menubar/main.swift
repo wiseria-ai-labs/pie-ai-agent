@@ -112,6 +112,31 @@ enum L10n {
             "ja": "更新を確認できませんでした", "es-419": "No se pudo buscar actualizaciones",
             "pt-BR": "Não foi possível verificar atualizações",
         ],
+        // #419：daemon 已更新但顶栏 .app 没换上（非 admin / EACCES / 三闸失败）
+        "appUpdatePartial": [
+            "en": "Menu bar app needs a pkg install",
+            "zh-CN": "顶栏程序需要装一次 pkg",
+            "zh-TW": "頂欄程式需要裝一次 pkg",
+            "ja": "メニューバーアプリは pkg の再インストールが必要です",
+            "es-419": "La app de la barra de menús necesita instalar el pkg",
+            "pt-BR": "O app da barra de menus precisa instalar o pkg",
+        ],
+        "appUpdatePartialBody": [
+            "en": "The Pie Link service is now v",
+            "zh-CN": "Pie Link 服务已更新到 v",
+            "zh-TW": "Pie Link 服務已更新到 v",
+            "ja": "Pie Link サービスは v",
+            "es-419": "El servicio de Pie Link ahora es v",
+            "pt-BR": "O serviço do Pie Link agora é v",
+        ],
+        "appUpdatePartialHint": [
+            "en": "The menu bar app could not be replaced. Download and install the pkg once:\nhttps://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest",
+            "zh-CN": "顶栏程序未能替换。请下载并安装一次 pkg：\nhttps://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest",
+            "zh-TW": "頂欄程式未能替換。請下載並安裝一次 pkg：\nhttps://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest",
+            "ja": "メニューバーアプリを置き換えられませんでした。pkg を一度ダウンロードしてインストールしてください：\nhttps://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest",
+            "es-419": "No se pudo reemplazar la app de la barra de menús. Descarga e instala el pkg una vez:\nhttps://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest",
+            "pt-BR": "Não foi possível substituir o app da barra de menus. Baixe e instale o pkg uma vez:\nhttps://github.com/wiseria-ai-labs/pie-ai-agent/releases/latest",
+        ],
         // 活动窗口
         "activityTitle": [
             "en": "Pie Link · Activity / Logs", "zh-CN": "Pie Link · 活动 / 日志",
@@ -463,10 +488,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func applyUpdateNow() { startUpdate() }
 
-    // #403：更新执行统一入口（托盘菜单「点此更新」与检查更新弹窗按钮共用）——apply_update
-    // 换文件 → launchctl kickstart -k 重启 daemon 跑新二进制 → 刷新缓存。执行期间浮一个
-    // 不定进度小窗（apply_update 是单请求、wire 无进度事件，诚实表达就是转圈 + 「更新中…」）。
-    // 任一步失败弹 NSAlert 给原因（三道硬闸失败即中止、不替换）。
+    // #403 / #419：更新执行统一入口（托盘菜单「点此更新」与检查更新弹窗按钮共用）——
+    // apply_update 换 ~/.pie/bin/pie，再尝试整 bundle 替换 /Applications/Pie Link.app。
+    // daemon 成功后先 kickstart daemon；appUpdated 再 kickstart 自己（自杀必须最后一步）。
+    // app 失败只重启 daemon + NSAlert 引导装 pkg，不自杀（重启也还是老 bundle）。
     private func startUpdate() {
         guard !isUpdating else { return }
         isUpdating = true
@@ -477,6 +502,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if result != nil {
                 // 只换了文件，daemon 仍跑老 inode——kickstart -k 杀掉重启到新二进制。
                 kickstarted = Self.launchctl(["kickstart", "-k", "gui/\(getuid())/ai.wiseria.pie"])
+                let appUpdated = (result?["appUpdated"] as? Bool) ?? false
+                if appUpdated {
+                    // 新 bundle 已就位：自杀重启必须是最后一步。kickstart -k 自带 start，
+                    // 不依赖 KeepAlive（menubar plist 是 KeepAlive=false）。
+                    let selfRestarted = Self.launchctl([
+                        "kickstart", "-k", "gui/\(getuid())/ai.wiseria.pie.menubar",
+                    ])
+                    if selfRestarted { return }
+                }
             }
             DispatchQueue.main.async {
                 guard let self = self else { return }
@@ -487,13 +521,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     let ver = result["version"] as? String ?? "?"
                     self.cachedAvailable = false
                     self.cachedLatest = ver
-                    alert.messageText = L10n.t("updateDone")
-                    alert.informativeText = "\(L10n.t("updateDoneBody"))\(ver)"
-                    if !kickstarted {
-                        // 换文件成功但重启没成——下次 daemon 自然重启（launchd KeepAlive）会跑新版。
-                        alert.informativeText += "\n(pie doctor)"
+                    let appError = result["appError"] as? String
+                    if let appError = appError, !appError.isEmpty {
+                        alert.messageText = L10n.t("appUpdatePartial")
+                        alert.informativeText =
+                            "\(L10n.t("appUpdatePartialBody"))\(ver)\n\(L10n.t("appUpdatePartialHint"))\n(\(appError))"
+                    } else {
+                        alert.messageText = L10n.t("updateDone")
+                        alert.informativeText = "\(L10n.t("updateDoneBody"))\(ver)"
+                        if !kickstarted {
+                            // 换文件成功但重启没成——下次 daemon 自然重启（launchd KeepAlive）会跑新版。
+                            alert.informativeText += "\n(pie doctor)"
+                        }
                     }
-                    // 重启后 daemon 版本已变，刷新缓存与后续菜单显示。
                     self.refreshUpdateCache()
                 } else {
                     alert.messageText = L10n.t("updateFailed")

@@ -8,6 +8,7 @@ import type { CheckUpdateResult, ApplyUpdateResult } from "../../src/types/local
 import {
   LATEST_JSON_URL,
   EXPECTED_TEAM_ID,
+  PIE_LINK_APP_PATH,
   parseLatest,
   compareVersions,
   defaultFetchJson,
@@ -17,14 +18,17 @@ import {
 import {
   applyDarwinUpdate,
   defaultCodesignVerify,
+  defaultCodesignVerifyDeep,
   defaultCodesignInfo,
   defaultUnzipToBinary,
+  defaultUnzipToBundle,
 } from "./update-darwin";
 
 export {
   LATEST_JSON_URL,
   RELEASES_URL_PREFIX,
   EXPECTED_TEAM_ID,
+  PIE_LINK_APP_PATH,
   compareVersions,
   parseLatest,
   isAllowedUpdateUrl,
@@ -35,15 +39,25 @@ export {
   type BinaryChecks,
 } from "./update-core";
 
+export {
+  defaultUnzipToBinary,
+  defaultUnzipToBundle,
+  defaultCodesignVerifyDeep,
+  findTopLevelApp,
+} from "./update-darwin";
+
 function realDeps(): UpdateDeps {
   return {
     fetchJson: defaultFetchJson,
     fetchBytes: defaultFetchBytes,
     codesignVerify: defaultCodesignVerify,
+    codesignVerifyDeep: defaultCodesignVerifyDeep,
     codesignInfo: defaultCodesignInfo,
     unzipToBinary: defaultUnzipToBinary,
+    unzipToBundle: defaultUnzipToBundle,
     platform: process.platform,
     binDir: paths.binDir,
+    appPath: PIE_LINK_APP_PATH,
     expectedTeamId: EXPECTED_TEAM_ID,
   };
 }
