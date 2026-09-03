@@ -769,6 +769,8 @@ export const zhCNDict = {
     composerShortcut: "深度研究",
     sendToChat: "发送到对话",
     download: "下载 .md",
+    notifyTitle: "研究完成",
+    notifyBody: "你的研究报告已就绪。",
     paywall: {
       intro: "给它一个问题，它自己拆解方向、检索几十个来源，写成一份逐句标注出处的报告。",
       cap1Title: "自己决定搜什么",

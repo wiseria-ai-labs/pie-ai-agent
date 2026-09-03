@@ -769,6 +769,8 @@ export const jaDict = {
     composerShortcut: "ディープリサーチ",
     sendToChat: "チャットに送る",
     download: "Download .md",
+    notifyTitle: "リサーチ完了",
+    notifyBody: "レポートの準備ができました。",
     paywall: {
       intro: "質問をひとつ渡すと、調べる切り口を自分で決め、数十の情報源を読み、根拠を一文ずつ示したレポートを書きます。",
       cap1Title: "何を検索するか自分で決める",

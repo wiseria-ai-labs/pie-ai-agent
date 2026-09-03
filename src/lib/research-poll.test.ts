@@ -5,8 +5,11 @@ import {
   untrackResearchRun,
   handleResearchPollAlarm,
 } from "./research-poll";
-import { getConfig } from "./idb/config-store";
+import { getConfig, setConfig } from "./idb/config-store";
 import { _resetForTests } from "./idb/db";
+import { STORAGE_KEY_UI_LOCALE } from "./i18n";
+import { enDict } from "./i18n/dictionaries/en";
+import { zhCNDict } from "./i18n/dictionaries/zh-CN";
 
 const STORAGE_KEY = "research_in_progress_ids";
 
@@ -106,6 +109,34 @@ describe("handleResearchPollAlarm", () => {
       "https://account.pie.chat/research/run_done?locale=en",
       expect.objectContaining({ headers: { authorization: "Bearer sk-r" } }),
     );
+  });
+
+  it("notification title follows the UI locale (zh-CN vs en)", async () => {
+    const run = {
+      id: "run_done",
+      question: "What is Pie?",
+      status: "done" as const,
+      sourcesFound: 3,
+      report: "# ok",
+    };
+    for (const [locale, title] of [
+      ["zh-CN", zhCNDict.research.notifyTitle],
+      ["en", enDict.research.notifyTitle],
+    ] as const) {
+      await _resetForTests();
+      stub = installChromeStub();
+      await setConfig(STORAGE_KEY_UI_LOCALE, locale);
+      await trackResearchRun("run_done");
+      await handleResearchPollAlarm(RESEARCH_POLL_ALARM, {
+        fetchFn: fetchReturning(run),
+        getApiKey: async () => "sk-r",
+        locale,
+      });
+      expect(stub.notifCreate).toHaveBeenCalledOnce();
+      const opts = stub.notifCreate.mock.calls[0]![1] as { title: string; message: string };
+      expect(opts.title).toBe(title);
+      expect(opts.message).toContain("What is Pie?");
+    }
   });
 
   it("failed_system → 移出但不发 notification", async () => {

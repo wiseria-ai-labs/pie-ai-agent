@@ -770,6 +770,8 @@ export const ptBRDict = {
     composerShortcut: "Pesquisa profunda",
     sendToChat: "Enviar para o chat",
     download: "Baixar .md",
+    notifyTitle: "Pesquisa concluída",
+    notifyBody: "Sua pesquisa está pronta.",
     paywall: {
       intro: "Dê uma pergunta: ele decide por onde buscar, lê dezenas de fontes e escreve um relatório em que cada afirmação aponta para a origem.",
       cap1Title: "Decide o que pesquisar",
