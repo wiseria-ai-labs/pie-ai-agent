@@ -145,16 +145,35 @@ function normalizeSources(raw: unknown): ResearchSource[] | undefined {
   });
 }
 
+/**
+ * Backend GET /research timestamps are unix seconds (number or numeric string).
+ * Downstream UI Date.parse()s ISO; a bare "1756660221" is NaN.
+ * ISO strings (or any other non-numeric string) are kept as-is.
+ */
+function normalizeTimestamp(raw: unknown): string | undefined {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return new Date(raw * 1000).toISOString();
+  }
+  if (typeof raw === "string") {
+    if (/^\d+$/.test(raw)) {
+      const sec = Number(raw);
+      if (Number.isFinite(sec)) return new Date(sec * 1000).toISOString();
+    }
+    return raw;
+  }
+  return undefined;
+}
+
 function normalizeSummary(raw: unknown): ResearchRunSummary {
   const r = (raw ?? {}) as Record<string, unknown>;
   const summary: ResearchRunSummary = {
     id: String(r.id ?? ""),
     question: typeof r.question === "string" ? r.question : "",
     status: asStatus(r.status),
-    createdAt: typeof r.createdAt === "string" ? r.createdAt : String(r.createdAt ?? ""),
+    createdAt: normalizeTimestamp(r.createdAt) ?? "",
   };
-  if (typeof r.finishedAt === "string") summary.finishedAt = r.finishedAt;
-  else if (r.finishedAt != null) summary.finishedAt = String(r.finishedAt);
+  const finishedAt = normalizeTimestamp(r.finishedAt);
+  if (finishedAt) summary.finishedAt = finishedAt;
   return summary;
 }
 
