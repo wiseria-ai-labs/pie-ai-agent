@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ResearchPhase, ResearchRun, ResearchSubStatus } from "@/lib/managed-research";
 import { useI18n } from "@/lib/i18n";
+import { isHttpUrl } from "./http-url";
 
 type T = ReturnType<typeof useI18n>["t"];
 
@@ -237,26 +238,39 @@ export default function ResearchTimeline({
             </div>
             <div className="text-[11px] leading-4 text-fg-3">{t("research.sourcesUnit")}</div>
           </div>
-          {run.recentSources.slice(0, 3).map((src, i) => (
-            <a
-              key={`${src.url}-${i}`}
-              href={src.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bubble-in flex items-center gap-2.5 rounded-[9px] bg-surface px-2.5 py-[7px]"
-              style={{ opacity: [1, 0.72, 0.45][i] ?? 0.45 }}
-            >
-              <span className="flex size-[18px] shrink-0 items-center justify-center rounded-[5px] bg-line font-mono text-[9px] font-semibold uppercase text-fg-2">
-                {src.domain.slice(0, 1)}
+          {run.recentSources.slice(0, 3).map((src, i) => {
+            const inner = (
+              <>
+                <span className="flex size-[18px] shrink-0 items-center justify-center rounded-[5px] bg-line font-mono text-[9px] font-semibold uppercase text-fg-2">
+                  {src.domain.slice(0, 1)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12px] leading-[17px] text-fg-1">
+                  {src.title || src.domain}
+                </span>
+                <span className="w-[72px] shrink-0 truncate whitespace-nowrap text-right text-[11px] leading-4 text-fg-3">
+                  {src.domain}
+                </span>
+              </>
+            );
+            const className = "bubble-in flex items-center gap-2.5 rounded-[9px] bg-surface px-2.5 py-[7px]";
+            const style = { opacity: [1, 0.72, 0.45][i] ?? 0.45 };
+            return isHttpUrl(src.url) ? (
+              <a
+                key={`${src.url}-${i}`}
+                href={src.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={className}
+                style={style}
+              >
+                {inner}
+              </a>
+            ) : (
+              <span key={`${src.url}-${i}`} className={className} style={style}>
+                {inner}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[12px] leading-[17px] text-fg-1">
-                {src.title || src.domain}
-              </span>
-              <span className="w-[72px] shrink-0 truncate whitespace-nowrap text-right text-[11px] leading-4 text-fg-3">
-                {src.domain}
-              </span>
-            </a>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
