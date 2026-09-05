@@ -775,6 +775,8 @@ export const enDict = {
     composerShortcut: "Deep research",
     sendToChat: "Send to chat",
     download: "Download .md",
+    notifyTitle: "Research complete",
+    notifyBody: "Your research is ready.",
     paywall: {
       intro: "Give it a question. It plans the angles, reads dozens of sources, and writes a report where every claim points back to where it came from.",
       cap1Title: "Decides what to search",

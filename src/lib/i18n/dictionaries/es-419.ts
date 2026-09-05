@@ -770,6 +770,8 @@ export const es419Dict = {
     composerShortcut: "Investigación profunda",
     sendToChat: "Enviar al chat",
     download: "Descargar .md",
+    notifyTitle: "Investigación lista",
+    notifyBody: "Tu investigación está lista.",
     paywall: {
       intro: "Dale una pregunta: decide por dónde buscar, lee decenas de fuentes y escribe un informe donde cada afirmación remite a su origen.",
       cap1Title: "Decide qué buscar",

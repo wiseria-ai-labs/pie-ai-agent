@@ -769,6 +769,8 @@ export const zhTWDict = {
     composerShortcut: "深度研究",
     sendToChat: "傳送到對話",
     download: "下載 .md",
+    notifyTitle: "研究完成",
+    notifyBody: "你的研究報告已就緒。",
     paywall: {
       intro: "給它一個問題，它自己拆解方向、檢索幾十個來源，寫成一份逐句標註出處的報告。",
       cap1Title: "自己決定搜什麼",

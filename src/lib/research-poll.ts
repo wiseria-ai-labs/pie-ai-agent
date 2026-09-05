@@ -2,6 +2,7 @@ import { getResearch, type ResearchRun } from "./managed-research";
 import { listInstances } from "./instances";
 import { getConfig, setConfig } from "./idb/config-store";
 import { RESEARCH_NOTIF_PREFIX } from "./research-notif";
+import { makeT, resolveLocale } from "./i18n";
 
 /** SW chrome.alarms 名：固定单 alarm，周期 1 分钟。 */
 export const RESEARCH_POLL_ALARM = "pie-research-poll";
@@ -59,14 +60,20 @@ function iconUrl(): string {
 /** 复用 schedules/notify.ts 的 chrome.notifications.create 写法；失败非致命。 */
 async function notifyResearchDone(run: ResearchRun): Promise<void> {
   try {
+    let t = makeT("en");
+    try {
+      t = makeT(await resolveLocale());
+    } catch {
+      // locale unresolvable — English fallback
+    }
     await new Promise<void>((resolve) => {
       chrome.notifications.create(
         `${RESEARCH_NOTIF_PREFIX}${run.id}`,
         {
           type: "basic",
           iconUrl: iconUrl(),
-          title: "Research complete",
-          message: (run.question || "Your research is ready.").slice(0, 100),
+          title: t("research.notifyTitle"),
+          message: (run.question || t("research.notifyBody")).slice(0, 100),
         },
         () => resolve(),
       );
