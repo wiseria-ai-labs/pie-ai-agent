@@ -56,7 +56,8 @@ describe("research sample fixtures", () => {
     const en = loadSample("ai-regulation", "en");
     const ja = loadSample("ai-regulation", "ja");
     expect(en.title.length).toBeGreaterThan(0);
-    expect(en.body).toMatch(/placeholder/i);
+    expect(en.body).not.toMatch(/placeholder/i);
+    expect(en.body).toMatch(/^## References/m);
     expect(ja).toEqual(en);
     expect(listSamples("pt-BR")).toHaveLength(3);
   });
@@ -73,7 +74,8 @@ describe("research sample fixtures", () => {
     const run = sampleToRun(loadSample("climate-tech", "en"));
     expect(run.id).toBe("sample:climate-tech");
     expect(run.status).toBe("done");
-    expect(run.report).toMatch(/placeholder/i);
+    expect(run.report).not.toMatch(/placeholder/i);
+    expect(run.report).toMatch(/\[1\]/);
     expect(run.question).toBe(loadSample("climate-tech", "en").title);
   });
 });

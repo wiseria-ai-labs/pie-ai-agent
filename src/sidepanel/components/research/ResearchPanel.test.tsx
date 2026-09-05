@@ -526,7 +526,7 @@ describe("ResearchPanel paywall", () => {
     fireEvent.click(await screen.findByTestId("research-sample-ai-regulation"));
     expect(await screen.findByTestId("research-detail")).toBeTruthy();
     expect(screen.getByTestId("research-report")).toBeTruthy();
-    expect(screen.getByTestId("markdown").textContent).toMatch(/placeholder/i);
+    expect(screen.getByTestId("markdown").textContent).toMatch(/References/);
     expect(screen.getByText(loadSample("ai-regulation", "en").title)).toBeTruthy();
     expect(screen.queryByTestId("research-cancel")).toBeNull();
     expect(mocks.getResearch).not.toHaveBeenCalled();
