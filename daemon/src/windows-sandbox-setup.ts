@@ -1,7 +1,6 @@
-// Windows 脚本沙箱设施的安装/卸载/状态命令（spec docs/specs/2026-08-05-daemon-windows-support.md
-// §3.2 / §4.5）。Inno 安装器提权阶段调 `pie.exe windows-install`（内部走 srt 的
-// installWindowsSandboxAsync 建 srt-sandbox 账户 + 机器级 WFP 围栏）；卸载段调
-// `pie.exe windows-uninstall` 逆操作。
+// Legacy Windows 脚本沙箱设施的安装/卸载/状态命令（spec docs/specs/2026-08-05-daemon-windows-support.md
+// §3.2 / §4.5）。GUI 安装器已不再调 `pie.exe windows-install`（Windows skill 脚本改 passthrough）；
+// 卸载段仍调 `pie.exe windows-uninstall`，给装过旧版的机器清残留 srt-sandbox 账户 + WFP 围栏。
 //
 // 关键约束：
 // - **非 win32 恒 no-op**（mac/linux 上这些命令无意义；本地/CI 跑测试不触真 OS）。

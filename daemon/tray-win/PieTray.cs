@@ -151,12 +151,6 @@ namespace PieLink
                     ["en"] = "Diagnostics", ["zh-CN"] = "诊断", ["zh-TW"] = "診斷",
                     ["ja"] = "診断", ["es-419"] = "Diagnóstico", ["pt-BR"] = "Diagnóstico",
                 },
-                ["repairSandbox"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Repair Sandbox", ["zh-CN"] = "修复沙箱", ["zh-TW"] = "修復沙箱",
-                    ["ja"] = "サンドボックスを修復", ["es-419"] = "Reparar sandbox",
-                    ["pt-BR"] = "Reparar sandbox",
-                },
                 ["diagTitleOk"] = new Dictionary<string, string>
                 {
                     ["en"] = "Diagnostics — All Good", ["zh-CN"] = "诊断 — 一切正常",
@@ -219,31 +213,6 @@ namespace PieLink
                     ["es-419"] = "Reinstala Pie Link para restaurar la conexión del navegador",
                     ["pt-BR"] = "Reinstale o Pie Link para restaurar a conexão do navegador",
                 },
-                ["doctor.sandbox"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Script sandbox", ["zh-CN"] = "脚本沙箱", ["zh-TW"] = "指令碼沙箱",
-                    ["ja"] = "スクリプトサンドボックス", ["es-419"] = "Sandbox de scripts",
-                    ["pt-BR"] = "Sandbox de scripts",
-                },
-                ["doctor.sandbox.ok"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Ready", ["zh-CN"] = "就绪", ["zh-TW"] = "就緒",
-                    ["ja"] = "準備完了", ["es-419"] = "Listo", ["pt-BR"] = "Pronto",
-                },
-                ["doctor.sandbox.bad"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Not ready", ["zh-CN"] = "未就绪", ["zh-TW"] = "未就緒",
-                    ["ja"] = "未準備", ["es-419"] = "No está listo", ["pt-BR"] = "Não está pronto",
-                },
-                ["doctor.sandbox.hint"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Click \"Repair Sandbox\" to fix it",
-                    ["zh-CN"] = "点「修复沙箱」可以修好",
-                    ["zh-TW"] = "點「修復沙箱」即可修復",
-                    ["ja"] = "「サンドボックスを修復」をクリックすると修復できます",
-                    ["es-419"] = "Haz clic en \"Reparar sandbox\" para solucionarlo",
-                    ["pt-BR"] = "Clique em \"Reparar sandbox\" para corrigir",
-                },
                 ["doctor.install_path"] = new Dictionary<string, string>
                 {
                     ["en"] = "Install location", ["zh-CN"] = "安装位置", ["zh-TW"] = "安裝位置",
@@ -258,26 +227,6 @@ namespace PieLink
                     ["ja"] = "Pie Link をローカルディスクに再インストールしてください",
                     ["es-419"] = "Reinstala Pie Link en un disco local",
                     ["pt-BR"] = "Reinstale o Pie Link em um disco local",
-                },
-                ["doctor.vc_runtime"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Runtime library", ["zh-CN"] = "运行库", ["zh-TW"] = "執行庫",
-                    ["ja"] = "ランタイムライブラリ", ["es-419"] = "Biblioteca de runtime",
-                    ["pt-BR"] = "Biblioteca de runtime",
-                },
-                ["doctor.vc_runtime.ok"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Installed", ["zh-CN"] = "已安装", ["zh-TW"] = "已安裝",
-                    ["ja"] = "インストール済み", ["es-419"] = "Instalado", ["pt-BR"] = "Instalado",
-                },
-                ["doctor.vc_runtime.hint"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Install the Microsoft Visual C++ x64 runtime",
-                    ["zh-CN"] = "安装 Microsoft Visual C++ x64 运行库",
-                    ["zh-TW"] = "安裝 Microsoft Visual C++ x64 執行庫",
-                    ["ja"] = "Microsoft Visual C++ x64 ランタイムをインストールしてください",
-                    ["es-419"] = "Instala el runtime de Microsoft Visual C++ x64",
-                    ["pt-BR"] = "Instale o runtime do Microsoft Visual C++ x64",
                 },
                 ["openLogs"] = new Dictionary<string, string>
                 {
@@ -670,10 +619,6 @@ namespace PieLink
             diagnostics.Click += (_, __) => RunDoctor();
             menu.Items.Add(diagnostics);
 
-            var repair = new ToolStripMenuItem(L10n.T("repairSandbox"));
-            repair.Click += (_, __) => RepairSandbox();
-            menu.Items.Add(repair);
-
             var checkUpdate = new ToolStripMenuItem(L10n.T("checkForUpdates"));
             checkUpdate.Click += (_, __) => CheckForUpdates(status);
             menu.Items.Add(checkUpdate);
@@ -822,7 +767,7 @@ namespace PieLink
             }
         }
 
-        // 状态词：优先按 id 取覆盖（如 sandbox.bad=「未就绪」、vc_runtime.ok=「已安装」），否则回落通用词。
+        // 状态词：优先按 id 取覆盖（如 doctor.install_path 有独立 hint），否则回落通用词。
         private static string StatusWord(string id, string status)
         {
             bool isOk = string.Equals(status, "ok", StringComparison.OrdinalIgnoreCase);
@@ -925,45 +870,6 @@ namespace PieLink
                 dlg.ShowDialog();
             }
             return installer;
-        }
-
-        // 「修复沙箱」= 提权依次跑 windows-uninstall + windows-install，跑完自动再诊断一次让用户看结果。
-        // 必须两步：srt 幂等判定只看凭据在不在、不验能否登录，单跑 install 会「成功地什么都没修」（见 #400）。
-        private void RepairSandbox()
-        {
-            // 第一步被取消（UAC 点否）则不继续第二步，也不再诊断——保持沙箱原状、不弹错。
-            if (!RunElevated("windows-uninstall")) return;
-            if (!RunElevated("windows-install")) return;
-            RunDoctor();
-        }
-
-        // 提权跑 `pie.exe <arg>`：runas verb 必须走 ShellExecute；WindowStyle.Hidden 压掉控制台黑框。
-        // 返回 false 仅当用户取消 UAC（NativeErrorCode 1223）——调用方据此中止后续步骤且不弹错、不诊断。
-        // 其它失败返回 true：best-effort 不阻断，让流程继续，最终由随后的诊断展示真实状态。
-        private static bool RunElevated(string arg)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo(PieExePath(), arg)
-                {
-                    UseShellExecute = true, // runas 提权必须 ShellExecute（不能重定向管道）
-                    Verb = "runas",
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                };
-                using (var proc = Process.Start(psi))
-                {
-                    if (proc != null) proc.WaitForExit();
-                }
-                return true;
-            }
-            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
-            {
-                return false; // 用户取消 UAC：静默返回，中止链路
-            }
-            catch
-            {
-                return true; // 非取消失败：不阻断，交给随后的诊断显示实况
-            }
         }
 
         // 「退出 Pie Link」= 关整套（对齐 mac Docker Desktop 模型）：先请 daemon 自己停，再退托盘。

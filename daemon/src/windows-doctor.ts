@@ -1,5 +1,5 @@
 // Windows-only `pie doctor` checks (spec docs/specs/2026-08-05-daemon-windows-support.md
-// §2.4 F1/F5/F6 + §4.8). Every check here targets a real failure mode observed during the
+// §2.4 F5 + §4.8). Every check here targets a real failure mode observed during the
 // 2026-08-09 Windows 11 acceptance run and surfaces an actionable line; a normal user can't
 // self-diagnose most of these, which is the whole reason doctor exists.
 //
@@ -7,7 +7,6 @@
 // verdict logic can be asserted hermetically from `bun test` on mac/Linux — the platform gate
 // lives in `doctor.ts`, this module only runs when already on win32.
 import { existsSync, readFileSync } from "fs";
-import path from "path";
 
 /** Native-messaging host name (registry subkey leaf + manifest json basename). */
 export const NM_HOST_NAME = "ai.wiseria.pie";
@@ -50,9 +49,8 @@ export const NM_BROWSERS: NmBrowser[] = [
  * never user-facing text; `detail` is the raw technical detail (English, never translated) and is
  * only meaningful on non-`ok` checks — the tray shows it under abnormal items for screenshots.
  *
- * `status` is decoupled from the doctor `ok` verdict on purpose: the sandbox facility being NOT
- * ready is `error` here (it's actionable — "Repair Sandbox") even though it does NOT flip `ok`
- * (fail-closed degrade, spec §3.2). See #406 for why the tray must not key its title off `ok`.
+ * `status` is decoupled from the doctor `ok` verdict on purpose so the tray can flag an
+ * individual check as `error` without keying its title off the overall `ok`. See #406.
  */
 export type DoctorCheckStatus = "ok" | "warn" | "error";
 export interface DoctorCheck {
@@ -201,16 +199,12 @@ export interface WindowsDoctorDeps {
   execPath: string;
   /** Named-pipe IPC address (informational + probe target). */
   pipePath: string;
-  /** Absolute path to VCRUNTIME140.dll to probe (F1). Default: %SystemRoot%\System32\vcruntime140.dll. */
-  vcRuntimePath: string;
   /** Read a registry key's `(Default)` value; null when the key is absent. */
   regQueryDefault(key: string): string | null;
   fileExists(p: string): boolean;
   readFile(p: string): string;
   /** Drive letters (upper-case) currently mapped to network shares (`net use`). */
   mappedDrives(): Set<string>;
-  /** F6 behavioural probe (verifyWindowsWfpEgress under the hood). */
-  sandboxReady(): Promise<{ ready: boolean; reason?: string }>;
   /** Best-effort named-pipe reachability probe. */
   probePipe(): Promise<PipeProbeResult>;
 }
@@ -219,10 +213,9 @@ export interface WindowsDoctorDeps {
  * Run the Windows-specific doctor checks and return lines + an `ok` verdict.
  *
  * `ok` is flipped to false only by genuine, actionable faults: a missing HKLM NM key, an HKCU
- * shadow key, a broken manifest, a network install path, a missing VC++ runtime, or an
- * unreachable-but-erroring pipe. States that are acceptable-by-design do NOT flip ok: a
- * not-running daemon (expected — it's launched lazily), a missing sandbox facility (fail-closed
- * degrade, spec §3.2), or an HKCU key that is merely absent (the normal, healthy case).
+ * shadow key, a broken manifest, a network install path, or an unreachable-but-erroring pipe.
+ * States that are acceptable-by-design do NOT flip ok: a not-running daemon (expected — it's
+ * launched lazily), or an HKCU key that is merely absent (the normal, healthy case).
  */
 export async function runWindowsDoctor(depsOverride: Partial<WindowsDoctorDeps> = {}): Promise<{
   ok: boolean;
@@ -271,41 +264,8 @@ export async function runWindowsDoctor(depsOverride: Partial<WindowsDoctorDeps> 
     checks.push({ id: "install_path", status: "ok", detail: deps.execPath });
   }
 
-  // --- F1: srt-win.exe dynamically links VCRUNTIME140.dll; without it the loader dies silently.
-  if (deps.fileExists(deps.vcRuntimePath)) {
-    lines.push("VC++ runtime (VCRUNTIME140.dll): present");
-    checks.push({ id: "vc_runtime", status: "ok", detail: "VCRUNTIME140.dll present" });
-  } else {
-    lines.push("VC++ runtime (VCRUNTIME140.dll): MISSING — srt-win.exe dies silently at loader");
-    lines.push("  stage (no error, no UAC). Install the Microsoft Visual C++ x64 redistributable");
-    lines.push("  (vc_redist.x64). Only run_skill_script is affected.");
-    ok = false;
-    checks.push({
-      id: "vc_runtime",
-      status: "error",
-      detail: "VCRUNTIME140.dll missing — install the Microsoft Visual C++ x64 redistributable",
-    });
-  }
-
-  // --- F6: sandbox facility readiness (behavioural probe, NOT filter enumeration).
-  try {
-    const sandbox = await deps.sandboxReady();
-    if (sandbox.ready) {
-      lines.push("Windows script sandbox facility: ready");
-      checks.push({ id: "sandbox", status: "ok", detail: "ready" });
-    } else {
-      lines.push(`Windows script sandbox facility: NOT ready${sandbox.reason ? ` — ${sandbox.reason}` : ""}`);
-      lines.push("  Only run_skill_script is affected; the bridge / skills / handoff are unaffected");
-      lines.push("  (fail-closed degrade). Reinstall Pie Link to restore. (ok not affected.)");
-      // `error` in `--json` even though `ok` is NOT flipped — this is the exact decoupling #406
-      // requires so the tray flags a credential-broken sandbox instead of saying "All Good".
-      checks.push({ id: "sandbox", status: "error", detail: sandbox.reason ?? "not ready" });
-    }
-  } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e);
-    lines.push(`Windows script sandbox facility: probe error — ${detail}`);
-    checks.push({ id: "sandbox", status: "error", detail: `probe error — ${detail}` });
-  }
+  // Windows skill scripts run unsandboxed (passthrough). Informational — not a structured check.
+  lines.push("skill scripts: run as the signed-in user (no sandbox on Windows)");
 
   // --- Native-messaging registry keys: HKLM (installed) + HKCU (shadow) for Chrome + Edge.
   for (const b of NM_BROWSERS) {
@@ -409,19 +369,13 @@ function safeMappedDrives(deps: WindowsDoctorDeps): Set<string> {
 // ---------------------------------------------------------------------------
 
 export function defaultWindowsDoctorDeps(): WindowsDoctorDeps {
-  const systemRoot = process.env.SystemRoot ?? process.env.windir ?? "C:\\Windows";
   return {
     execPath: process.execPath,
     pipePath: `\\\\.\\pipe\\${NM_HOST_NAME}`,
-    vcRuntimePath: path.join(systemRoot, "System32", "vcruntime140.dll"),
     regQueryDefault: (key) => defaultRegQueryDefault(key),
     fileExists: (p) => existsSync(p),
     readFile: (p) => readFileSync(p, "utf8"),
     mappedDrives: () => defaultMappedDrives(),
-    sandboxReady: async () => {
-      const { checkWindowsSandboxReady } = await import("./skill-sandbox-win32");
-      return checkWindowsSandboxReady();
-    },
     probePipe: () => defaultProbePipe(`\\\\.\\pipe\\${NM_HOST_NAME}`),
   };
 }

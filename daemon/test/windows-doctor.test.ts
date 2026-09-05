@@ -204,20 +204,17 @@ function healthyDeps(over: Partial<WindowsDoctorDeps> = {}): WindowsDoctorDeps {
     allowed_origins: [EXPECTED_ORIGIN],
   });
   const knownFiles = new Set([
-    "C:\\Windows\\System32\\vcruntime140.dll",
     "C:\\Program Files\\Pie Link\\ai.wiseria.pie.json",
     "C:\\Program Files\\Pie Link\\pie-host.bat",
   ]);
   return {
     execPath: "C:\\Program Files\\Pie Link\\pie.exe",
     pipePath: `\\\\.\\pipe\\${NM_HOST_NAME}`,
-    vcRuntimePath: "C:\\Windows\\System32\\vcruntime140.dll",
     regQueryDefault: (key) =>
       key.startsWith("HKLM") ? "C:\\Program Files\\Pie Link\\ai.wiseria.pie.json" : null,
     fileExists: (p) => knownFiles.has(p),
     readFile: () => manifestJson,
     mappedDrives: () => new Set(),
-    sandboxReady: async () => ({ ready: true }),
     probePipe: async () => "running",
     ...over,
   };
@@ -229,7 +226,8 @@ describe("runWindowsDoctor orchestrator", () => {
     expect(r.ok).toBe(true);
     expect(r.lines.some((l) => l.includes("Chrome native-messaging: HKLM key present"))).toBe(true);
     expect(r.lines.some((l) => l.includes("manifest OK"))).toBe(true);
-    expect(r.lines.some((l) => l.includes("sandbox facility: ready"))).toBe(true);
+    expect(r.lines.some((l) => l.includes("no sandbox on Windows"))).toBe(true);
+    expect(r.checks.some((c) => c.id === "sandbox")).toBe(false);
   });
 
   test("HKCU shadow → warned and ok flipped even when it resolves fine", async () => {
@@ -263,23 +261,6 @@ describe("runWindowsDoctor orchestrator", () => {
     expect(r.lines.some((l) => l.includes("ERROR_BAD_NETPATH"))).toBe(true);
   });
 
-  test("missing VC++ runtime → ERROR + ok flipped", async () => {
-    const r = await runWindowsDoctor(
-      healthyDeps({ fileExists: (p) => !p.toLowerCase().includes("vcruntime140") && p.includes("Pie Link") }),
-    );
-    expect(r.ok).toBe(false);
-    expect(r.lines.some((l) => l.includes("VCRUNTIME140.dll): MISSING"))).toBe(true);
-  });
-
-  test("sandbox NOT ready → warned but ok NOT flipped (fail-closed degrade)", async () => {
-    const r = await runWindowsDoctor(
-      healthyDeps({ sandboxReady: async () => ({ ready: false, reason: "egress not blocked" }) }),
-    );
-    expect(r.ok).toBe(true);
-    expect(r.lines.some((l) => l.includes("sandbox facility: NOT ready"))).toBe(true);
-    expect(r.lines.some((l) => l.includes("Only run_skill_script is affected"))).toBe(true);
-  });
-
   test("daemon not running → reported as not-running, ok NOT flipped", async () => {
     const r = await runWindowsDoctor(healthyDeps({ probePipe: async () => "not-running" }));
     expect(r.ok).toBe(true);
@@ -295,9 +276,8 @@ describe("runWindowsDoctor orchestrator", () => {
   test("broken manifest (missing host wrapper) → ERROR + ok flipped", async () => {
     const r = await runWindowsDoctor(
       healthyDeps({
-        // json exists but the host wrapper does not, and vcruntime is present.
-        fileExists: (p) =>
-          p.endsWith("ai.wiseria.pie.json") || p.toLowerCase().includes("vcruntime140"),
+        // json exists but the host wrapper does not.
+        fileExists: (p) => p.endsWith("ai.wiseria.pie.json"),
       }),
     );
     expect(r.ok).toBe(false);
@@ -337,8 +317,8 @@ describe("runWindowsDoctor orchestrator", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Structured `checks` array for `--json` (#406). The tray renders these; the sandbox item is
-// `error` even though `ok` stays true, and the pipe/agents probes are excluded.
+// Structured `checks` array for `--json` (#406). The tray renders these.
+// Windows no longer emits a sandbox check (skill scripts run unsandboxed).
 // ---------------------------------------------------------------------------
 
 describe("runWindowsDoctor checks (--json)", () => {
@@ -346,10 +326,10 @@ describe("runWindowsDoctor checks (--json)", () => {
     return checks.find((c) => c.id === id);
   }
 
-  test("all-healthy → every check ok, covers the 4 categories", async () => {
+  test("all-healthy → every check ok, covers install_path / NM", async () => {
     const r = await runWindowsDoctor(healthyDeps());
     const ids = r.checks.map((c) => c.id).sort();
-    expect(ids).toEqual(["install_path", "nm_chrome", "nm_edge", "sandbox", "vc_runtime"]);
+    expect(ids).toEqual(["install_path", "nm_chrome", "nm_edge"]);
     expect(r.checks.every((c) => c.status === "ok")).toBe(true);
     // ok detail carries the HKLM manifest path for verification.
     expect(findCheck(r.checks, "nm_chrome")!.detail).toContain("HKLM ->");
@@ -357,34 +337,17 @@ describe("runWindowsDoctor checks (--json)", () => {
 
   test("pipe/agents probes never leak into checks", async () => {
     const r = await runWindowsDoctor(healthyDeps({ probePipe: async () => "not-running" }));
-    expect(r.checks.some((c) => c.id === "pipe" || c.id === "agents")).toBe(false);
-    expect(r.checks.length).toBe(5);
+    expect(r.checks.some((c) => c.id === "pipe" || c.id === "agents" || c.id === "sandbox")).toBe(
+      false,
+    );
+    expect(r.checks.length).toBe(3);
   });
 
-  test("sandbox NOT ready → check is error even though ok stays true", async () => {
-    const r = await runWindowsDoctor(
-      healthyDeps({
-        sandboxReady: async () => ({ ready: false, reason: "CreateProcessWithLogonW: logon failure" }),
-      }),
-    );
-    // The exact #406 contradiction: verdict ok, but the tray must see error.
-    expect(r.ok).toBe(true);
-    const sandbox = findCheck(r.checks, "sandbox")!;
-    expect(sandbox.status).toBe("error");
-    expect(sandbox.detail).toContain("logon failure");
-  });
-
-  test("sandbox probe throw → error check with the probe message", async () => {
-    const r = await runWindowsDoctor(
-      healthyDeps({
-        sandboxReady: async () => {
-          throw new Error("srt exploded");
-        },
-      }),
-    );
-    const sandbox = findCheck(r.checks, "sandbox")!;
-    expect(sandbox.status).toBe("error");
-    expect(sandbox.detail).toContain("srt exploded");
+  test("no sandbox check even when doctor is otherwise healthy", async () => {
+    const r = await runWindowsDoctor(healthyDeps());
+    expect(findCheck(r.checks, "sandbox")).toBeUndefined();
+    expect(findCheck(r.checks, "vc_runtime")).toBeUndefined();
+    expect(r.lines.some((l) => /no sandbox on Windows/i.test(l))).toBe(true);
   });
 
   test("network install path → install_path check is error with the reason", async () => {
@@ -392,13 +355,6 @@ describe("runWindowsDoctor checks (--json)", () => {
     const c = findCheck(r.checks, "install_path")!;
     expect(c.status).toBe("error");
     expect(c.detail).toContain("network location");
-  });
-
-  test("missing VC++ runtime → vc_runtime check is error", async () => {
-    const r = await runWindowsDoctor(
-      healthyDeps({ fileExists: (p) => !p.toLowerCase().includes("vcruntime140") && p.includes("Pie Link") }),
-    );
-    expect(findCheck(r.checks, "vc_runtime")!.status).toBe("error");
   });
 
   test("HKCU shadow → nm_chrome check is error and detail names the shadow path", async () => {
@@ -429,8 +385,7 @@ describe("runWindowsDoctor checks (--json)", () => {
   test("broken manifest (missing host wrapper) → nm check error", async () => {
     const r = await runWindowsDoctor(
       healthyDeps({
-        fileExists: (p) =>
-          p.endsWith("ai.wiseria.pie.json") || p.toLowerCase().includes("vcruntime140"),
+        fileExists: (p) => p.endsWith("ai.wiseria.pie.json"),
       }),
     );
     expect(findCheck(r.checks, "nm_chrome")!.status).toBe("error");

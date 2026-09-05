@@ -258,7 +258,7 @@ jobs:
         shell: bash
         run: echo "version=$(node -p "require('./daemon/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Compile pie.exe + stage sandbox / redist payload
+      - name: Compile pie.exe
         shell: bash
         working-directory: daemon
         env:
@@ -270,10 +270,6 @@ jobs:
           bun build ./src/cli.ts --compile --target=bun-windows-x64 \
             --define "process.env.PIE_DAEMON_VERSION=\"$VER\"" \
             --outfile dist/pie.exe
-          # srt-win.exe is a companion file (no vendored fallback in a bun single binary; F1/6.1).
-          cp node_modules/@anthropic-ai/sandbox-runtime/vendor/srt-win/x64/srt-win.exe dist/
-          # vc_redist prerequisite (F1: srt-win links VCRUNTIME140.dll).
-          curl -fSL -o dist/vc_redist.x64.exe https://aka.ms/vs/17/release/vc_redist.x64.exe
           ls -la dist
 
       - name: Build tray (PieTray.exe)

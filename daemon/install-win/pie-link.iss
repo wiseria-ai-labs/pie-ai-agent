@@ -1,31 +1,29 @@
 ; daemon/install-win/pie-link.iss -- Pie Link Windows installer (Inno Setup 6).
-; Authoritative design: docs/specs/2026-08-05-daemon-windows-support.md 4.2 / 4.5 + F1 / F5.
+; Authoritative design: docs/specs/2026-08-05-daemon-windows-support.md 4.2 / 4.5 + F5.
+; Skill scripts on Windows run as the signed-in user (no sandbox; passthrough decision in
+; docs/solutions/2026-08-13-windows-skill-passthrough.md). This installer no longer stages a
+; sandbox backend or a VC++ redistributable, and no longer provisions a sandbox facility.
 ;
 ; Payload -> %ProgramFiles%\Pie Link\ (MUST be a local disk; F5: a network path breaks the
 ; elevation chain with ERROR_BAD_NETPATH):
-;   pie.exe        bun-windows-x64 compiled daemon (also serves `host` / `windows-*` subcommands)
+;   pie.exe        bun-windows-x64 compiled daemon (also serves `host` / legacy `windows-*`)
 ;   pie-host.bat   native-messaging wrapper (Chrome spawns it -> `pie.exe host`; .bat verified
 ;                  on a real machine 2026-08-08 -- no separate pie-host.exe needed)
 ;   PieTray.exe    minimal tray app (daemon/tray-win, C# net48)
-;   srt-win.exe    @anthropic-ai/sandbox-runtime Windows backend (companion file, no vendored
-;                  fallback in a bun single-binary; spec 6.1)
-;   vc_redist.x64.exe  extracted to {tmp}, silent-installed first (F1: srt-win dynamically links
-;                  VCRUNTIME140.dll and dies silently at loader stage without it)
 ;
 ; [Registry] writes the Chrome + Edge native-messaging host keys and the Run key (tray autostart
-; at login). These are HKLM (machine-wide), NOT HKCU: this is an admin/machine-wide install (WFP +
-; local account are machine-scoped), and when a standard user elevates with a *different* admin's
+; at login). These are HKLM (machine-wide), NOT HKCU: this is an admin/machine-wide install
+; (Program Files), and when a standard user elevates with a *different* admin's
 ; credentials, HKCU + {localappdata} resolve to the admin's hive/profile -- Chrome runs as the
 ; standard user and would never find a per-user NM manifest. HKLM NM host keys are read by Chrome
 ; and Edge for every user, so the manifest json is written to {app} (Program Files, world-readable)
-; and both keys + the Run value live under HKLM. [Code] on ssPostInstall: vc_redist (silent) ->
-; `pie.exe windows-install` (installs the sandbox facility; failure/cancel does NOT block the
-; install, only degrades script execution -- spec 3.2 fail-closed) -> start the tray. Uninstall
-; reverses everything and calls `pie.exe windows-uninstall`.
+; and both keys + the Run value live under HKLM. [Code] on ssPostInstall: write the NM manifest
+; and start the tray. Uninstall reverses everything and calls `pie.exe windows-uninstall`
+; (legacy: tears down a leftover srt-sandbox account / WFP filters from older installs).
 ;
 ; Build (CI or local): iscc /DMyAppVersion=<x.y.z> [ /DDistDir=<staging> ] pie-link.iss
-;   DistDir defaults to ..\dist (daemon/dist) and must contain pie.exe, PieTray.exe, srt-win.exe,
-;   vc_redist.x64.exe. pie-host.bat is taken from this script's own directory.
+;   DistDir defaults to ..\dist (daemon/dist) and must contain pie.exe, PieTray.exe.
+;   pie-host.bat is taken from this script's own directory.
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
@@ -50,7 +48,7 @@ AppPublisherURL=https://github.com/wiseria-ai-labs/pie-ai-agent
 DefaultDirName={autopf}\Pie Link
 DisableProgramGroupPage=yes
 DisableDirPage=yes
-; Sandbox install (machine-level WFP + local account) and Program Files both require admin.
+; Program Files requires admin.
 PrivilegesRequired=admin
 ; x64-only first release (spec decision 2); arm64 devices run via the OS x64 emulation layer.
 ArchitecturesAllowed=x64compatible
@@ -80,9 +78,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "{#DistDir}\pie.exe";           DestDir: "{app}"; Flags: ignoreversion
 Source: "{#DistDir}\PieTray.exe";        DestDir: "{app}"; Flags: ignoreversion
-Source: "{#DistDir}\srt-win.exe";        DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\pie-host.bat";    DestDir: "{app}"; Flags: ignoreversion
-Source: "{#DistDir}\vc_redist.x64.exe";  DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
 ; Start-menu entry so users have a graphical way to relaunch the tray after they quit it (parity
@@ -145,26 +141,6 @@ begin
     '  "allowed_origins": ["chrome-extension://{#ExtId}/", "chrome-extension://{#EdgeExtId}/"]' + #13#10 +
     '}' + #13#10;
   SaveStringToFile(GetManifestPath(''), Json, False);
-end;
-
-// Best-effort sandbox facility install: vc_redist (F1) first, then `pie.exe windows-install`.
-// Failures are logged, never fatal (spec 3.2 fail-closed): the bridge / skills / handoff still
-// work; only `run_skill_script` degrades until the facility is present.
-procedure InstallSandboxFacility();
-var
-  Code: Integer;
-begin
-  if Exec(ExpandConstant('{tmp}\vc_redist.x64.exe'), '/install /quiet /norestart', '',
-          SW_HIDE, ewWaitUntilTerminated, Code) then
-    Log('vc_redist exit=' + IntToStr(Code))
-  else
-    Log('vc_redist failed to launch (continuing)');
-
-  if Exec(ExpandConstant('{app}\pie.exe'), 'windows-install', '',
-          SW_HIDE, ewWaitUntilTerminated, Code) then
-    Log('windows-install exit=' + IntToStr(Code))
-  else
-    Log('windows-install failed to launch (sandbox degraded; install continues)');
 end;
 
 // Start the tray immediately after install as the invoking (non-elevated) user, matching the
@@ -248,12 +224,11 @@ begin
   begin
     ClearShadowingHkcuKeys();
     WriteNativeManifest();
-    InstallSandboxFacility();
     // The pre-copy rename (PrepareToInstall) leaves the OLD daemon running off pie.exe.old, and it
     // still owns the named pipe -- the extension would keep talking to the previous version until
     // something restarts it. Kill it here, after the new payload is in place: the next extension
-    // reconnect lazy-launches the new pie.exe. Must come after InstallSandboxFacility (which itself
-    // runs a short-lived `pie.exe windows-install` and would be killed mid-flight otherwise).
+    // reconnect lazy-launches the new pie.exe. Must come before StartTray so the new tray does
+    // not attach to a stale daemon.
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im pie.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
     StartTray();
   end;
@@ -265,8 +240,8 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
-    // Stop the tray first, then tear down the sandbox facility (a short-lived pie.exe run),
-    // then kill any remaining daemon so {app}\pie.exe unlocks for deletion.
+    // Stop the tray first, then tear down a leftover sandbox facility from older installs
+    // (a short-lived pie.exe run), then kill any remaining daemon so {app}\pie.exe unlocks.
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im PieTray.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
     if FileExists(ExpandConstant('{app}\pie.exe')) then
       Exec(ExpandConstant('{app}\pie.exe'), 'windows-uninstall', '', SW_HIDE, ewWaitUntilTerminated, Code);
