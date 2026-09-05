@@ -6,7 +6,7 @@ import type { DoctorCheck } from "./windows-doctor";
 export async function doctor(
   // 注入点统一收在一个 opts 里：
   // - detect：agent 探测，默认走 detectAgents（真机要问 login shell PATH）；
-  // - windowsChecks：Windows 检查项，默认走真机 doctor（reg query / net use / srt 探针），
+  // - windowsChecks：Windows 检查项，默认走真机 doctor（reg query / net use / 安装路径），
   //   非 win32 跳过；测试传桩在 mac/linux 上覆盖 win32 分支做 hermetic 断言。
   opts: {
     platform?: NodeJS.Platform;
@@ -43,7 +43,7 @@ export async function doctor(
   // pipe 平台无法 fs 判在场（ipcPresent=null）→ 不拿它压 ok。
   let ok = ipcPresent ?? true;
 
-  // Windows 专属检查项（F1/F5/F6 + NM 注册表 HKCU 遮蔽）。非 win32 整体跳过——不产生噪音输出
+  // Windows 专属检查项（F1/F5 + NM 注册表 HKCU 遮蔽）。非 win32 整体跳过——不产生噪音输出
   // （沿用 doctor 平台分支惯例）。
   if (platform === "win32") {
     const runWin =

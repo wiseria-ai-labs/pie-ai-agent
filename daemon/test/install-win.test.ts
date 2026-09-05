@@ -2,10 +2,11 @@ import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Structural guards for the Windows installer片 (spec 4.2/4.5 + F1/F5). The full flow is
+// Structural guards for the Windows installer片 (spec 4.2/4.5 + F5). The full flow is
 // real-machine (need-human-test); here we lock the invariants that a string-scan can enforce so
-// a future edit can't silently drop the Program-Files target, the vc_redist prerequisite, the
-// registry wiring, or the sandbox install/uninstall hooks.
+// a future edit can't silently drop the Program-Files target, the registry wiring, or the
+// leftover-sandbox uninstall hook. Windows skill scripts run unsandboxed: the installer must
+// not restage a sandbox backend or a VC++ redistributable.
 
 const dir = join(import.meta.dir, "..", "install-win");
 const iss = readFileSync(join(dir, "pie-link.iss"), "utf8");
@@ -30,8 +31,8 @@ test("pie-host.bat forwards to `pie.exe host` next to itself, with CRLF", () => 
   expect(bat).toContain("\r\n"); // Windows line endings
 });
 
-// ── [Files]: every payload the spec enumerates ──────────────────────────────
-for (const f of ["pie.exe", "PieTray.exe", "srt-win.exe", "pie-host.bat", "vc_redist.x64.exe"]) {
+// ── [Files]: every payload the installer still ships ────────────────────────
+for (const f of ["pie.exe", "PieTray.exe", "pie-host.bat"]) {
   test(`iss [Files] ships ${f}`, () => {
     expect(iss).toContain(f);
   });
@@ -42,7 +43,7 @@ test("iss installs into Program Files ({autopf}) on a local disk (F5)", () => {
   expect(iss).toContain("DefaultDirName={autopf}\\Pie Link");
 });
 
-test("iss requires admin (WFP sandbox install + Program Files)", () => {
+test("iss requires admin (Program Files)", () => {
   expect(iss).toMatch(/PrivilegesRequired\s*=\s*admin/);
 });
 
@@ -84,22 +85,23 @@ test("iss lands the native-messaging manifest under {app} (world-readable Progra
   expect(iss).not.toContain("{localappdata}\\PieLink");
 });
 
-// ── [Run]/[Code]: vc_redist BEFORE windows-install (F1), then windows-uninstall on removal ──
-test("iss runs vc_redist silently before pie.exe windows-install (F1 ordering)", () => {
-  const vc = iss.indexOf("vc_redist.x64.exe' + ") >= 0 ? -1 : iss.indexOf("vc_redist.x64.exe");
-  const vcRun = iss.indexOf("/install /quiet /norestart");
-  const install = iss.indexOf("'windows-install'");
-  expect(vcRun).toBeGreaterThan(-1);
-  expect(install).toBeGreaterThan(-1);
-  expect(vcRun).toBeLessThan(install); // vc_redist step precedes windows-install
-  expect(vc).toBeGreaterThan(-1);
+// ── leftover sandbox teardown on uninstall; installer must not re-provision ──
+test("iss does not mention windows-install or vc_redist (no sandbox facility on install)", () => {
+  expect(iss).not.toContain("windows-install");
+  expect(iss).not.toContain("vc_redist");
 });
 
-test("iss calls pie.exe windows-install on install (sandbox facility)", () => {
-  expect(iss).toContain("'windows-install'");
+test("iss does not ship a sandbox backend", () => {
+  expect(iss).not.toContain("srt-win.exe");
+  expect(iss).not.toContain("InstallSandboxFacility");
 });
 
-test("iss calls pie.exe windows-uninstall on uninstall (facility teardown)", () => {
+test("release workflow does not stage srt-win.exe or vc_redist", () => {
+  expect(releaseYml).not.toContain("srt-win.exe");
+  expect(releaseYml).not.toContain("vc_redist");
+});
+
+test("iss calls pie.exe windows-uninstall on uninstall (legacy facility teardown)", () => {
   expect(iss).toContain("'windows-uninstall'");
   expect(iss).toContain("CurUninstallStepChanged");
 });
@@ -174,18 +176,24 @@ test("iss renames the running payload aside before [Files] (taskkill alone loses
 });
 
 // After the rename the OLD daemon is still running off pie.exe.old and still owns the named pipe;
-// without a post-copy kill the extension keeps talking to the previous version. It must land after
-// InstallSandboxFacility (which runs a short-lived `pie.exe windows-install` of its own).
-test("iss kills the stale daemon in ssPostInstall, after InstallSandboxFacility, before StartTray", () => {
+// without a post-copy kill the extension keeps talking to the previous version. Kill after the
+// new payload is in place and before StartTray so the new tray does not attach to a stale daemon.
+test("iss kills the stale daemon in ssPostInstall, after WriteNativeManifest, before StartTray", () => {
   const start = iss.indexOf("procedure CurStepChanged(");
   expect(start).toBeGreaterThan(-1);
   const body = iss.slice(start);
-  const sandbox = body.indexOf("InstallSandboxFacility();");
+  const write = body.indexOf("WriteNativeManifest();");
   const kill = body.search(/taskkill\.exe'\),\s*'\/f \/im pie\.exe'/);
   const startTray = body.indexOf("StartTray();");
-  expect(sandbox).toBeGreaterThan(-1);
-  expect(kill).toBeGreaterThan(sandbox);
+  expect(write).toBeGreaterThan(-1);
+  expect(kill).toBeGreaterThan(write);
   expect(startTray).toBeGreaterThan(kill);
+});
+
+test("PieTray has no Repair Sandbox menu item", () => {
+  expect(trayCs).not.toContain("repairSandbox");
+  expect(trayCs).not.toContain("RepairSandbox");
+  expect(trayCs).not.toContain("doctor.sandbox");
 });
 
 test("iss keeps CloseApplications=no (killing is done by us, not Inno's restart manager)", () => {

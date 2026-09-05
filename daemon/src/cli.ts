@@ -29,9 +29,10 @@ export async function runCli(argv: string[]): Promise<number> {
     case "windows-install":
     case "windows-uninstall":
     case "windows-status": {
-      // Inno 安装器/卸载器调这些子命令装/卸 Windows 脚本沙箱设施（spec §3.2 / §4.5）。
-      // install/uninstall 是 best-effort：失败只报告不阻断（安装器 [Code] 亦忽略退出码），
-      // 故恒返回 0；status 返回就绪判定（ready→0 / 未就绪→1，供 doctor/自检读）。
+      // Legacy: leftover srt-sandbox account / WFP teardown on machines that installed an
+      // older Pie Link. The GUI installer no longer provisions a sandbox (Windows skill
+      // scripts run unsandboxed). install/uninstall stay best-effort and always return 0;
+      // status returns the readiness verdict (ready→0 / not ready→1).
       const { runWindowsSandboxSetup } = await import("./windows-sandbox-setup");
       const action = cmd.slice("windows-".length) as "install" | "uninstall" | "status";
       const r = await runWindowsSandboxSetup(action);
@@ -46,7 +47,7 @@ export async function runCli(argv: string[]): Promise<number> {
     }
     default:
       console.error(
-        `unknown command: ${cmd ?? "(none)"}. usage: pie <daemon|host|doctor|version|windows-install|windows-uninstall|windows-status>`,
+        `unknown command: ${cmd ?? "(none)"}. usage: pie <daemon|host|doctor|version> (legacy: windows-install|windows-uninstall|windows-status)`,
       );
       return 2;
   }

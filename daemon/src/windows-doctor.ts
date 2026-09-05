@@ -1,5 +1,5 @@
 // Windows-only `pie doctor` checks (spec docs/specs/2026-08-05-daemon-windows-support.md
-// §2.4 F1/F5/F6 + §4.8). Every check here targets a real failure mode observed during the
+// §2.4 F1/F5 + §4.8). Every check here targets a real failure mode observed during the
 // 2026-08-09 Windows 11 acceptance run and surfaces an actionable line; a normal user can't
 // self-diagnose most of these, which is the whole reason doctor exists.
 //
@@ -50,9 +50,8 @@ export const NM_BROWSERS: NmBrowser[] = [
  * never user-facing text; `detail` is the raw technical detail (English, never translated) and is
  * only meaningful on non-`ok` checks — the tray shows it under abnormal items for screenshots.
  *
- * `status` is decoupled from the doctor `ok` verdict on purpose: the sandbox facility being NOT
- * ready is `error` here (it's actionable — "Repair Sandbox") even though it does NOT flip `ok`
- * (fail-closed degrade, spec §3.2). See #406 for why the tray must not key its title off `ok`.
+ * `status` is decoupled from the doctor `ok` verdict on purpose so the tray can flag an
+ * individual check as `error` without keying its title off the overall `ok`. See #406.
  */
 export type DoctorCheckStatus = "ok" | "warn" | "error";
 export interface DoctorCheck {
@@ -209,8 +208,6 @@ export interface WindowsDoctorDeps {
   readFile(p: string): string;
   /** Drive letters (upper-case) currently mapped to network shares (`net use`). */
   mappedDrives(): Set<string>;
-  /** F6 behavioural probe (verifyWindowsWfpEgress under the hood). */
-  sandboxReady(): Promise<{ ready: boolean; reason?: string }>;
   /** Best-effort named-pipe reachability probe. */
   probePipe(): Promise<PipeProbeResult>;
 }
@@ -221,8 +218,8 @@ export interface WindowsDoctorDeps {
  * `ok` is flipped to false only by genuine, actionable faults: a missing HKLM NM key, an HKCU
  * shadow key, a broken manifest, a network install path, a missing VC++ runtime, or an
  * unreachable-but-erroring pipe. States that are acceptable-by-design do NOT flip ok: a
- * not-running daemon (expected — it's launched lazily), a missing sandbox facility (fail-closed
- * degrade, spec §3.2), or an HKCU key that is merely absent (the normal, healthy case).
+ * not-running daemon (expected — it's launched lazily), or an HKCU key that is merely absent
+ * (the normal, healthy case).
  */
 export async function runWindowsDoctor(depsOverride: Partial<WindowsDoctorDeps> = {}): Promise<{
   ok: boolean;
@@ -287,25 +284,8 @@ export async function runWindowsDoctor(depsOverride: Partial<WindowsDoctorDeps> 
     });
   }
 
-  // --- F6: sandbox facility readiness (behavioural probe, NOT filter enumeration).
-  try {
-    const sandbox = await deps.sandboxReady();
-    if (sandbox.ready) {
-      lines.push("Windows script sandbox facility: ready");
-      checks.push({ id: "sandbox", status: "ok", detail: "ready" });
-    } else {
-      lines.push(`Windows script sandbox facility: NOT ready${sandbox.reason ? ` — ${sandbox.reason}` : ""}`);
-      lines.push("  Only run_skill_script is affected; the bridge / skills / handoff are unaffected");
-      lines.push("  (fail-closed degrade). Reinstall Pie Link to restore. (ok not affected.)");
-      // `error` in `--json` even though `ok` is NOT flipped — this is the exact decoupling #406
-      // requires so the tray flags a credential-broken sandbox instead of saying "All Good".
-      checks.push({ id: "sandbox", status: "error", detail: sandbox.reason ?? "not ready" });
-    }
-  } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e);
-    lines.push(`Windows script sandbox facility: probe error — ${detail}`);
-    checks.push({ id: "sandbox", status: "error", detail: `probe error — ${detail}` });
-  }
+  // Windows skill scripts run unsandboxed (passthrough). Informational — not a structured check.
+  lines.push("skill scripts: run as the signed-in user (no sandbox on Windows)");
 
   // --- Native-messaging registry keys: HKLM (installed) + HKCU (shadow) for Chrome + Edge.
   for (const b of NM_BROWSERS) {
@@ -418,10 +398,6 @@ export function defaultWindowsDoctorDeps(): WindowsDoctorDeps {
     fileExists: (p) => existsSync(p),
     readFile: (p) => readFileSync(p, "utf8"),
     mappedDrives: () => defaultMappedDrives(),
-    sandboxReady: async () => {
-      const { checkWindowsSandboxReady } = await import("./skill-sandbox-win32");
-      return checkWindowsSandboxReady();
-    },
     probePipe: () => defaultProbePipe(`\\\\.\\pipe\\${NM_HOST_NAME}`),
   };
 }

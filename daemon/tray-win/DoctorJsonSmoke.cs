@@ -17,14 +17,14 @@ namespace PieLink
         {
             int failures = 0;
 
-            // A real `doctor --json` payload: `checks` is a JSON array. Must parse to 5 rows, not
+            // A real `doctor --json` payload: `checks` is a JSON array. Must parse to 4 rows, not
             // null -- the exact F1 regression (object[] test -> always null -> renderer disabled).
+            // Windows no longer emits a sandbox check (skill scripts run unsandboxed).
             const string ok =
                 "{\"ok\":true,\"checks\":[" +
                 "{\"id\":\"install_path\",\"status\":\"ok\",\"detail\":\"\"}," +
                 "{\"id\":\"vc_runtime\",\"status\":\"ok\",\"detail\":\"\"}," +
-                "{\"id\":\"sandbox\",\"status\":\"error\",\"detail\":\"logon failure\"}," +
-                "{\"id\":\"nm_chrome\",\"status\":\"ok\",\"detail\":\"\"}," +
+                "{\"id\":\"nm_chrome\",\"status\":\"error\",\"detail\":\"HKLM key missing\"}," +
                 "{\"id\":\"nm_edge\",\"status\":\"ok\",\"detail\":\"\"}]}";
             var checks = DoctorJson.ParseChecks(ok);
             if (checks == null)
@@ -34,25 +34,30 @@ namespace PieLink
             }
             else
             {
-                if (checks.Count != 5)
+                if (checks.Count != 4)
                 {
                     failures++;
-                    Console.Error.WriteLine("FAIL: expected 5 checks, got " + checks.Count);
+                    Console.Error.WriteLine("FAIL: expected 4 checks, got " + checks.Count);
                 }
-                DoctorCheck sandbox = null;
+                DoctorCheck nmChrome = null;
                 foreach (var c in checks)
                 {
-                    if (c.Id == "sandbox") { sandbox = c; break; }
+                    if (c.Id == "sandbox")
+                    {
+                        failures++;
+                        Console.Error.WriteLine("FAIL: sandbox check must not appear in doctor --json");
+                    }
+                    if (c.Id == "nm_chrome") { nmChrome = c; }
                 }
-                if (sandbox == null || sandbox.Status != "error")
+                if (nmChrome == null || nmChrome.Status != "error")
                 {
                     failures++;
-                    Console.Error.WriteLine("FAIL: sandbox check should be parsed with status=error");
+                    Console.Error.WriteLine("FAIL: nm_chrome check should be parsed with status=error");
                 }
-                else if (sandbox.Detail != "logon failure")
+                else if (nmChrome.Detail != "HKLM key missing")
                 {
                     failures++;
-                    Console.Error.WriteLine("FAIL: sandbox detail lost during parse");
+                    Console.Error.WriteLine("FAIL: nm_chrome detail lost during parse");
                 }
             }
 
