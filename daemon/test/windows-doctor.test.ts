@@ -204,14 +204,12 @@ function healthyDeps(over: Partial<WindowsDoctorDeps> = {}): WindowsDoctorDeps {
     allowed_origins: [EXPECTED_ORIGIN],
   });
   const knownFiles = new Set([
-    "C:\\Windows\\System32\\vcruntime140.dll",
     "C:\\Program Files\\Pie Link\\ai.wiseria.pie.json",
     "C:\\Program Files\\Pie Link\\pie-host.bat",
   ]);
   return {
     execPath: "C:\\Program Files\\Pie Link\\pie.exe",
     pipePath: `\\\\.\\pipe\\${NM_HOST_NAME}`,
-    vcRuntimePath: "C:\\Windows\\System32\\vcruntime140.dll",
     regQueryDefault: (key) =>
       key.startsWith("HKLM") ? "C:\\Program Files\\Pie Link\\ai.wiseria.pie.json" : null,
     fileExists: (p) => knownFiles.has(p),
@@ -263,14 +261,6 @@ describe("runWindowsDoctor orchestrator", () => {
     expect(r.lines.some((l) => l.includes("ERROR_BAD_NETPATH"))).toBe(true);
   });
 
-  test("missing VC++ runtime → ERROR + ok flipped", async () => {
-    const r = await runWindowsDoctor(
-      healthyDeps({ fileExists: (p) => !p.toLowerCase().includes("vcruntime140") && p.includes("Pie Link") }),
-    );
-    expect(r.ok).toBe(false);
-    expect(r.lines.some((l) => l.includes("VCRUNTIME140.dll): MISSING"))).toBe(true);
-  });
-
   test("daemon not running → reported as not-running, ok NOT flipped", async () => {
     const r = await runWindowsDoctor(healthyDeps({ probePipe: async () => "not-running" }));
     expect(r.ok).toBe(true);
@@ -286,9 +276,8 @@ describe("runWindowsDoctor orchestrator", () => {
   test("broken manifest (missing host wrapper) → ERROR + ok flipped", async () => {
     const r = await runWindowsDoctor(
       healthyDeps({
-        // json exists but the host wrapper does not, and vcruntime is present.
-        fileExists: (p) =>
-          p.endsWith("ai.wiseria.pie.json") || p.toLowerCase().includes("vcruntime140"),
+        // json exists but the host wrapper does not.
+        fileExists: (p) => p.endsWith("ai.wiseria.pie.json"),
       }),
     );
     expect(r.ok).toBe(false);
@@ -337,10 +326,10 @@ describe("runWindowsDoctor checks (--json)", () => {
     return checks.find((c) => c.id === id);
   }
 
-  test("all-healthy → every check ok, covers install_path / vc_runtime / NM", async () => {
+  test("all-healthy → every check ok, covers install_path / NM", async () => {
     const r = await runWindowsDoctor(healthyDeps());
     const ids = r.checks.map((c) => c.id).sort();
-    expect(ids).toEqual(["install_path", "nm_chrome", "nm_edge", "vc_runtime"]);
+    expect(ids).toEqual(["install_path", "nm_chrome", "nm_edge"]);
     expect(r.checks.every((c) => c.status === "ok")).toBe(true);
     // ok detail carries the HKLM manifest path for verification.
     expect(findCheck(r.checks, "nm_chrome")!.detail).toContain("HKLM ->");
@@ -351,12 +340,13 @@ describe("runWindowsDoctor checks (--json)", () => {
     expect(r.checks.some((c) => c.id === "pipe" || c.id === "agents" || c.id === "sandbox")).toBe(
       false,
     );
-    expect(r.checks.length).toBe(4);
+    expect(r.checks.length).toBe(3);
   });
 
   test("no sandbox check even when doctor is otherwise healthy", async () => {
     const r = await runWindowsDoctor(healthyDeps());
     expect(findCheck(r.checks, "sandbox")).toBeUndefined();
+    expect(findCheck(r.checks, "vc_runtime")).toBeUndefined();
     expect(r.lines.some((l) => /no sandbox on Windows/i.test(l))).toBe(true);
   });
 
@@ -365,13 +355,6 @@ describe("runWindowsDoctor checks (--json)", () => {
     const c = findCheck(r.checks, "install_path")!;
     expect(c.status).toBe("error");
     expect(c.detail).toContain("network location");
-  });
-
-  test("missing VC++ runtime → vc_runtime check is error", async () => {
-    const r = await runWindowsDoctor(
-      healthyDeps({ fileExists: (p) => !p.toLowerCase().includes("vcruntime140") && p.includes("Pie Link") }),
-    );
-    expect(findCheck(r.checks, "vc_runtime")!.status).toBe("error");
   });
 
   test("HKCU shadow → nm_chrome check is error and detail names the shadow path", async () => {
@@ -402,8 +385,7 @@ describe("runWindowsDoctor checks (--json)", () => {
   test("broken manifest (missing host wrapper) → nm check error", async () => {
     const r = await runWindowsDoctor(
       healthyDeps({
-        fileExists: (p) =>
-          p.endsWith("ai.wiseria.pie.json") || p.toLowerCase().includes("vcruntime140"),
+        fileExists: (p) => p.endsWith("ai.wiseria.pie.json"),
       }),
     );
     expect(findCheck(r.checks, "nm_chrome")!.status).toBe("error");

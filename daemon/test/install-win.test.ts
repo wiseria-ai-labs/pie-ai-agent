@@ -6,7 +6,7 @@ import { join } from "node:path";
 // real-machine (need-human-test); here we lock the invariants that a string-scan can enforce so
 // a future edit can't silently drop the Program-Files target, the registry wiring, or the
 // leftover-sandbox uninstall hook. Windows skill scripts run unsandboxed: the installer must
-// not restage a sandbox backend or a VC++ redistributable.
+// not restage a sandbox backend.
 
 const dir = join(import.meta.dir, "..", "install-win");
 const iss = readFileSync(join(dir, "pie-link.iss"), "utf8");
@@ -194,6 +194,7 @@ test("PieTray has no Repair Sandbox menu item", () => {
   expect(trayCs).not.toContain("repairSandbox");
   expect(trayCs).not.toContain("RepairSandbox");
   expect(trayCs).not.toContain("doctor.sandbox");
+  expect(trayCs).not.toContain("doctor.vc_runtime");
 });
 
 test("iss keeps CloseApplications=no (killing is done by us, not Inno's restart manager)", () => {

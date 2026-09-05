@@ -228,26 +228,6 @@ namespace PieLink
                     ["es-419"] = "Reinstala Pie Link en un disco local",
                     ["pt-BR"] = "Reinstale o Pie Link em um disco local",
                 },
-                ["doctor.vc_runtime"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Runtime library", ["zh-CN"] = "运行库", ["zh-TW"] = "執行庫",
-                    ["ja"] = "ランタイムライブラリ", ["es-419"] = "Biblioteca de runtime",
-                    ["pt-BR"] = "Biblioteca de runtime",
-                },
-                ["doctor.vc_runtime.ok"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Installed", ["zh-CN"] = "已安装", ["zh-TW"] = "已安裝",
-                    ["ja"] = "インストール済み", ["es-419"] = "Instalado", ["pt-BR"] = "Instalado",
-                },
-                ["doctor.vc_runtime.hint"] = new Dictionary<string, string>
-                {
-                    ["en"] = "Install the Microsoft Visual C++ x64 runtime",
-                    ["zh-CN"] = "安装 Microsoft Visual C++ x64 运行库",
-                    ["zh-TW"] = "安裝 Microsoft Visual C++ x64 執行庫",
-                    ["ja"] = "Microsoft Visual C++ x64 ランタイムをインストールしてください",
-                    ["es-419"] = "Instala el runtime de Microsoft Visual C++ x64",
-                    ["pt-BR"] = "Instale o runtime do Microsoft Visual C++ x64",
-                },
                 ["openLogs"] = new Dictionary<string, string>
                 {
                     ["en"] = "Open Logs Folder", ["zh-CN"] = "打开日志目录", ["zh-TW"] = "開啟日誌目錄",
@@ -787,7 +767,7 @@ namespace PieLink
             }
         }
 
-        // 状态词：优先按 id 取覆盖（如 vc_runtime.ok=「已安装」），否则回落通用词。
+        // 状态词：优先按 id 取覆盖（如 doctor.install_path 有独立 hint），否则回落通用词。
         private static string StatusWord(string id, string status)
         {
             bool isOk = string.Equals(status, "ok", StringComparison.OrdinalIgnoreCase);

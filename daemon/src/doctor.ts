@@ -43,7 +43,7 @@ export async function doctor(
   // pipe 平台无法 fs 判在场（ipcPresent=null）→ 不拿它压 ok。
   let ok = ipcPresent ?? true;
 
-  // Windows 专属检查项（F1/F5 + NM 注册表 HKCU 遮蔽）。非 win32 整体跳过——不产生噪音输出
+  // Windows 专属检查项（F5 + NM 注册表 HKCU 遮蔽）。非 win32 整体跳过——不产生噪音输出
   // （沿用 doctor 平台分支惯例）。
   if (platform === "win32") {
     const runWin =

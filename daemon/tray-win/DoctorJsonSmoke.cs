@@ -17,13 +17,12 @@ namespace PieLink
         {
             int failures = 0;
 
-            // A real `doctor --json` payload: `checks` is a JSON array. Must parse to 4 rows, not
+            // A real `doctor --json` payload: `checks` is a JSON array. Must parse to 3 rows, not
             // null -- the exact F1 regression (object[] test -> always null -> renderer disabled).
-            // Windows no longer emits a sandbox check (skill scripts run unsandboxed).
+            // Windows no longer emits sandbox or vc_runtime checks.
             const string ok =
                 "{\"ok\":true,\"checks\":[" +
                 "{\"id\":\"install_path\",\"status\":\"ok\",\"detail\":\"\"}," +
-                "{\"id\":\"vc_runtime\",\"status\":\"ok\",\"detail\":\"\"}," +
                 "{\"id\":\"nm_chrome\",\"status\":\"error\",\"detail\":\"HKLM key missing\"}," +
                 "{\"id\":\"nm_edge\",\"status\":\"ok\",\"detail\":\"\"}]}";
             var checks = DoctorJson.ParseChecks(ok);
@@ -34,18 +33,18 @@ namespace PieLink
             }
             else
             {
-                if (checks.Count != 4)
+                if (checks.Count != 3)
                 {
                     failures++;
-                    Console.Error.WriteLine("FAIL: expected 4 checks, got " + checks.Count);
+                    Console.Error.WriteLine("FAIL: expected 3 checks, got " + checks.Count);
                 }
                 DoctorCheck nmChrome = null;
                 foreach (var c in checks)
                 {
-                    if (c.Id == "sandbox")
+                    if (c.Id == "sandbox" || c.Id == "vc_runtime")
                     {
                         failures++;
-                        Console.Error.WriteLine("FAIL: sandbox check must not appear in doctor --json");
+                        Console.Error.WriteLine("FAIL: " + c.Id + " check must not appear in doctor --json");
                     }
                     if (c.Id == "nm_chrome") { nmChrome = c; }
                 }

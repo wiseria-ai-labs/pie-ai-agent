@@ -1,7 +1,7 @@
 # Pie Link Windows 安装器（Inno Setup）
 
 macOS `.pkg`（`daemon/install/`）的 Windows 对应物。权威设计：
-`docs/specs/2026-08-05-daemon-windows-support.md` §4.2 / §4.5 + 实测发现 F1 / F5。
+`docs/specs/2026-08-05-daemon-windows-support.md` §4.2 / §4.5 + 实测发现 F5。
 
 ## 文件
 
