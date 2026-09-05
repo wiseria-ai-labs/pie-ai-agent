@@ -58,25 +58,75 @@ describe("startResearch", () => {
 });
 
 describe("listResearch", () => {
+  const UNIX_SEC = 1756660221;
+  const ISO = new Date(UNIX_SEC * 1000).toISOString();
+
+  const summaryWire = {
+    id: "run_1",
+    question: "What is Pie?",
+    status: "running" as const,
+    createdAt: UNIX_SEC,
+  };
+
   const summary = {
     id: "run_1",
     question: "What is Pie?",
     status: "running" as const,
-    createdAt: "2026-08-29T00:00:00.000Z",
+    createdAt: ISO,
   };
 
   it("GETs /research?locale= with Bearer and parses an array", async () => {
-    const fetchFn = ok([summary]);
+    const fetchFn = ok([summaryWire]);
     const res = await listResearch(KEY, { fetchFn, locale: "en" });
     expect(fetchFn).toHaveBeenCalledWith("https://account.pie.chat/research?locale=en", {
       headers: { authorization: "Bearer sk-research" },
     });
     expect(res).toEqual([summary]);
+    expect(Date.parse(res[0].createdAt)).toBe(UNIX_SEC * 1000);
   });
 
   it("parses {runs: [...]} envelope", async () => {
-    const fetchFn = ok({ runs: [summary] });
+    const fetchFn = ok({ runs: [summaryWire] });
     expect(await listResearch(KEY, { fetchFn, locale: "en" })).toEqual([summary]);
+  });
+
+  it("normalizes unix-second createdAt / finishedAt (number) to ISO", async () => {
+    const finishedSec = UNIX_SEC + 60;
+    const fetchFn = ok([{ ...summaryWire, finishedAt: finishedSec }]);
+    const res = await listResearch(KEY, { fetchFn, locale: "en" });
+    expect(res[0].createdAt).toBe(ISO);
+    expect(Date.parse(res[0].createdAt)).toBe(1756660221000);
+    expect(res[0].finishedAt).toBe(new Date(finishedSec * 1000).toISOString());
+    expect(Date.parse(res[0].finishedAt!)).toBe(finishedSec * 1000);
+  });
+
+  it("normalizes numeric-string createdAt / finishedAt the same way", async () => {
+    const finishedSec = UNIX_SEC + 60;
+    const fetchFn = ok([{
+      ...summaryWire,
+      createdAt: String(UNIX_SEC),
+      finishedAt: String(finishedSec),
+    }]);
+    const res = await listResearch(KEY, { fetchFn, locale: "en" });
+    expect(res[0].createdAt).toBe(ISO);
+    expect(Date.parse(res[0].createdAt)).toBe(1756660221000);
+    expect(res[0].finishedAt).toBe(new Date(finishedSec * 1000).toISOString());
+    expect(Date.parse(res[0].finishedAt!)).toBe(finishedSec * 1000);
+  });
+
+  it("keeps ISO timestamps as-is", async () => {
+    const finishedIso = "2026-08-29T00:01:00.000Z";
+    const fetchFn = ok([{ ...summaryWire, createdAt: ISO, finishedAt: finishedIso }]);
+    const res = await listResearch(KEY, { fetchFn, locale: "en" });
+    expect(res[0].createdAt).toBe(ISO);
+    expect(res[0].finishedAt).toBe(finishedIso);
+  });
+
+  it("omits finishedAt when the backend doesn't send it", async () => {
+    const fetchFn = ok([summaryWire]);
+    const res = await listResearch(KEY, { fetchFn, locale: "en" });
+    expect(res[0].finishedAt).toBeUndefined();
+    expect("finishedAt" in res[0]).toBe(false);
   });
 
   it.each(ERRORS)("status %s → ResearchError.code %s", async (status, code) => {
