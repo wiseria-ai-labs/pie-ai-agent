@@ -1,21 +1,105 @@
 ---
-sources: 27
-searches: 10
-minutes: 4.8
+sources: 35
+searches: 9
+minutes: 3.5
 ---
 
-# How governments are regulating AI in 2026
+# AI Regulation in 2026: Comparing Frontier-Model Licensing Thresholds, Training-Data Transparency, and Cross-Border Evaluation Agreements
 
-Licensing thresholds for frontier models, training-data transparency bills, cross-border evaluation agreements — where each of the three main tracks actually stands.
+In 2026, AI regulation is split among binding EU rules, a US patchwork of state laws and executive action, and largely voluntary international evaluation arrangements [19][33][16]. The EU AI Act is the most formalized track: general-purpose AI with systemic risk obligations applies to models trained above 10^25 FLOP, while US instruments commonly use a 10^26 compute threshold or avoid licensing altogether [1][4][5]. Training-data transparency is furthest along in the United States through California’s AB 2013, which is in force and survived a preliminary-injunction challenge, though it lacks specified penalties; the EU’s Article 50 transparency duties apply from August 2026 [6][8][14]. Cross-border evaluation is largely non-binding, centered on the International Network for Advanced AI Measurement, Evaluation and Science, bilateral safety agreements, and voluntary US CAISI pre-deployment testing agreements [16][17][20].
 
-This is a placeholder sample report. Replace this file's contents with a real Deep Research report; keep the front matter, the leading `#` title, and the opening paragraph (it doubles as the card summary).
+## What are the current frontier-model licensing thresholds in major jurisdictions in 2026?
 
-## Snapshot
+At the supranational level, the EU AI Act is the clearest threshold-based regime. It imposes requirements on providers of general-purpose AI with systemic risk, including systems trained using greater than 10^25 floating point operations (FLOP) [1]. Those general-purpose AI obligations became effective in August 2025 [1]. The systemic-risk provisions’ core application date is August 2, 2026, when the largest frontier model providers face requirements for adversarial testing protocols and detailed risk assessment documentation [2]. The EU AI Act’s transparency requirements under Article 50 also started applying on August 2, 2026, requiring disclosure when humans interact with AI systems and machine-readable marking of synthetic content [3]. However, the EU’s high-risk AI obligations were delayed to December 2, 2027 via the Digital Omnibus package [3]. Administrative fines for transparency violations reach €15 million or 3% of global annual turnover [3].
 
-Placeholder findings on national AI laws, safety institutes, and disclosure rules. Citations below are fictional.
+The United States does not have a formal pre-release licensing regime for AI models as of June 2026 [4]. Executive Order 14409 establishes a voluntary framework for developers to give the federal government access to covered frontier models for up to 30 days before planned release, but it explicitly states that nothing in the order authorizes a mandatory governmental licensing, preclearance, or permitting requirement [4]. A White House executive order that would have created an FDA-style pre-release vetting process for frontier AI models was cancelled on May 22, 2026 [2]. In April 2026, the White House’s informal veto of Anthropic’s Claude Mythos Preview was described as an informal licensing regime without statutory basis, because the government exercised effective control over distribution of a private product through executive pressure with no authorizing statute, no defined criteria, and no mechanism for appeal or review [2]. The United States’ AI Diffusion Framework uses a training compute threshold of 10^26 FLOP to identify “controlled models” that face a number of requirements [1].
 
-## Takeaways
+At the state level, California’s SB 53, effective January 1, 2026, is described as the most operationally concrete frontier AI disclosure mandate currently in force in the United States; it requires safety incident reporting within fifteen days for covered models above the 10^26 FLOP training threshold [2]. SB 53 applies to developers of frontier models trained using more than 10^26 computing operations, with the strictest duties falling on large frontier developers that have annual gross revenue over $500 million [5]. Civil penalties can reach up to $1,000,000 per violation, depending on severity [5]. In Illinois, large frontier developers earning over $500 million annually must retain independent third parties for annual audits starting January 1, 2028 [3]. Colorado’s SB 26-189, effective January 1, 2027, requires developers and deployers of automated decision-making technology used in consequential decisions to provide consumer notices and explanations after adverse decisions [5].
 
-- Placeholder: licensing thresholds for frontier models.
-- Placeholder: copyright and training-data transparency bills.
-- Placeholder: cross-border evaluation agreements.
+At the federal level, the AI Foundation Model Transparency Act of 2026, H.R. 8094, would direct the FTC to establish disclosure standards for high-impact foundation models but does not establish licensing authority [2]. The Advanced AI Security Readiness Act, H.R. 3919, directs the NSA Director to develop an AI Security Playbook but explicitly states it does not authorize regulatory or enforcement actions against AI companies [2].
+
+In the United Kingdom, the notes do not identify a formal statutory licensing threshold. The UK AI Security Institute published independent cyber capability evaluation results for Claude Mythos within six days of Anthropic’s announcement, finding that Mythos was the first AI to complete a 32-step simulated cyber-attack range [2]. Ministers also confirmed that the Cyber Security and Resilience Bill will return to Parliament in response to AI-assisted cyber threats [2].
+
+## How are governments enforcing training-data transparency requirements for AI models in 2026?
+
+California’s AB 2013, effective January 1, 2026, is a central training-data transparency measure in the United States [6]. It requires developers of generative AI systems to publicly disclose detailed information about the data used to train their models, including dataset sources, types of data, whether copyrighted materials were used, and whether personal information is included [6]. Developers must post a high-level summary on their website covering 12 specified categories, including the sources or owners of the datasets and whether the system used or continuously uses synthetic data generation in its development [9].
+
+On enforcement, AB 2013 does not specify an enforcement mechanism or penalties, but it may be enforced under California’s Unfair Competition Law [12]. On March 4, 2026, a federal district court denied xAI’s motion for a preliminary injunction against AB 2013, allowing the law to remain in force [8]. OpenAI and Anthropic have published disclosures under the law, but these remain high-level and do not identify specific datasets used to train their models [11]. California’s AI transparency framework consists of four separate instruments: SB 942, AB 2013, SB 53, and CPPA ADMT regulations, each with different scopes and effective dates [10].
+
+California’s SB 942, as amended by AB 853, requires covered generative AI providers with more than 1 million monthly California users to embed C2PA-compatible latent provenance watermarks in AI-generated images, video, and audio, and to offer a free public detection tool; the operative date was delayed from January 1, 2026 to August 2, 2026 to align with EU AI Act Article 50 timelines [13].
+
+At the federal level, the TRAIN Act was introduced on January 22, 2026, and would grant copyright holders rights to access AI training data, allowing them to verify whether their works were used without authorization; the bill would allow copyright holders to subpoena AI training data without prior judicial review [7]. A December 11, 2025 executive order signals an intent to consolidate AI oversight at the federal level and challenge burdensome state AI rules, but it does not preempt, suspend, or invalidate current and enacted state AI laws [15].
+
+In the EU, Article 50 of the AI Act requires chatbot disclosure and synthetic content labeling, with enforcement starting August 2, 2026 [14]. Colorado’s original AI Act, SB 24-205, was scheduled for June 30, 2026, but enforcement was paused after xAI v. Weiser; Colorado lawmakers have advanced SB 26-189 as a replacement framework focused on automated decision-making technology, with key obligations starting January 1, 2027 if enacted [14].
+
+## What cross-border AI evaluation agreements exist in 2026 and how are they being implemented?
+
+The primary multilateral vehicle is the International Network for Advanced AI Measurement, Evaluation and Science, formerly the International Network of AI Safety Institutes, which includes Australia, Canada, the European Union, France, Japan, Kenya, South Korea, Singapore, the United Kingdom, and the United States [16]. In 2025, Network members gathered in San Diego alongside NeurIPS to build consensus on evaluation best practice [16]. Members have identified consensus areas including that evaluations require clear objectives, transparency and reproducibility, quality assurance, separate reporting, understandable headline findings, strengthened validity, and consideration of different languages and cultures [16]. Open questions remain on whether evaluations should use risk models, what evaluators should prioritize, what information should be shared, how flexible report templates should be, and how to test AI systems rather than only models [16]. As Network Coordinator in 2026, the UK will lead efforts to turn shared learning into more detailed best-practice documentation later in the year [16].
+
+Bilaterally, Australia and Canada signed an AI Safety Cooperation Agreement in early 2026 to strengthen cooperation on AI safety through the International Network of AI Safety Institutes [17]. Australia and the UK signed a Memorandum of Understanding in late May 2026, under which the Australian AI Safety Institute and the UK AI Security Institute will collaborate on sharing information and expertise on emerging AI capabilities and risks, best practices for testing AI systems, conducting joint research, and supporting the International Network for Advanced AI Measurement, Evaluation and Science [17].
+
+The International AI Safety Report 2026, published in February 2026, is led by Yoshua Bengio and authored by over 100 AI experts, backed by over 30 countries and international organisations [18]. It focuses on “emerging risks” that arise at the frontier of AI capabilities, and it will be showcased at the India AI Impact Summit [18].
+
+On May 5, 2026, Google DeepMind, Microsoft, and xAI signed agreements with the US Center for AI Standards and Innovation (CAISI) to provide early access to their frontier AI models for pre-deployment testing [20]. These agreements bring the total number of frontier labs participating in CAISI’s pre-deployment review program to five, with OpenAI and Anthropic having established partnerships earlier [20]. CAISI has completed more than 40 evaluations, including assessments of frontier models not yet available to the public [20]. Its authority to conduct evaluations rests entirely on voluntary participation, because the center can only assess models that developers choose to share [20]. In March 2026, CAISI formalized a memorandum of understanding with the General Services Administration to extend its evaluation methodology to federal AI procurement through the USAi secure generative AI platform [20]. Its mandate includes evaluation of frontier AI capabilities in cyber operations, biosecurity, chemical and biological threat domains, and manipulation capabilities [20]. CAISI has published evaluation results for DeepSeek V4 Pro [20].
+
+Microsoft announced agreements with both CAISI and the UK AI Security Institute on May 5, 2026 [21]. The CAISI collaboration includes improving methodologies for adversarial assessments and co-developing systematic and reproducible approaches to evaluation [21]. The UK AISI collaboration covers frontier safety and security research, including methods for evaluating high-risk capabilities and safeguards, plus societal resilience research [21]. Microsoft is also pursuing research and evaluation with other AI institutes globally through the International Network for AI Measurement, Evaluation and Science, and it contributes to MLCommons, including efforts to expand AILuminate for multilingual, multicultural, and multimodal evaluation [21].
+
+The EU plans to launch a call to increase EU evaluation capacity of AI models before they are placed on the EU market, expected to be operational by 2027 [19]. A published report also indicated that the White House was on the verge of preparing an executive order to create a vetting system for all new AI models [22].
+
+## How do the main regulatory tracks compare in terms of progress and enforcement in 2026?
+
+The three regulatory tracks differ sharply in legal force and enforcement maturity [19][20][33].
+
+On frontier-model licensing thresholds, the EU track is the most binding. The EU AI Act imposes obligations on general-purpose AI with systemic risk, including models trained above 10^25 FLOP [1]. The governance and enforcement provisions became applicable from August 2, 2026, with the AI Office holding enforcement powers over GPAI models [19]. However, the EU’s high-risk obligations have been delayed: standalone Annex III systems were pushed from August 2, 2026 to December 2, 2027 [3][26]. The United States has no federal licensing regime, and Executive Order 14409 explicitly disclaims mandatory licensing, preclearance, or permitting [4]. State measures such as California’s SB 53 impose disclosure and reporting duties rather than pre-release approval, though civil penalties exist [2][5]. The White House’s informal veto of Claude Mythos Preview illustrates executive pressure outside a statutory licensing framework [2].
+
+On training-data transparency, California’s AB 2013 is the most operational US measure: it is in force, survived a preliminary-injunction challenge, and has produced high-level disclosures, but it lacks specified penalties [6][8][11][12]. The EU’s Article 50 transparency duties became applicable in August 2026, with enforcement backed by fines of up to €15 million or 3% of global annual turnover for transparency violations [3][14]. At the US federal level, the TRAIN Act remains a proposed bill rather than enacted law [7]. The federal executive order of December 2025 signals a push against state rules, but it does not immediately invalidate them [15].
+
+On cross-border evaluation, progress is operational but largely voluntary. The International Network has produced consensus areas and open questions rather than enforceable standards [16]. Bilateral agreements such as the Australia-Canada and Australia-UK arrangements are cooperation instruments [17]. The International AI Safety Report 2026 provides a shared scientific evidence base but does not itself create legal obligations [18]. CAISI’s pre-deployment evaluations are based entirely on voluntary developer participation [20]. The Microsoft agreements with CAISI and the UK AI Security Institute illustrate the voluntary, partnership-based character of this track [21].
+
+Across all tracks, the EU AI Act remains the global high-water mark for binding, risk-tiered AI compliance, with most obligations in effect in 2026 [28][33]. The US federal posture in 2026 favors light-touch, innovation-first regulation and is actively working to preempt state AI laws, but preemption is contested and unresolved [33]. State legislative activity is intense: by March 2026, state lawmakers in 45 states had introduced 1,561 AI-related bills [23], and by July 1, 2026, states had enacted 109 AI laws [24]. The FTC has been the most active federal agency on AI enforcement, using its existing authority under Section 5 of the FTC Act against unfair or deceptive AI practices [27]. Globally, at least 72 countries have proposed over 1,000 AI-related policy initiatives and legal frameworks, but in most cases these policies have not yet been translated into legally binding regulations [30][35].
+
+## Unverified
+
+No uncited factual claims are included in this report.
+
+## Limitations / Uncovered
+
+No sub-question was skipped. This report is limited to the supplied notes and does not incorporate primary legislative texts beyond those quoted or cited indirectly. The notes themselves are secondary sources and contain some conflicts; for example, one source states that OpenAI and Anthropic established CAISI partnerships in September 2025, while another states they signed similar agreements in August 2024 [20][22]. Enforcement outcomes beyond the examples cited, such as actual AB 2013 penalty decisions or the final fate of pending bills and executive actions, are not covered in the provided materials.
+
+## References
+
+[1] Trends in Frontier AI Model Count: A Forecast to 2028 — https://arxiv.org/html/2504.16138v1
+[2] Post-Mythos AI Model Regulation: Licensing and Disclosure Frameworks – Lab Space — https://labs.cloudsecurityalliance.org/research/csa-research-note-post-mythos-ai-model-regulation-policy-lan
+[3] AI Regulation Hits Hard in H2 2026 — https://kaynemcgladrey.com/blog/halfway-through-2026-ai-regulation-is-no-longer-theoretical
+[4] Promoting Advanced Artificial Intelligence Innovation and ... — https://www.whitehouse.gov/presidential-actions/2026/06/promoting-advanced-artificial-intelligence-innovation-and-security
+[5] AI Regulations Around the World: A 2026 Guide — https://www.bdemerson.com/article/ai-regulations-around-the-world
+[6] AI Legal Updates: California's AI Training Data Transparency Law Takes Effect - Davis+Gilbert LLP — https://www.dglaw.com/ai-legal-updates-californias-ai-training-data-transparency-law-takes-effect
+[7] The “TRAIN Act”: Forcing Transparency in AI Training Data - Berkeley Technology Law Journal — https://btlj.org/2026/05/the-train-act-forcing-transparency-in-ai-training-data
+[8] California District Court upholds transparency requirements for generative AI training data — https://www.nortonrosefulbright.com/en-us/knowledge/publications/c1df8419/california-district-court-upholds-transparency-requirements-for-generative-ai-training-data
+[9] Countdown to Jan. 1, 2026: Preparing for California’s New AI Training Data Transparency Obligations, Andrew Folks — https://technologylaw.fkks.com/post/102lx5o/countdown-to-jan-1-2026-preparing-for-californias-new-ai-training-data-transp
+[10] California AI Transparency Law: What Businesses Need to ... — https://secureprivacy.ai/blog/california-ai-transparency-law
+[11] California’s AB 2013 Takes Effect: Navigating AI Training Data Transparency and Trade Secret Risk | Insights & Resources | Goodwin — https://www.goodwinlaw.com/en/insights/publications/2026/01/alerts-otherindustries-californias-ab-2013-takes-effect
+[12] California’s AB 2013 Requires Generative AI Data Disclosure by January 1, 2026 — https://www.crowell.com/en/insights/client-alerts/californias-ab-2013-requires-generative-ai-data-disclosure-by-january-1-2026
+[13] AI Transparency Laws by State: 2026 Requirements — https://www.ailawsbystate.com/blog/ai-transparency-disclosure-requirements-state-by-state
+[14] AI Transparency and Disclosure Requirements: a CEO's Guide for 2026 | LaunchReady.ai Insights — https://launchready.ai/insights/ai-governance/ai-transparency-disclosure-requirements
+[15] 2026 AI Laws Update: Key Regulations and Practical ... — https://www.gunder.com/en/news-insights/insights/2026-ai-laws-update-key-regulations-and-practical-guidance
+[16] International consensus and open questions in AI evaluations | AISI Work — https://www.aisi.gov.uk/blog/international-ai-network-consensus-and-open-questions
+[17] International AI Legal Landscape (2026) - SafeAI-Aus — https://safeaiaus.org/safety-standards/international-ai-legal-overview
+[18] International AI Safety Report 2026 — https://internationalaisafetyreport.org/publication/international-ai-safety-report-2026
+[19] AI Act | Shaping Europe's digital future - European Union — https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai
+[20] CAISI Frontier Testing Agreements Reach Five Labs – Lab Space — https://labs.cloudsecurityalliance.org/research/csa-research-note-caisi-frontier-ai-testing-agreements-20260
+[21] Advancing AI evaluation with the Center for AI Standards (US) and Innovation and the AI Security Institute (UK) - Microsoft On the Issues — https://blogs.microsoft.com/on-the-issues/2026/05/05/advancing-ai-evaluation-with-the-center-for-ai-standards-us-and-innovation-and-the-ai-security-institute-uk
+[22] US government agency to safety test frontier AI models before release | CIO — https://www.cio.com/article/4168122/us-government-agency-to-safety-test-frontier-ai-models-before-release.html
+[23] State AI Legislation Tracker 2026: All 50 States — https://www.multistate.ai/artificial-intelligence-ai-legislation
+[24] Where State AI Legislation Stands Half Way Into 2026 — https://techpolicy.press/where-state-ai-legislation-stands-half-way-into-2026
+[25] AI Regulation in 2026: Navigating an Uncertain Landscape — https://www.holisticai.com/blog/ai-regulation-in-2026-navigating-an-uncertain-landscape
+[26] AI Regulation: How It Works, What It Requires, and ... — https://www.kiteworks.com/cybersecurity-risk-management/ai-regulation-2026-business-compliance-guide
+[27] US AI regulations 2026: the state laws you must comply with — https://verifywise.ai/blog/state-of-ai-governance-regulations-united-states-2026
+[28] AI Compliance Guide 2026: Global Regulations | Modulos — https://www.modulos.ai/ai-compliance-guide
+[29] AI Watch: Global regulatory tracker - United States — https://www.whitecase.com/insight-our-thinking/ai-watch-global-regulatory-tracker-united-states
+[30] AI Regulations Worldwide in 2026: 72 Countries Propose 1000+ Initiatives | Mind Foundry posted on the topic | LinkedIn — https://www.linkedin.com/posts/mind-foundry_ai-regulations-around-the-world-in-2026-activity-7415023805464518657-0v4T
+[31] High-level summary of the AI Act — https://artificialintelligenceact.eu/high-level-summary
+[32] Global AI Roundup March 2026 | New Laws, EU AI Act Progress & Global Shifts — https://www.youtube.com/watch?v=a6nCg3KoNTE
+[33] AI regulatory compliance in 2026: EU AI Act, US orders ... — https://www.collibra.com/blog/ai-regulatory-compliance-in-2026-eu-ai-act-us-orders-and-state-laws-and-how-to-operationalize
+[34] 2026 AI Regulation Guide for Legal and Compliance Leaders — https://www.cimplifi.com/resources/the-ai-regulation-landscape-for-2026-what-legal-and-compliance-leaders-need-to-know
+[35] Comprehensive Guide to AI Laws and Regulations ... — https://sumsub.com/blog/comprehensive-guide-to-ai-laws-and-regulations-worldwide

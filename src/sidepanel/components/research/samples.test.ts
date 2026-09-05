@@ -54,11 +54,32 @@ describe("research sample fixtures", () => {
 
   it("loads packed en fixtures and falls back for locales without a file", () => {
     const en = loadSample("ai-regulation", "en");
-    const ja = loadSample("ai-regulation", "ja");
+    const fr = loadSample("ai-regulation", "fr");
     expect(en.title.length).toBeGreaterThan(0);
-    expect(en.body).toMatch(/placeholder/i);
-    expect(ja).toEqual(en);
+    expect(en.body).not.toMatch(/placeholder/i);
+    expect(en.body).toMatch(/^## References/m);
+    expect(fr).toEqual(en);
     expect(listSamples("pt-BR")).toHaveLength(3);
+  });
+
+  // 每个 UI locale 都有自己的一份；References 标题与后端 worker/src/models.ts 的本地化字串一致，
+  // 引用编号与 en 版逐一对应（翻译不得增删 [n]）。
+  it.each([
+    ["zh-CN", "参考文献"],
+    ["zh-TW", "參考文獻"],
+    ["ja", "参考文献"],
+    ["es-419", "Referencias"],
+    ["pt-BR", "Referências"],
+  ])("ships a translated copy of every sample for %s", (locale, referencesHeading) => {
+    const cites = (s: string) => (s.match(/\[\d+\]/g) ?? []).sort().join(",");
+    for (const id of SAMPLE_IDS) {
+      const en = loadSample(id, "en");
+      const loc = loadSample(id, locale);
+      expect(loc.title, `${id}/${locale}`).not.toBe(en.title);
+      expect(loc.stats, `${id}/${locale}`).toEqual(en.stats);
+      expect(loc.body, `${id}/${locale}`).toContain(`## ${referencesHeading}`);
+      expect(cites(loc.body), `${id}/${locale}`).toBe(cites(en.body));
+    }
   });
 
   it("every packed sample carries the stats the paywall card renders", () => {
@@ -69,11 +90,21 @@ describe("research sample fixtures", () => {
     }
   });
 
+  it("rejects failed-run leftovers so paywall samples stay finished copy", () => {
+    for (const s of listSamples("en")) {
+      expect(s.body, s.id).not.toMatch(/not supplied in the notes/i);
+      expect(s.body, s.id).not.toMatch(/skipped due to data errors/i);
+      expect(s.body, s.id).toMatch(/^## References/m);
+      expect(s.body, s.id).toMatch(/\[1\]/);
+    }
+  });
+
   it("maps a sample onto a done ResearchRun for the shared detail view", () => {
     const run = sampleToRun(loadSample("climate-tech", "en"));
     expect(run.id).toBe("sample:climate-tech");
     expect(run.status).toBe("done");
-    expect(run.report).toMatch(/placeholder/i);
+    expect(run.report).not.toMatch(/placeholder/i);
+    expect(run.report).toMatch(/\[1\]/);
     expect(run.question).toBe(loadSample("climate-tech", "en").title);
   });
 });
