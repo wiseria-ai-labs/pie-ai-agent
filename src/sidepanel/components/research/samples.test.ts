@@ -70,6 +70,15 @@ describe("research sample fixtures", () => {
     }
   });
 
+  it("rejects failed-run leftovers so paywall samples stay finished copy", () => {
+    for (const s of listSamples("en")) {
+      expect(s.body, s.id).not.toMatch(/not supplied in the notes/i);
+      expect(s.body, s.id).not.toMatch(/skipped due to data errors/i);
+      expect(s.body, s.id).toMatch(/^## References/m);
+      expect(s.body, s.id).toMatch(/\[1\]/);
+    }
+  });
+
   it("maps a sample onto a done ResearchRun for the shared detail view", () => {
     const run = sampleToRun(loadSample("climate-tech", "en"));
     expect(run.id).toBe("sample:climate-tech");

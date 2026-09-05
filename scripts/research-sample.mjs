@@ -2,10 +2,12 @@
 // 跑一次线上 Deep Research，把报告写成 paywall 示例（issue #430）。
 // 用法：PIE_API_KEY=sk-... node scripts/research-sample.mjs <sample-id> "<question>" [searches]
 //   sample-id 必须是 samples.ts 里的 SAMPLE_IDS 之一；searches 只有 admin「研究运行」列表能看到，手填。
+const SAMPLE_IDS = ["ai-regulation", "climate-tech", "electric-vehicles"];
 const BASE = process.env.PIE_ACCOUNT_BASE ?? "https://account.pie.chat";
 const [id, question, searchesArg] = process.argv.slice(2);
 const key = process.env.PIE_API_KEY;
 if (!id || !question || !key) { console.error("usage: PIE_API_KEY=... research-sample.mjs <id> <question> [searches]"); process.exit(2); }
+if (!SAMPLE_IDS.includes(id)) { console.error(`unknown sample id ${id}; expected one of ${SAMPLE_IDS.join(", ")}`); process.exit(2); }
 const h = { authorization: `Bearer ${key}`, "content-type": "application/json" };
 const j = async (r) => { if (!r.ok) throw new Error(`${r.status} ${await r.text()}`); return r.json(); };
 
@@ -27,10 +29,12 @@ const row = (list.runs ?? list).find((r) => r.id === runId);
 const sec = (v) => (typeof v === "number" ? v : Date.parse(v) / 1000);
 const minutes = row?.finishedAt ? ((sec(row.finishedAt) - sec(row.createdAt)) / 60).toFixed(1) : null;
 const searches = searchesArg ? Number(searchesArg) : null;
-// 三项缺一 samples.ts 就整体丢弃 stats；缺 searches 时先不写 front matter，拿到数字再补。
-const fm = searches != null && minutes != null
-  ? `---\nsources: ${run.sourcesFound}\nsearches: ${searches}\nminutes: ${minutes}\n---\n\n`
-  : `<!-- TODO front matter: sources: ${run.sourcesFound}, minutes: ${minutes ?? "?"}, searches: ? (admin 研究运行列表) -->\n\n`;
+const sources = run.sourcesFound;
+if (sources == null || searches == null || !Number.isFinite(searches) || minutes == null) {
+  console.error(`missing front matter: sources=${sources ?? "?"}, searches=${Number.isFinite(searches) ? searches : "?"}, minutes=${minutes ?? "?"}`);
+  process.exit(1);
+}
+const fm = `---\nsources: ${sources}\nsearches: ${searches}\nminutes: ${minutes}\n---\n\n`;
 const out = new URL(`../src/sidepanel/components/research/samples/${id}.en.md`, import.meta.url);
 const { writeFileSync } = await import("node:fs");
 writeFileSync(out, fm + run.report.trim() + "\n");

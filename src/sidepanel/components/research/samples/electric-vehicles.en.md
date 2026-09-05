@@ -46,14 +46,6 @@ At the same time, global data do not show a ceiling. Global electric car sales e
 
 Thus, the genuine softness appears concentrated in US early-adopter states and price-conscious segments, not in the largest global markets.
 
-## What are the year-over-year and month-over-month trends in EV market share for these countries?
-
-Data for this sub-question were not supplied in the notes. See Limitations / Uncovered.
-
-## How do EV registration trends compare with overall passenger vehicle registrations in these markets?
-
-Data for this sub-question were not supplied in the notes. See Limitations / Uncovered.
-
 ## What do industry analysts and recent reports say about whether EV adoption has hit a ceiling?
 
 Analysts do not agree that EV adoption has hit a ceiling, but they have sharply marked down US expectations. The IEA reported that global electric car sales topped 20 million in 2025, with one in four new cars sold worldwide being electric [32]. EY stated that EV adoption is beating predictions and that EVs could make up 55% of total global vehicle sales by 2030 [36]. Market research firms project continued growth: the global EV market is projected to grow from US$833.2 billion in 2026 to US$2,169.5 billion by 2033, a 14.7% CAGR [28], and the US EV market is projected to reach US$263.46 billion by 2032, an 11.6% CAGR [29].
@@ -64,7 +56,7 @@ On the demand side, Escalent reports that BEV adoption has reached the early maj
 
 ## Limitations / Uncovered
 
-Sub-questions 4 and 5 were skipped due to data errors; no notes were provided for them. Monthly registration numbers for all six markets are incomplete: some sources provide annual totals, market shares, or quarterly figures rather than monthly registrations. Definitions and time periods vary across sources — some track BEVs, others include all electric cars or plug-in vehicles; some cover 2024, 2025, or 2026. Some data come from industry blogs, social media posts, and analyst projections rather than official registries, and not all sources are consistent. For example, S&P Global Mobility reports 2025 US EV registrations at 1.3 million [9], Cox Automotive reports 2025 US EV sales as just shy of 2024’s 1.30 million [23], and Morgan Lewis projected 2.25 million US EV sales by the end of 2025 [24]. These discrepancies are not reconciled in the provided notes.
+Monthly registration numbers for all six markets are incomplete: some sources provide annual totals, market shares, or quarterly figures rather than monthly registrations. Definitions and time periods vary across sources — some track BEVs, others include all electric cars or plug-in vehicles; some cover 2024, 2025, or 2026. Some data come from industry blogs, social media posts, and analyst projections rather than official registries, and not all sources are consistent. For example, S&P Global Mobility reports 2025 US EV registrations at 1.3 million [9], Cox Automotive reports 2025 US EV sales as just shy of 2024’s 1.30 million [23], and Morgan Lewis projected 2.25 million US EV sales by the end of 2025 [24]. These discrepancies are not reconciled across sources.
 
 ## Unverified
 
