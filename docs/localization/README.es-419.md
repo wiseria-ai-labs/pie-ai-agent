@@ -1,7 +1,7 @@
 <div align="center">
   <img src="../../public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
-  <p><strong>Un agente de IA de código abierto que vive en el panel lateral de Chrome. Dile lo que quieres en lenguaje natural — lee páginas, hace clic, escribe y resuelve tareas entre tus pestañas.</strong></p>
+  <p><strong>Pie es un agente de IA de navegador gratuito y de código abierto para Chrome. Vive en el panel lateral y hace las tareas por ti: lee páginas y PDF, llena formularios, extrae datos a CSV, automatiza pestañas y delega trabajo a Claude Code. Trae tu propia clave (11 proveedores) o suscríbete. Sin telemetría.</strong></p>
   <p>
     <a href="https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed"><img src="https://img.shields.io/chrome-web-store/v/gpccjhdgjkmalnepmeclooflliiocfed?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white" alt="Disponible en Chrome Web Store" /></a>
   </p>

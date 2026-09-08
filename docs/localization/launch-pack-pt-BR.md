@@ -8,11 +8,11 @@ O Pie é um assistente de IA de código aberto que realmente usa o seu navegador
 
 ### Name
 
-Pie · Agente de IA aberto para seu navegador
+Pie – Agente de IA para Chrome: automatiza tarefas, lê páginas e PDFs
 
 ### Short Description
 
-Agente de IA aberto para Chrome: lê páginas e PDFs, automatiza abas. Sua chave (11 provedores) ou assinatura. Sem telemetria.
+Agente IA: lê páginas e PDF, preenche formulários, extrai dados em CSV, automatiza abas. Claude, GPT, Gemini e mais 8. Open source.
 
 ### Long Description
 

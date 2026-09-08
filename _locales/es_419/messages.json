@@ -1,10 +1,10 @@
 {
   "extension_name": {
-    "message": "Pie · Agente de IA abierto para tu navegador",
+    "message": "Pie – Agente de IA para Chrome: automatiza tareas, lee páginas y PDF",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "Agente IA abierto para Chrome: lee páginas y PDF, automatiza pestañas. Tu clave (11 proveedores) o suscripción. Sin telemetría.",
+    "message": "Agente IA: lee páginas y PDF, llena formularios, extrae datos a CSV, automatiza pestañas. Claude, GPT, Gemini y 8 más. Open source.",
     "description": "Short description shown in the Web Store and chrome://extensions."
   },
   "extension_description_edge": {

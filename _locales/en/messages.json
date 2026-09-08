@@ -1,10 +1,10 @@
 {
   "extension_name": {
-    "message": "Pie · Open-Source AI Agent for Browser & Tabs",
+    "message": "Pie – AI Agent for Chrome: Automate Tasks, Read Pages & PDFs",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "Open-source AI agent for Chrome. Reads pages & PDFs, automates tabs. Bring your own key (11 providers) or subscribe. No telemetry.",
+    "message": "AI browser agent: reads pages & PDFs, fills forms, extracts data to CSV, automates tabs. Claude, GPT, Gemini & 8 more. Open source.",
     "description": "Short description shown in the Web Store and chrome://extensions."
   },
   "extension_description_edge": {

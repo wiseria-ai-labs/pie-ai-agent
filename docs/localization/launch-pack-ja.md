@@ -8,11 +8,11 @@ Pie は、ブラウザを実際に操作してくれるオープンソースの 
 
 ### Name
 
-Pie · ブラウザ用のオープンAIエージェント
+Pie – Chrome の AI エージェント：タスク自動化・ページと PDF 読解
 
 ### Short Description
 
-Chrome 用オープンソース AI エージェント。ページや PDF を読み、タブを自動化。自分の API キー（11 社）かサブスクで利用、テレメトリなし。
+AI ブラウザエージェント：ページと PDF を読み、フォーム入力、データを CSV に抽出、タブ自動化。Claude・GPT・Gemini ほか 11 社。オープンソース。
 
 ### Long Description
 

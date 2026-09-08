@@ -1,7 +1,7 @@
 <div align="center">
   <img src="../../public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
-  <p><strong>常駐 Chrome 側邊欄的開源 AI Agent。用大白話告訴它你想做什麼 —— 它會幫你讀網頁、點擊、輸入，跨分頁把事情辦好。</strong></p>
+  <p><strong>Pie 是一個免費開源的 Chrome AI 瀏覽器 Agent。它常駐側邊欄，替你把事辦完：讀網頁和 PDF、填表單、把資料擷取成 CSV、自動化分頁，還能把工作交接給 Claude Code。自帶 API Key（支援 11 家）或訂閱使用，無遙測。</strong></p>
   <p>
     <a href="https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed"><img src="https://img.shields.io/chrome-web-store/v/gpccjhdgjkmalnepmeclooflliiocfed?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white" alt="Chrome Web Store 上架" /></a>
   </p>
