@@ -4,7 +4,7 @@
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "AI ブラウザエージェント：ページと PDF を読み、フォーム入力、データを CSV に抽出、タブ自動化。Claude・GPT・Gemini ほか 11 社。オープンソース。",
+    "message": "AI ブラウザエージェント：ページと PDF を読み、フォーム入力、データを CSV に抽出、タブ自動化。Claude・GPT・Gemini など 11 社。オープンソース。",
     "description": "Short description shown in the Web Store and chrome://extensions."
   },
   "extension_description_edge": {

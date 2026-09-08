@@ -12,7 +12,7 @@ Pie – Chrome の AI エージェント：タスク自動化・ページと PDF
 
 ### Short Description
 
-AI ブラウザエージェント：ページと PDF を読み、フォーム入力、データを CSV に抽出、タブ自動化。Claude・GPT・Gemini ほか 11 社。オープンソース。
+AI ブラウザエージェント：ページと PDF を読み、フォーム入力、データを CSV に抽出、タブ自動化。Claude・GPT・Gemini など 11 社。オープンソース。
 
 ### Long Description
 
