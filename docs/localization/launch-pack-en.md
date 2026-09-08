@@ -8,11 +8,11 @@ Pie is an open-source AI assistant that actually uses your browser. The copy sho
 
 ### Name
 
-Pie · Open-Source AI Agent for Browser & Tabs
+Pie – AI Agent for Chrome: Automate Tasks, Read Pages & PDFs
 
 ### Short Description
 
-Open-source AI agent for Chrome. Reads pages & PDFs, automates tabs. Bring your own key (11 providers) or subscribe. No telemetry.
+AI browser agent: reads pages & PDFs, fills forms, extracts data to CSV, automates tabs. Claude, GPT, Gemini & 8 more. Open source.
 
 ### Long Description
 

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="../../public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
-  <p><strong>Chrome のサイドパネルに常駐するオープンソースの AI エージェント。やりたいことを普段の言葉で伝えるだけ —— ページを読み、クリックし、入力し、タブをまたいで作業をこなします。</strong></p>
+  <p><strong>Pie は Chrome 向けの無料・オープンソースの AI ブラウザエージェントです。サイドパネルに常駐して作業を代行します —— ページと PDF を読み、フォームを入力し、データを CSV に抽出し、タブを自動化し、作業を Claude Code に引き継ぎます。自分の API キー（11 社）またはサブスクで利用でき、テレメトリはありません。</strong></p>
   <p>
     <a href="https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed"><img src="https://img.shields.io/chrome-web-store/v/gpccjhdgjkmalnepmeclooflliiocfed?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white" alt="Chrome ウェブストアで入手可能" /></a>
   </p>

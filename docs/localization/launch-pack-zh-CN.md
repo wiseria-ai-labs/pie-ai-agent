@@ -8,11 +8,11 @@ Pie 是一个会动手用浏览器的开源 AI 助手。文案以「能做什么
 
 ### Name
 
-Pie · 开源浏览器 AI Agent · 多 Tab 自动化
+Pie – Chrome AI 浏览器 Agent：自动化任务、读网页与 PDF
 
 ### Short Description
 
-开源 Chrome AI Agent：读网页与 PDF、跨标签页自动化。自带 API Key（支持 11 家）或订阅 Pie，无遥测。
+AI 浏览器 Agent：读网页与 PDF、填表单、把数据抽成 CSV、自动化标签页。支持 Claude、GPT、Gemini 等 11 家。开源。
 
 ### Long Description
 

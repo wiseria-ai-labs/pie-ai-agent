@@ -1,10 +1,10 @@
 {
   "extension_name": {
-    "message": "Pie · 開源瀏覽器 AI Agent · 多分頁自動化",
+    "message": "Pie – Chrome AI 瀏覽器 Agent：自動化任務、讀網頁與 PDF",
     "description": "Extension name shown in Chrome and the Web Store."
   },
   "extension_description": {
-    "message": "開源 Chrome AI Agent：讀網頁與 PDF、跨分頁自動化。自帶 API Key（支援 11 家）或訂閱 Pie，無遙測。",
+    "message": "AI 瀏覽器 Agent：讀網頁與 PDF、填表單、把資料擷取成 CSV、自動化分頁。支援 Claude、GPT、Gemini 等 11 家。開源。",
     "description": "Short description shown in the Web Store and chrome://extensions."
   },
   "extension_description_edge": {

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/icons/icon-128.svg" alt="Pie" width="96" height="96" />
   <h1>Pie</h1>
-  <p><strong>An open-source AI agent that lives in your Chrome sidebar. Tell it what you want in plain language — it reads pages, clicks, types, and gets things done across your tabs.</strong></p>
+  <p><strong>Pie is a free, open-source AI browser agent for Chrome. It lives in the side panel and does tasks for you: reads pages and PDFs, fills forms, extracts data to CSV, automates tabs, and hands work off to Claude Code. Bring your own key (11 providers) or subscribe. No telemetry.</strong></p>
   <p>
     <a href="https://chromewebstore.google.com/detail/pie-%C2%B7-open-source-ai-agen/gpccjhdgjkmalnepmeclooflliiocfed"><img src="https://img.shields.io/chrome-web-store/v/gpccjhdgjkmalnepmeclooflliiocfed?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white" alt="Available in the Chrome Web Store" /></a>
   </p>
