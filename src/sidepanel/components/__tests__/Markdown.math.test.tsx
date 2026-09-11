@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { render, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
@@ -29,6 +31,9 @@ describe("Markdown — math rendering (#447)", () => {
     expect(renderedTex(c)).toEqual(["E=mc^2"]);
     expect(c.querySelector(".katex-display")).toBeNull();
     expect(c.textContent).toContain("in 1905");
+    // Pin the structural class the stylesheet's box-model rules target; see
+    // the stylesheet/renderer agreement test at the bottom of this file.
+    expect(c.querySelector(".katex .base")).not.toBeNull();
   });
 
   it("renders $$…$$ on its own line as display math", () => {
@@ -89,5 +94,36 @@ describe("Markdown — math rendering (#447)", () => {
     const c = md("It cost $100 and then $200 more.");
     expect(c.textContent).toContain("100");
     expect(c.textContent).toContain("200");
+  });
+  /**
+   * The stylesheet the panel imports (`katex/dist/katex.min.css`, pulled in by
+   * `src/sidepanel/index.css`) and the renderer that produces the markup (the
+   * `katex` **rehype-katex** resolves — it declares `katex: ^0.16.0` as a direct
+   * dependency, not a peer, so a mismatched top-level `katex` does not override
+   * it but *does* change which CSS ships) must be the same KaTeX major.
+   *
+   * KaTeX 0.18 renamed 21 structural classes to a `katex-` prefix. A mixed pair
+   * therefore ships CSS whose per-formula box model — `.base{display:inline-block;
+   * position:relative;white-space:nowrap;width:min-content}` plus `.strut` —
+   * matches nothing, and every sub/superscript, fraction, root and integral
+   * collapses into unstyled glyphs. None of the assertions above notice: they
+   * read the MathML `<annotation>` text, and happy-dom applies no CSS at all.
+   *
+   * So compare the two directly: take a class the renderer actually emitted and
+   * require the imported stylesheet to declare a rule for it.
+   */
+  it("ships a stylesheet whose class names match the renderer's output", () => {
+    const css = readFileSync(
+      createRequire(import.meta.url).resolve("katex/dist/katex.min.css"),
+      "utf8",
+    );
+    // The first child of `.katex-html` is the per-formula box — and it is one of
+    // the classes that got renamed ("base" in 0.16, "katex-base" in 0.18), so it
+    // is exactly the right probe. (Don't reach for `.katex > span`: that lands on
+    // `.katex-mathml`, which carries the same name in both majors and would make
+    // this test pass on a mismatched pair.)
+    const boxClass = md("$x^2$").querySelector(".katex-html > span")?.className;
+    expect(boxClass).toBeTruthy();
+    expect(css).toContain(`.${boxClass}{`);
   });
 });
