@@ -90,10 +90,46 @@ describe("Markdown — math rendering (#447)", () => {
     }
   });
 
-  it("does not blow up on prose that merely contains dollar signs", () => {
+  /**
+   * remark-math pairs `$` like a code-span delimiter, with no guard against a
+   * digit following it — so two amounts in one paragraph pair up and the prose
+   * between them renders as italic math with the signs eaten. Asserting on
+   * `textContent` is not enough to catch that: the MathML `<annotation>` still
+   * carries the original text, so the numbers are "found" either way. Count
+   * `.katex` nodes instead.
+   */
+  it("leaves dollar amounts in prose as prose", () => {
     const c = md("It cost $100 and then $200 more.");
-    expect(c.textContent).toContain("100");
-    expect(c.textContent).toContain("200");
+    expect(c.querySelectorAll(".katex")).toHaveLength(0);
+    expect(c.textContent).toContain("It cost $100 and then $200 more.");
+  });
+
+  it("leaves the multi-amount sentences found in real output as prose", () => {
+    for (const prose of [
+      // An agent answer about company valuations.
+      "Form Energy is valued between $3.5B and $4.8B [18]; Base Power at $13 billion post-money.",
+      // research/samples/ai-regulation.en.md:17.
+      "…annual gross revenue over $500 million [5]. Civil penalties can reach up to $1,000,000 per violation, depending on severity [5].",
+      // An amount written with a space, and one with four figures.
+      "Budget $ 500 for the first month, then $1,200 a month after.",
+    ]) {
+      const c = md(prose);
+      expect(c.querySelectorAll(".katex")).toHaveLength(0);
+      expect(c.textContent).toContain("$");
+      cleanup();
+    }
+  });
+
+  it("still renders a real formula standing next to a dollar amount", () => {
+    const c = md("The $40 device solves $E=mc^2$ for you.");
+    expect(renderedTex(c)).toEqual(["E=mc^2"]);
+    expect(c.textContent).toContain("$40");
+  });
+
+  it("keeps a display block whose body starts with a digit", () => {
+    const c = md("$$100 = 10^2$$");
+    expect(renderedTex(c)).toEqual(["100 = 10^2"]);
+    expect(c.querySelector(".katex-display")).not.toBeNull();
   });
   /**
    * The stylesheet the panel imports (`katex/dist/katex.min.css`, pulled in by
@@ -125,5 +161,29 @@ describe("Markdown — math rendering (#447)", () => {
     const boxClass = md("$x^2$").querySelector(".katex-html > span")?.className;
     expect(boxClass).toBeTruthy();
     expect(css).toContain(`.${boxClass}{`);
+  });
+  /**
+   * The three Deep Research sample reports are the paywall's shop window, and
+   * they are full of dollar amounts ("$500 million", "$1,000,000") — which is
+   * how the `$`-pairing bug first showed up as visible garbage on a shipped
+   * screen. No sample report contains math, so the whole set must render with
+   * zero formulas, in every locale.
+   */
+  it("renders every Deep Research sample report with no math at all", () => {
+    const samples = import.meta.glob<string>("../research/samples/*.md", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    });
+    const names = Object.keys(samples);
+    expect(names.length).toBeGreaterThanOrEqual(18);
+    for (const name of names) {
+      const c = md(samples[name]);
+      expect(
+        [...c.querySelectorAll(".katex")].map((n) => n.textContent),
+        `${name} should contain no math`,
+      ).toEqual([]);
+      cleanup();
+    }
   });
 });

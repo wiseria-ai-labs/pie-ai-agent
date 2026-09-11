@@ -109,6 +109,28 @@ const CODE_SPANS =
   /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`+[^`\n]*(?:`+|$))/g;
 
 /**
+ * A dollar amount is not math, but remark-math pairs `$` like a code-span
+ * delimiter — it has no "`$` may not be followed by a digit" guard — so
+ * "valued between $3.5B and $4.8B" pairs the two signs and renders the prose
+ * between them as italic math with the signs eaten. Escape the sign when a
+ * number follows it; `\$` is the escape remark-math documents, and a currency
+ * sign that no longer opens math also cannot close any, so one stray amount
+ * next to a real formula stops breaking it too.
+ *
+ * Known cost: an inline formula that *starts* with a digit (`$2x$`) stops
+ * rendering — write it `$$2x$$` or `\(2x\)`. Prices, budgets and valuations are
+ * far more common in answers than digit-leading formulas, and a mangled
+ * sentence is worse than an unrendered one. Not covered (needs two of them in
+ * one paragraph to misfire at all, and escaping the digit forms above already
+ * breaks most pairings): `$.50`, `US$`, `$x`.
+ */
+function escapeCurrencyDollars(text: string): string {
+  // Skip `$$` (display fences, whose body may legitimately start with a digit)
+  // and an already-escaped `\$`.
+  return text.replace(/(?<![\\$])\$(?=[ \t]*\d)/g, "\\$&");
+}
+
+/**
  * Models write math with whichever delimiters their training favored, but
  * remark-math only understands dollars — and only treats `$$` as a *display*
  * block when the fences sit on their own lines. Rewrite the two other shapes
@@ -136,7 +158,11 @@ function normalizeMathDelimiters(text: string): string {
 function normalizeMath(content: string): string {
   return content
     .split(CODE_SPANS)
-    .map((seg, i) => (i % 2 === 0 ? normalizeMathDelimiters(seg) : seg))
+    .map((seg, i) =>
+      // Currency first: delimiter normalization *emits* `$`, and those are math
+      // by construction — they must not be run through the currency escape.
+      i % 2 === 0 ? normalizeMathDelimiters(escapeCurrencyDollars(seg)) : seg,
+    )
     .join("");
 }
 
