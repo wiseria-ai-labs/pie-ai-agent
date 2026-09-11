@@ -1,4 +1,8 @@
 @import "tailwindcss";
+/* KaTeX glyph metrics + bundled woff2/ttf faces. Self-hosted on purpose: MV3's
+   CSP is `script-src 'self'` and the panel must render math offline, so no CDN
+   stylesheet. Overrides for the narrow panel live at the bottom of this file. */
+@import "katex/dist/katex.min.css";
 
 @layer base {
   :root {
@@ -315,4 +319,24 @@ button {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Math (KaTeX). Three adjustments for a ~400px side panel:
+   - 1.21em (KaTeX's default) shouts next to 12px body text; 1.05em sits level.
+   - A display formula wider than the panel scrolls inside its own box instead
+     of widening the panel or being clipped.
+   - A formula KaTeX could not parse (half-streamed `$$\frac{1`) falls back to
+     its source text, which must wrap rather than run off the edge. */
+.katex {
+  font-size: 1.05em;
+}
+.katex-display {
+  margin: 0.6em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+.katex-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

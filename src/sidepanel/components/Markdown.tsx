@@ -1,6 +1,8 @@
 import { isValidElement, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { useT } from "@/lib/i18n";
 
 interface MarkdownContentProps {
@@ -100,11 +102,50 @@ function stripIncidentalIndentedCode(content: string): string {
   return lines.join("\n");
 }
 
+/** Fenced code blocks and inline code spans — the regions math normalization
+ * must leave byte-for-byte alone. Unterminated fences match to end of input so
+ * a half-streamed ``` block is still protected. */
+const CODE_SPANS =
+  /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`+[^`\n]*(?:`+|$))/g;
+
+/**
+ * Models write math with whichever delimiters their training favored, but
+ * remark-math only understands dollars — and only treats `$$` as a *display*
+ * block when the fences sit on their own lines. Rewrite the two other shapes
+ * we actually see into the one it renders the way a reader expects:
+ *
+ *   `\(x\)`  → `$x$`        (inline)
+ *   `\[x\]`  → `$$x$$`      (which the next rule may promote to display)
+ *   a line that is nothing but `$$x$$` → fences split onto their own lines
+ *
+ * Mid-sentence `\[…\]` stays on one line and renders inline rather than
+ * surgically splitting the paragraph — display math in running text is rare,
+ * and inline is a readable fallback where a broken block is not.
+ */
+function normalizeMathDelimiters(text: string): string {
+  return text
+    .replace(/\\\[([\s\S]*?)\\\]/g, "$$$$$1$$$$")
+    .replace(/\\\(([\s\S]*?)\\\)/g, "$$$1$$")
+    .replace(/^[ \t]*\$\$([^\n$]+?)\$\$[ \t]*$/gm, (_m, body: string) =>
+      `$$\n${body.trim()}\n$$`,
+    );
+}
+
+/** Apply math-delimiter normalization outside code regions only, so a `$` or
+ * `\[` shown as example source in a code block is never eaten. */
+function normalizeMath(content: string): string {
+  return content
+    .split(CODE_SPANS)
+    .map((seg, i) => (i % 2 === 0 ? normalizeMathDelimiters(seg) : seg))
+    .join("");
+}
+
 export default function MarkdownContent({ content }: MarkdownContentProps) {
-  const normalized = stripIncidentalIndentedCode(content);
+  const normalized = normalizeMath(stripIncidentalIndentedCode(content));
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
       components={{
         h1: ({ children }) => (
           <h1 className="mb-2 mt-3 text-[15px] font-semibold first:mt-0">
