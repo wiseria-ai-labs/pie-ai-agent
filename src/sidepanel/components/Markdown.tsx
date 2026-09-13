@@ -1,6 +1,8 @@
 import { isValidElement, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { useT } from "@/lib/i18n";
 
 interface MarkdownContentProps {
@@ -100,11 +102,84 @@ function stripIncidentalIndentedCode(content: string): string {
   return lines.join("\n");
 }
 
+/** Fenced code blocks and inline code spans — the regions math normalization
+ * must leave byte-for-byte alone. Unterminated fences match to end of input so
+ * a half-streamed ``` block is still protected. */
+const CODE_SPANS =
+  /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`+[^`\n]*(?:`+|$))/g;
+
+/**
+ * A dollar amount is not math, but remark-math pairs `$` like a code-span
+ * delimiter — it has no "`$` may not be followed by a digit" guard — so
+ * "valued between $3.5B and $4.8B" pairs the two signs and renders the prose
+ * between them as italic math with the signs eaten. Escape a sign that is
+ * followed by a number, *unless* the next sign on the line reads like a closing
+ * delimiter (right after a non-space character, and not itself followed by a
+ * number — `US$2,169` is another amount, not a closer) — then it is the
+ * opener of a digit-leading formula such as `$2\pi r$` or `$3.14$`, and
+ * escaping it would orphan that closer to pair with the next formula's opener
+ * ("Area $2\pi r$ and radius $r$" → "and radius" rendered as math).
+ * `\$` is the escape remark-math documents.
+ *
+ * Known hole, accepted to keep bare `$…$` inline math: an amount followed on
+ * the same line by a formula whose opener sits right after punctuation —
+ * "Costs $5 at rate ($r$)." — reads as a digit-leading formula, so "5 at rate ("
+ * still renders as math. Single-`$` math and currency can't be told apart by
+ * any local rule (which is why KaTeX auto-render and MathJax leave single `$`
+ * off by default); every variant tried leaves one such sentence shape open.
+ * `\(…\)` and `$$…$$` never have the problem.
+ */
+function escapeCurrencyDollars(text: string): string {
+  // Skip `$$` (display fences, whose body may legitimately start with a digit)
+  // and an already-escaped `\$`.
+  return text.replace(
+    /(?<![\\$])\$(?=[ \t]*\d)(?![^\n$]*[^\s$]\$(?![ \t]*\d))/g,
+    "\\$&",
+  );
+}
+
+/**
+ * Models write math with whichever delimiters their training favored, but
+ * remark-math only understands dollars — and only treats `$$` as a *display*
+ * block when the fences sit on their own lines. Rewrite the two other shapes
+ * we actually see into the one it renders the way a reader expects:
+ *
+ *   `\(x\)`  → `$x$`        (inline)
+ *   `\[x\]`  → `$$x$$`      (which the next rule may promote to display)
+ *   a line that is nothing but `$$x$$` → fences split onto their own lines
+ *
+ * Mid-sentence `\[…\]` stays on one line and renders inline rather than
+ * surgically splitting the paragraph — display math in running text is rare,
+ * and inline is a readable fallback where a broken block is not.
+ */
+function normalizeMathDelimiters(text: string): string {
+  return text
+    .replace(/\\\[([\s\S]*?)\\\]/g, "$$$$$1$$$$")
+    .replace(/\\\(([\s\S]*?)\\\)/g, "$$$1$$")
+    .replace(/^[ \t]*\$\$([^\n$]+?)\$\$[ \t]*$/gm, (_m, body: string) =>
+      `$$\n${body.trim()}\n$$`,
+    );
+}
+
+/** Apply math-delimiter normalization outside code regions only, so a `$` or
+ * `\[` shown as example source in a code block is never eaten. */
+function normalizeMath(content: string): string {
+  return content
+    .split(CODE_SPANS)
+    .map((seg, i) =>
+      // Currency first: delimiter normalization *emits* `$`, and those are math
+      // by construction — they must not be run through the currency escape.
+      i % 2 === 0 ? normalizeMathDelimiters(escapeCurrencyDollars(seg)) : seg,
+    )
+    .join("");
+}
+
 export default function MarkdownContent({ content }: MarkdownContentProps) {
-  const normalized = stripIncidentalIndentedCode(content);
+  const normalized = normalizeMath(stripIncidentalIndentedCode(content));
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
       components={{
         h1: ({ children }) => (
           <h1 className="mb-2 mt-3 text-[15px] font-semibold first:mt-0">
