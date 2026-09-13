@@ -24,6 +24,8 @@
   "packageManager": "pnpm@10.33.0",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@formkit/auto-animate": "^0.9.0",
     "@llamaindex/liteparse-wasm": "^2.0.0",
     "katex": "^0.16.47",
