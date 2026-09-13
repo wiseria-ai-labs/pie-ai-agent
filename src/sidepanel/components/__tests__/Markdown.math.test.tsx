@@ -112,6 +112,9 @@ describe("Markdown — math rendering (#447)", () => {
       "…annual gross revenue over $500 million [5]. Civil penalties can reach up to $1,000,000 per violation, depending on severity [5].",
       // An amount written with a space, and one with four figures.
       "Budget $ 500 for the first month, then $1,200 a month after.",
+      // research/samples/electric-vehicles.en.md:51 — `US$` glues a letter to
+      // the sign, so it must not read as the closer of a digit-leading formula.
+      "The global EV market is projected to grow from US$833.2 billion in 2026 to US$2,169.5 billion by 2033.",
     ]) {
       const c = md(prose);
       expect(c.querySelectorAll(".katex")).toHaveLength(0);
@@ -124,6 +127,33 @@ describe("Markdown — math rendering (#447)", () => {
     const c = md("The $40 device solves $E=mc^2$ for you.");
     expect(renderedTex(c)).toEqual(["E=mc^2"]);
     expect(c.textContent).toContain("$40");
+  });
+
+  it("renders digit-leading formulas without orphaning their closer", () => {
+    // Escaping only the opener of `$2\pi r$` would leave its closing `$` to pair
+    // with the next formula's opener and render "and radius" as math.
+    const c = md("Area $2\\pi r$ and radius $r$ here.");
+    expect(renderedTex(c)).toEqual(["2\\pi r", "r"]);
+    expect(c.textContent).toContain("and radius");
+    cleanup();
+    expect(renderedTex(md("Take $3.14$ as pi."))).toEqual(["3.14"]);
+  });
+
+  it("renders only the formula when amounts precede it", () => {
+    const c = md("From $3 to $5, scaled by $n$.");
+    expect(renderedTex(c)).toEqual(["n"]);
+    expect(c.textContent).toContain("From $3 to $5, scaled by");
+  });
+
+  it("KNOWN HOLE: an amount before a formula opened right after punctuation", () => {
+    // Accepted to keep bare `$…$` inline math (see escapeCurrencyDollars). This
+    // pins today's wrong output so a fix — or a silent change in which shape
+    // misfires — shows up as a diff here instead of in someone's answer.
+    const c = md("Costs $5 at rate ($r$).");
+    expect(renderedTex(c)).toEqual(["5 at rate ("]);
+    cleanup();
+    // The unambiguous delimiters are unaffected.
+    expect(renderedTex(md("Costs $5 at rate (\\(r\\)))."))).toEqual(["r"]);
   });
 
   it("keeps a display block whose body starts with a digit", () => {

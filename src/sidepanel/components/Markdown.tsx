@@ -112,22 +112,30 @@ const CODE_SPANS =
  * A dollar amount is not math, but remark-math pairs `$` like a code-span
  * delimiter — it has no "`$` may not be followed by a digit" guard — so
  * "valued between $3.5B and $4.8B" pairs the two signs and renders the prose
- * between them as italic math with the signs eaten. Escape the sign when a
- * number follows it; `\$` is the escape remark-math documents, and a currency
- * sign that no longer opens math also cannot close any, so one stray amount
- * next to a real formula stops breaking it too.
+ * between them as italic math with the signs eaten. Escape a sign that is
+ * followed by a number, *unless* the next sign on the line reads like a closing
+ * delimiter (right after a non-space character, and not itself followed by a
+ * number — `US$2,169` is another amount, not a closer) — then it is the
+ * opener of a digit-leading formula such as `$2\pi r$` or `$3.14$`, and
+ * escaping it would orphan that closer to pair with the next formula's opener
+ * ("Area $2\pi r$ and radius $r$" → "and radius" rendered as math).
+ * `\$` is the escape remark-math documents.
  *
- * Known cost: an inline formula that *starts* with a digit (`$2x$`) stops
- * rendering — write it `$$2x$$` or `\(2x\)`. Prices, budgets and valuations are
- * far more common in answers than digit-leading formulas, and a mangled
- * sentence is worse than an unrendered one. Not covered (needs two of them in
- * one paragraph to misfire at all, and escaping the digit forms above already
- * breaks most pairings): `$.50`, `US$`, `$x`.
+ * Known hole, accepted to keep bare `$…$` inline math: an amount followed on
+ * the same line by a formula whose opener sits right after punctuation —
+ * "Costs $5 at rate ($r$)." — reads as a digit-leading formula, so "5 at rate ("
+ * still renders as math. Single-`$` math and currency can't be told apart by
+ * any local rule (which is why KaTeX auto-render and MathJax leave single `$`
+ * off by default); every variant tried leaves one such sentence shape open.
+ * `\(…\)` and `$$…$$` never have the problem.
  */
 function escapeCurrencyDollars(text: string): string {
   // Skip `$$` (display fences, whose body may legitimately start with a digit)
   // and an already-escaped `\$`.
-  return text.replace(/(?<![\\$])\$(?=[ \t]*\d)/g, "\\$&");
+  return text.replace(
+    /(?<![\\$])\$(?=[ \t]*\d)(?![^\n$]*[^\s$]\$(?![ \t]*\d))/g,
+    "\\$&",
+  );
 }
 
 /**
