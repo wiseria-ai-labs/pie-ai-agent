@@ -74,21 +74,25 @@ export interface ProviderMeta {
 
 // Kimi (Moonshot) curated models — shared by both the international
 // (api.moonshot.ai) and China (api.moonshot.cn) registry entries so the two
-// stay in lockstep. kimi-k2.x are multimodal; moonshot-v1-* are text fallbacks.
+// stay in lockstep. 现存四款全是多模态（platform.kimi.ai/docs/pricing/chat）。
+// kimi-k2.5 与 moonshot-v1 系列 2026-08-31 官方下线（调用返回 404），已移除。
 const MOONSHOT_MODELS: ModelMeta[] = [
   { id: "kimi-k3", vision: true, tools: true, maxContextTokens: 1_048_576 },
-  { id: "kimi-k2.7-code", vision: false, tools: true, maxContextTokens: 256_000 },
-  { id: "kimi-k2.6", vision: true, tools: true, maxContextTokens: 256_000 },
-  { id: "kimi-k2.5", vision: true, tools: true, maxContextTokens: 256_000 },
-  { id: "moonshot-v1-128k", vision: false, tools: true, maxContextTokens: 128_000 },
-  { id: "moonshot-v1-32k", vision: false, tools: true, maxContextTokens: 32_000 },
+  { id: "kimi-k2.7-code", vision: true, tools: true, maxContextTokens: 262_144 },
+  { id: "kimi-k2.7-code-highspeed", vision: true, tools: true, maxContextTokens: 262_144 },
+  { id: "kimi-k2.6", vision: true, tools: true, maxContextTokens: 262_144 },
 ];
 
-// Kimi Code 订阅端点（api.kimi.com）= moonshot 两条目的默认端点。订阅 API 只接受
-// 统一 model id "kimi-for-coding"（官方要求请求体固定用它，不暴露真实模型名）。
-// TODO(vision): 官方未明确 kimi-for-coding 是否收图片输入，fail-closed false，核实后更新。
+// Kimi Code 订阅端点（api.kimi.com/coding）= moonshot 两条目的默认端点。官方
+// kimi.com/code/docs/kimi-code/models 列出 4 个 model id，全部收图片输入。
+// kimi-for-coding 全会员可用，放首位当默认；其余按套餐档位开放，档位不够服务端回 401
+// （同 zhipu Coding Plan 先例：不按档位拆清单，选错由运行期报错自纠）。
+// k3 的 1M 仅 Allegretto 及以上；Moderato 档实际 256K，该档用户应选 k3-256k。
 const KIMI_CODE_MODELS: ModelMeta[] = [
-  { id: "kimi-for-coding", vision: false, tools: true, maxContextTokens: 256_000 },
+  { id: "kimi-for-coding", vision: true, tools: true, maxContextTokens: 1_048_576 },
+  { id: "kimi-for-coding-highspeed", vision: true, tools: true, maxContextTokens: 262_144 },
+  { id: "k3", vision: true, tools: true, maxContextTokens: 1_048_576 },
+  { id: "k3-256k", vision: true, tools: true, maxContextTokens: 262_144 },
 ];
 
 // 按量计费 variant：Kimi Code（订阅）无地区分流，单一 api.kimi.com/coding，所以
@@ -114,6 +118,7 @@ const MOONSHOT_PAYG_CN: EndpointVariant = {
 // the two copies (same lockstep pattern as MOONSHOT_MODELS).
 const STEP_37_FLASH: ModelMeta = { id: "step-3.7-flash", vision: true, tools: true, maxContextTokens: 256_000 };
 const STEP_35_FLASH: ModelMeta = { id: "step-3.5-flash", vision: false, tools: true, maxContextTokens: 256_000 };
+const STEP_35_FLASH_2603: ModelMeta = { id: "step-3.5-flash-2603", vision: false, tools: true, maxContextTokens: 256_000 };
 
 export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
@@ -124,6 +129,8 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     placeholder: "sk-ant-...",
     // Claude 5 family（1M 上下文 / 128K 输出）。注：Opus 5 / Fable 5 / Sonnet 5 拒收
     // temperature / top_p / budget_tokens —— anthropic-sdk-core 本就不发这些参数，无需适配。
+    // claude-fable-5-1 暂不收录：它在 thinking block 之前的历史被改动时回 400，而 loop 的
+    // compaction / 快照省略正会改历史，需先做 wire 适配（另起任务）；手填自定义 id 仍可用。
     models: [
       { id: "claude-opus-5", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 128_000 },
       { id: "claude-fable-5", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 128_000 },
@@ -145,9 +152,11 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // out of scope. Superseded lines (gpt-5.4-*, o3/o3-mini, gpt-4/4-turbo,
     // gpt-3.5-turbo, *-search-preview, *-deep-research) are intentionally
     // omitted —手填自定义 model id 仍可用。gpt-5.x 全系 Text+Image 输入。
-    // maxContextTokens = input window.
+    // maxContextTokens = input window. gpt-6-astra 是 $10/$50 高价档，故意不放首位
+    // （models[0] = 新 instance 默认模型，别让 BYOK 用户默认落到最贵档）。
     models: [
       { id: "gpt-5.6-sol", vision: true, tools: true, maxContextTokens: 1_050_000 },
+      { id: "gpt-6-astra", vision: true, tools: true, maxContextTokens: 1_050_000 },
       { id: "gpt-5.6-terra", vision: true, tools: true, maxContextTokens: 1_050_000 },
       { id: "gpt-5.6-luna", vision: true, tools: true, maxContextTokens: 1_050_000 },
       { id: "gpt-5.5", vision: true, tools: true, maxContextTokens: 1_050_000 },
@@ -193,10 +202,13 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // Curated from the BigModel model-overview (issue #106). Only chat /
     // vision models are listed — the agent loop requires tool calling, so
     // image-gen / video / TTS-ASR / embedding / rerank models are out of
-    // scope. Deprecated lines (GLM-Z1, GLM-4-0520) and the soon-to-retire
-    // GLM-4.5-Flash are intentionally omitted. maxContextTokens = input window.
+    // scope. Deprecated lines (GLM-Z1, GLM-4-0520, GLM-4.5-Flash) are omitted.
+    // glm-4-long（不在对话补全 API model 枚举、无 Function Calling）与
+    // glm-4.1v-thinking-flash(x) / glm-4v-flash（API 参考：视觉模型 tools 不支持）
+    // 2026-09 移除——agent loop 恒带 tools。maxContextTokens = input window.
     models: [
       // Text
+      { id: "glm-5.3", vision: false, tools: true, maxContextTokens: 1_000_000 },
       { id: "glm-5.2", vision: false, tools: true, maxContextTokens: 1_000_000 },
       { id: "glm-5.1", vision: false, tools: true, maxContextTokens: 200_000 },
       { id: "glm-5", vision: false, tools: true, maxContextTokens: 200_000 },
@@ -207,19 +219,17 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
       { id: "glm-4.6", vision: false, tools: true, maxContextTokens: 200_000 },
       { id: "glm-4.5-air", vision: false, tools: true, maxContextTokens: 128_000 },
       { id: "glm-4.5-airx", vision: false, tools: true, maxContextTokens: 128_000 },
-      { id: "glm-4-long", vision: false, tools: true, maxContextTokens: 1_000_000 },
       { id: "glm-4-flashx-250414", vision: false, tools: true, maxContextTokens: 128_000 },
       { id: "glm-4-flash-250414", vision: false, tools: true, maxContextTokens: 128_000 },
       // Vision
+      { id: "glm-5.3-flash", vision: true, tools: true, maxContextTokens: 1_000_000 },
       { id: "glm-5v-turbo", vision: true, tools: true, maxContextTokens: 200_000 },
       { id: "glm-4.6v", vision: true, tools: true, maxContextTokens: 128_000 },
       { id: "glm-4.6v-flash", vision: true, tools: true, maxContextTokens: 128_000 },
-      { id: "glm-4.1v-thinking-flashx", vision: true, tools: true, maxContextTokens: 64_000 },
-      { id: "glm-4.1v-thinking-flash", vision: true, tools: true, maxContextTokens: 64_000 },
-      { id: "glm-4v-flash", vision: true, tools: true, maxContextTokens: 16_000 },
     ],
-    // 默认（Coding Plan）沿用上面这份全量 GLM 清单：Plan 限 GLM-5.1/5-Turbo/4.7/4.5-Air，
-    // 但按量是超集 → 默认不 override，选错模型由运行期报错自纠，免维护两份清单。
+    // 默认（Coding Plan）沿用上面这份全量 GLM 清单：Plan 全档支持 GLM-5.3 / GLM-5.3-Flash
+    // （调 5.2/5.1 自动切 5.3，5-Turbo/4.7 自动切 5.3-Flash），按量是超集 → 默认不 override，
+    // 选错模型由运行期报错自纠，免维护两份清单。
     // payg variant 同样不 override（共用全量清单）。
     defaultEndpointLabel: "Coding Plan",
     endpointVariants: [
@@ -232,11 +242,14 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     iconAsset: "provider-icons/bailian.svg",
     defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
     placeholder: "sk-...",
-    // Qwen3.7 全系 1M 上下文；plus 是多模态（读图/读屏），max/flash fail-closed 记 false。
+    // Qwen3.8 / 3.7 全系 1M 上下文，均支持 Function Calling（百炼模型卡）。
+    // qwen3.7-max 稳定别名等同纯文本快照 2026-05-20，vision false；其余输入模态含图片。
     models: [
+      { id: "qwen3.8-max", vision: true, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.8-flash", vision: true, tools: true, maxContextTokens: 1_000_000 },
       { id: "qwen3.7-max", vision: false, tools: true, maxContextTokens: 1_000_000 },
       { id: "qwen3.7-plus", vision: true, tools: true, maxContextTokens: 1_000_000 },
-      { id: "qwen3.7-flash", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.7-flash", vision: true, tools: true, maxContextTokens: 1_000_000 },
     ],
   },
   {
@@ -245,11 +258,14 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     iconAsset: "provider-icons/gemini.svg",
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
     placeholder: "AIza...",
+    // maxContextTokens = 各模型页 "Input token limit"（1,048,576）。
     models: [
-      { id: "gemini-3.6-flash", vision: true, tools: true, maxContextTokens: 1_000_000 },
-      { id: "gemini-3.5-flash", vision: true, tools: true, maxContextTokens: 1_000_000 },
-      { id: "gemini-3.5-flash-lite", vision: true, tools: true, maxContextTokens: 1_000_000 },
-      { id: "gemini-2.5-pro", vision: true, tools: true, maxContextTokens: 1_000_000 },
+      { id: "gemini-3.8-flash", vision: true, tools: true, maxContextTokens: 1_048_576 },
+      { id: "gemini-3.7-flash", vision: true, tools: true, maxContextTokens: 1_048_576 },
+      { id: "gemini-3.6-flash", vision: true, tools: true, maxContextTokens: 1_048_576 },
+      { id: "gemini-3.5-flash", vision: true, tools: true, maxContextTokens: 1_048_576 },
+      { id: "gemini-3.5-flash-lite", vision: true, tools: true, maxContextTokens: 1_048_576 },
+      { id: "gemini-2.5-pro", vision: true, tools: true, maxContextTokens: 1_048_576 },
     ],
   },
   {
@@ -258,8 +274,11 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     iconAsset: "provider-icons/deepseek.svg",
     defaultBaseUrl: "https://api.deepseek.com",
     placeholder: "sk-...",
+    // deepseek-flash = V4.1-Flash（2026-09-10），收图片输入。旧名 deepseek-v4-flash 对应模型
+    // 已退役，API 暂时把旧名路由到 V4.1-Flash，故从清单移除（存量选择仍能调通）。
+    // deepseek-chat / deepseek-reasoner 2026-07-24 停用。
     models: [
-      { id: "deepseek-v4-flash", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 384_000 },
+      { id: "deepseek-flash", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 384_000 },
       { id: "deepseek-v4-pro", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 384_000 },
     ],
   },
@@ -270,8 +289,9 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     defaultBaseUrl: "https://token-plan-cn.xiaomimimo.com",
     placeholder: "tp-...",
     // mimo-v2 系列（v2-pro / v2-omni / v2-flash）2026-06-30 官方下线，已移除。
+    // 官方 Anthropic API 文档："Only the mimo-v2.5 model supports image input." → v2.5-pro 纯文本。
     models: [
-      { id: "mimo-v2.5-pro", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
+      { id: "mimo-v2.5-pro", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
       { id: "mimo-v2.5",     vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 131_072 },
     ],
     // 注意：mimo 的 defaultBaseUrl 本就是 Token Plan（订阅）端点 —— 保持不动，
@@ -320,7 +340,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // 默认（Step Plan）限定池（¥49–699/月档位），含 step-router-v1 智能路由。
     models: [
       STEP_37_FLASH,
-      { id: "step-3.5-flash-2603", vision: false, tools: true, maxContextTokens: 256_000 },
+      STEP_35_FLASH_2603,
       STEP_35_FLASH,
       { id: "step-router-v1", vision: false, tools: true, maxContextTokens: 256_000 },
     ],
@@ -330,8 +350,8 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
         id: "payg",
         label: "Pay-as-you-go",
         baseUrl: "https://api.stepfun.com",
-        // 按量端点不提供 step-router-v1 / -2603（那是 Step Plan 限定）。
-        models: [STEP_37_FLASH, STEP_35_FLASH],
+        // 按量端点不提供 step-router-v1（Step Plan 限定）；-2603 按量定价表有列，可用。
+        models: [STEP_37_FLASH, STEP_35_FLASH_2603, STEP_35_FLASH],
       },
     ],
   },

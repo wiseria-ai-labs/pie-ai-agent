@@ -118,8 +118,12 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("openai", "gpt-4o-mini-tts")).toBeUndefined();
   });
 
-  it("glm-4v-flash maxContextTokens is 16K", () => {
-    expect(getModelMeta("zhipu", "glm-4v-flash")?.maxContextTokens).toBe(16_000);
+  it("GLM 5.3 line is registered; models without tool calling are gone", () => {
+    expect(getModelMeta("zhipu", "glm-5.3")?.vision).toBe(false);
+    expect(getModelMeta("zhipu", "glm-5.3-flash")?.vision).toBe(true);
+    for (const id of ["glm-4-long", "glm-4v-flash", "glm-4.1v-thinking-flash", "glm-4.1v-thinking-flashx"]) {
+      expect(getModelMeta("zhipu", id)).toBeUndefined();
+    }
   });
 
   it("MiniMax-M3 is registered with vision; M2.x is text-only", () => {
@@ -134,15 +138,18 @@ describe("ModelMeta capability flags (per-model)", () => {
     expect(getModelMeta("gemini", "gemini-2.0-pro")).toBeUndefined();
   });
 
-  it("DeepSeek model capability flags", () => {
-    expect(getModelMeta("deepseek", "deepseek-v4-flash")?.tools).toBe(true);
-    expect(getModelMeta("deepseek", "deepseek-v4-flash")?.vision).toBe(false);
-    expect(getModelMeta("deepseek", "deepseek-v4-flash")?.maxContextTokens).toBe(1_000_000);
+  it("DeepSeek model capability flags — deepseek-flash takes images, v4-pro is text-only", () => {
+    expect(getModelMeta("deepseek", "deepseek-flash")?.tools).toBe(true);
+    expect(getModelMeta("deepseek", "deepseek-flash")?.vision).toBe(true);
+    expect(getModelMeta("deepseek", "deepseek-flash")?.maxContextTokens).toBe(1_000_000);
+    expect(getModelMeta("deepseek", "deepseek-v4-pro")?.vision).toBe(false);
+    // 旧名对应模型已退役（API 暂路由到 V4.1-Flash）
+    expect(getModelMeta("deepseek", "deepseek-v4-flash")).toBeUndefined();
   });
 
-  it("MiMo v2.5 series is multimodal at 1M; retired v2 series is gone", () => {
+  it("MiMo v2.5 is multimodal, v2.5-pro text-only, both 1M; retired v2 series is gone", () => {
     expect(getModelMeta("mimo", "mimo-v2.5-pro")?.tools).toBe(true);
-    expect(getModelMeta("mimo", "mimo-v2.5-pro")?.vision).toBe(true);
+    expect(getModelMeta("mimo", "mimo-v2.5-pro")?.vision).toBe(false);
     expect(getModelMeta("mimo", "mimo-v2.5-pro")?.maxContextTokens).toBe(1_000_000);
 
     expect(getModelMeta("mimo", "mimo-v2.5")?.vision).toBe(true);
@@ -273,31 +280,24 @@ describe("Moonshot (Kimi) — dual-region registration", () => {
     const cn = getProviderMeta("moonshot-cn")!.endpointVariants!.find((v) => v.id === "payg")!.models!.map((m) => m.id);
     expect(cn).toEqual(intl);
     expect(intl).toContain("kimi-k2.6");
-    // Default (Kimi Code Plan) model list is the pinned single id for both.
-    expect(getProviderMeta("moonshot")!.models.map((m) => m.id)).toEqual(["kimi-for-coding"]);
+    // Default (Kimi Code Plan) list starts with kimi-for-coding (all members) for both.
+    expect(getProviderMeta("moonshot")!.models[0]!.id).toBe("kimi-for-coding");
+    expect(getProviderMeta("moonshot-cn")!.models).toEqual(getProviderMeta("moonshot")!.models);
   });
 
-  it("kimi-k2.6 / kimi-k2.5 have vision + tools + 256K context", () => {
-    for (const id of ["kimi-k2.6", "kimi-k2.5"]) {
+  it("kimi-k2.6 / kimi-k2.7-code have vision + tools + 262,144 context", () => {
+    for (const id of ["kimi-k2.6", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"]) {
       const m = getModelMeta("moonshot", id)!;
       expect(m.vision).toBe(true);
       expect(m.tools).toBe(true);
-      expect(m.maxContextTokens).toBe(256_000);
+      expect(m.maxContextTokens).toBe(262_144);
     }
   });
 
-  it("moonshot-v1-128k is text-only with tools (128K)", () => {
-    const m = getModelMeta("moonshot", "moonshot-v1-128k")!;
-    expect(m.vision).toBe(false);
-    expect(m.tools).toBe(true);
-    expect(m.maxContextTokens).toBe(128_000);
-  });
-
-  it("moonshot-v1-32k is text-only with tools (32K)", () => {
-    const m = getModelMeta("moonshot", "moonshot-v1-32k")!;
-    expect(m.vision).toBe(false);
-    expect(m.tools).toBe(true);
-    expect(m.maxContextTokens).toBe(32_000);
+  it("kimi-k2.5 and moonshot-v1 series are gone (retired 2026-08-31)", () => {
+    for (const id of ["kimi-k2.5", "moonshot-v1-128k", "moonshot-v1-32k"]) {
+      expect(getModelMeta("moonshot", id)).toBeUndefined();
+    }
   });
 });
 
@@ -306,7 +306,7 @@ describe("maxOutputTokens (anthropic-wire, sourced from provider docs)", () => {
     ["anthropic", "claude-opus-5", 128_000],
     ["anthropic", "claude-sonnet-5", 128_000],
     ["anthropic", "claude-haiku-4-5-20251001", 64_000],
-    ["deepseek", "deepseek-v4-flash", 384_000],
+    ["deepseek", "deepseek-flash", 384_000],
     ["deepseek", "deepseek-v4-pro", 384_000],
     ["minimax", "MiniMax-M3", 524_288],
     ["minimax", "MiniMax-M2.7", 204_800],
@@ -350,7 +350,7 @@ describe("endpoint variants", () => {
       expect(meta.defaultBaseUrl).toBe("https://api.kimi.com/coding");
       expect(meta.defaultEndpointLabel).toBe("Kimi Code Plan");
       expect(meta.placeholder).toBe("sk-kimi-...");
-      expect(meta.models.map((m) => m.id)).toEqual(["kimi-for-coding"]);
+      expect(meta.models.map((m) => m.id)).toEqual(["kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k"]);
       const v = meta.endpointVariants?.find((x) => x.id === "payg");
       expect(v?.placeholder).toBe("sk-...");
       expect(v?.models?.map((m) => m.id)).toContain("kimi-k2.6");
@@ -380,11 +380,11 @@ describe("endpoint variants", () => {
     ]);
     const v = meta.endpointVariants?.find((x) => x.id === "payg");
     expect(v?.baseUrl).toBe("https://api.stepfun.com");
-    expect(v?.models?.map((m) => m.id)).toEqual(["step-3.7-flash", "step-3.5-flash"]);
+    expect(v?.models?.map((m) => m.id)).toEqual(["step-3.7-flash", "step-3.5-flash-2603", "step-3.5-flash"]);
   });
 
   it("getModelMeta unions variant models after the default list", () => {
-    expect(getModelMeta("moonshot", "kimi-for-coding")?.maxContextTokens).toBe(256_000); // default (Kimi Code)
+    expect(getModelMeta("moonshot", "kimi-for-coding")?.maxContextTokens).toBe(1_048_576); // default (Kimi Code)
     expect(getModelMeta("moonshot", "kimi-k2.6")).toBeDefined(); // payg variant → union hit
     expect(getModelMeta("stepfun", "step-router-v1")?.vision).toBe(false); // default (Step Plan)
     // 默认清单优先：step-3.7-flash 在默认清单与 payg variant 清单都存在 → 返回默认条目

@@ -310,7 +310,7 @@ describe("endpoint variant switch", () => {
 
   it("model list follows the endpoint: default Kimi Code → payg swaps to Moonshot models", () => {
     render(<InstanceForm {...base} provider="moonshot" onSave={noop} />);
-    // Default = Kimi Code Plan → pinned single model.
+    // Default = Kimi Code Plan → Kimi Code model ids.
     expect(screen.getByText("kimi-for-coding")).toBeTruthy();
     expect(screen.queryByText("kimi-k2.6")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Pay-as-you-go" }));

@@ -35,6 +35,12 @@ describe("resolveSelection", () => {
     expect(sel).toEqual({ instanceId: id, model: "claude-opus-5" });
   });
 
+  it("keeps a session model that was dropped from the registry (never swaps in an empty/other model)", async () => {
+    const id = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k", endpointVariant: "payg" });
+    const sel = await resolveSelection({ instanceId: id, model: "kimi-k2.5" });
+    expect(sel).toEqual({ instanceId: id, model: "kimi-k2.5" });
+  });
+
   it("returns null when no instances configured", async () => {
     expect(await resolveSelection({})).toBeNull();
   });

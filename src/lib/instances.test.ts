@@ -266,7 +266,7 @@ describe("resolveModelConfig — builtin custom model vision via pcmm", () => {
 describe("resolveModelConfig — maxOutputTokens resolved from registry", () => {
   it("anthropic-wire registry model carries its maxOutputTokens", async () => {
     const id = await createInstance({ provider: "deepseek", nickname: "DS", apiKey: "k" });
-    const cfg = await resolveModelConfig(id, "deepseek-v4-flash");
+    const cfg = await resolveModelConfig(id, "deepseek-flash");
     expect(cfg!.maxOutputTokens).toBe(384_000);
   });
 
@@ -279,9 +279,17 @@ describe("resolveModelConfig — maxOutputTokens resolved from registry", () => 
   it("instance-level maxTokens coexists with resolved maxOutputTokens (neither overwrites)", async () => {
     const id = await createInstance({ provider: "deepseek", nickname: "DS", apiKey: "k" });
     await updateInstance(id, { maxTokens: 8000 });
-    const cfg = await resolveModelConfig(id, "deepseek-v4-flash");
+    const cfg = await resolveModelConfig(id, "deepseek-flash");
     expect(cfg!.maxTokens).toBe(8000);
     expect(cfg!.maxOutputTokens).toBe(384_000);
+  });
+
+  it("model id dropped from the registry still resolves: id kept, vision omitted, maxOutputTokens unset (core fallback)", async () => {
+    const id = await createInstance({ provider: "deepseek", nickname: "DS", apiKey: "k" });
+    const cfg = await resolveModelConfig(id, "deepseek-v4-flash");
+    expect(cfg!.model).toBe("deepseek-v4-flash");
+    expect("vision" in cfg!).toBe(false);
+    expect(cfg!.maxOutputTokens).toBeUndefined();
   });
 });
 
