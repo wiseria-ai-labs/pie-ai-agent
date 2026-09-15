@@ -81,7 +81,7 @@ Pie が考えるには AI モデルが必要です。好きなものを選んで
 
 対応している BYOK プロバイダー：**Anthropic Claude · OpenAI · Google Gemini ·
 OpenRouter · DeepSeek · MiniMax · GLM（Zhipu）· Bailian · Mimo（Xiaomi）·
-Moonshot（Kimi —— 国際版および中国版）· StepFun**。Ollama によるローカルモデルは
+Moonshot（Kimi —— 国際版および中国版）· StepFun · A2Agent**。Ollama によるローカルモデルは
 [ロードマップ](../ROADMAP.md)にあります。
 
 ## プライバシー

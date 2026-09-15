@@ -336,6 +336,42 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     ],
   },
   {
+    id: "a2agent",
+    name: "A2Agent",
+    iconColorAsset: "provider-icons/a2agent.png",
+    // OpenAI-compat 网关（Bearer、POST /v1/chat/completions SSE、GET /v1/models），面向海外
+    // 用户一把 key 聚合 DeepSeek / Qwen / GLM / Kimi / MiniMax（#446）。零 hook 薄 wrapper。
+    // 模型清单来自 2026-09-16 `GET /v1/models`；元数据复用各上游条目的值，上游没有的
+    // 按 vision fail-closed。走硬编码清单而非 `modelsEndpoint` 懒拉取——拉取路径在 UI
+    // 三处硬钉 openrouter；网关新增 id 用户可经自定义模型池（pcm_a2agent）补。
+    defaultBaseUrl: "https://api.a2agent.me",
+    placeholder: "sk-...",
+    models: [
+      { id: "deepseek-v4-pro", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 384_000 },
+      { id: "deepseek-v4-flash", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 384_000 },
+      { id: "qwen3.8-max", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.8-max-0902", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.8-flash", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.7-max", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.7-plus", vision: true, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.7-flash", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.6-flash", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "qwen3.5-plus", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "glm-5.3", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-5.3-flash", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-5.2", vision: false, tools: true, maxContextTokens: 1_000_000 },
+      { id: "glm-5.1", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "glm-5", vision: false, tools: true, maxContextTokens: 200_000 },
+      { id: "kimi-k3", vision: true, tools: true, maxContextTokens: 1_048_576 },
+      { id: "kimi-k2.7-code", vision: false, tools: true, maxContextTokens: 256_000 },
+      // id 大小写照网关 /v1/models 原样。
+      { id: "Kimi-K2.5", vision: true, tools: true, maxContextTokens: 256_000 },
+      { id: "MiniMax-M3", vision: true, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 524_288 },
+      { id: "MiniMax-M2.7", vision: false, tools: true, maxContextTokens: 204_800, maxOutputTokens: 204_800 },
+      { id: "MiniMax-M2.5", vision: false, tools: true, maxContextTokens: 204_800, maxOutputTokens: 204_800 },
+    ],
+  },
+  {
     id: "managed",
     name: "Pie 官方订阅",
     iconColorAsset: "icons/managed-plan.svg",

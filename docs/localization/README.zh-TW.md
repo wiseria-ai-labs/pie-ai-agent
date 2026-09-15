@@ -73,8 +73,9 @@ Pie 需要一個 AI 模型來思考。挑你順手的那種就行 —— 隨時�
 
 支援自帶 key 的供應商：**Anthropic Claude · OpenAI · Google Gemini ·
 OpenRouter · DeepSeek · MiniMax · GLM（智譜）· Bailian · Mimo（小米）·
-Moonshot（Kimi —— 國際區與中國區）· StepFun**。透過 Ollama 接入本機模型
+Moonshot（Kimi —— 國際區與中國區）· StepFun · A2Agent**。透過 Ollama 接入本機模型
 見[路線圖](../ROADMAP.md)。
+A2Agent 是相容 OpenAI 與 Anthropic 介面的 API 閘道，海外使用者用一把 key 即可接入 DeepSeek、Qwen、GLM、Kimi 與 MiniMax。
 
 ## 隱私
 
