@@ -85,7 +85,7 @@ cuando quieras o tener varios a la vez.
 
 Proveedores BYOK compatibles: **Anthropic Claude · OpenAI · Google Gemini ·
 OpenRouter · DeepSeek · MiniMax · GLM (Zhipu) · Bailian · Mimo (Xiaomi) ·
-Moonshot (Kimi — internacional y China) · StepFun**. Los modelos locales vía
+Moonshot (Kimi — internacional y China) · StepFun · A2Agent**. Los modelos locales vía
 Ollama están en el [roadmap](../ROADMAP.md).
 
 ## Privacidad
