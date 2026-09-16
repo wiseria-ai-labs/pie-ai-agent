@@ -29,7 +29,7 @@ describe("ProviderMeta schema", () => {
   });
 
   it("non-OpenRouter providers have non-empty models[] (hardcoded)", () => {
-    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek", "mimo", "moonshot", "moonshot-cn", "stepfun"] as const;
+    const ids = ["anthropic", "openai", "zhipu", "bailian", "minimax", "gemini", "deepseek", "mimo", "moonshot", "moonshot-cn", "stepfun", "a2agent"] as const;
     for (const id of ids) {
       const meta = getProviderMeta(id)!;
       expect(meta.models.length).toBeGreaterThan(0);
@@ -57,6 +57,15 @@ describe("ProviderMeta schema", () => {
     // Default endpoint is the Step Plan (subscription); pay-as-you-go is a variant.
     expect(getProviderMeta("stepfun")!.defaultBaseUrl).toBe("https://api.stepfun.com/step_plan");
     expect(getProviderMeta("stepfun")!.name).toBe("StepFun");
+  });
+
+  it("A2Agent is registered", () => {
+    expect(getProviderMeta("a2agent")).toBeDefined();
+    expect(getProviderMeta("a2agent")!.defaultBaseUrl).toBe("https://api.a2agent.me");
+    expect(getProviderMeta("a2agent")!.name).toBe("A2Agent");
+    expect(getModelMeta("a2agent", "deepseek-v4-pro")?.vision).toBe(false);
+    expect(getModelMeta("a2agent", "deepseek-v4-pro")?.maxContextTokens).toBe(1_000_000);
+    expect(getModelMeta("a2agent", "kimi-k3")?.vision).toBe(true);
   });
 });
 

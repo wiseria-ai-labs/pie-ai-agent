@@ -23,6 +23,7 @@
     "https://api.moonshot.ai/*",
     "https://api.moonshot.cn/*",
     "https://api.stepfun.com/*",
+    "https://api.a2agent.me/*",
     "https://api.kimi.com/*",
     "https://api.xiaomimimo.com/*",
     "https://api.tavily.com/*"

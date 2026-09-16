@@ -87,7 +87,7 @@ trocar a qualquer momento ou manter vários lado a lado.
 
 Provedores BYOK suportados: **Anthropic Claude · OpenAI · Google Gemini ·
 OpenRouter · DeepSeek · MiniMax · GLM (Zhipu) · Bailian · Mimo (Xiaomi) ·
-Moonshot (Kimi — internacional e China) · StepFun**. Modelos locais via Ollama
+Moonshot (Kimi — internacional e China) · StepFun · A2Agent**. Modelos locais via Ollama
 estão no [roadmap](../ROADMAP.md).
 
 ## Privacidade

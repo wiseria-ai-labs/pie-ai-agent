@@ -85,8 +85,9 @@ time, or keep several side by side.
 
 Supported BYOK providers: **Anthropic Claude · OpenAI · Google Gemini ·
 OpenRouter · DeepSeek · MiniMax · GLM (Zhipu) · Bailian · Mimo (Xiaomi) ·
-Moonshot (Kimi — international & China) · StepFun**. Local models via Ollama are
+Moonshot (Kimi — international & China) · StepFun · A2Agent**. Local models via Ollama are
 on the [roadmap](docs/ROADMAP.md).
+A2Agent is an OpenAI- and Anthropic-compatible API gateway giving overseas users access to DeepSeek, Qwen, GLM, Kimi and MiniMax with one key.
 
 ## Privacy
 

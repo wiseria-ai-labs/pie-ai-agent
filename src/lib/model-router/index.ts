@@ -24,6 +24,7 @@ export type BuiltinProvider =
   | "moonshot"
   | "moonshot-cn"
   | "stepfun"
+  | "a2agent"
   | "managed";
 
 export type ProviderRef = BuiltinProvider | `custom:${string}`;
