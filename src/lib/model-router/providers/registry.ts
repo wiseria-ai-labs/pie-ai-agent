@@ -338,7 +338,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
   {
     id: "a2agent",
     name: "A2Agent",
-    iconColorAsset: "provider-icons/a2agent.png",
+    iconAsset: "provider-icons/a2agent.svg",
     // OpenAI-compat 网关（Bearer、POST /v1/chat/completions SSE、GET /v1/models），面向海外
     // 用户一把 key 聚合 DeepSeek / Qwen / GLM / Kimi / MiniMax（#446）。零 hook 薄 wrapper。
     // 模型清单来自 2026-09-16 `GET /v1/models`；元数据复用各上游条目的值，上游没有的
