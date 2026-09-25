@@ -13,6 +13,8 @@ import {
   Info,
   HelpCircle,
   ChevronRight,
+  ZoomIn,
+  RotateCcw,
 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
@@ -20,10 +22,12 @@ import { getSearchProviderStatus, ACTIVE_SEARCH_PROVIDER } from "@/lib/search-pr
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import { getPanelMode, setPanelMode, PANEL_MODE_KEY } from "@/lib/panel-host/panel-mode";
 import { onStoreChange } from "@/lib/store-bus";
+import { setConfig } from "@/lib/idb/config-store";
 import { Switch } from "@/sidepanel/components/ui/Switch";
+import { IconButton } from "@/sidepanel/components/ui/IconButton";
 import { Popover } from "@/sidepanel/components/ui/Popover";
-import { useAnchorRect } from "@/sidepanel/components/ui/useAnchorRect";
-import type { ThemeMode } from "@/sidepanel/theme";
+import { useAnchorRect, viewportSize, rootZoom } from "@/sidepanel/components/ui/useAnchorRect";
+import { type ThemeMode, UI_SCALE_KEY, applyUiScale } from "@/sidepanel/theme";
 import type { SettingsPage } from "@/sidepanel/components/TopBar";
 import { useBridgeStatus } from "./bridge-status";
 
@@ -82,14 +86,17 @@ function ControlRow({
   control: ReactNode;
 }) {
   return (
-    <div className="flex min-h-[46px] w-full items-center gap-3 border-t border-line px-3.5 first:border-t-0">
+    <div className="flex min-h-[46px] w-full flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-3.5 py-2 first:border-t-0">
       <span className="shrink-0 text-fg-2">{icon}</span>
-      <span className="flex items-center gap-1 text-[13px] font-medium text-fg-1">
+      {/* flex-1 label + ml-auto control (no spacer): when the row runs out of
+          room (narrow panel × large interface scale) the label wraps its text
+          first, and a control that still doesn't fit drops to its own line
+          flush right — instead of overflowing. */}
+      <span className="flex flex-1 items-center gap-1 text-[13px] font-medium text-fg-1">
         {label}
         {help}
       </span>
-      <div className="flex-1" />
-      <div className="shrink-0">{control}</div>
+      <div className="ml-auto shrink-0">{control}</div>
     </div>
   );
 }
@@ -99,7 +106,7 @@ const HELP_W = 280; // "?" popover width — kept in sync with the clamp below
 /** Left-align the "?" popover to its trigger, then clamp inside the panel — the
  *  trigger sits far right in a ~420px side panel, so an unclamped popover runs
  *  off the edge. Pure (viewport width passed in) so it stays unit-testable. */
-export function helpCoords(rect: DOMRect, viewportW = window.innerWidth): { left: number; width: number } {
+export function helpCoords(rect: DOMRect, viewportW = viewportSize().w): { left: number; width: number } {
   const MARGIN = 8;
   const width = Math.min(HELP_W, viewportW - 2 * MARGIN);
   const left = Math.max(MARGIN, Math.min(rect.left - 12, viewportW - width - MARGIN));
@@ -260,6 +267,75 @@ function ThemeSegmented({
   );
 }
 
+function persistUiScale(pct: number) {
+  localStorage.setItem(UI_SCALE_KEY, String(pct / 100));
+  void setConfig(UI_SCALE_KEY, pct / 100);
+}
+
+// Interface scale — CSS zoom on the whole panel (theme.ts). Dragging previews
+// live; the native `change` event (fires on release / per keyboard step)
+// persists. The track gets its own full-width line on purpose: zooming resizes
+// the slider under the pointer, and a full-width track scales about its middle
+// so the value under the cursor barely moves — a short track at the row's end
+// drifts enough to feed back into its own value and run away mid-drag.
+function UiScaleRow() {
+  const t = useT();
+  const [pct, setPct] = useState(() => Math.round(rootZoom() * 100));
+  const sliderRef = useRef<HTMLInputElement>(null);
+
+  const preview = (p: number) => {
+    setPct(p);
+    applyUiScale(p / 100);
+  };
+
+  useEffect(() => {
+    const el = sliderRef.current;
+    if (!el) return;
+    const onCommit = () => persistUiScale(Number(el.value));
+    el.addEventListener("change", onCommit);
+    return () => el.removeEventListener("change", onCommit);
+  }, []);
+
+  return (
+    <div className="flex w-full flex-col gap-1.5 border-t border-line px-3.5 py-2.5 first:border-t-0">
+      <div className="flex min-h-[26px] items-center gap-3">
+        <span className="shrink-0 text-fg-2">
+          <ZoomIn {...ROW_ICON} />
+        </span>
+        <span className="flex-1 text-[13px] font-medium text-fg-1">{t("settings.uiScale.label")}</span>
+        <span data-testid="ui-scale-value" className="font-mono text-[11px] tabular-nums text-fg-2">
+          {pct}%
+        </span>
+        <IconButton
+          size="sm"
+          data-testid="ui-scale-reset"
+          aria-label={t("settings.uiScale.reset")}
+          title={t("settings.uiScale.reset")}
+          icon={<RotateCcw size={13} strokeWidth={1.75} />}
+          disabled={pct === 100}
+          onClick={() => {
+            preview(100);
+            persistUiScale(100);
+          }}
+        />
+      </div>
+      <input
+        ref={sliderRef}
+        type="range"
+        data-testid="ui-scale-slider"
+        min={70}
+        max={150}
+        step={5}
+        value={pct}
+        aria-label={t("settings.uiScale.label")}
+        aria-valuetext={`${pct}%`}
+        onChange={(e) => preview(Number(e.target.value))}
+        className="ml-7 cursor-pointer accent-accent"
+      />
+    </div>
+  );
+}
+
 export default function SettingsRoot({
   themeMode,
   onThemeModeChange,
@@ -340,6 +416,7 @@ export default function SettingsRoot({
             label={t("settings.theme.label")}
             control={<ThemeSegmented themeMode={themeMode} onThemeModeChange={onThemeModeChange} />}
           />
+          <UiScaleRow />
           <PanelWindowRow />
           <NavRow
             id="uiLanguage"

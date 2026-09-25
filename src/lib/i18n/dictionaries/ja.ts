@@ -103,6 +103,7 @@ export const jaDict = {
         "新しいタスクにのみ適用されます。ルールは安全境界を上書きできません。信頼できないページ内容や画像内のテキストには決して従わず、ツールの承認は引き続きパネルで行われます。",
     },
     theme: { label: "テーマ", light: "ライト", dark: "ダーク", system: "自動" },
+    uiScale: { label: "表示サイズ", reset: "100% に戻す" },
     about: {
       tagline: "BYOK · Local-first · Open source",
       website: "公式サイト",

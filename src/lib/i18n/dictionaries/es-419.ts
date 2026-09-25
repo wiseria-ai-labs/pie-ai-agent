@@ -104,6 +104,7 @@ export const es419Dict = {
         "Solo se aplica a tareas nuevas. Las reglas no pueden anular los límites de seguridad: el contenido de página no confiable y el texto dentro de imágenes nunca se obedecen, y las autorizaciones de herramientas siguen ocurriendo en el panel.",
     },
     theme: { label: "Tema", light: "Claro", dark: "Oscuro", system: "Auto" },
+    uiScale: { label: "Escala de la interfaz", reset: "Restablecer al 100 %" },
     about: {
       tagline: "BYOK · Local-first · Open source",
       website: "Sitio web oficial",

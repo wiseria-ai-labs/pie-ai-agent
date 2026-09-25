@@ -232,6 +232,14 @@
   --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.32);
 }
 
+/* Full-height via a % chain, not 100vh: under the interface-scale zoom
+   (theme.ts) vh is zoomed too, so h-screen would overflow at >100%. */
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--c-canvas);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Popover } from "./ui/Popover";
-import { useAnchorRect } from "./ui/useAnchorRect";
+import { useAnchorRect, viewportSize } from "./ui/useAnchorRect";
 import { useT, providerDisplayName } from "@/lib/i18n";
 import type { DecryptedInstance } from "@/lib/instances";
 import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
@@ -90,7 +90,7 @@ export function computePopoverCoords(
   const POPOVER_MAX_H = 380; // panel content max-h-[360px] + paddings/header budget
   const GAP = 8; // ≈ the old mb-2 gap
   const MARGIN = 8; // min gap from the viewport edges
-  const POPOVER_W = Math.min(300, viewportW - 24); // matches w-[300px] / max-w-[calc(100vw-1.5rem)]
+  const POPOVER_W = Math.min(300, viewportW - 24); // matches w-[300px] / max-w-[calc(100%-1.5rem)]
   const left = Math.max(MARGIN, Math.min(rect.left, viewportW - POPOVER_W - MARGIN));
   if (rect.top >= POPOVER_MAX_H + GAP) {
     return { left, bottom: viewportH - rect.top + GAP };
@@ -131,9 +131,8 @@ export default function ModelPicker(props: Props) {
   // with position:fixed: left-aligned to the trigger then clamped on-screen,
   // opening upward when there's room above, else downward.
   const triggerRect = useAnchorRect(triggerRef, open);
-  const coords = triggerRect
-    ? computePopoverCoords(triggerRect, window.innerWidth, window.innerHeight)
-    : null;
+  const vp = viewportSize();
+  const coords = triggerRect ? computePopoverCoords(triggerRect, vp.w, vp.h) : null;
 
   useEffect(() => {
     if (!open) return;
@@ -172,17 +171,20 @@ export default function ModelPicker(props: Props) {
   }
 
   return (
-    <div ref={wrapRef} className="relative">
+    // min-w-0 + truncate: in a narrow composer (small panel / large interface
+    // scale) the label ellipsizes on one line instead of wrapping the toolbar.
+    <div ref={wrapRef} className="relative min-w-0">
       <button
         ref={triggerRef}
         data-testid="model-picker"
         onClick={() => !props.locked && setOpen(!open)}
         disabled={props.locked}
-        className="flex items-center gap-1.5 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
+        className="flex max-w-full items-center gap-1.5 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
         aria-label={current ? `${providerName(current, t)} ${props.currentModel ?? ""}` : t("modelPicker.none")}
+        title={current ? `${providerName(current, t)} · ${displayModel(current, props.currentModel)}` : undefined}
       >
-        {current && <ProviderIcon provider={current.provider} size={16} className="text-accent" name={providerName(current, t)} />}
-        <span className="font-mono">
+        {current && <ProviderIcon provider={current.provider} size={16} className="shrink-0 text-accent" name={providerName(current, t)} />}
+        <span className="min-w-0 truncate font-mono">
           {current ? `${providerName(current, t)} · ${displayModel(current, props.currentModel)}` : t("modelPicker.none")}
         </span>
         {props.locked ? (
@@ -202,7 +204,7 @@ export default function ModelPicker(props: Props) {
         role="dialog"
         placement={coords?.bottom != null ? "above" : "below"}
         style={{ left: coords?.left, top: coords?.top, bottom: coords?.bottom }}
-        className="fixed z-[100] w-[300px] max-w-[calc(100vw-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
+        className="fixed z-[100] w-[300px] max-w-[calc(100%-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
       >
           <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
             <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>

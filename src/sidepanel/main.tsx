@@ -5,6 +5,7 @@
 //
 // Inline <script> in index.html is blocked by MV3's default CSP
 // (script-src 'self'), so this lives in the sidepanel's main module instead.
+import { applyUiScale, parseUiScale, UI_SCALE_KEY } from "./theme";
 try {
   const m = localStorage.getItem("theme-mode");
   if (m === "light" || m === "dark") {
@@ -12,6 +13,13 @@ try {
   }
 } catch {
   // localStorage unavailable — fall through to the system fallback.
+}
+// Interface scale (theme.ts) — same pre-paint slot, so the first frame is
+// already at the saved zoom instead of jumping after React mounts.
+try {
+  applyUiScale(parseUiScale(localStorage.getItem(UI_SCALE_KEY)));
+} catch {
+  // localStorage unavailable — stay at 100%.
 }
 
 // Answer the SW's panel-liveness ping. Registered at module scope, before React
