@@ -11,7 +11,7 @@ import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
 import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
 import CustomRulesPage from "@/sidepanel/components/settings/pages/CustomRulesPage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
-import type { ThemeMode } from "@/sidepanel/theme";
+import { type ThemeMode, UI_SCALE_KEY, applyUiScale, parseUiScale } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
 import ResearchPanel from "@/sidepanel/components/research/ResearchPanel";
 import { getInstance, listInstances } from "@/lib/instances";
@@ -236,6 +236,11 @@ export default function App() {
       });
       return;
     }
+    if (c.id === UI_SCALE_KEY) {
+      // Cross-window interface-scale sync (the writer already applied its own).
+      void getConfig(UI_SCALE_KEY).then((v) => applyUiScale(parseUiScale(v)));
+      return;
+    }
     // last_model_selection / active_instance_id (and any other config write)
     // can change the resolved provider label.
     loadProviderLabel();
@@ -385,7 +390,7 @@ export default function App() {
 
   return (
     <div
-      className="bg-canvas text-fg-1 dot-grid flex h-screen flex-col"
+      className="bg-canvas text-fg-1 dot-grid flex h-full flex-col"
       style={{ position: "relative", overflow: "hidden" }}
     >
       {/* ── Contextual single top bar (six states + pin sub-row) ──────────── */}

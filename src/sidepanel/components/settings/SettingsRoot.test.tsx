@@ -85,6 +85,37 @@ describe("SettingsRoot", () => {
     });
   });
 
+  it("interface-scale slider previews while dragging, persists on release, resets to 100%", async () => {
+    const { getConfig } = await import("@/lib/idb/config-store");
+    // Node ≥25's own (file-less, undefined) localStorage global shadows happy-dom's.
+    const ls = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => ls.get(k) ?? null,
+      setItem: (k: string, v: string) => void ls.set(k, v),
+    });
+    render(<SettingsRoot {...make()} />);
+    const slider = screen.getByTestId("ui-scale-slider") as HTMLInputElement;
+    expect(slider.value).toBe("100");
+    expect((screen.getByTestId("ui-scale-reset") as HTMLButtonElement).disabled).toBe(true);
+
+    // Drag (input events): zoom follows live, nothing persisted yet.
+    fireEvent.input(slider, { target: { value: "120" } });
+    expect(document.documentElement.style.zoom).toBe("1.2");
+    expect(screen.getByTestId("ui-scale-value").textContent).toBe("120%");
+    expect(localStorage.getItem("ui-scale")).toBeNull();
+
+    // Release (native change): written to both stores.
+    fireEvent.change(slider);
+    expect(localStorage.getItem("ui-scale")).toBe("1.2");
+    await waitFor(async () => expect(await getConfig("ui-scale")).toBe(1.2));
+
+    fireEvent.click(screen.getByTestId("ui-scale-reset"));
+    expect(document.documentElement.style.zoom).toBe("");
+    expect(localStorage.getItem("ui-scale")).toBe("1");
+    await waitFor(async () => expect(await getConfig("ui-scale")).toBe(1));
+    vi.unstubAllGlobals();
+  });
+
   it("CDP '?' reveals the explainer on hover and hides it on leave", async () => {
     render(<SettingsRoot {...make()} />);
     const help = screen.getByTestId("cdp-help");

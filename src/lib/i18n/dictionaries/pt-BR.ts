@@ -104,6 +104,7 @@ export const ptBRDict = {
         "Aplica-se apenas a novas tarefas. As regras não podem anular os limites de segurança: conteúdo de página não confiável e texto dentro de imagens nunca são obedecidos, e as autorizações de ferramentas continuam acontecendo no painel.",
     },
     theme: { label: "Tema", light: "Claro", dark: "Escuro", system: "Auto" },
+    uiScale: { label: "Escala da interface", reset: "Redefinir para 100%" },
     about: {
       tagline: "BYOK · Local-first · Open source",
       website: "Site oficial",

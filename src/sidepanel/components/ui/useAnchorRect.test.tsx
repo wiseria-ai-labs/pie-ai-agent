@@ -1,9 +1,14 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, cleanup, act } from "@testing-library/react";
 import { useRef } from "react";
-import { useAnchorRect } from "./useAnchorRect";
+import { useAnchorRect, viewportSize } from "./useAnchorRect";
+import { applyUiScale } from "@/sidepanel/theme";
+import { computePopoverCoords } from "../ModelPicker";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  applyUiScale(1);
+});
 
 const fakeRect = (over: Partial<DOMRect> = {}): DOMRect =>
   ({
@@ -53,5 +58,34 @@ describe("useAnchorRect", () => {
     });
     expect(calls).toBeGreaterThan(initial);
     spy.mockRestore();
+  });
+
+  // Interface scale (#455): <html> zoom makes getBoundingClientRect / innerWidth
+  // visual px while fixed top/left get multiplied by the zoom — the hook and
+  // viewportSize() both hand back zoomed-space values so coords land on the anchor.
+  it("divides the rect and the viewport by the root zoom", () => {
+    applyUiScale(1.5);
+    const spy = vi
+      .spyOn(HTMLButtonElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(fakeRect({ left: 60, top: 150, bottom: 180, right: 210, width: 150, height: 30 }));
+    let last: DOMRect | null = null;
+    render(<Harness open={true} onRect={(r) => (last = r)} />);
+    expect(last!.left).toBeCloseTo(40);
+    expect(last!.top).toBeCloseTo(100);
+    expect(last!.bottom).toBeCloseTo(120);
+    expect(last!.width).toBeCloseTo(100);
+
+    const vp = viewportSize();
+    expect(vp.w).toBeCloseTo(window.innerWidth / 1.5);
+    expect(vp.h).toBeCloseTo(window.innerHeight / 1.5);
+    // Opens downward right under the anchor (zoomed px), not 1.5× further down.
+    expect(computePopoverCoords(last!, 400, 400)).toEqual({ left: 40, top: 128 });
+    spy.mockRestore();
+  });
+
+  it("zoom 1 leaves the rect untouched", () => {
+    applyUiScale(1);
+    expect(document.documentElement.style.zoom).toBe("");
+    expect(viewportSize()).toEqual({ w: window.innerWidth, h: window.innerHeight });
   });
 });

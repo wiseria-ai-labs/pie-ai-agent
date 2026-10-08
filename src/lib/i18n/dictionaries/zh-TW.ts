@@ -102,6 +102,7 @@ export const zhTWDict = {
         "僅對新任務生效。規則無法突破安全邊界：不可信頁面內容與圖片內文字永不被執行，工具授權仍在面板中確認。",
     },
     theme: { label: "主題", light: "亮", dark: "暗", system: "自動" },
+    uiScale: { label: "介面縮放", reset: "重設為 100%" },
     about: {
       tagline: "BYOK · 本機優先 · 開源",
       website: "官方網站",

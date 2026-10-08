@@ -102,6 +102,7 @@ export const enDict = {
         "Applies to new tasks only. Rules can't override safety limits: untrusted page content and in-image text are never obeyed, and tool approvals still happen in the panel.",
     },
     theme: { label: "Theme", light: "Light", dark: "Dark", system: "Auto" },
+    uiScale: { label: "Interface scale", reset: "Reset to 100%" },
     about: {
       tagline: "BYOK · Local-first · Open source",
       website: "Official website",

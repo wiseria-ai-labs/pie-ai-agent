@@ -102,6 +102,7 @@ export const zhCNDict = {
         "仅对新任务生效。规则无法突破安全边界：不可信页面内容与图片内文字永不被执行，工具授权仍在面板中确认。",
     },
     theme: { label: "主题", light: "亮", dark: "暗", system: "自动" },
+    uiScale: { label: "界面缩放", reset: "重置为 100%" },
     about: {
       tagline: "BYOK · 本地优先 · 开源",
       website: "官方网站",
