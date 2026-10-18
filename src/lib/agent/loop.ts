@@ -2193,7 +2193,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const thinkingBlocks: ThinkingContentBlock[] = [];
       const openToolCalls = new Map<
         number,
-        { id: string; name: string; argsAccum: string }
+        { id: string; name: string; argsAccum: string; thoughtSignature?: string }
       >();
       const completedToolCalls: Array<{ id: string; name: string; args: unknown }> = [];
       // Arrival-ordered tool_use / remote_tool blocks for this assistant turn.
@@ -2241,6 +2241,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             id: event.id,
             name: event.name,
             argsAccum: "",
+            ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
           });
         } else if (event.type === "tool-call-delta") {
           const pending = openToolCalls.get(event.index);
@@ -2266,6 +2267,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               id: pending.id,
               name: pending.name,
               input: parsedArgs,
+              ...(pending.thoughtSignature ? { thoughtSignature: pending.thoughtSignature } : {}),
             });
             openToolCalls.delete(event.index);
           }

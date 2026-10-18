@@ -46,11 +46,24 @@ export interface OpenAICompatHooks {
 interface OpenAIWireMessage {
   role: string;
   content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> | null;
-  tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
+  tool_calls?: {
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+    extra_content?: { google: { thought_signature: string } };
+  }[];
   tool_call_id?: string;
 }
 
-function toWireMessages(messages: AgentMessage[]): OpenAIWireMessage[] {
+/** Gemini's OpenAI-compat layer (generativelanguage.googleapis.com/.../openai). */
+export function isGeminiCompat(baseUrl: string | undefined): boolean {
+  return !!baseUrl && /generativelanguage\.googleapis\.com/.test(baseUrl);
+}
+
+/** Google-documented placeholder for tool calls whose real signature was lost. */
+const GEMINI_SKIP_SIGNATURE = "skip_thought_signature_validator";
+
+function toWireMessages(messages: AgentMessage[], gemini = false): OpenAIWireMessage[] {
   const result: OpenAIWireMessage[] = [];
   for (const msg of messages) {
     if (msg.role === "system") {
@@ -68,14 +81,21 @@ function toWireMessages(messages: AgentMessage[]): OpenAIWireMessage[] {
       for (const block of content) {
         if (block.type === "text") textParts.push(block.text);
         else if (block.type === "tool_use") {
-          toolCalls.push({
+          const call: NonNullable<OpenAIWireMessage["tool_calls"]>[number] = {
             id: block.id,
             type: "function",
             function: {
               name: block.name,
               arguments: typeof block.input === "string" ? block.input : JSON.stringify(block.input ?? {}),
             },
-          });
+          };
+          // Gemini 3 rejects history whose function calls lack a thought
+          // signature (400 "Function call is missing a thought_signature").
+          // Echo the real one; for the first call of a turn fall back to the
+          // documented skip placeholder (parallel calls only sign the first).
+          const sig = block.thoughtSignature ?? (gemini && toolCalls.length === 0 ? GEMINI_SKIP_SIGNATURE : undefined);
+          if (sig) call.extra_content = { google: { thought_signature: sig } };
+          toolCalls.push(call);
         }
         // remote_tool is Responses-wire only — drop on chat/completions.
       }
@@ -125,9 +145,14 @@ export async function* streamChatOpenAICompat(
   tools?: ToolDefinition[],
   hooks?: OpenAICompatHooks,
 ): AsyncGenerator<StreamEvent> {
-  const baseUrl = config.baseUrl!.replace(/\/$/, "");
-  const endpoint = baseUrl.match(/\/v\d+$/) ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
-  const wireMessages = toWireMessages(messages);
+  const baseUrl = config.baseUrl!.replace(/#.*$/, "").replace(/\/$/, "");
+  const gemini = isGeminiCompat(baseUrl);
+  const endpoint = /\/chat\/completions$/.test(baseUrl)
+    ? baseUrl
+    : /\/(v\d+[a-z]*\d*|openai)$/.test(baseUrl)
+      ? `${baseUrl}/chat/completions`
+      : `${baseUrl}/v1/chat/completions`;
+  const wireMessages = toWireMessages(messages, gemini);
 
   const requestBody: Record<string, unknown> = {
     model: config.model,
@@ -183,6 +208,9 @@ export async function* streamChatOpenAICompat(
 
   let usage: Extract<StreamEvent, { type: "done" }>["usage"];
   const pendingToolCalls = new Map<number, PendingToolCall>();
+  // Gemini compat may omit tool_call `index` and send an empty `id`.
+  let autoIndex = 0;
+  let lastIndex = -1;
   const splitter = createThinkTagSplitter();
   let thinkingOpen = false;
 
@@ -272,14 +300,21 @@ export async function* streamChatOpenAICompat(
         }
         if (delta?.tool_calls) {
           for (const tcd of delta.tool_calls) {
-            const index: number = tcd.index;
+            const index: number =
+              typeof tcd.index === "number"
+                ? tcd.index
+                : tcd.function?.name
+                  ? 1000 + autoIndex++ // no index: each named chunk is a new call
+                  : lastIndex;         // no index, no name: continuation of the last call
+            lastIndex = index;
             const existing = pendingToolCalls.get(index);
             if (!existing) {
-              const id: string = tcd.id ?? "";
+              const id: string = tcd.id || `call_${Date.now().toString(36)}_${index}`;
               const name: string = tcd.function?.name ?? "";
               const initialArgs: string = tcd.function?.arguments ?? "";
+              const thoughtSignature: string | undefined = tcd.extra_content?.google?.thought_signature || undefined;
               pendingToolCalls.set(index, { id, name, argsAccum: initialArgs });
-              yield { type: "tool-call-start", id, index, name };
+              yield { type: "tool-call-start", id, index, name, ...(thoughtSignature ? { thoughtSignature } : {}) };
               if (initialArgs) yield { type: "tool-call-delta", index, argsDelta: initialArgs };
             } else {
               const argFragment: string = tcd.function?.arguments ?? "";
@@ -292,6 +327,24 @@ export async function* streamChatOpenAICompat(
         }
         if (finishReason != null) {
           if (finishReason === "tool_calls") {
+            for (const [index] of pendingToolCalls) yield { type: "tool-call-end", index };
+            pendingToolCalls.clear();
+            for (const seg of splitter.flush()) {
+              if (seg.kind === "think") {
+                if (!thinkingOpen) { yield { type: "thinking-start", replay: false }; thinkingOpen = true; }
+                yield { type: "thinking-delta", text: seg.text };
+              } else {
+                if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
+                yield { type: "text-delta", text: seg.text };
+              }
+            }
+            if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
+            yield { type: "done", stopReason: "tool_calls", usage };
+            return;
+          } else if ((finishReason === "stop" || finishReason === "length") && pendingToolCalls.size > 0) {
+            // Gemini's OpenAI-compat layer ends tool-call streams with
+            // finish_reason "stop" (googleapis/python-genai#2868). Without
+            // this branch the calls are dropped and the turn looks empty.
             for (const [index] of pendingToolCalls) yield { type: "tool-call-end", index };
             pendingToolCalls.clear();
             for (const seg of splitter.flush()) {
@@ -335,6 +388,12 @@ export async function* streamChatOpenAICompat(
       }
     }
     if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
+    if (pendingToolCalls.size > 0) {
+      for (const [index] of pendingToolCalls) yield { type: "tool-call-end", index };
+      pendingToolCalls.clear();
+      yield { type: "done", stopReason: "tool_calls", usage };
+      return;
+    }
     yield { type: "done", usage };
   } catch (e) {
     if (signal?.aborted) return;

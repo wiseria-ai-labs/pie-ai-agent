@@ -9,6 +9,8 @@ export interface ToolUseBlock {
   id: string;
   name: string;
   input: unknown;
+  /** Gemini 3 thought signature (OpenAI-compat extra_content.google.thought_signature). Must be echoed back. */
+  thoughtSignature?: string;
 }
 
 export interface ToolResultBlock {
@@ -76,7 +78,7 @@ export type StreamEvent =
   | { type: "thinking-start"; replay: boolean }
   | { type: "thinking-delta"; text: string }
   | { type: "thinking-end"; signature?: string }
-  | { type: "tool-call-start"; id: string; index: number; name: string }
+  | { type: "tool-call-start"; id: string; index: number; name: string; thoughtSignature?: string }
   | { type: "tool-call-delta"; index: number; argsDelta: string }
   | { type: "tool-call-end"; index: number }
   /** One completed peer-executed tool step (not for the local agent loop). */
