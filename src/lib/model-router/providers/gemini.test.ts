@@ -49,7 +49,7 @@ describe("Gemini wire converter", () => {
     ];
     const wire = _toGeminiContentsForTest(msgs);
     expect(wire).toEqual([
-      { role: "model", parts: [{ functionCall: { name: "read_page", args: { url: "https://example.com" } } }] },
+      { role: "model", parts: [{ functionCall: { name: "read_page", args: { url: "https://example.com" } }, thoughtSignature: "skip_thought_signature_validator" }] },
     ]);
   });
 
@@ -176,5 +176,69 @@ describe("Gemini streamChat", () => {
       },
     });
     fetchMock.mockRestore();
+  });
+});
+
+describe("Gemini native: schema, thought signatures, parallel results, ids", () => {
+  it("strips additionalProperties/$schema but keeps a property literally named additionalProperties", async () => {
+    const { _toGeminiToolsForTest } = await import("./gemini");
+    const out = _toGeminiToolsForTest([{
+      name: "t", description: "d",
+      parameters: {
+        $schema: "x", type: "object", additionalProperties: false,
+        properties: {
+          additionalProperties: { type: "string" },
+          nested: { type: "object", additionalProperties: false, properties: { a: { type: "string" } } },
+          list: { type: "array", items: { type: "object", additionalProperties: false } },
+        },
+      },
+    }] as any);
+    const p = out.function_declarations[0].parameters as any;
+    expect(p.$schema).toBeUndefined();
+    expect(p.additionalProperties).toBeUndefined();
+    expect(p.properties.additionalProperties).toEqual({ type: "string" });
+    expect(p.properties.nested.additionalProperties).toBeUndefined();
+    expect(p.properties.list.items.additionalProperties).toBeUndefined();
+    expect(JSON.stringify(p)).not.toContain('"additionalProperties":false');
+  });
+
+  it("echoes real signatures, signs only the first unsigned call, merges parallel results", () => {
+    const msgs = [
+      { role: "assistant", content: [
+        { type: "tool_use", id: "a", name: "click", input: {} },
+        { type: "tool_use", id: "b", name: "read", input: {} },
+      ] },
+      { role: "user", content: [
+        { type: "tool_result", toolUseId: "a", content: "ok-a" },
+        { type: "tool_result", toolUseId: "b", content: "ok-b" },
+      ] },
+      { role: "assistant", content: [
+        { type: "tool_use", id: "c", name: "click", input: {}, thoughtSignature: "REAL" },
+      ] },
+    ] as any;
+    const wire = _toGeminiContentsForTest(msgs) as any[];
+    expect(wire[0].parts[0].thoughtSignature).toBe("skip_thought_signature_validator");
+    expect(wire[0].parts[1].thoughtSignature).toBeUndefined();
+    expect(wire[1]).toEqual({ role: "function", parts: [
+      { functionResponse: { name: "click", response: { content: "ok-a" } } },
+      { functionResponse: { name: "read", response: { content: "ok-b" } } },
+    ] });
+    expect(wire[2].parts[0].thoughtSignature).toBe("REAL");
+  });
+
+  it("stream: captures thoughtSignature and generates ids unique across calls", async () => {
+    const { streamChat } = await import("./gemini");
+    const chunk = { candidates: [{ content: { parts: [
+      { functionCall: { name: "click", args: { ref: "e1" } }, thoughtSignature: "SIG" },
+    ] }, finishReason: "STOP" }] };
+    const mk = () => new Response(`data: ${JSON.stringify(chunk)}\n\n`, { status: 200 });
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => mk());
+    const cfg = { provider: "gemini", model: "gemini-3.5-flash-lite", apiKey: "k", baseUrl: "https://generativelanguage.googleapis.com" } as any;
+    const run = async () => { const ev: any[] = []; for await (const e of streamChat(cfg, [{ role: "user", content: "hi" }])) ev.push(e); return ev; };
+    const a = (await run()).find((e) => e.type === "tool-call-start");
+    const b = (await run()).find((e) => e.type === "tool-call-start");
+    expect(a.thoughtSignature).toBe("SIG");
+    expect(a.id).not.toBe(b.id);
+    spy.mockRestore();
   });
 });
