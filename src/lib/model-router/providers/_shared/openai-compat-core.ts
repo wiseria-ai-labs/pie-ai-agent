@@ -149,7 +149,9 @@ export async function* streamChatOpenAICompat(
   const gemini = isGeminiCompat(baseUrl);
   const endpoint = /\/chat\/completions$/.test(baseUrl)
     ? baseUrl
-    : /\/(v\d+[a-z]*\d*|openai)$/.test(baseUrl)
+    // `/openai` only counts after a version segment (Gemini `/v1beta/openai`);
+    // a bare `/openai` prefix (Groq `api.groq.com/openai`) still needs `/v1`.
+    : /\/v\d+[a-z]*\d*(\/openai)?$/.test(baseUrl)
       ? `${baseUrl}/chat/completions`
       : `${baseUrl}/v1/chat/completions`;
   const wireMessages = toWireMessages(messages, gemini);

@@ -45,6 +45,13 @@ describe("Gemini OpenAI-compat quirks", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
   });
 
+  it("bare '/openai' prefix without a version segment still gets /v1 (Groq)", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sse([
+      { choices: [{ index: 0, finish_reason: "stop", delta: { content: "ok" } }] }]));
+    await collect(streamChatOpenAICompat({ ...cfg, baseUrl: "https://api.groq.com/openai" }, [{ role: "user", content: "hi" }]));
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.groq.com/openai/v1/chat/completions");
+  });
+
   it("echoes real signatures and adds the skip placeholder only for Gemini", () => {
     const msgs = [{ role: "assistant", content: [
       { type: "tool_use", id: "a", name: "click", input: {}, thoughtSignature: "REAL" },
