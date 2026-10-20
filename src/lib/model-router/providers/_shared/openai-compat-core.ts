@@ -328,25 +328,11 @@ export async function* streamChatOpenAICompat(
           }
         }
         if (finishReason != null) {
-          if (finishReason === "tool_calls") {
-            for (const [index] of pendingToolCalls) yield { type: "tool-call-end", index };
-            pendingToolCalls.clear();
-            for (const seg of splitter.flush()) {
-              if (seg.kind === "think") {
-                if (!thinkingOpen) { yield { type: "thinking-start", replay: false }; thinkingOpen = true; }
-                yield { type: "thinking-delta", text: seg.text };
-              } else {
-                if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
-                yield { type: "text-delta", text: seg.text };
-              }
-            }
-            if (thinkingOpen) { yield { type: "thinking-end" }; thinkingOpen = false; }
-            yield { type: "done", stopReason: "tool_calls", usage };
-            return;
-          } else if ((finishReason === "stop" || finishReason === "length") && pendingToolCalls.size > 0) {
-            // Gemini's OpenAI-compat layer ends tool-call streams with
-            // finish_reason "stop" (googleapis/python-genai#2868). Without
-            // this branch the calls are dropped and the turn looks empty.
+          // Gemini's OpenAI-compat layer ends tool-call streams with
+          // finish_reason "stop" (googleapis/python-genai#2868); without this
+          // the calls are dropped and the turn looks empty. "length" + pending
+          // calls stays a truncation (half-written args must not run).
+          if (finishReason === "tool_calls" || (finishReason === "stop" && pendingToolCalls.size > 0)) {
             for (const [index] of pendingToolCalls) yield { type: "tool-call-end", index };
             pendingToolCalls.clear();
             for (const seg of splitter.flush()) {

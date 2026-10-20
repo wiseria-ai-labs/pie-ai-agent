@@ -38,6 +38,26 @@ describe("Gemini OpenAI-compat quirks", () => {
     expect(ev.at(-1)).toMatchObject({ type: "done", stopReason: "end" });
   });
 
+  it("'length' with a pending tool call stays a truncation (no tool-call-end)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(sse([
+      { choices: [{ index: 0, finish_reason: "length", delta: { tool_calls: [
+        { index: 0, id: "c1", type: "function", function: { name: "click", arguments: "{\"ref\":\"e" } } ] } }] },
+    ]));
+    const ev = await collect(streamChatOpenAICompat(cfg, [{ role: "user", content: "hi" }], undefined, tools));
+    expect(ev.some((e) => e.type === "tool-call-end")).toBe(false);
+    expect(ev.at(-1)).toMatchObject({ type: "done", stopReason: "length" });
+  });
+
+  it("stream ending without finish_reason flushes pending tool calls", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(sse([
+      { choices: [{ index: 0, delta: { tool_calls: [
+        { index: 0, id: "c1", type: "function", function: { name: "click", arguments: "{}" } } ] } }] },
+    ]));
+    const ev = await collect(streamChatOpenAICompat(cfg, [{ role: "user", content: "hi" }], undefined, tools));
+    expect(ev.filter((e) => e.type === "tool-call-end")).toHaveLength(1);
+    expect(ev.at(-1)).toMatchObject({ type: "done", stopReason: "tool_calls" });
+  });
+
   it("legacy '#' base URL still resolves to the right endpoint", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sse([
       { choices: [{ index: 0, finish_reason: "stop", delta: { content: "ok" } }] }]));
