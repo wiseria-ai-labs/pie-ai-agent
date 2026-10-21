@@ -177,3 +177,54 @@ describe("snapshot merge preserves pendingInstructions (clobber regression)", ()
     expect(merged.currentFocusTabId).toBeUndefined();
   });
 });
+
+describe("queue fixes — no dropped messages", () => {
+  const instr = (id: string) => ({ chatMessageId: id, content: `msg ${id}`, createdAt: 1 });
+
+  it("addPending on a brand-new session (no agent record yet) seeds the record instead of dropping", async () => {
+    expect(await getSessionAgent("fresh")).toBeNull();
+    await addPending("fresh", instr("a"));
+    const state = await getSessionAgent("fresh");
+    expect(state?.pendingInstructions.map((p) => p.chatMessageId)).toEqual(["a"]);
+    expect(state?.stepIndex).toBe(0);
+  });
+
+  it("seeded queue survives the loop's first step snapshot (non-tombstone merge)", async () => {
+    const { updateSessionAgent } = await import("./storage");
+    await addPending("fresh2", instr("a"));
+    const snapshot = buildSessionAgentSnapshot([{ role: "user", content: "task" }], 1, false);
+    await updateSessionAgent("fresh2", (cur) => mergeSessionAgentSnapshot(cur, snapshot));
+    expect((await getSessionAgent("fresh2"))?.pendingInstructions.map((p) => p.chatMessageId)).toEqual(["a"]);
+  });
+
+  it("instruction queued between the snapshot handler's read and write is kept (the lost-update bug)", async () => {
+    const { updateSessionAgent } = await import("./storage");
+    await seedAgentState();
+    const snapshot = buildSessionAgentSnapshot([{ role: "user", content: "task" }], 3, false);
+
+    // Old SW handler: read … (user queues a message) … write back the stale read.
+    const staleRead = await getSessionAgent(SESSION_ID);
+    await addPending(SESSION_ID, instr("lost"));
+    const oldWrite = mergeSessionAgentSnapshot(staleRead, snapshot);
+    expect(oldWrite.pendingInstructions.map((p) => p.chatMessageId)).toEqual([]); // the bug
+
+    // New handler: the merge runs inside the write transaction on the latest record.
+    await updateSessionAgent(SESSION_ID, (cur) => mergeSessionAgentSnapshot(cur, snapshot));
+    const state = await getSessionAgent(SESSION_ID);
+    expect(state!.pendingInstructions.map((p) => p.chatMessageId)).toEqual(["lost"]);
+    expect(state!.stepIndex).toBe(3);
+  });
+
+  it("drain racing with adds: every instruction is delivered exactly once", async () => {
+    await seedAgentState();
+    const delivered: string[] = [];
+    const ops: Promise<unknown>[] = [];
+    for (let i = 0; i < 8; i++) {
+      ops.push(addPending(SESSION_ID, instr(`d${i}`)));
+      ops.push(drainPending(SESSION_ID).then((d) => delivered.push(...d.map((p) => p.chatMessageId))));
+    }
+    await Promise.all(ops);
+    delivered.push(...(await drainPending(SESSION_ID)).map((p) => p.chatMessageId));
+    expect(delivered.sort()).toEqual(Array.from({ length: 8 }, (_, i) => `d${i}`).sort());
+  });
+});

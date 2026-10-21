@@ -89,12 +89,12 @@ import {
   getSessionMeta,
   updateSessionMeta,
   getSessionAgent,
-  setSessionAgent,
+  updateSessionAgent,
   isSkillApprovedInSession,
   recordSkillApproval,
 } from "../sessions/storage";
 import { addPinToMeta, removePinFromMeta } from "../sessions/pin-state";
-import { drainPending } from "../sessions/pending-instructions";
+import { drainPending, hasPending } from "../sessions/pending-instructions";
 import { buildMidTaskUserMessage } from "./loop-drain";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import {
@@ -1148,13 +1148,11 @@ export async function readFocusFromStorage(
       if (await isTabAlive(candidate.tabId)) {
         // Persist the new focus (same write path as focus_tab) so the next
         // iteration's resolveFocusedPin lands directly on the surviving tab.
-        const cur = await getSessionAgent(sessionId);
-        if (cur) {
-          await setSessionAgent(sessionId, {
-            ...cur,
-            currentFocusTabId: candidate.tabId,
-          });
-        }
+        // Atomic read-modify-write — a plain get → set wrote back a stale
+        // record and could drop a mid-task instruction queued in between.
+        await updateSessionAgent(sessionId, (cur) =>
+          cur ? { ...cur, currentFocusTabId: candidate.tabId } : null,
+        );
         return {
           focused: candidate,
           pinnedTabs: refreshedPins,
@@ -1684,11 +1682,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // clean tombstone. RMW-preserve so the resume path keeps its stepIndex and
     // history; buildSessionAgentTombstone clears it back to false at task end.
     try {
-      const cur = await getSessionAgent(sessionId);
-      await setSessionAgent(sessionId, {
+      await updateSessionAgent(sessionId, (cur) => ({
         ...(cur ?? buildSessionAgentTombstone()),
         taskActive: true,
-      });
+      }));
     } catch (e) {
       console.warn(`[agent] taskActive mark failed for session=${sessionId}:`, e);
     }
@@ -2389,29 +2386,40 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // successful step.
       if (lastStepUsage) {
         try {
-          const cur = await getSessionAgent(sessionId);
-          const nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage);
-          await setSessionAgent(sessionId, withContextUsage(cur, nextUsage));
+          // Atomic read-modify-write — the old get → set wrote back a stale
+          // record and dropped a mid-task instruction queued in between.
+          // The merged usage is captured from inside the transaction so the
+          // emit below reports exactly the numbers that were committed.
+          const usageBox: {
+            value: NonNullable<SessionAgentState["contextUsage"]> | null;
+          } = { value: null };
+          await updateSessionAgent(sessionId, (cur) => {
+            const merged = mergeContextUsage(cur?.contextUsage, lastStepUsage!);
+            usageBox.value = merged;
+            return withContextUsage(cur, merged);
+          });
+          const usage = usageBox.value;
+          if (!usage) throw new Error("context usage merge produced nothing");
           try {
             emit(
               withSession(
                 {
                   type: "agent-usage",
-                  lastInputTokens: nextUsage.lastInputTokens,
-                  lastOutputTokens: nextUsage.lastOutputTokens,
-                  totalInputTokens: nextUsage.totalInputTokens,
-                  totalOutputTokens: nextUsage.totalOutputTokens,
-                  ...(nextUsage.lastCachedTokens != null
-                    ? { lastCachedTokens: nextUsage.lastCachedTokens }
+                  lastInputTokens: usage.lastInputTokens,
+                  lastOutputTokens: usage.lastOutputTokens,
+                  totalInputTokens: usage.totalInputTokens,
+                  totalOutputTokens: usage.totalOutputTokens,
+                  ...(usage.lastCachedTokens != null
+                    ? { lastCachedTokens: usage.lastCachedTokens }
                     : {}),
-                  ...(nextUsage.lastPromptTotalTokens != null
-                    ? { lastPromptTotalTokens: nextUsage.lastPromptTotalTokens }
+                  ...(usage.lastPromptTotalTokens != null
+                    ? { lastPromptTotalTokens: usage.lastPromptTotalTokens }
                     : {}),
-                  ...(nextUsage.totalCachedTokens != null &&
-                  nextUsage.totalPromptTokens != null
+                  ...(usage.totalCachedTokens != null &&
+                  usage.totalPromptTokens != null
                     ? {
-                        totalCachedTokens: nextUsage.totalCachedTokens,
-                        totalPromptTokens: nextUsage.totalPromptTokens,
+                        totalCachedTokens: usage.totalCachedTokens,
+                        totalPromptTokens: usage.totalPromptTokens,
                       }
                     : {}),
                 },
@@ -2551,6 +2559,20 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               );
             }
           }
+        }
+        // Issue #34 follow-up — the user queued an instruction while this final
+        // reply was streaming. Ending here would strand it in the queue until
+        // they send yet another message. Keep the reply in history and loop:
+        // the top-of-loop drain delivers the queued message as the next turn.
+        if (!signal.aborted && (await hasPending(sessionId))) {
+          if (!hasRemoteTools) {
+            const replyBlocks = assembleAssistantBlocks(thinkingBlocks, accumulatedText, turnBlocks);
+            if (replyBlocks.length > 0) history.push({ role: "assistant", content: replyBlocks });
+          }
+          // The panel keeps accumulating streamed text until chat-done; keep the
+          // next answer from running into this one.
+          if (accumulatedText.trim()) emit(withSession({ type: "chat-chunk", text: "\n\n" }, sessionId));
+          continue;
         }
         if (ctx.onTaskDone) {
           try {
@@ -2847,9 +2869,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               );
             },
             setCurrentFocusTabId: async (tabId) => {
-              const cur = await getSessionAgent(sessionId);
-              if (!cur) return;
-              await setSessionAgent(sessionId, { ...cur, currentFocusTabId: tabId });
+              // Atomic read-modify-write — a plain get → set wrote back a
+              // stale record and could drop a mid-task instruction queued
+              // in between.
+              await updateSessionAgent(sessionId, (cur) =>
+                cur ? { ...cur, currentFocusTabId: tabId } : null,
+              );
             },
             // Issue #110 — unpin_tab removes a tab from SessionMeta.pinnedTabs[]
             // (persisted) AND from the live stepPinView (so a same-turn
@@ -2994,7 +3019,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         });
       }
 
-      // Terminal tool check
+      // Terminal tool check. Issue #34 follow-up — a queued instruction
+      // overrides done/fail: the tool_result is already in history, and the
+      // top-of-loop drain hands the model the user's new message next turn.
+      if (shouldTerminate && terminationResult && !signal.aborted && (await hasPending(sessionId))) {
+        continue;
+      }
       if (shouldTerminate && terminationResult) {
         await emitDone({
           type: "agent-done-task",

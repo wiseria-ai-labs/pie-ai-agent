@@ -26,9 +26,13 @@ describe("buildCurrentTimeBlock — time injection (block A)", () => {
 
   it("includes the IANA timezone and a UTC offset", () => {
     const block = buildCurrentTimeBlock(NOW);
-    // resolvedOptions().timeZone in the test env is the machine TZ; assert the
-    // shape (a Region/City IANA id and a UTC±N marker) rather than an exact zone.
-    expect(block).toMatch(/[A-Za-z]+\/[A-Za-z_]+/); // IANA region/city
+    // The zone is the DEVICE's zone (resolvedOptions().timeZone): a
+    // Region/City IANA id on most machines, "UTC" on a UTC-configured one
+    // (CI runners). Assert the block carries the machine's ACTUAL zone in
+    // the zone slot rather than a fixed shape — asserting a "Region/City"
+    // shape made the test fail on any UTC machine.
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    expect(block).toContain(`· ${zone} (`); // zone slot
     expect(block).toMatch(/UTC[+-]\d/); // UTC offset marker
   });
 

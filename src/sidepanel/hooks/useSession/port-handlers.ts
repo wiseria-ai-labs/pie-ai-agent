@@ -325,6 +325,10 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streamingText: "",
         error: null,
         errorKind: null,
+        // The rejected instruction is re-sent as a normal message below — it
+        // is no longer waiting in the agent's queue, so the pending marker
+        // must go (otherwise the bubble stays "pending" forever).
+        pendingByChatMessageId: new Map(),
       });
       postMessageRef?.current?.(msg.sessionId, {
         type: "chat-start",

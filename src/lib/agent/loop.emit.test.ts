@@ -143,6 +143,7 @@ vi.mock("../sessions/pin-state", () => ({
 }));
 vi.mock("../sessions/pending-instructions", () => ({
   drainPending: vi.fn(async () => []),
+  hasPending: vi.fn(async () => false),
 }));
 vi.mock("./loop-drain", () => ({ buildMidTaskUserMessage: vi.fn(() => null) }));
 vi.mock("@/background/instruction-broadcast", () => ({
@@ -466,5 +467,109 @@ describe("ratelimit-wait 转发（RPM 限流）", () => {
     expect(rl).toBeDefined();
     expect(rl!.resumeAt).toBe(1234567);
     expect(rl!.sessionId).toBe("s-rl");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Message queue — an instruction queued during the FINAL turn (pure-text
+// answer or `done`) must not be stranded: the loop keeps going and the next
+// LLM call carries the queued message.
+// ---------------------------------------------------------------------------
+describe("message queue at task end", () => {
+  // The user queues their message WHILE turn 1 streams (after the top-of-step drain).
+  const queueState = { queued: false };
+  const QUEUED = "<untrusted_user_message source=\"mid_task\">\n1. and also say bye\n</untrusted_user_message>";
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const pending = await import("../sessions/pending-instructions");
+    queueState.queued = false;
+    const queued = () => queueState.queued;
+    vi.mocked(pending.hasPending).mockImplementation(async () => queued());
+    vi.mocked(pending.drainPending).mockImplementation(async () => {
+      if (!queued()) return [];
+      queueState.queued = false;
+      return [{ chatMessageId: "q1", content: "and also say bye", createdAt: 1 }];
+    });
+    const drain = await import("./loop-drain");
+    vi.mocked(drain.buildMidTaskUserMessage).mockImplementation((p) =>
+      p.length ? { role: "user", content: QUEUED } : null);
+    const blocks = await import("./assistant-blocks");
+    vi.mocked(blocks.assembleAssistantBlocks).mockImplementation(((_thinking: unknown, text: string, turn: unknown[]) =>
+      [...(text ? [{ type: "text", text }] : []), ...turn]) as never);
+  });
+
+  afterEach(async () => {
+    const pending = await import("../sessions/pending-instructions");
+    vi.mocked(pending.hasPending).mockImplementation(async () => false);
+    vi.mocked(pending.drainPending).mockImplementation(async () => []);
+    const drain = await import("./loop-drain");
+    vi.mocked(drain.buildMidTaskUserMessage).mockImplementation(() => null);
+    const { streamChat } = await import("../model-router");
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: "text-delta", text: "Hello world" };
+      yield { type: "done", stopReason: "end" };
+    });
+    const tools = await import("./tools");
+    vi.mocked(tools.getKeyboardTools).mockImplementation(() => []);
+    const blocks = await import("./assistant-blocks");
+    vi.mocked(blocks.assembleAssistantBlocks).mockImplementation(() => []);
+  });
+
+  async function run(turns: Array<"text" | "done">, queueOnFirstTurn = true) {
+    const { streamChat } = await import("../model-router");
+    let i = 0;
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      const t = turns[i++] ?? "text";
+      if (i === 1 && queueOnFirstTurn) queueState.queued = true;
+      if (t === "done") {
+        yield { type: "tool-call-start", id: `d${i}`, index: 0, name: "done" } as const;
+        yield { type: "tool-call-delta", index: 0, argsDelta: "{}" } as const;
+        yield { type: "tool-call-end", index: 0 } as const;
+        yield { type: "done", stopReason: "tool_calls" } as const;
+      } else {
+        yield { type: "text-delta", text: `answer ${i}` } as const;
+        yield { type: "done", stopReason: "end" } as const;
+      }
+    });
+    const emitted: Array<{ type: string }> = [];
+    const { runAgentLoop } = await import("./loop");
+    await runAgentLoop({
+      emit: (m) => { emitted.push(m as { type: string }); },
+      task: "say hi",
+      modelConfig: { provider: "openai", model: "gpt-4o", apiKey: "k", vision: false },
+      signal: new AbortController().signal,
+      sessionId: "s-queue",
+      pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+      initialFocusTabId: 1,
+    });
+    return { emitted, calls: vi.mocked(streamChat).mock.calls };
+  }
+
+  it("pure-text final answer + queued message → another turn that sees the message", async () => {
+    const { emitted, calls } = await run(["text", "text"]);
+    expect(calls).toHaveLength(2);
+    expect(JSON.stringify(calls[1][1])).toContain("and also say bye");
+    // first answer kept in history for the second turn
+    expect(JSON.stringify(calls[1][1])).toContain("answer 1");
+    expect(emitted.filter((m) => m.type === "chat-done")).toHaveLength(1);
+  });
+
+  it("done + queued message → task continues instead of ending", async () => {
+    const tools = await import("./tools");
+    vi.mocked(tools.getKeyboardTools).mockImplementation(() => [{
+      name: "done", description: "", parameters: { type: "object", properties: {} },
+      handler: vi.fn(async () => ({ success: true, observation: "finished" })),
+    }] as never);
+    const { emitted, calls } = await run(["done", "text"]);
+    expect(calls).toHaveLength(2);
+    expect(JSON.stringify(calls[1][1])).toContain("and also say bye");
+    expect(emitted.filter((m) => m.type === "agent-done-task")).toHaveLength(0);
+    expect(emitted.filter((m) => m.type === "chat-done")).toHaveLength(1);
+  });
+
+  it("empty queue → ends after the first answer (no behavior change)", async () => {
+    const { calls } = await run(["text", "text"], false);
+    expect(calls).toHaveLength(1);
   });
 });

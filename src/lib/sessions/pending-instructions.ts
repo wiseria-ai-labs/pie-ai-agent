@@ -1,21 +1,24 @@
-import type { PendingInstruction, SessionAgentState } from "./types";
-import { agentKey, getSessionAgent, writeAtomic } from "./storage";
+import type { PendingInstruction } from "./types";
+import { emptySessionAgentState, getSessionAgent, updateSessionAgent } from "./storage";
+
+// Mid-task instruction queue (Issue #34). Every mutation is an atomic
+// read-modify-write of the agent record (updateSessionAgent): the SW
+// step-snapshot handler writes the same record every step, and a separate
+// get → set here used to race with it and drop queued messages.
 
 /**
- * Append a PendingInstruction to the session's queue.
- * Read-modify-write on session_{id}_agent.
+ * Append a PendingInstruction to the session's queue. Seeds a minimal agent
+ * record when none exists yet (an instruction queued during the first step of
+ * a brand-new session, before the first snapshot) — it used to be dropped.
  */
 export async function addPending(
   sessionId: string,
   instruction: PendingInstruction,
 ): Promise<void> {
-  const state = await getSessionAgent(sessionId);
-  if (!state) return;
-  const next: SessionAgentState = {
-    ...state,
-    pendingInstructions: [...state.pendingInstructions, instruction],
-  };
-  await writeAtomic({ [agentKey(sessionId)]: next });
+  await updateSessionAgent(sessionId, (state) => {
+    const base = state ?? emptySessionAgentState();
+    return { ...base, pendingInstructions: [...(base.pendingInstructions ?? []), instruction] };
+  });
 }
 
 /**
@@ -26,16 +29,16 @@ export async function cancelPending(
   sessionId: string,
   chatMessageId: string,
 ): Promise<boolean> {
-  const state = await getSessionAgent(sessionId);
-  if (!state) return false;
-  const before = state.pendingInstructions.length;
-  const filtered = state.pendingInstructions.filter(
-    (p) => p.chatMessageId !== chatMessageId,
-  );
-  if (filtered.length === before) return false;
-  const next: SessionAgentState = { ...state, pendingInstructions: filtered };
-  await writeAtomic({ [agentKey(sessionId)]: next });
-  return true;
+  let removed = false;
+  await updateSessionAgent(sessionId, (state) => {
+    if (!state) return null;
+    const pending = state.pendingInstructions ?? [];
+    const filtered = pending.filter((p) => p.chatMessageId !== chatMessageId);
+    if (filtered.length === pending.length) return null;
+    removed = true;
+    return { ...state, pendingInstructions: filtered };
+  });
+  return removed;
 }
 
 /**
@@ -46,11 +49,18 @@ export async function cancelPending(
 export async function drainPending(
   sessionId: string,
 ): Promise<PendingInstruction[]> {
-  const state = await getSessionAgent(sessionId);
-  if (!state) return [];
-  const drained = state.pendingInstructions;
-  if (drained.length === 0) return [];
-  const next: SessionAgentState = { ...state, pendingInstructions: [] };
-  await writeAtomic({ [agentKey(sessionId)]: next });
+  let drained: PendingInstruction[] = [];
+  await updateSessionAgent(sessionId, (state) => {
+    const pending = state?.pendingInstructions ?? [];
+    if (!state || pending.length === 0) return null;
+    drained = pending;
+    return { ...state, pendingInstructions: [] };
+  });
   return drained;
+}
+
+/** Non-destructive peek: does the session have queued instructions? */
+export async function hasPending(sessionId: string): Promise<boolean> {
+  const state = await getSessionAgent(sessionId);
+  return (state?.pendingInstructions?.length ?? 0) > 0;
 }

@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto";
-import { beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
+import { cleanup } from "@testing-library/react";
 import { __resetSwPort } from "@/lib/sw-connection/manager";
 
 // chrome.storage.local mock — backed by a single in-memory record reset
@@ -375,8 +376,7 @@ if (typeof Element !== "undefined" && typeof Element.prototype.animate !== "func
 }
 
 beforeEach(() => {
-  local.__store = {};
-  local.__changedListeners = [];
+  local.__store = {};  local.__changedListeners = [];
   runtime.__ports = [];
   runtime.__messageListeners = [];
   // mockReset clears both call history AND any mockImplementation overrides
@@ -403,6 +403,26 @@ beforeEach(() => {
   downloads.download.mockClear();
   extension.isAllowedFileSchemeAccess.mockReset();
   extension.isAllowedFileSchemeAccess.mockResolvedValue(true);
+});
+
+// ── React tree cleanup ───────────────────────────────────────────────────────
+//
+// Testing Library's auto-cleanup only registers itself when a GLOBAL
+// `afterEach` exists. This project runs vitest with `globals: false`
+// (vitest.config.ts), so that auto-cleanup never registers — every
+// `render` / `renderHook` tree stayed mounted for the whole file.
+//
+// React 19's scheduler can defer work through `setImmediate`. When such a
+// callback fires AFTER the test file finished and vitest tore down the
+// happy-dom environment, react-dom touched `window` and threw
+// "ReferenceError: window is not defined" — an UNHANDLED error that fails
+// the whole run even though every test passed. It surfaced on CI (slower
+// scheduling) and was invisible locally.
+//
+// Unmounting in afterEach flushes React's pending work inside the test's
+// own lifetime, so nothing leaks past the environment teardown.
+afterEach(() => {
+  cleanup();
 });
 
 export { chromeMock };
