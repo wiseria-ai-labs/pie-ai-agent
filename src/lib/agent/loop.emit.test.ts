@@ -49,6 +49,7 @@ vi.mock("./tool-names", () => ({
   getToolClass: vi.fn(() => "read"),
   SCREENSHOT_TOOL_NAMES: [],
   SCREENSHOT_TOOL_NAME_SET: new Set<string>(),
+  VISION_ONLY_TOOL_NAMES: [],
   // Task 7 — disclosure selectTools() resolves each tool's group via
   // getToolGroup. "core" keeps every tool selected (core is always active).
   getToolGroup: vi.fn(() => "core"),
@@ -153,6 +154,11 @@ vi.mock("./synthesize-agent-turn", () => ({
 }));
 vi.mock("./wait-for-url-settle", () => ({
   waitForUrlSettle: vi.fn(async () => ({ url: "https://example.com", settled: true })),
+}));
+// click_at's real handler wraps dispatch in withActionSettle; nothing else in
+// this file reaches it (BUILT_IN_TOOLS is []), so a passthrough is safe.
+vi.mock("./wait-for-settle", () => ({
+  withActionSettle: vi.fn(async (_tabId: number, fn: () => Promise<unknown>) => fn()),
 }));
 vi.mock("./assistant-blocks", () => ({
   assembleAssistantBlocks: vi.fn(() => []),
@@ -466,5 +472,147 @@ describe("ratelimit-wait 转发（RPM 限流）", () => {
     expect(rl).toBeDefined();
     expect(rl!.resumeAt).toBe(1234567);
     expect(rl!.sessionId).toBe("s-rl");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// click_at screenshot-geometry invalidation (loop-level)
+//
+// The real click_at handler + the real screenshot-geometry store run inside
+// runAgentLoop; capture_visible_tab is the mocked dispatcher, which records
+// geometry the way the real one does. Proves the loop drops the geometry
+// after any write tool / scroll between the capture and click_at.
+// ---------------------------------------------------------------------------
+describe("click_at ↔ loop geometry invalidation", () => {
+  const PROBE = { url: "https://example.com/", cssWidth: 1280, cssHeight: 720, dpr: 1, scrollX: 0, scrollY: 0 };
+  let cdpSend: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const geometry = await import("./screenshot-geometry");
+    geometry.__clearScreenshotGeometryForTest();
+
+    const { dispatchCaptureVisibleTab } = await import("./tools/screenshot");
+    vi.mocked(dispatchCaptureVisibleTab).mockImplementation(async (ctx) => {
+      geometry.recordScreenshotGeometry(ctx.sessionId, ctx.pinnedTabId, {
+        ...PROBE, imageWidth: 1280, imageHeight: 720, capturedAt: Date.now(),
+      });
+      return {
+        ok: true,
+        value: { kind: "image", id: "img_1", mediaType: "image/jpeg", data: "AA", width: 1280, height: 720, byteLength: 2 },
+      };
+    });
+
+    chromeMock.scripting.executeScript.mockImplementation((async (inj: { func?: { name?: string } }) =>
+      inj.func?.name === "viewportProbeInjected" ? [{ result: PROBE }] : [{ result: "<body>hi</body>" }]) as never);
+
+    const { isCdpInputEnabled } = await import("../cdp-input-enabled");
+    vi.mocked(isCdpInputEnabled).mockResolvedValue(true);
+    cdpSend = vi.fn(async () => ({}));
+    const { acquireCdpSession } = await import("../../background/cdp-session");
+    vi.mocked(acquireCdpSession).mockResolvedValue({ send: cdpSend, isAlive: true } as never);
+
+    const { buildClickAtTool } = await vi.importActual<typeof import("./tools/mouse")>("./tools/mouse");
+    const tools = await import("./tools");
+    vi.mocked(tools.getMouseTools).mockImplementation((deps) => [buildClickAtTool(deps)] as never);
+    // Stand-ins so the loop can find these names; their handlers just succeed.
+    const stub = (name: string) => ({
+      name, description: "", parameters: { type: "object", properties: {} },
+      handler: vi.fn(async () => ({ success: true, observation: `${name} ok` })),
+    });
+    vi.mocked(tools.getKeyboardTools).mockImplementation(
+      () => [stub("capture_visible_tab"), stub("scroll"), stub("press_key"), stub("list_tabs")] as never,
+    );
+    const names = await import("./tool-names");
+    vi.mocked(names.getToolClass).mockImplementation((n: string) =>
+      n === "press_key" || n === "click_at" ? "write" : "read");
+  });
+
+  afterEach(async () => {
+    const { streamChat } = await import("../model-router");
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: "text-delta", text: "Hello world" };
+      yield { type: "done", stopReason: "end" };
+    });
+    chromeMock.scripting.executeScript.mockResolvedValue([{ result: "<body>hi</body>" }]);
+    const { isCdpInputEnabled } = await import("../cdp-input-enabled");
+    vi.mocked(isCdpInputEnabled).mockResolvedValue(false);
+  });
+
+  /** Script one tool call per LLM turn, then a plain-text finish. */
+  async function runTurns(calls: Array<{ name: string; args?: Record<string, unknown> }>) {
+    const { streamChat } = await import("../model-router");
+    let turn = 0;
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      const call = calls[turn++];
+      if (!call) {
+        yield { type: "text-delta", text: "finished" } as const;
+        yield { type: "done", stopReason: "end" } as const;
+        return;
+      }
+      yield { type: "tool-call-start", id: `tc_${turn}`, index: 0, name: call.name } as const;
+      yield { type: "tool-call-delta", index: 0, argsDelta: JSON.stringify(call.args ?? {}) } as const;
+      yield { type: "tool-call-end", index: 0 } as const;
+      yield { type: "done", stopReason: "tool_calls" } as const;
+    });
+    const emitted: Array<{ type: string; tool?: string; status?: string; observation?: string }> = [];
+    const { runAgentLoop } = await import("./loop");
+    await runAgentLoop({
+      emit: (m) => { emitted.push(m as (typeof emitted)[number]); },
+      task: "click the canvas",
+      modelConfig: { provider: "anthropic", model: "claude-test", apiKey: "k", vision: true },
+      signal: new AbortController().signal,
+      sessionId: "s-click-at",
+      pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+      initialFocusTabId: 1,
+    });
+    return emitted.filter(
+      (m) => m.type === "agent-step" && m.tool === "click_at" && m.status !== "pending",
+    );
+  }
+
+  const mousePresses = () =>
+    cdpSend.mock.calls.filter(([m, p]) => m === "Input.dispatchMouseEvent" && (p as { type: string }).type === "mousePressed");
+
+  it("capture → click_at (nothing in between) → clicks", async () => {
+    const steps = await runTurns([
+      { name: "capture_visible_tab" },
+      { name: "click_at", args: { x: 100, y: 200 } },
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].status).toBe("ok");
+    expect(mousePresses()).toHaveLength(1);
+  });
+
+  it.each(["scroll", "press_key"])("capture → %s → click_at refuses", async (between) => {
+    const steps = await runTurns([
+      { name: "capture_visible_tab" },
+      { name: between },
+      { name: "click_at", args: { x: 100, y: 200 } },
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].status).toBe("error");
+    expect(steps[0].observation).toContain("capture_visible_tab");
+    expect(mousePresses()).toHaveLength(0);
+  });
+
+  it("a read-class tool in between does NOT invalidate", async () => {
+    const steps = await runTurns([
+      { name: "capture_visible_tab" },
+      { name: "list_tabs" },
+      { name: "click_at", args: { x: 100, y: 200 } },
+    ]);
+    expect(steps[0].status).toBe("ok");
+    expect(mousePresses()).toHaveLength(1);
+  });
+
+  it("second click_at without a new capture refuses (click_at invalidates itself)", async () => {
+    const steps = await runTurns([
+      { name: "capture_visible_tab" },
+      { name: "click_at", args: { x: 100, y: 200 } },
+      { name: "click_at", args: { x: 100, y: 200 } },
+    ]);
+    expect(steps.map((s) => s.status)).toEqual(["ok", "error"]);
+    expect(mousePresses()).toHaveLength(1);
   });
 });

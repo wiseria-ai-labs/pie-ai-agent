@@ -5,6 +5,12 @@ import type { ActionResult } from "@/lib/dom-actions/types";
 import { elementToPagePoint, type GeometryError } from "@/lib/dom-actions/geometry";
 import { execActInTab } from "@/lib/dom-actions/exec-act";
 import { withActionSettle } from "../wait-for-settle";
+import {
+  getScreenshotGeometry,
+  invalidateScreenshotGeometry,
+  mapScreenshotPoint,
+  probeViewport,
+} from "../screenshot-geometry";
 
 /**
  * Internal: dispatch a single CDP mouse event at the given page coords.
@@ -14,16 +20,19 @@ export async function dispatchMouseAt(
   x: number,
   y: number,
   type: "mouseMoved" | "mousePressed" | "mouseReleased",
+  opts: { button?: MouseButton; clickCount?: number } = {},
 ): Promise<void> {
   await session.send("Input.dispatchMouseEvent", {
     type,
     x,
     y,
-    button: type === "mouseMoved" ? "none" : "left",
-    clickCount: type === "mouseMoved" ? 0 : 1,
+    button: type === "mouseMoved" ? "none" : (opts.button ?? "left"),
+    clickCount: type === "mouseMoved" ? 0 : (opts.clickCount ?? 1),
     pointerType: "mouse",
   });
 }
+
+export type MouseButton = "left" | "right" | "middle";
 
 export type CdpGateResult = { ok: true } | { ok: false; error: string };
 
@@ -245,6 +254,125 @@ USE WHEN:
           observation: `Clicked [${a.elementIndex}] at (${Math.round(point.x)},${Math.round(point.y)}).`,
         };
       });
+    },
+  };
+}
+
+const MOUSE_BUTTONS: readonly MouseButton[] = ["left", "right", "middle"];
+
+export function buildClickAtTool(deps: MouseToolDeps): Tool {
+  return {
+    name: "click_at",
+    description:
+      `Click at a pixel position in the LATEST capture_visible_tab screenshot (x,y in that image's pixels; mapped to the viewport for you). Real mouse events (CDP), top frame. clickCount 2 selects a word, 3 a paragraph/line.
+
+USE WHEN:
+- The target is drawn on a canvas or is otherwise missing from read_page's <interactive_index> — Google Docs / Sheets text, Figma-like editors, maps, charts.
+
+ALWAYS call capture_visible_tab right before, and again after any scroll / key press / typing / click — older screenshots are rejected.
+Google Docs: prefer placing the caret by text (see press_key) over pixels; pixel clicks on text are imprecise. After typing, capture_visible_tab to verify placement; if wrong, press_key mod+Z immediately.
+
+**DO NOT USE WHEN:**
+- The target has a data-pie-idx in read_page — use click (exact, survives layout shifts).
+- You only have a capture_fullpage_tab image — its coordinates are page-relative; take capture_visible_tab.`,
+    parameters: {
+      type: "object",
+      properties: {
+        x: {
+          type: "number",
+          description: "X in pixels of the latest capture_visible_tab image (0 = left edge).",
+        },
+        y: {
+          type: "number",
+          description: "Y in pixels of the latest capture_visible_tab image (0 = top edge).",
+        },
+        clickCount: {
+          type: "number",
+          enum: [1, 2, 3],
+          description: "1 = click (default), 2 = double-click (select word), 3 = triple-click (select paragraph).",
+        },
+        button: {
+          type: "string",
+          enum: MOUSE_BUTTONS,
+          description: 'Mouse button. Default "left".',
+        },
+      },
+      required: ["x", "y"],
+      additionalProperties: false,
+    },
+    handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+      const a = args as { x: number | string; y: number | string; clickCount?: number | string; button?: string };
+      const x = Number(a.x);
+      const y = Number(a.y);
+      const clickCount = a.clickCount === undefined ? 1 : Number(a.clickCount);
+      if (![1, 2, 3].includes(clickCount)) {
+        return { success: false, error: `clickCount must be 1, 2 or 3 (got ${String(a.clickCount)}).` };
+      }
+      const button = (a.button ?? "left") as MouseButton;
+      if (!MOUSE_BUTTONS.includes(button)) {
+        return { success: false, error: `button must be one of ${MOUSE_BUTTONS.join(", ")} (got ${String(a.button)}).` };
+      }
+
+      // Cheap pre-check so a doomed click never prompts for CDP consent or
+      // attaches the debugger. NOT authoritative — see the re-check below.
+      const precheck = mapScreenshotPoint(
+        getScreenshotGeometry(deps.sessionId, ctx.tabId),
+        { x, y },
+        await probeViewport(ctx.tabId),
+        Date.now(),
+      );
+      if (!precheck.ok) return { success: false, error: precheck.error };
+
+      const gate = await requireCdpInput({
+        sessionId: deps.sessionId,
+        requestConsent: deps.requestConsent,
+      });
+      if (!gate.ok) return { success: false, error: gate.error };
+
+      let session: CdpSession;
+      try {
+        session = await deps.acquireSession(ctx.tabId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/Another debugger|conflict/i.test(msg)) {
+          return {
+            success: false,
+            error: `CDP attach failed: another debugger is attached to this tab (DevTools or another agent task). Close it and retry.`,
+          };
+        }
+        return { success: false, error: `CDP attach failed: ${msg}` };
+      }
+
+      try {
+        // Authoritative check, right before dispatch: the consent card can sit
+        // open for minutes (user may scroll / resize meanwhile), and the first
+        // debugger attach shows Chrome's "started debugging" infobar, which
+        // shrinks the viewport. Either makes the pre-check result stale.
+        const mapped = mapScreenshotPoint(
+          getScreenshotGeometry(deps.sessionId, ctx.tabId),
+          { x, y },
+          await probeViewport(ctx.tabId),
+          Date.now(),
+        );
+        if (!mapped.ok) return { success: false, error: mapped.error };
+        return await withActionSettle(ctx.tabId, async () => {
+          await dispatchMouseAt(session, mapped.x, mapped.y, "mouseMoved");
+          // Chromium recognises double/triple clicks from a press/release run
+          // with an increasing clickCount (same as Playwright's click()).
+          for (let i = 1; i <= clickCount; i++) {
+            await dispatchMouseAt(session, mapped.x, mapped.y, "mousePressed", { button, clickCount: i });
+            await dispatchMouseAt(session, mapped.x, mapped.y, "mouseReleased", { button, clickCount: i });
+          }
+          const kind = clickCount === 1 ? "Clicked" : clickCount === 2 ? "Double-clicked" : "Triple-clicked";
+          return {
+            success: true,
+            observation: `${kind} (${button}) at screenshot (${Math.round(x)},${Math.round(y)}) → viewport (${Math.round(mapped.x)},${Math.round(mapped.y)}). The screenshot is now stale; call capture_visible_tab to see the result.`,
+          };
+        });
+      } finally {
+        // The click itself may scroll, focus or reflow — never reuse the old geometry.
+        invalidateScreenshotGeometry(deps.sessionId, ctx.tabId);
+      }
     },
   };
 }

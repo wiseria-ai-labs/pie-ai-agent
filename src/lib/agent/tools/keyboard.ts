@@ -29,6 +29,15 @@ import { withActionSettle } from "../wait-for-settle";
 
 const MAX_TEXT_LENGTH = 5000;
 
+// A–Z → { code: "KeyA", windowsVirtualKeyCode: 65 }, …
+const LETTER_KEYS: Record<string, { code: string; windowsVirtualKeyCode: number }> =
+  Object.fromEntries(
+    Array.from({ length: 26 }, (_, i) => {
+      const letter = String.fromCharCode(65 + i);
+      return [letter, { code: `Key${letter}`, windowsVirtualKeyCode: 65 + i }];
+    }),
+  );
+
 // Whitelist of supported control keys for press_key. Each entry maps the
 // LLM-facing key name to the CDP Input.dispatchKeyEvent parameters.
 // Limited intentionally — adding a key requires a deliberate decision.
@@ -46,16 +55,13 @@ const KEY_MAP: Record<
   ArrowRight: { code: "ArrowRight", windowsVirtualKeyCode: 39 },
   Home: { code: "Home", windowsVirtualKeyCode: 36 },
   End: { code: "End", windowsVirtualKeyCode: 35 },
-  // Letter keys for editor chords (#123): select-all / copy / paste / cut /
-  // undo / redo. Only the shortcut-relevant letters are added (deliberate,
-  // per the comment above) — they are meant to be pressed WITH a modifier;
-  // a bare letter press is rejected by the press_key handler.
-  A: { code: "KeyA", windowsVirtualKeyCode: 65 },
-  C: { code: "KeyC", windowsVirtualKeyCode: 67 },
-  V: { code: "KeyV", windowsVirtualKeyCode: 86 },
-  X: { code: "KeyX", windowsVirtualKeyCode: 88 },
-  Y: { code: "KeyY", windowsVirtualKeyCode: 89 },
-  Z: { code: "KeyZ", windowsVirtualKeyCode: 90 },
+  Delete: { code: "Delete", windowsVirtualKeyCode: 46 },
+  PageUp: { code: "PageUp", windowsVirtualKeyCode: 33 },
+  PageDown: { code: "PageDown", windowsVirtualKeyCode: 34 },
+  // Letter keys A–Z for editor chords (#123: select-all / copy / paste / cut /
+  // undo / redo; also mod+F find, mod+B bold, …). They are meant to be pressed
+  // WITH a modifier; a bare letter press is rejected by the press_key handler.
+  ...LETTER_KEYS,
 };
 
 // CDP modifier bitmask (Input.dispatchKeyEvent.modifiers field).
@@ -162,8 +168,16 @@ async function sendKeyPress(
 ): Promise<void> {
   const mapping = KEY_MAP[keyName];
   if (!mapping) throw new Error(`No mapping for key '${keyName}'`);
+  // Letter keys: KeyboardEvent.key is the produced character — "a" for
+  // Ctrl/Cmd+A, "A" only with Shift — exactly what a real keypress reports.
+  // Editors that bind chords by event.key ("Mod-b", is-hotkey, Quill) never
+  // match an unshifted "B".
+  const key =
+    /^[A-Z]$/.test(keyName) && (modifiers & MODIFIER_SHIFT) === 0
+      ? keyName.toLowerCase()
+      : keyName;
   const baseParams: Record<string, unknown> = {
-    key: keyName,
+    key,
     code: mapping.code,
     windowsVirtualKeyCode: mapping.windowsVirtualKeyCode,
     nativeVirtualKeyCode: mapping.windowsVirtualKeyCode,
@@ -297,7 +311,7 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
     {
       name: "dispatch_keyboard_input",
       description:
-        "Send text input via simulated real keyboard (Chrome DevTools Protocol). Pass the FULL multi-paragraph content in ONE call — every newline character inside `text` is converted to an Enter key press, so paragraphs/lists/code blocks are inserted correctly; don't split into many small calls. Use ONLY for canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular `type` tool returns 'hidden IME / keyboard capture buffer'. Activates Chrome's debugger (yellow bar appears). Set `softBreak: true` if newlines should be intra-paragraph soft breaks (Shift+Enter) instead of new paragraphs — Notion / Feishu / Google Docs treat Enter as block break and Shift+Enter as line break within the same block.",
+        "Send text input via simulated real keyboard (Chrome DevTools Protocol). Pass the FULL multi-paragraph content in ONE call — every newline character inside `text` is converted to an Enter key press, so paragraphs/lists/code blocks are inserted correctly; don't split into many small calls. Use ONLY for canvas-rendered editors (Feishu Docs, Google Docs, Notion) where the regular `type` tool returns 'hidden IME / keyboard capture buffer'. Activates Chrome's debugger (yellow bar appears). Set `softBreak: true` if newlines should be intra-paragraph soft breaks (Shift+Enter) instead of new paragraphs — Notion / Feishu / Google Docs treat Enter as block break and Shift+Enter as line break within the same block. Text goes wherever the caret is: in Google Docs place it first (see press_key's Docs recipe). After every insertion verify with capture_visible_tab (or read the text back); if it landed in the wrong place, press_key mod+Z at once. If the text appeared, the input worked — never conclude CDP input is 'untrusted'; a wrong position is a caret problem.",
       parameters: {
         type: "object",
         properties: {
@@ -464,7 +478,9 @@ export function buildKeyboardTools(deps: KeyboardToolDeps): Tool[] {
     },
     {
       name: "press_key",
-      description: `Press a control key, optionally with modifiers, via simulated real keyboard (CDP). Use for navigation (Escape/Tab/arrows) and editor shortcuts. For shortcuts ALWAYS pass modifiers:["mod"] — 'mod' is the OS accelerator (Cmd on macOS, Ctrl elsewhere); never pass "ctrl"/"meta" directly, because on macOS ctrl+A does NOT select-all. Recipes: select-all = key:"A" modifiers:["mod"]; undo = key:"Z" modifiers:["mod"]; redo = key:"Z" modifiers:["mod","shift"]. To replace an editor's content: select-all (mod+A), then ONE dispatch_keyboard_input with the new text (it overwrites the selection). Activates Chrome's debugger (yellow bar appears). Allowed keys: ${Object.keys(KEY_MAP).join(", ")}. CDP cannot inject clipboard contents, so mod+V only pastes if the clipboard already holds the target text.`,
+      description: `Press a control key, optionally with modifiers, via simulated real keyboard (CDP). Use for navigation (Escape/Tab/arrows) and editor shortcuts. For shortcuts ALWAYS pass modifiers:["mod"] — 'mod' is the OS accelerator (Cmd on macOS, Ctrl elsewhere); never pass "ctrl"/"meta" directly, because on macOS ctrl+A does NOT select-all. Recipes: select-all = key:"A" modifiers:["mod"]; undo = key:"Z" modifiers:["mod"]; redo = key:"Z" modifiers:["mod","shift"]. To replace an editor's content: select-all (mod+A), then ONE dispatch_keyboard_input with the new text (it overwrites the selection). Activates Chrome's debugger (yellow bar appears). Allowed keys: ${Object.keys(KEY_MAP).join(", ")}. CDP cannot inject clipboard contents, so mod+V only pastes if the clipboard already holds the target text.
+
+GOOGLE DOCS — place the caret by text, not pixels: mod+F → mod+A (the find box keeps the last query) → dispatch_keyboard_input(anchor text, unique in the doc) → Enter (jump to match) → Escape (closes find; the match stays SELECTED — typing now would overwrite it) → End (caret at end of the anchor's line). Then: type to append on that line; or ArrowDown, End to fill the empty line below; or Enter to open a new line. Then dispatch_keyboard_input, capture_visible_tab to verify, mod+Z if wrong.`,
       parameters: {
         type: "object",
         properties: {

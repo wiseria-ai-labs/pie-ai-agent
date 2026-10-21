@@ -3,6 +3,11 @@ import {
   dispatchCaptureVisibleTab,
   dispatchCaptureFullPageTab,
 } from "./screenshot";
+import {
+  __clearScreenshotGeometryForTest,
+  getScreenshotGeometry,
+  recordScreenshotGeometry,
+} from "../screenshot-geometry";
 
 beforeEach(() => {
   // Spread existing chrome mock from setup.ts to preserve storage/runtime,
@@ -169,5 +174,51 @@ describe("dispatchCaptureFullPageTab", () => {
     );
     expect(res.ok).toBe(true);
     expect(acquireMock).toHaveBeenCalled();
+  });
+});
+
+describe("screenshot geometry recording (click_at)", () => {
+  const PROBE = { url: "https://example.com/a", cssWidth: 1280, cssHeight: 720, dpr: 2, scrollX: 0, scrollY: 0 };
+
+  beforeEach(() => {
+    __clearScreenshotGeometryForTest();
+    (globalThis as any).chrome.scripting = {
+      executeScript: vi.fn(async () => [{ result: PROBE }]),
+    };
+  });
+
+  it("capture_visible_tab records viewport + resized image size", async () => {
+    const res = await dispatchCaptureVisibleTab({ sessionId: "s1", pinnedTabId: 42 });
+    expect(res.ok).toBe(true);
+    const g = getScreenshotGeometry("s1", 42);
+    expect(g).toMatchObject(PROBE);
+    if (res.ok) expect(g).toMatchObject({ imageWidth: res.value.width, imageHeight: res.value.height });
+  });
+
+  it("probe failure leaves no geometry (click_at will refuse)", async () => {
+    recordScreenshotGeometry("s1", 42, { ...PROBE, imageWidth: 1, imageHeight: 1, capturedAt: Date.now() });
+    (globalThis as any).chrome.scripting.executeScript = vi.fn(async () => { throw new Error("restricted"); });
+    const res = await dispatchCaptureVisibleTab({ sessionId: "s1", pinnedTabId: 42 });
+    expect(res.ok).toBe(true);
+    expect(getScreenshotGeometry("s1", 42)).toBeUndefined();
+  });
+
+  it("page moved during the capture (smooth scroll) → no geometry recorded", async () => {
+    let call = 0;
+    (globalThis as any).chrome.scripting.executeScript = vi.fn(async () => [
+      { result: { ...PROBE, scrollY: call++ === 0 ? 120 : 300 } },
+    ]);
+    const res = await dispatchCaptureVisibleTab({ sessionId: "s1", pinnedTabId: 42 });
+    expect(res.ok).toBe(true);
+    expect(getScreenshotGeometry("s1", 42)).toBeUndefined();
+  });
+
+  it("capture_fullpage_tab invalidates geometry (page-relative image)", async () => {
+    recordScreenshotGeometry("s1", 42, { ...PROBE, imageWidth: 1, imageHeight: 1, capturedAt: Date.now() });
+    await dispatchCaptureFullPageTab(
+      { sessionId: "s1", pinnedTabId: 42 },
+      { acquireSession: async () => { throw new Error("no cdp"); } },
+    );
+    expect(getScreenshotGeometry("s1", 42)).toBeUndefined();
   });
 });

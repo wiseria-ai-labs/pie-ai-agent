@@ -1,6 +1,12 @@
 import { resizeSW } from "@/lib/images/resize-sw";
 import type { ImageAttachment } from "@/lib/images";
 import type { CdpSession } from "@/background/cdp-session";
+import {
+  invalidateScreenshotGeometry,
+  probeViewport,
+  recordScreenshotGeometry,
+  type ViewportProbe,
+} from "../screenshot-geometry";
 
 export type CaptureOutcome =
   | { ok: true; value: ImageAttachment }
@@ -46,6 +52,9 @@ export async function dispatchCaptureVisibleTab(
     return { ok: false, reason: "pinned-tab-not-visible" };
   }
 
+  // Viewport probe bracketing the capture (see geometry recording below).
+  const viewportBefore = await probeViewport(ctx.pinnedTabId);
+
   // Capture as JPEG (chrome.tabs.captureVisibleTab default is PNG; explicit JPEG
   // for smaller wire payload + matches our resize-sw output mediaType).
   let dataUrl: string;
@@ -63,6 +72,28 @@ export async function dispatchCaptureVisibleTab(
   const resized = await resizeSW(blob);
   if (!resized.ok) return { ok: false, reason: resized.reason };
 
+  // click_at maps screenshot px → viewport CSS px against this record. A probe
+  // failure leaves no geometry, so click_at refuses instead of guessing. The
+  // page is probed before AND after the capture and the record is kept only if
+  // both agree: a page still moving (CSS `scroll-behavior: smooth` animating a
+  // prior scroll, a resize) would otherwise pair an image of one state with
+  // metrics of a later one, and click_at's own probe would then match.
+  const viewportAfter = await probeViewport(ctx.pinnedTabId);
+  const viewport =
+    viewportBefore && viewportAfter && sameViewport(viewportBefore, viewportAfter)
+      ? viewportAfter
+      : null;
+  if (viewport) {
+    recordScreenshotGeometry(ctx.sessionId, ctx.pinnedTabId, {
+      ...viewport,
+      imageWidth: resized.value.width,
+      imageHeight: resized.value.height,
+      capturedAt: Date.now(),
+    });
+  } else {
+    invalidateScreenshotGeometry(ctx.sessionId, ctx.pinnedTabId);
+  }
+
   const id = `img_screenshot_${crypto.randomUUID()}`;
   return {
     ok: true,
@@ -76,6 +107,17 @@ export async function dispatchCaptureVisibleTab(
       byteLength: resized.value.byteLength,
     },
   };
+}
+
+function sameViewport(a: ViewportProbe, b: ViewportProbe): boolean {
+  return (
+    a.url === b.url &&
+    a.cssWidth === b.cssWidth &&
+    a.cssHeight === b.cssHeight &&
+    a.dpr === b.dpr &&
+    a.scrollX === b.scrollX &&
+    a.scrollY === b.scrollY
+  );
 }
 
 function dataUrlToBlob(dataUrl: string): Blob {
@@ -119,6 +161,9 @@ export async function dispatchCaptureFullPageTab(
   ctx: CaptureContext,
   cdp: CdpAcquirer,
 ): Promise<CaptureOutcome> {
+  // Full-page images are in page coordinates, not viewport ones — the latest
+  // screenshot is no longer one click_at can map from.
+  invalidateScreenshotGeometry(ctx.sessionId, ctx.pinnedTabId);
   let session: CdpSession;
   try {
     session = await cdp.acquireSession({

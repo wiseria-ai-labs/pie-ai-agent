@@ -315,4 +315,63 @@ describe("press_key — modifiers (#123)", () => {
     expect(downs[0].params?.key).toBe("Enter");
     expect(downs[0].params?.modifiers).toBeUndefined();
   });
+
+  it("KEY_MAP covers A–Z: mod+F (Docs find) sends KeyF/70 with the accelerator bit", async () => {
+    const tool = getPressKeyTool();
+    const result = (await tool.handler({ key: "F", modifiers: ["mod"] }, ctx())) as ActionResult;
+
+    expect(result.success).toBe(true);
+    const downs = keyDowns();
+    expect(downs).toHaveLength(1);
+    expect(downs[0].params).toMatchObject({ key: "f", code: "KeyF", windowsVirtualKeyCode: 70, modifiers: META });
+    // Not an editing command — no `commands` on mac.
+    expect(downs[0].params?.commands).toBeUndefined();
+  });
+
+  it("letter chords report the produced character as key: lowercase, uppercase only with shift", async () => {
+    const tool = getPressKeyTool();
+    await tool.handler({ key: "B", modifiers: ["mod"] }, ctx());
+    await tool.handler({ key: "Z", modifiers: ["mod", "shift"] }, ctx());
+    const downs = keyDowns();
+    expect(downs.map((d) => d.params?.key)).toEqual(["b", "Z"]);
+    expect(downs.map((d) => d.params?.code)).toEqual(["KeyB", "KeyZ"]);
+  });
+
+  it("schema enum lists every letter plus Delete / PageUp / PageDown", () => {
+    const tool = getPressKeyTool();
+    const keyEnum = (tool.parameters as { properties: { key: { enum: string[] } } }).properties.key.enum;
+    for (let i = 0; i < 26; i++) expect(keyEnum).toContain(String.fromCharCode(65 + i));
+    expect(keyEnum).toEqual(expect.arrayContaining(["Delete", "PageUp", "PageDown"]));
+  });
+
+  it.each([
+    ["Delete", "Delete", 46],
+    ["PageUp", "PageUp", 33],
+    ["PageDown", "PageDown", 34],
+  ])("%s works without a modifier", async (key, code, vk) => {
+    const tool = getPressKeyTool();
+    const result = (await tool.handler({ key }, ctx())) as ActionResult;
+
+    expect(result.success).toBe(true);
+    const downs = keyDowns();
+    expect(downs).toHaveLength(1);
+    expect(downs[0].params).toMatchObject({ key, code, windowsVirtualKeyCode: vk });
+    expect(downs[0].params?.modifiers).toBeUndefined();
+  });
+
+  it("new letters still reject a bare press (no modifier)", async () => {
+    const tool = getPressKeyTool();
+    for (const key of ["F", "Q"]) {
+      const result = (await tool.handler({ key }, ctx())) as ActionResult;
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("dispatch_keyboard_input");
+    }
+    expect(keyDowns()).toHaveLength(0);
+  });
+
+  it("description carries the verified Google Docs caret recipe", () => {
+    const tool = getPressKeyTool();
+    expect(tool.description).toContain("GOOGLE DOCS");
+    expect(tool.description).toMatch(/Escape.*SELECTED.*End/s);
+  });
 });

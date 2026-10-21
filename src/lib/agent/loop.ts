@@ -5,6 +5,7 @@ import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
 import { putArtifact } from "../files/output-store";
 import { dispatchCaptureVisibleTab, dispatchCaptureFullPageTab } from "./tools/screenshot";
+import { invalidateScreenshotGeometry } from "./screenshot-geometry";
 import { dispatchCaptureVideoFrame } from "./tools/video-frame";
 import { hydrateAttachments } from "./image-hydration";
 import {
@@ -15,7 +16,7 @@ import {
   isKeyboardToolName,
 } from "./tools";
 import type { Tool } from "./types";
-import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
+import { getToolClass, VISION_ONLY_TOOL_NAMES } from "./tool-names";
 import { escapeUntrustedWrappers, escapeTrustedWrappers } from "./untrusted-wrappers";
 import { classifyStreamCompletion } from "./stream-completion";
 import {
@@ -387,10 +388,10 @@ function toolsToDefinitions(tools: Tool[]): ToolDefinition[] {
   }));
 }
 
-const SCREENSHOT_TOOL_NAME_SET = new Set<string>(SCREENSHOT_TOOL_NAMES);
+const VISION_ONLY_TOOL_NAME_SET = new Set<string>(VISION_ONLY_TOOL_NAMES);
 
 // #62 — fail-closed vision gating for the tool table offered to the LLM.
-// Screenshot tools attach an image block to the next turn; a model that
+// Covers VISION_ONLY_TOOL_NAMES (screenshot tools + click_at). Screenshot tools attach an image block to the next turn; a model that
 // can't ingest images either wastes a step on the runtime guard
 // (`vision === false`) or makes the provider API hard-reject the request
 // (`vision === undefined`, e.g. custom provider / unknown OpenRouter id).
@@ -403,7 +404,7 @@ export function filterToolsByVision<T extends { name: string }>(
   vision: boolean | undefined,
 ): T[] {
   if (vision === true) return tools;
-  return tools.filter((t) => !SCREENSHOT_TOOL_NAME_SET.has(t.name));
+  return tools.filter((t) => !VISION_ONLY_TOOL_NAME_SET.has(t.name));
 }
 
 /**
@@ -2810,6 +2811,28 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           continue;
         }
 
+        // Defense-in-depth for a mid-task switch to a non-vision model (the
+        // tool table is already filtered by filterToolsByVision).
+        if (tc.name === "click_at" && modelConfig.vision === false) {
+          const noVisionObs = `click_at unavailable: current model (${modelConfig.model}) does not support vision, so it cannot read screenshot coordinates. Use click with a read_page element index.`;
+          toolResultBlocks.push({
+            type: "tool_result",
+            toolUseId: tc.id,
+            isError: true,
+            content: noVisionObs,
+          });
+          emitStep({
+            type: "agent-step",
+            stepIndex,
+            tool: tc.name,
+            args: redactArgsForPanel(tc.name, tc.args),
+            resolvedElement,
+            status: "error",
+            observation: noVisionObs,
+          });
+          continue;
+        }
+
         // Execute tool
         liveStepMeta = {
           stepIndex,
@@ -2870,6 +2893,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             success: false,
             error: e instanceof Error ? e.message : "Tool execution failed",
           };
+        }
+
+        // click_at maps against the last capture_visible_tab; any action that
+        // may have moved pixels (input, scroll — including inner-container
+        // scrolls window.scrollY can't see, e.g. Google Docs) makes it stale.
+        // Attempted-but-failed actions count too: they may have partly applied.
+        if (getToolClass(tc.name) === "write" || tc.name === "scroll") {
+          invalidateScreenshotGeometry(sessionId, pinnedTabId);
         }
 
         let observation = result.observation ?? result.error ?? "";

@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { requireCdpInput, dispatchMouseAt, buildHoverTool, buildClickTool, type MouseToolDeps } from "./mouse";
+import { requireCdpInput, dispatchMouseAt, buildHoverTool, buildClickTool, buildClickAtTool, type MouseToolDeps } from "./mouse";
+import {
+  __clearScreenshotGeometryForTest,
+  getScreenshotGeometry,
+  recordScreenshotGeometry,
+  type ViewportProbe,
+} from "../screenshot-geometry";
 import type { CdpSession } from "@/background/cdp-session";
 import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 
@@ -412,5 +418,167 @@ describe("requireCdpInput", () => {
       ok: false,
       error: "Onboarding cancelled (panel closed).",
     });
+  });
+});
+
+describe("click_at tool", () => {
+  const PROBE: ViewportProbe = { url: "https://docs.google.com/document/d/x/edit", cssWidth: 1440, cssHeight: 900, dpr: 2, scrollX: 0, scrollY: 0 };
+
+  function mockProbe(p: ViewportProbe | undefined = PROBE) {
+    vi.mocked(chrome.scripting.executeScript).mockImplementation((async (inj: { func?: { name?: string } }) =>
+      inj.func?.name === "viewportProbeInjected" ? [{ result: p }] : [{ result: undefined }]) as never);
+  }
+
+  function seedScreenshot(over: Partial<ViewportProbe> = {}) {
+    // 1440x900 CSS @ DPR 2 → resized to 1568x980.
+    recordScreenshotGeometry("S1", 7, { ...PROBE, ...over, imageWidth: 1568, imageHeight: 980, capturedAt: Date.now() });
+  }
+
+  function deps(overrides?: Partial<MouseToolDeps>): MouseToolDeps {
+    return {
+      acquireSession: vi.fn().mockResolvedValue(fakeSession()),
+      sessionId: "S1",
+      requestConsent: vi.fn().mockResolvedValue(true),
+      ...overrides,
+    };
+  }
+
+  beforeEach(async () => {
+    await setCdpInputEnabled(true);
+    __clearScreenshotGeometryForTest();
+    mockProbe();
+  });
+
+  it("schema: x/y required, no frameId (top frame only)", () => {
+    const tool = buildClickAtTool(deps());
+    expect(tool.name).toBe("click_at");
+    expect((tool.parameters as { required: string[] }).required).toEqual(["x", "y"]);
+    expect(tool.description).toMatch(/USE WHEN/);
+    expect(tool.description).toMatch(/DO NOT USE WHEN/);
+  });
+
+  it("without a prior screenshot → error, no CDP attach", async () => {
+    const acquireSession = vi.fn();
+    const tool = buildClickAtTool(deps({ acquireSession }));
+    const r = await tool.handler({ x: 10, y: 10 }, { tabId: 7 });
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/capture_visible_tab/);
+    expect(acquireSession).not.toHaveBeenCalled();
+  });
+
+  it("dispatches move → press → release at mapped viewport coords", async () => {
+    seedScreenshot();
+    const session = fakeSession();
+    const tool = buildClickAtTool(deps({ acquireSession: vi.fn().mockResolvedValue(session) }));
+    const r = await tool.handler({ x: 392, y: 490 }, { tabId: 7 });
+    expect(r.success).toBe(true);
+    expect(r.observation).toMatch(/viewport \(360,450\)/);
+    const events = vi.mocked(session.send).mock.calls
+      .filter(([m]) => m === "Input.dispatchMouseEvent")
+      .map(([, p]) => p as Record<string, unknown>);
+    expect(events.map((e) => [e.type, e.button, e.clickCount])).toEqual([
+      ["mouseMoved", "none", 0],
+      ["mousePressed", "left", 1],
+      ["mouseReleased", "left", 1],
+    ]);
+    for (const e of events) expect(e).toMatchObject({ x: 360, y: 450 });
+  });
+
+  it("clickCount 3 sends press/release runs with increasing clickCount", async () => {
+    seedScreenshot();
+    const session = fakeSession();
+    const tool = buildClickAtTool(deps({ acquireSession: vi.fn().mockResolvedValue(session) }));
+    const r = await tool.handler({ x: 10, y: 10, clickCount: 3, button: "left" }, { tabId: 7 });
+    expect(r.success).toBe(true);
+    const counts = vi.mocked(session.send).mock.calls
+      .map(([, p]) => p as Record<string, unknown>)
+      .filter((p) => p.type !== "mouseMoved")
+      .map((p) => `${p.type}:${p.clickCount}`);
+    expect(counts).toEqual([
+      "mousePressed:1", "mouseReleased:1",
+      "mousePressed:2", "mouseReleased:2",
+      "mousePressed:3", "mouseReleased:3",
+    ]);
+  });
+
+  it("invalidates the screenshot geometry after a successful click", async () => {
+    seedScreenshot();
+    const tool = buildClickAtTool(deps());
+    expect((await tool.handler({ x: 10, y: 10 }, { tabId: 7 })).success).toBe(true);
+    expect(getScreenshotGeometry("S1", 7)).toBeUndefined();
+    const again = await tool.handler({ x: 10, y: 10 }, { tabId: 7 });
+    expect(again.success).toBe(false);
+  });
+
+  it("CDP gate: declined consent → error, no session, no events", async () => {
+    await setCdpInputEnabled(false);
+    seedScreenshot();
+    const acquireSession = vi.fn();
+    const requestConsent = vi.fn().mockResolvedValue(false);
+    const tool = buildClickAtTool(deps({ acquireSession, requestConsent }));
+    const r = await tool.handler({ x: 10, y: 10 }, { tabId: 7 });
+    expect(requestConsent).toHaveBeenCalledWith("S1");
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/declined/);
+    expect(acquireSession).not.toHaveBeenCalled();
+  });
+
+  it("page scrolled since the screenshot → stale error, no click", async () => {
+    seedScreenshot();
+    mockProbe({ ...PROBE, scrollY: 250 });
+    const acquireSession = vi.fn();
+    const tool = buildClickAtTool(deps({ acquireSession }));
+    const r = await tool.handler({ x: 10, y: 10 }, { tabId: 7 });
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("take capture_visible_tab again");
+    expect(acquireSession).not.toHaveBeenCalled();
+  });
+
+  it("page scrolled while the CDP consent card was open → stale error, no click", async () => {
+    await setCdpInputEnabled(false);
+    seedScreenshot();
+    const session = fakeSession();
+    // The user scrolls while deciding; consent resolves after the scroll.
+    const requestConsent = vi.fn(async () => {
+      mockProbe({ ...PROBE, scrollY: 400 });
+      return true;
+    });
+    const tool = buildClickAtTool(deps({ acquireSession: vi.fn().mockResolvedValue(session), requestConsent }));
+    const r = await tool.handler({ x: 10, y: 10 }, { tabId: 7 });
+    expect(requestConsent).toHaveBeenCalled();
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("take capture_visible_tab again");
+    expect(vi.mocked(session.send)).not.toHaveBeenCalled();
+    expect(getScreenshotGeometry("S1", 7)).toBeUndefined();
+  });
+
+  it("viewport shrinks on debugger attach (infobar) → stale error, no click", async () => {
+    seedScreenshot();
+    const session = fakeSession();
+    const acquireSession = vi.fn(async () => {
+      mockProbe({ ...PROBE, cssHeight: 864 });
+      return session;
+    });
+    const tool = buildClickAtTool(deps({ acquireSession }));
+    const r = await tool.handler({ x: 10, y: 10 }, { tabId: 7 });
+    expect(acquireSession).toHaveBeenCalled();
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/resized/);
+    expect(vi.mocked(session.send)).not.toHaveBeenCalled();
+  });
+
+  it("out-of-bounds point → error", async () => {
+    seedScreenshot();
+    const tool = buildClickAtTool(deps());
+    const r = await tool.handler({ x: 5000, y: 10 }, { tabId: 7 });
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/outside the screenshot/);
+  });
+
+  it("rejects an invalid clickCount / button", async () => {
+    seedScreenshot();
+    const tool = buildClickAtTool(deps());
+    expect((await tool.handler({ x: 1, y: 1, clickCount: 4 }, { tabId: 7 })).success).toBe(false);
+    expect((await tool.handler({ x: 1, y: 1, button: "back" }, { tabId: 7 })).success).toBe(false);
   });
 });
