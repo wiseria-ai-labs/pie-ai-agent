@@ -13,6 +13,7 @@ export type SettingsPage =
   | "models"
   | "bridge"
   | "search"
+  | "mcp"
   | "uiLanguage"
   | "assistantLanguage"
   | "customRules"
@@ -25,6 +26,7 @@ const SETTINGS_PAGE_TITLE_KEY = {
   models: "settings.nav.models",
   bridge: "settings.nav.bridge",
   search: "settings.nav.search",
+  mcp: "settings.nav.mcp",
   uiLanguage: "settings.language.uiLabel",
   assistantLanguage: "settings.language.assistantLabel",
   customRules: "settings.nav.customRules",

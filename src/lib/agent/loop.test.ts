@@ -383,6 +383,7 @@ describe("buildAbortTaskActiveClear — abort must not leave taskActive dangling
       hasImageContent: false,
       taskActive: true,
       approvedSkillIds: ["skill-a"],
+      approvedMcpServerIds: ["srv-1"],
     };
     const merged = mergeSessionAgentSnapshot(
       existing,
@@ -391,6 +392,7 @@ describe("buildAbortTaskActiveClear — abort must not leave taskActive dangling
     expect(merged.taskActive).toBe(false);
     expect(merged.pendingInstructions).toEqual(existing.pendingInstructions);
     expect(merged.approvedSkillIds).toEqual(["skill-a"]);
+    expect(merged.approvedMcpServerIds).toEqual(["srv-1"]);
     // 净效果 = 修好后 recovery 的判据：stepIndex=0 && !taskActive → no-op，
     // 会话保持 active，composer 可继续输入。
     expect(merged.stepIndex).toBe(0);

@@ -113,10 +113,18 @@ function toolNamesForGroup(group: DisclosureGroup): string[] {
   return Object.keys(TOOL_GROUPS).filter((n) => TOOL_GROUPS[n] === group);
 }
 
-export function buildToolCatalogBlock(startActive: ReadonlySet<string>): string {
+/**
+ * @param extraLines catalog lines for runtime groups (one per enabled MCP
+ *   server), snapshotted at task start so the system prompt stays stable.
+ */
+export function buildToolCatalogBlock(
+  startActive: ReadonlySet<string>,
+  extraLines: readonly string[] = [],
+): string {
   const lines = LOADABLE_GROUPS
     .filter((g) => !startActive.has(g))
-    .map((g) => `- ${GROUP_META[g].catalogLine}`);
+    .map((g) => `- ${GROUP_META[g].catalogLine}`)
+    .concat(extraLines.map((l) => `- ${l}`));
   if (lines.length === 0) return "";
   return (
     `\n\n<available_tools_catalog>\n` +
@@ -163,12 +171,13 @@ export interface LoadToolsResult {
  * unknown. MUTATES `active` IN PLACE — newly loaded groups are added to it
  * (the loop owns this set; the load_tools handler passes it by reference).
  * Non-loadable names (core/screenshot/skill-mediation), unknown strings, and
- * `schedule` under headless all fall to `unknown`.
+ * `schedule` under headless all fall to `unknown`. `opts.extraLoadable` adds
+ * runtime groups (MCP servers, `mcp:<slug>`) that are not in GROUP_META.
  */
 export function resolveLoadTools(
   groups: readonly string[],
   active: Set<string>,
-  opts: { headless: boolean },
+  opts: { headless: boolean; extraLoadable?: ReadonlySet<string> },
 ): LoadToolsResult {
   const loaded: string[] = [];
   const alreadyActive: string[] = [];
@@ -176,8 +185,9 @@ export function resolveLoadTools(
   for (const raw of groups) {
     const g = String(raw).trim();
     const isLoadable =
-      (LOADABLE_GROUPS as string[]).includes(g) &&
-      !(opts.headless && g === "schedule");
+      ((LOADABLE_GROUPS as string[]).includes(g) &&
+        !(opts.headless && g === "schedule")) ||
+      (opts.extraLoadable?.has(g) ?? false);
     if (!isLoadable) {
       unknown.push(g);
     } else if (active.has(g)) {

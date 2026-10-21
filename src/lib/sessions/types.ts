@@ -243,6 +243,13 @@ export interface SessionAgentState {
    */
   approvedSkillIds?: string[];
   /**
+   * MCP servers (by StoredMcpServer.id) the user approved for this session
+   * ("Ask once per session" consent). Same lifecycle as approvedSkillIds:
+   * persisted, carried across the task-end tombstone, written only by the SW
+   * after a panel-request round-trip.
+   */
+  approvedMcpServerIds?: string[];
+  /**
    * v1.5 — task-scoped pointer to the currently-focused tab among
    * `SessionMeta.pinnedTabs[]`. Snapshot is taken on this tab each
    * iteration. Mutated by `focus_tab` tool; reset to pinnedTabs[0].tabId
