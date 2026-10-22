@@ -35,6 +35,7 @@
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.1",
+    "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "sql.js": "^1.14.1"

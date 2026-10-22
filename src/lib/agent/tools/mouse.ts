@@ -4,7 +4,14 @@ import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "@/lib/dom-actions/types";
 import { elementToPagePoint, type GeometryError } from "@/lib/dom-actions/geometry";
 import { execActInTab } from "@/lib/dom-actions/exec-act";
-import { withActionSettle } from "../wait-for-settle";
+import { withActionSettle, type ActionSettleOptions } from "../wait-for-settle";
+import { pageAtlasStore } from "./page-atlas/state";
+
+/** click may navigate (links, SPA routes): wait for the new page, not the old one. */
+const CLICK_SETTLE: ActionSettleOptions = {
+  detectNavigation: true,
+  onNavigated: (tabId) => pageAtlasStore.invalidateTab(tabId),
+};
 
 /**
  * Internal: dispatch a single CDP mouse event at the given page coords.
@@ -209,7 +216,7 @@ USE WHEN:
             success: true,
             observation: `Clicked [${a.elementIndex}] in frame ${frameId} via synthetic events (real mouse input is top-frame only). If the page did not react, the control may require trusted input.`,
           };
-        });
+        }, CLICK_SETTLE);
       }
 
       const gate = await requireCdpInput({
@@ -244,7 +251,7 @@ USE WHEN:
           success: true,
           observation: `Clicked [${a.elementIndex}] at (${Math.round(point.x)},${Math.round(point.y)}).`,
         };
-      });
+      }, CLICK_SETTLE);
     },
   };
 }

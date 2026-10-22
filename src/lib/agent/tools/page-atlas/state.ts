@@ -12,6 +12,8 @@ export interface PageAtlasStore {
   save(atlas: PageAtlasState): void;
   get(atlasId: string): PageAtlasState | undefined;
   clear(): void;
+  /** Drop every atlas of this tab (its page navigated). */
+  invalidateTab(tabId: number): void;
   resolveTarget(args: ResolveTargetArgs): ResolveTargetResult;
 }
 
@@ -60,6 +62,10 @@ export function createPageAtlasStore(
 
     clear() {
       atlases.clear();
+    },
+
+    invalidateTab(tabId) {
+      for (const [id, atlas] of atlases) if (atlas.tabId === tabId) atlases.delete(id);
     },
 
     resolveTarget(args) {

@@ -581,6 +581,33 @@ describe("open_url tool", () => {
     expect(r.observation).toMatch(/focus_tab\(999\)/);
   });
 
+  it("waits for the new page to load (probes the new tab) and adds no note when it's ready", async () => {
+    chromeMock.tabs.__tabsById.set(999, { id: 999, url: "https://example.com/page" });
+    const executeScript = vi.fn(async () => [
+      {
+        result: {
+          url: "https://example.com/page",
+          title: "Page",
+          heading: "Page",
+          readyState: "complete",
+          mutAt: Date.now() - 5000,
+          loading: false,
+        },
+      },
+    ]);
+    (globalThis.chrome as unknown as { scripting: unknown }).scripting = { executeScript };
+    try {
+      const handlerPromise = openUrlTool.handler({ url: "https://example.com/page" }, { tabId: 12 });
+      await fireOnCommittedNext(999, 0);
+      const r = await handlerPromise;
+      expect(r.success).toBe(true);
+      expect(executeScript).toHaveBeenCalledWith(expect.objectContaining({ target: { tabId: 999 } }));
+      expect(r.observation).not.toContain("still loading");
+    } finally {
+      delete (globalThis.chrome as unknown as { scripting?: unknown }).scripting;
+    }
+  });
+
   it("respects active=true", async () => {
     chromeMock.tabs.__tabsById.set(999, {
       id: 999,

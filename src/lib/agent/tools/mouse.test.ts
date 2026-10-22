@@ -40,6 +40,7 @@ beforeEach(() => {
     webNavigation: {
       onCommitted: { addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.webNavigation.onCommitted,
       onHistoryStateUpdated: { addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.webNavigation.onHistoryStateUpdated,
+      onBeforeNavigate: { addListener: vi.fn(), removeListener: vi.fn() } as unknown as typeof chrome.webNavigation.onBeforeNavigate,
     },
     // #251 — withActionSettle subscribes to tabs.onCreated to detect fanout.
     tabs: {
@@ -185,6 +186,36 @@ describe("click tool (CDP)", () => {
       ...overrides,
     };
   }
+
+  it("a click that navigates (SPA route) waits for the new page and invalidates indices + atlases", async () => {
+    // Fake page: the click (mouseReleased) swaps the route.
+    let page = { url: "https://classroom.google.com/h", title: "Classes", heading: "Classes", readyState: "complete", mutAt: Date.now() - 5000, loading: false };
+    const cleared = vi.fn();
+    chrome.scripting.executeScript = vi.fn(async ({ func }: { func: { name: string } }) => {
+      if (func.name === "probeNavState") return [{ result: { ...page } }];
+      if (func.name === "clearPieIndices") { cleared(); return [{ result: 2 }]; }
+      return [{ result: undefined }];
+    }) as unknown as typeof chrome.scripting.executeScript;
+    const session = fakeSession();
+    vi.mocked(session.send).mockImplementation(async (_m: string, params?: unknown) => {
+      if ((params as { type?: string })?.type === "mouseReleased") {
+        page = { ...page, url: "https://classroom.google.com/c/42", title: "Algebra", heading: "Algebra", mutAt: Date.now() };
+      }
+      return undefined;
+    });
+    vi.mocked(elementToPagePoint).mockResolvedValue({ x: 10, y: 20 });
+    const { pageAtlasStore } = await import("./page-atlas/state");
+    const invalidate = vi.spyOn(pageAtlasStore, "invalidateTab");
+
+    const tool = buildClickTool(deps({ acquireSession: vi.fn().mockResolvedValue(session) }));
+    const result = await tool.handler({ frameId: 0, elementIndex: 3 }, { tabId: 7 });
+
+    expect(result.success).toBe(true);
+    expect(result.observation).toContain("The page navigated.");
+    expect(result.observation).toContain("https://classroom.google.com/c/42");
+    expect(cleared).toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith(7);
+  });
 
   it("declares write-class schema with required frameId + elementIndex", () => {
     const tool = buildClickTool(deps());

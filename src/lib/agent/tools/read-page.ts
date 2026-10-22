@@ -82,15 +82,32 @@ function elementText(value: string): string {
   return escapeWrapperAttribute(escapeUntrustedWrappers(value));
 }
 
-function wrapPageAtlasObservation(atlas: PageAtlasState, body: string): string {
+/**
+ * `Current URL` / `Page title` lines that head every read_page observation,
+ * so the model can check which page it is reading. The title is page text:
+ * wrapper tags in it are escaped. When the tab's URL and the document's URL
+ * disagree the page is mid-navigation — say so instead of letting the model
+ * trust a page that is about to be replaced.
+ */
+export function pageHeaderLines(info: { url: string; title: string; tabUrl: string }): string[] {
+  const lines = [`Current URL: ${info.url}`, `Page title: ${escapeUntrustedWrappers(info.title)}`];
+  if (info.tabUrl && info.url && info.tabUrl !== info.url) {
+    lines.push(
+      `Note: the browser reports ${info.tabUrl} but the document is still ${info.url} — ` +
+        "the page is probably mid-navigation; call read_page again in a moment.",
+    );
+  }
+  return lines;
+}
+
+function wrapPageAtlasObservation(atlas: PageAtlasState, body: string, tabUrl: string): string {
   return [
     // Header mirrors the snapshot path's `Current URL / Page title` prelude so
     // elideStaleObservations has something cheap to keep before its cut point.
     // Without it a stale atlas result elides down to a bare marker — every one
     // of them byte-identical — and the LLM can no longer tell which step read
     // which page, so it re-runs read_page instead of relying on history.
-    `Current URL: ${atlas.url}`,
-    `Page title: ${atlas.title}`,
+    ...pageHeaderLines({ url: atlas.fingerprint.url || atlas.url, title: atlas.title, tabUrl }),
     ``,
     `<untrusted_page_content ${attr("tool", "read_page")} ${attr("mode", "atlas")} ${attr("atlas_id", atlas.atlasId)} ${attr("tab_id", atlas.tabId)}>`,
     body,
@@ -325,7 +342,9 @@ export const readPageTool: Tool = {
         tabId: a.tabId,
         url: topUrl,
         origin: parseOrigin(topUrl),
-        title: tab.title ?? topFingerprint.title,
+        // The document's own title (fingerprint) beats tab metadata, which can
+        // lag an SPA route change.
+        title: topFingerprint.title || tab.title || "",
         createdAt: Date.now(),
         fingerprint: topFingerprint,
         targets: [],
@@ -354,7 +373,7 @@ export const readPageTool: Tool = {
       const unreachableBlock = renderAtlasUnreachableFrames(frames, reachableFrameIds, timedOutFrameIds);
       const rendered = renderPageAtlas(atlas);
       const atlasBody = unreachableBlock ? `${rendered}\n${unreachableBlock}` : rendered;
-      const observation = wrapPageAtlasObservation(atlas, atlasBody);
+      const observation = wrapPageAtlasObservation(atlas, atlasBody, tab.url ?? "");
 
       const actionBlock = blockOf(atlasBody, "<action_surfaces>", "</action_surfaces>");
       const dataBlock = blockOf(atlasBody, "<data_surfaces>", "</data_surfaces>");
@@ -521,9 +540,17 @@ export const readPageTool: Tool = {
       );
     }
 
+    // Header: prefer what the document itself reports — chrome.tabs metadata
+    // can lag (or lead) an SPA route change, which is exactly when the model
+    // needs to know which page it is looking at.
+    const topSnapshot = results.find((r) => r.frameId === 0)?.result;
+    const docInfo = topSnapshot?.op === "snapshot" ? topSnapshot : undefined;
     const headerLines = [
-      `Current URL: ${topUrl}`,
-      `Page title: ${tab.title ?? ""}`,
+      ...pageHeaderLines({
+        url: docInfo?.url || topUrl,
+        title: docInfo?.title ?? tab.title ?? "",
+        tabUrl: tab.url ?? "",
+      }),
       ``,
       `<frame_map>`,
       ...frameMapLines,

@@ -1,6 +1,7 @@
 import { isValidElement, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { useT } from "@/lib/i18n";
@@ -178,7 +179,10 @@ export default function MarkdownContent({ content }: MarkdownContentProps) {
   const normalized = normalizeMath(stripIncidentalIndentedCode(content));
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
+      // remark-breaks: a single "\n" in model output is a line break, not a
+      // soft wrap (CommonMark would join "A\nB" into "A B"). Models write
+      // line-per-item text without blank lines; code blocks are untouched.
+      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]}
       rehypePlugins={[rehypeKatex]}
       components={{
         h1: ({ children }) => (

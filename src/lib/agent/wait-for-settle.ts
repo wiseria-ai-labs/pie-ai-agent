@@ -79,6 +79,183 @@ function readMutationTimestamp(): number {
   return (window as unknown as { __pieMutAt?: number }).__pieMutAt ?? 0;
 }
 
+/** What `probeNavState` reports about the top document. */
+export interface NavProbe {
+  url: string;
+  title: string;
+  /** Text of the page's main heading (first h1, else first h2), trimmed. */
+  heading: string;
+  readyState: DocumentReadyState;
+  /** Last DOM mutation seen by the tracker (ms epoch); install time if none. */
+  mutAt: number;
+  /** A visible loading indicator is on screen (spinner / "Loading…"). */
+  loading: boolean;
+}
+
+/**
+ * Self-contained injected probe: URL + DOM fingerprint (title, main heading),
+ * readiness, last mutation time and whether a loading indicator is visible.
+ * Installs the mutation tracker itself when missing (a new document after a
+ * cross-doc navigation has none yet) — the install time counts as activity,
+ * so a freshly loaded page still has to stay quiet for one window.
+ *
+ * MUST be self-contained for `chrome.scripting.executeScript`.
+ */
+export function probeNavState(): NavProbe {
+  type W = { __pieMutAt?: number; __pieMutObs?: MutationObserver };
+  const w = window as unknown as W;
+  if (!w.__pieMutObs) {
+    w.__pieMutAt = Date.now();
+    const obs = new MutationObserver(() => {
+      (window as unknown as W).__pieMutAt = Date.now();
+    });
+    obs.observe(document.body ?? document, { childList: true, subtree: true });
+    w.__pieMutObs = obs;
+  }
+
+  const visible = (el: Element): boolean => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    const cs = getComputedStyle(el);
+    return cs.visibility !== "hidden" && cs.display !== "none" && parseFloat(cs.opacity || "1") !== 0;
+  };
+
+  let heading = "";
+  for (const sel of ["main h1", "[role='main'] h1", "h1", "[role='heading'][aria-level='1']", "main h2", "h2"]) {
+    const el = document.querySelector(sel);
+    const text = (el?.textContent ?? "").replace(/\s+/g, " ").trim();
+    if (text) {
+      heading = text.slice(0, 200);
+      break;
+    }
+  }
+
+  // Loading indicators: busy regions, indeterminate progress bars (no
+  // aria-valuenow — a determinate bar such as course progress is not a
+  // spinner), and short visible "Loading…" labels in common UI languages.
+  const LOADING_RE =
+    /^(loading|загрузка|завантаження|cargando|carregando|chargement|wird geladen|caricamento|ładowanie|読み込み中|加载中|載入中|正在加载|로딩 중)(\s*(\.{1,3}|…))?$/i;
+  let loading = false;
+  for (const el of Array.from(
+    document.querySelectorAll("[aria-busy='true'], [role='progressbar']:not([aria-valuenow])"),
+  ).slice(0, 200)) {
+    if (visible(el)) {
+      loading = true;
+      break;
+    }
+  }
+  if (!loading) {
+    for (const el of Array.from(document.querySelectorAll("[aria-label]")).slice(0, 2000)) {
+      const label = (el.getAttribute("aria-label") ?? "").trim();
+      if (label.length <= 30 && LOADING_RE.test(label) && visible(el)) {
+        loading = true;
+        break;
+      }
+    }
+  }
+  if (!loading && document.body) {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let seen = 0;
+    for (let node = walker.nextNode(); node && seen < 5000; node = walker.nextNode()) {
+      seen++;
+      const text = (node.nodeValue ?? "").trim();
+      if (text && text.length <= 30 && LOADING_RE.test(text) && node.parentElement && visible(node.parentElement)) {
+        loading = true;
+        break;
+      }
+    }
+  }
+
+  return {
+    url: location.href,
+    title: document.title,
+    heading,
+    readyState: document.readyState,
+    mutAt: w.__pieMutAt ?? 0,
+    loading,
+  };
+}
+
+/**
+ * Self-contained injected helper: drop every data-pie-idx stamp in this frame.
+ * Run after a navigation so element indices from an earlier read_page fail
+ * fast ("Element not found … call read_page again") instead of resolving to
+ * a node an SPA re-used for something else.
+ */
+export function clearPieIndices(): number {
+  const els = document.querySelectorAll("[data-pie-idx]");
+  els.forEach((el) => el.removeAttribute("data-pie-idx"));
+  return els.length;
+}
+
+/** URL, title or main heading differ → the page is not the one we started on. */
+export function pageChanged(before: NavProbe, after: NavProbe): boolean {
+  return before.url !== after.url || before.title !== after.title || before.heading !== after.heading;
+}
+
+async function runProbe(tabId: number): Promise<NavProbe | null> {
+  try {
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: probeNavState });
+    return (results[0]?.result as NavProbe | undefined) ?? null;
+  } catch {
+    return null; // document tearing down / restricted page
+  }
+}
+
+/** Strip data-pie-idx in every frame of the tab. Best-effort. */
+export async function invalidateElementIndices(tabId: number): Promise<void> {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: clearPieIndices });
+  } catch {
+    // tab gone / restricted — nothing to invalidate
+  }
+}
+
+const shortUrl = (url: string) => (url.length > 300 ? `${url.slice(0, 300)}…` : url);
+
+export interface PageReadyOptions {
+  /** Required quiet window (no DOM mutations), ms. Default 500. */
+  quietMs?: number;
+  /** Give up at this absolute time (ms epoch). */
+  deadline: number;
+  /** Poll interval, ms. Default 200. */
+  pollMs?: number;
+}
+
+export type PageReadyResult =
+  | { ready: true; probe: NavProbe }
+  | { ready: false; probe: NavProbe | null; reason: "loading" | "busy" | "unreachable" };
+
+/**
+ * Wait until the tab's document has parsed, the DOM has been quiet for
+ * `quietMs` and no loading indicator is visible — or the deadline passes.
+ */
+export async function waitForPageReady(tabId: number, opts: PageReadyOptions): Promise<PageReadyResult> {
+  const quietMs = opts.quietMs ?? 500;
+  const pollMs = opts.pollMs ?? 200;
+  let last: NavProbe | null = null;
+  let failures = 0;
+  for (;;) {
+    const p = await runProbe(tabId);
+    if (p) last = p;
+    failures = p ? 0 : failures + 1;
+    const now = Date.now();
+    // Never reachable (restricted page, injection blocked): nothing to wait for.
+    if (!last && failures >= 5) return { ready: false, probe: null, reason: "unreachable" };
+    if (p && p.readyState !== "loading" && now - p.mutAt >= quietMs && !p.loading) {
+      return { ready: true, probe: p };
+    }
+    if (now >= opts.deadline) {
+      return {
+        ready: false,
+        probe: last,
+        reason: !last ? "unreachable" : last.loading || last.readyState === "loading" ? "loading" : "busy",
+      };
+    }
+    await new Promise<void>((r) => setTimeout(r, pollMs));
+  }
+}
+
 /**
  * #251 — build the observation suffix appended when an action opened one or
  * more new tabs (target=_blank / window.open fanout). Only browser-derived
@@ -124,6 +301,29 @@ export interface ActionSettleOptions {
    * executeScript IPC calls; 100ms is a reasonable balance.
    */
   pollMs?: number;
+  /**
+   * Navigation-aware mode (click). Fingerprints the page (URL, title, main
+   * heading) before the action. If the URL / fingerprint starts changing —
+   * or a navigation event fires — within `navStartMs`, waits (up to
+   * `navTimeoutMs`) until the page has actually changed, the DOM has been
+   * quiet for `quietMs` and no loading spinner is visible; then invalidates
+   * element indices. Otherwise it is a non-navigating click (button,
+   * toggle) and only the normal quiet settle applies. The observation says
+   * what happened, including "navigation not detected".
+   */
+  detectNavigation?: boolean;
+  /** How long to watch for a navigation to START. Default 1000. */
+  navStartMs?: number;
+  /** Max wait for a started navigation to land and settle. Default 10000. */
+  navTimeoutMs?: number;
+  /**
+   * SPAs often push the new URL first and swap the content in after a fetch.
+   * When only the URL changed, give the title / main heading this long to
+   * follow before settling on DOM quiet alone. Default 1500.
+   */
+  urlOnlyGraceMs?: number;
+  /** Called once a navigation changed the page (after indices are cleared). */
+  onNavigated?: (tabId: number) => void;
 }
 
 /**
@@ -143,6 +343,7 @@ export async function withActionSettle<T extends ActionResult>(
   options: ActionSettleOptions = {},
 ): Promise<T> {
   const { quietMs = 500, maxMs = 3000, pollMs = 100 } = options;
+  if (options.detectNavigation) return withNavigationSettle(tabId, performAction, options);
 
   // Install the mutation tracker BEFORE the action so a synchronous DOM
   // mutation during the action's click handler is captured. Best-effort
@@ -263,6 +464,156 @@ export async function withActionSettle<T extends ActionResult>(
 
     return result;
   } finally {
+    chrome.webNavigation.onCommitted.removeListener(onNavEvent);
+    chrome.webNavigation.onHistoryStateUpdated.removeListener(onNavEvent);
+    chrome.tabs.onCreated.removeListener(onTabCreated);
+  }
+}
+
+/**
+ * `withActionSettle({detectNavigation: true})`. See ActionSettleOptions.
+ * Phases, polled every ~200ms from the moment the action returned:
+ *   1. watch for a navigation to start (≤ navStartMs): a top-frame
+ *      webNavigation event, the URL / title / main heading differing from the
+ *      pre-action fingerprint, or the document tearing down;
+ *   2a. none → ordinary click: wait for one quiet window (≤ maxMs);
+ *   2b. started → wait (≤ navTimeoutMs) until the page changed, parsed, went
+ *       quiet and shows no spinner. Element indices are then invalidated.
+ */
+async function withNavigationSettle<T extends ActionResult>(
+  tabId: number,
+  performAction: () => Promise<T>,
+  options: ActionSettleOptions,
+): Promise<T> {
+  const { quietMs = 500, maxMs = 3000, navStartMs = 1000, navTimeoutMs = 10_000, urlOnlyGraceMs = 1500 } = options;
+  const pollMs = options.pollMs ?? 200;
+
+  const before = await runProbe(tabId); // also installs the mutation tracker
+  // Can't inspect this page at all (restricted / injection blocked): a failed
+  // probe later would prove nothing, so use the plain settle.
+  if (!before) return withActionSettle(tabId, performAction, { ...options, detectNavigation: false });
+
+  let navSignalAt = 0;
+  const onNavEvent = (details: { tabId: number; frameId: number }) => {
+    if (details.tabId !== tabId || details.frameId !== 0) return;
+    navSignalAt = Date.now();
+  };
+  chrome.webNavigation.onBeforeNavigate.addListener(onNavEvent);
+  chrome.webNavigation.onCommitted.addListener(onNavEvent);
+  chrome.webNavigation.onHistoryStateUpdated.addListener(onNavEvent);
+
+  const newTabIds: number[] = [];
+  const newTabOrigins = new Map<number, string>();
+  const onTabCreated = (tab: chrome.tabs.Tab) => {
+    if (tab.id === undefined || tab.openerTabId !== tabId || newTabIds.includes(tab.id)) return;
+    newTabIds.push(tab.id);
+    try {
+      const origin = new URL(tab.pendingUrl || tab.url || "").origin;
+      if (origin && origin !== "null") newTabOrigins.set(tab.id, origin);
+    } catch {
+      // id-only notice
+    }
+  };
+  chrome.tabs.onCreated.addListener(onTabCreated);
+
+  const appendNote = (r: T, note: string) => {
+    r.observation = r.observation ? `${r.observation} ${note}` : note;
+  };
+
+  try {
+    const actionStartedAt = Date.now();
+    const result = await performAction();
+    if (!result.success) return result;
+    const t0 = Date.now();
+
+    let navStarted = false;
+    let navAt = 0;
+    let changed = false;
+    let contentChanged = false; // title or main heading, not just the URL
+    let last: NavProbe | null = null;
+    let outcome: "no-nav" | "settled" | "timeout" = "timeout";
+
+    for (;;) {
+      await new Promise<void>((r) => setTimeout(r, pollMs));
+      const p = await runProbe(tabId);
+      const now = Date.now();
+      if (p) last = p;
+
+      if (!p && !navStarted) {
+        navStarted = true; // document tore down → cross-document navigation
+        navAt = now;
+      }
+      if (navSignalAt >= actionStartedAt && !navStarted) {
+        navStarted = true;
+        navAt = navSignalAt;
+      }
+      if (p && (p.title !== before.title || p.heading !== before.heading)) contentChanged = true;
+      if (p && pageChanged(before, p)) {
+        changed = true;
+        if (!navStarted) {
+          navStarted = true;
+          navAt = now;
+        }
+      }
+      const elapsed = now - t0;
+
+      if (!navStarted) {
+        // Ordinary click unless a navigation starts within navStartMs.
+        const quiet = !p || now - Math.max(p.mutAt, t0) >= quietMs;
+        if (elapsed >= navStartMs && (quiet || elapsed >= maxMs)) {
+          outcome = "no-nav";
+          break;
+        }
+        continue;
+      }
+
+      if (elapsed >= navTimeoutMs) break;
+      if (!p || p.readyState === "loading") continue;
+      // Settle once the content (title / heading) changed. A URL-only change
+      // gets urlOnlyGraceMs for the content to follow; a navigation event with
+      // no visible change at all (same-URL reload) gets 2s.
+      const sinceNav = now - navAt;
+      const changeOk = contentChanged || (changed && sinceNav >= urlOnlyGraceMs) || sinceNav >= 2000;
+      const quiet = now - Math.max(p.mutAt, navSignalAt, navAt) >= quietMs;
+      if (changeOk && quiet && !p.loading) {
+        outcome = "settled";
+        break;
+      }
+    }
+
+    if (outcome === "no-nav") {
+      const domTouched = last ? last.mutAt >= actionStartedAt : true;
+      if (!domTouched) {
+        appendNote(result, "No navigation or page change detected — the page may be unchanged.");
+      }
+    } else {
+      if (changed) {
+        await invalidateElementIndices(tabId);
+        options.onNavigated?.(tabId);
+      }
+      const at = last ? ` Now at ${shortUrl(last.url)}.` : "";
+      if (outcome === "settled") {
+        appendNote(
+          result,
+          `The page navigated.${at} Element indices from earlier read_page calls are no longer valid — call read_page before the next click or type.`,
+        );
+      } else if (!changed) {
+        appendNote(
+          result,
+          `Navigation not detected: a navigation started but the URL, title and main heading did not change within ${Math.round(navTimeoutMs / 1000)}s — the page may be unchanged.`,
+        );
+      } else {
+        appendNote(
+          result,
+          `The page navigated but was still loading after ${Math.round(navTimeoutMs / 1000)}s.${at} read_page may show a partial page; element indices from earlier read_page calls are no longer valid.`,
+        );
+      }
+    }
+
+    if (newTabIds.length > 0) appendNote(result, formatNewTabNotice(newTabIds, newTabOrigins));
+    return result;
+  } finally {
+    chrome.webNavigation.onBeforeNavigate.removeListener(onNavEvent);
     chrome.webNavigation.onCommitted.removeListener(onNavEvent);
     chrome.webNavigation.onHistoryStateUpdated.removeListener(onNavEvent);
     chrome.tabs.onCreated.removeListener(onTabCreated);

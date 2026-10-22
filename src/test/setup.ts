@@ -271,6 +271,15 @@ type NavListener = (
 const webNavigation = {
   __committedListeners: [] as NavListener[],
   __historyListeners: [] as NavListener[],
+  __beforeNavigateListeners: [] as NavListener[],
+  onBeforeNavigate: {
+    addListener: (l: NavListener) => webNavigation.__beforeNavigateListeners.push(l),
+    removeListener: (l: NavListener) => {
+      webNavigation.__beforeNavigateListeners = webNavigation.__beforeNavigateListeners.filter(
+        (x) => x !== l,
+      );
+    },
+  },
   getAllFrames: vi.fn(() => Promise.resolve([])),
   onCommitted: {
     addListener: (l: NavListener) => webNavigation.__committedListeners.push(l),
