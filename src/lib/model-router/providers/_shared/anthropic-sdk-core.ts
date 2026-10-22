@@ -8,6 +8,7 @@
 // duck-typing — none execute when those globals are absent.
 import Anthropic from "@anthropic-ai/sdk";
 import type { ModelConfig } from "@/lib/model-router";
+import { isHardQuotaText, parseRetryAfter } from "../../retry-hints";
 import type {
   AgentMessage,
   ContentBlock,
@@ -176,6 +177,10 @@ export async function* streamChatAnthropicSdk(
     // BYOK: the key is the user's own, stored locally; this flag's whole point
     // is "I accept the key lives client-side" — already true for this extension.
     dangerouslyAllowBrowser: true,
+    // The agent loop owns retries (llm-retry.ts) so attempts don't multiply
+    // across layers and the panel can show progress. The SDK's own default
+    // (2 silent retries) is turned off.
+    maxRetries: 0,
     ...(auth === "bearer" ? { authToken: config.apiKey } : { apiKey: config.apiKey }),
     ...(hooks?.stripAnthropicVersion
       ? { defaultHeaders: { "anthropic-version": null } }
@@ -351,21 +356,40 @@ export async function* streamChatAnthropicSdk(
   } catch (e) {
     if (signal?.aborted || e instanceof Anthropic.APIUserAbortError) return;
     const name = config.provider;
-    if (e instanceof Anthropic.APIError) {
-      if (e.status === 401) {
-        yield { type: "error", error: `Invalid ${name} API key` };
-      } else if (e.status === 429) {
-        yield { type: "error", error: `${name} rate limit exceeded` };
+    if (e instanceof Anthropic.APIConnectionTimeoutError) {
+      yield { type: "error", error: `${name} request timed out`, kind: "timeout" };
+      return;
+    }
+    if (e instanceof Anthropic.APIError && typeof e.status === "number") {
+      const status = e.status;
+      const retryAfterMs = parseRetryAfter(readHeader(e.headers, "retry-after"));
+      if (status === 401) {
+        yield { type: "error", error: `Invalid ${name} API key`, kind: "auth", status };
+      } else if (status === 429) {
+        yield isHardQuotaText(e.message)
+          ? { type: "error", error: `${name} quota exceeded: ${e.message}`, kind: "budget", status }
+          : { type: "error", error: `${name} rate limit exceeded`, kind: "ratelimit", status, retryAfterMs };
       } else {
-        yield { type: "error", error: `${name} API error (${e.status}): ${e.message}` };
+        yield { type: "error", error: `${name} API error (${status}): ${e.message}`, kind: "http", status, retryAfterMs };
       }
       return;
     }
+    // APIConnectionError (status undefined), a mid-stream SSE `error` frame
+    // surfaced by the SDK, or a dropped connection.
     yield {
       type: "error",
       error: `Stream interrupted: ${e instanceof Error ? e.message : "Unknown error"}`,
+      kind: e instanceof Anthropic.APIError && !(e instanceof Anthropic.APIConnectionError) ? "http" : "network",
     };
   }
+}
+
+/** SDK error headers are a Headers instance in v0.5x+, a plain record in older builds. */
+function readHeader(headers: unknown, name: string): string | null {
+  if (!headers) return null;
+  if (typeof (headers as Headers).get === "function") return (headers as Headers).get(name);
+  const rec = headers as Record<string, string | undefined>;
+  return rec[name] ?? rec[name.toLowerCase()] ?? null;
 }
 
 export { toSdkParams as _toSdkParamsForTest };

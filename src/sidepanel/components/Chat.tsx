@@ -24,6 +24,7 @@ import { CollapsibleText } from "./CollapsibleText";
 import { FileChip } from "./FileChip";
 import { QuoteGlyph } from "./icons";
 import type { UseSession } from "@/sidepanel/hooks/useSession";
+import type { LlmRetryState } from "@/sidepanel/hooks/useSession/runtime-map";
 import { buildRewindInput } from "@/sidepanel/hooks/useSession/rewind";
 import { swPort } from "@/lib/sw-connection/manager";
 import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
@@ -178,6 +179,8 @@ export default function Chat({
     streamingText,
     streamingThinking,
     ratelimitResumeAt,
+    llmRetry,
+    pauseError,
     error,
     errorKind,
     toast,
@@ -887,7 +890,9 @@ After the skill completes, briefly summarize what was created (the user will see
   // Issue #34 — textarea enabled only when the session is active (not paused/failed/archived).
   // Replaces the old `disabled={streaming}` guard which kept the field locked
   // between tasks even when the agent was idle.
-  const sessionAllowsInput = status === "active";
+  // A task the loop paused after LLM retries ran out can be abandoned by just
+  // sending a new message (the SW un-pauses the session at chat-start).
+  const sessionAllowsInput = status === "active" || (status === "paused" && pauseError != null);
 
   // Issue #34 — pending instruction items derived from messages + pendingByChatMessageId.
   const pendingItems = messages.flatMap((m) => {
@@ -1082,18 +1087,23 @@ After the skill completes, briefly summarize what was created (the user will see
           either restarts the loop or shows the drift card. */}
       {session.status === "paused" && (
         <div className="flex flex-shrink-0 items-center justify-between gap-3 border-b border-warning-line bg-warning-tint px-4 py-2 text-[12px]">
-          <div className="flex flex-col gap-0.5">
+          <div className="flex min-w-0 flex-col gap-0.5">
             <span className="caps text-warning">{t("chat.paused")}</span>
             <span className="text-fg-1">
-              {t("chat.pausedDescription")}
+              {pauseError != null ? t("chat.llmPausedDescription") : t("chat.pausedDescription")}
             </span>
+            {pauseError != null && (
+              <span className="truncate font-mono text-[10px] text-fg-3" title={pauseError}>
+                {pauseError}
+              </span>
+            )}
           </div>
           <button
             onClick={() => session.resumeTask()}
-            className="rounded border border-warning-line bg-transparent px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-warning hover:bg-warning-tint/60"
-            aria-label={t("chat.resumeTaskAria")}
+            className="flex-shrink-0 rounded border border-warning-line bg-transparent px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-warning hover:bg-warning-tint/60"
+            aria-label={pauseError != null ? t("chat.retryAria") : t("chat.resumeTaskAria")}
           >
-            {t("chat.resumeTask")}
+            {pauseError != null ? t("chat.retry") : t("chat.resumeTask")}
           </button>
         </div>
       )}
@@ -1222,6 +1232,7 @@ After the skill completes, briefly summarize what was created (the user will see
               <WorkingIndicator
                 thinking={!!streamingThinking && !streamingText}
                 ratelimitResumeAt={ratelimitResumeAt}
+                llmRetry={llmRetry}
               />
             )}
             <HitlInlineCards
@@ -1891,18 +1902,41 @@ function ReportIcon() {
 function WorkingIndicator({
   thinking,
   ratelimitResumeAt,
+  llmRetry,
 }: {
   thinking: boolean;
   ratelimitResumeAt?: number | null;
+  llmRetry?: LlmRetryState | null;
 }) {
   const t = useT();
   const [now, setNow] = useState(() => Date.now());
+  const tickUntil = ratelimitResumeAt ?? llmRetry?.resumeAt ?? null;
   useEffect(() => {
-    if (ratelimitResumeAt == null) return;
+    if (tickUntil == null) return;
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [ratelimitResumeAt]);
+  }, [tickUntil]);
+  if (llmRetry) {
+    // Counts down to the next attempt, then reads "retrying n/N…" while that
+    // attempt is in flight (cleared by the first chunk / step it produces).
+    const retryIn = Math.ceil((llmRetry.resumeAt - now) / 1000);
+    const vars = { attempt: llmRetry.attempt, max: llmRetry.maxAttempts, seconds: retryIn };
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label={t("chat.agentWorking")}
+        className="flex items-center gap-2 px-1 py-0.5"
+        title={llmRetry.error}
+      >
+        <PieFace state="thinking" size={22} />
+        <span className="caps tabular text-pending">
+          {retryIn > 0 ? t("chat.llmRetryingIn", vars) : t("chat.llmRetrying", vars)}
+        </span>
+      </div>
+    );
+  }
   // 归零即回落到普通「工作中」——SW 侧要么已放行、要么马上补播新的 resumeAt，
   // 停在「限流等待 0 秒」会被读成卡死。
   const seconds = ratelimitResumeAt == null ? 0 : Math.ceil((ratelimitResumeAt - now) / 1000);

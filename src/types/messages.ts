@@ -185,6 +185,40 @@ export interface ChatRatelimitWaitMessage {
   sessionId: string;
 }
 
+/** SW → Panel：一次 LLM 请求失败（429/5xx/网络/超时/空回复），agent loop 正在
+ *  退避后重试同一步。panel 显示 "Provider error, retrying 2/5…"，收到任一真实
+ *  进展消息即清除。 */
+export interface ChatLlmRetryMessage {
+  type: "chat-llm-retry";
+  /** 1-based retry number. */
+  attempt: number;
+  /** Retries allowed before the task is paused. */
+  maxAttempts: number;
+  reason: import("@/lib/agent/llm-retry").RetryReason;
+  /** The failure being retried (shown as a tooltip / in logs). */
+  error: string;
+  /** When the next attempt starts (epoch ms). */
+  resumeAt: number;
+  /** Chars of text / thinking the failed attempt already streamed. The panel
+   *  drops them from its in-flight buffers so the retry doesn't duplicate. */
+  discardText: number;
+  discardThinking: number;
+  sessionId: string;
+}
+
+/** SW → Panel：重试耗尽，任务被暂停（不是失败）。history 保留，会话 status=paused，
+ *  panel 显示 Retry 按钮（resume-task 从同一步继续）。 */
+export interface AgentPausedMessage {
+  type: "agent-paused";
+  error: string;
+  kind?: ErrorKind;
+  stepCount: number;
+  /** Same as ChatLlmRetryMessage: the last failed attempt's partial output. */
+  discardText: number;
+  discardThinking: number;
+  sessionId: string;
+}
+
 /**
  * Issue #59 — SW → Panel: emitted after each agent step whose stream produced
  * a real `done.usage`. Panel mirrors into `slot.usage` for ring rendering.
@@ -661,4 +695,6 @@ export type PortMessageToPanel =
   | NeedsFileAccessMessage            // local file access card
   | FileOutputMessage                 // output_file download card
   | FileOutputResultMessage           // output_file download result
-  | ChatRatelimitWaitMessage;         // Provider RPM 限流排队等待
+  | ChatRatelimitWaitMessage          // Provider RPM 限流排队等待
+  | ChatLlmRetryMessage               // LLM 请求失败，退避重试中
+  | AgentPausedMessage;               // 重试耗尽 → 任务暂停，可 Retry

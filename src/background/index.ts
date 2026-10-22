@@ -1,5 +1,6 @@
 // Service Worker — background script for Pie
 
+import { clearLlmPause, hasResumableAgentState, pauseSessionForLlmError } from "./llm-pause";
 import type {
   PageContent,
   ExtractedFrameContent,
@@ -1126,7 +1127,7 @@ async function handleResumeRequest(
     return;
   }
   const agent = await getSessionAgent(sessionId);
-  if (!agent || agent.stepIndex === 0) {
+  if (!hasResumableAgentState(meta, agent)) {
     console.warn(
       `[sw] resume-task ignored — session=${sessionId} has no in-flight agent state`,
     );
@@ -1194,8 +1195,7 @@ async function handleResumeRequest(
   // Single-transaction patch — `meta` was read several awaits ago; writing it
   // back wholesale could clobber concurrent writers.
   await updateSessionMeta(sessionId, (current) => ({
-    ...current,
-    status: "active",
+    ...clearLlmPause(current),
     ...(current.instanceId ? {} : { instanceId: resumeSel.instanceId, model: resumeSel.model }),
   }));
 
@@ -1228,6 +1228,7 @@ async function handleResumeRequest(
     sessionId,
     // M2-U1: shared handler that also throttles lastAccessedAt bumps.
     onStepSnapshot: makeStepSnapshotHandler(sessionId),
+    onLlmPause: (info) => pauseSessionForLlmError(sessionId, info.error),
     resumedAgentMessages: agent.agentMessages,
     resumedFromStep: agent.stepIndex,
     // Phase 5 — propagate prior hasImageContent flag across resume.
@@ -1411,6 +1412,15 @@ async function handleChatStream(
         sessionId,
       });
       return;
+    }
+    // A new message on a session the loop paused after LLM retries ran out
+    // abandons that paused task: the conversation (with the paused task's
+    // visible steps) is the new task's context. The paused resume seed is
+    // simply overwritten by this task's first step snapshot.
+    if (chatSessionMeta?.status === "paused" && chatSessionMeta.pauseReason) {
+      await updateSessionMeta(sessionId, (current) =>
+        current.status === "paused" ? clearLlmPause(current) : null,
+      );
     }
     // M2-U1 trigger (b) — bump lastAccessedAt when the SW receives a new
     // chat-start for this session. Fire-and-forget; failure is non-fatal.
@@ -1631,6 +1641,8 @@ async function handleChatStream(
       // (see makeStepSnapshotHandler). Errors caught + logged inside
       // runAgentLoop; this wrapper only does the storage calls.
       onStepSnapshot: makeStepSnapshotHandler(sessionId),
+      // LLM retries exhausted → pause (keep history, panel shows Retry).
+      onLlmPause: (info) => pauseSessionForLlmError(sessionId, info.error),
       // v1.5 multi-pin: replace single `pinned` with the full array.
       // synthMeta is post-upgradeAutoToTaskAtChatStart (fetched after the
       // upgrade at line 1035), so pinnedTabs[] reflects the upgraded state.

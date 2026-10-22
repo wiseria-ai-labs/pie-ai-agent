@@ -135,6 +135,12 @@ export interface UseSession {
   /** Provider RPM 限流：streamChat 正在排队等待时的预计恢复时刻（epoch ms）。
    *  null = 未在限流等待。WorkingIndicator 据此切换为倒计时变体。 */
   ratelimitResumeAt: number | null;
+  /** LLM request failed; the loop is backing off before retrying the same
+   *  step. WorkingIndicator shows "Provider error, retrying n/N…". */
+  llmRetry: import("./runtime-map").LlmRetryState | null;
+  /** Set when the loop paused this session after LLM retries ran out
+   *  (meta.pauseReason). Chat shows it with a Retry button. */
+  pauseError: string | null;
   error: string | null;
   /** 最近一次 chat-error 的机读分类（见 ErrorKind）。null = 无/未分类。
    *  驱动 Chat 错误气泡下的 managed CTA（budget→管理订阅 / auth→重登提示）。 */
@@ -219,6 +225,7 @@ export interface UseSession {
 export function useSession(): UseSession {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<SessionStatus | null>(null);
+  const [pauseError, setPauseError] = useState<string | null>(null);
   // v1.5 — pinnedTabs[] replaces single pinnedOrigin/pinnedTabId state.
   const [pinnedTabsState, setPinnedTabsState] = useState<
     ReadonlyArray<{ tabId: number; origin: string }> | null
@@ -350,6 +357,7 @@ export function useSession(): UseSession {
         if (cancelled) return;
         setSessionId(meta.id);
         setStatus(meta.status);
+        setPauseError(null);
         setPinnedTabsState(null);
         setPinModeState(meta.pinMode ?? "auto");
         patchSlot(meta.id, EMPTY_SLOT);
@@ -424,7 +432,10 @@ export function useSession(): UseSession {
       // Status update is always adopted — the SW transitions (paused→active,
       // active→failed) must land even mid-stream (e.g. SW cold-start marking
       // a task paused while the panel thinks it's still running).
-      if (newMeta?.status !== undefined) setStatus(newMeta.status);
+      if (newMeta?.status !== undefined) {
+        setStatus(newMeta.status);
+        setPauseError(newMeta.status === "paused" ? newMeta.pauseReason?.error ?? null : null);
+      }
       // v1.5 — propagate pinMode + pinnedTabs[]. Subtle invariant:
       // when SW transitions task → auto via clearTaskPinIfActive, it
       // `delete`s pinnedTabs from the meta object. The deleted
@@ -535,6 +546,7 @@ export function useSession(): UseSession {
         error: null,
         errorKind: null,
         ratelimitResumeAt: null,
+        llmRetry: null,
       });
 
       // Build the LLM-facing chat history (text-only, slash-expanded).
@@ -892,6 +904,9 @@ export function useSession(): UseSession {
     sessionIdRef.current = id;
     setSessionId(id);
     setStatus(metaForActivate.status);
+    setPauseError(
+      metaForActivate.status === "paused" ? metaForActivate.pauseReason?.error ?? null : null,
+    );
     const activatePins = metaForActivate.pinnedTabs;
     setPinnedTabsState(activatePins && activatePins.length > 0 ? activatePins : null);
     setPinModeState(metaForActivate.pinMode ?? "auto");
@@ -947,6 +962,7 @@ export function useSession(): UseSession {
     sessionIdRef.current = meta.id;
     setSessionId(meta.id);
     setStatus(meta.status);
+    setPauseError(null);
     setPinnedTabsState(null);
     setPinModeState("auto");
     patchSlot(meta.id, EMPTY_SLOT);
@@ -1045,6 +1061,8 @@ export function useSession(): UseSession {
     streamingText: active.streamingText,
     streamingThinking: active.streamingThinking,
     ratelimitResumeAt: active.ratelimitResumeAt,
+    llmRetry: active.llmRetry,
+    pauseError,
     error: active.error,
     errorKind: active.errorKind,
     toast: active.toast,

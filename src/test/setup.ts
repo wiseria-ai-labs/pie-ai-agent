@@ -1,6 +1,12 @@
 import "fake-indexeddb/auto";
 import { beforeEach, vi } from "vitest";
 import { __resetSwPort } from "@/lib/sw-connection/manager";
+import { setRetrySleepForTests } from "@/lib/agent/llm-retry";
+
+// The agent loop backs off for seconds between LLM retries; tests that hit an
+// error path must not wait on real timers. Tests that assert the delays
+// install their own recorder via setRetrySleepForTests.
+setRetrySleepForTests(async () => {});
 
 // chrome.storage.local mock — backed by a single in-memory record reset
 // between tests. Mirrors the subset of chrome.storage.local API actually
