@@ -1,4 +1,5 @@
 import type { ModelConfig } from "@/lib/model-router";
+import { isHardQuotaText, parseRetryAfter } from "../../retry-hints";
 import type { AgentMessage, ToolDefinition, StreamEvent } from "@/lib/model-router/types";
 import { readSSELines } from "@/lib/model-router/sse";
 import { createThinkTagSplitter } from "../../think-tag-splitter";
@@ -193,17 +194,21 @@ export async function* streamChatOpenAICompat(
     const name = displayProviderName(config);
     let errorType: string | undefined;
     try { errorType = JSON.parse(text)?.error?.type; } catch { /* 非 JSON body */ }
-    if (response.status === 401) {
-      yield { type: "error", error: `Invalid ${name} API key`, kind: "auth" };
-    } else if (response.status === 429) {
+    const status = response.status;
+    const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+    if (status === 401) {
+      yield { type: "error", error: `Invalid ${name} API key`, kind: "auth", status };
+    } else if (status === 429) {
       if (errorType === "budget_exceeded") {
-        yield { type: "error", error: `${name}: quota exhausted — manage your subscription`, kind: "budget" };
+        yield { type: "error", error: `${name}: quota exhausted — manage your subscription`, kind: "budget", status };
+      } else if (isHardQuotaText(text)) {
+        yield { type: "error", error: `${name} quota exceeded: ${text}`, kind: "budget", status };
       } else {
         const retryAfter = response.headers.get("retry-after");
-        yield { type: "error", error: `${name} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}`, kind: "ratelimit" };
+        yield { type: "error", error: `${name} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}`, kind: "ratelimit", status, retryAfterMs };
       }
     } else {
-      yield { type: "error", error: `${name} API error (${response.status}): ${text}`, kind: "http" };
+      yield { type: "error", error: `${name} API error (${status}): ${text}`, kind: "http", status, retryAfterMs };
     }
     return;
   }

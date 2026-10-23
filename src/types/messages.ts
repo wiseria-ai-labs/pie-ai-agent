@@ -56,6 +56,15 @@ export interface ChatStartMessage {
    * user message (the only case the SW triggers title generation).
    */
   fallbackTitle?: string;
+  /**
+   * The tab the task is bound to: the active tab of the panel's OWN window,
+   * captured when the user pressed send. The SW pins the task to it instead
+   * of asking Chrome for "the active tab" — in a service worker that means
+   * the last-focused window, so a user who sends and immediately switches to
+   * another window or workspace used to get the task bound to a tab there.
+   * Optional / additive: older panels omit it and the SW falls back.
+   */
+  anchorTab?: { tabId: number; windowId: number };
 }
 
 export interface ChatAbortMessage {
@@ -182,6 +191,42 @@ export interface ChatRatelimitWaitMessage {
   type: "chat-ratelimit-wait";
   /** 预计恢复时刻（epoch ms）。waiter 竞争下实际可能更晚，panel 钳 ≥0 显示。 */
   resumeAt: number;
+  sessionId: string;
+}
+
+/** SW → Panel：一次 LLM 请求失败（429/5xx/网络/超时/空回复），agent loop 正在
+ *  退避后重试同一步。panel 显示 "Provider error, retrying 2/5…"，收到任一真实
+ *  进展消息即清除。 */
+export interface ChatLlmRetryMessage {
+  type: "chat-llm-retry";
+  /** 1-based retry number. */
+  attempt: number;
+  /** Retries allowed before the task is paused. */
+  maxAttempts: number;
+  reason: import("@/lib/agent/llm-retry").RetryReason;
+  /** The failure being retried (shown as a tooltip / in logs). */
+  error: string;
+  /** When the next attempt starts (epoch ms). */
+  resumeAt: number;
+  /** Chars of text / thinking the failed attempt already streamed. The panel
+   *  drops them from its in-flight buffers so the retry doesn't duplicate. */
+  discardText: number;
+  discardThinking: number;
+  sessionId: string;
+}
+
+/** SW → Panel：重试耗尽，任务被暂停（不是失败）。history 保留，会话 status=paused，
+ *  panel 显示 Retry 按钮（resume-task 从同一步继续）。 */
+export interface AgentPausedMessage {
+  type: "agent-paused";
+  error: string;
+  kind?: ErrorKind;
+  stepCount: number;
+  /** Why: LLM retries ran out (default) or the task's tab was closed. */
+  reason?: "llm-error" | "tab-closed";
+  /** Same as ChatLlmRetryMessage: the last failed attempt's partial output. */
+  discardText: number;
+  discardThinking: number;
   sessionId: string;
 }
 
@@ -661,4 +706,6 @@ export type PortMessageToPanel =
   | NeedsFileAccessMessage            // local file access card
   | FileOutputMessage                 // output_file download card
   | FileOutputResultMessage           // output_file download result
-  | ChatRatelimitWaitMessage;         // Provider RPM 限流排队等待
+  | ChatRatelimitWaitMessage          // Provider RPM 限流排队等待
+  | ChatLlmRetryMessage               // LLM 请求失败，退避重试中
+  | AgentPausedMessage;               // 重试耗尽 → 任务暂停，可 Retry

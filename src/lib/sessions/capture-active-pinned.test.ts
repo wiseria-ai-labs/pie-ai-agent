@@ -13,7 +13,7 @@
 
 import { describe, expect, it, beforeEach } from "vitest";
 import { chromeMock } from "@/test/setup";
-import { captureActivePinnedTab } from "./capture-active-pinned";
+import { captureActivePinnedTab, captureAnchorTab, capturePinnedTabById } from "./capture-active-pinned";
 
 beforeEach(() => {
   chromeMock.tabs.__activeTab = null;
@@ -60,5 +60,27 @@ describe("captureActivePinnedTab", () => {
   it("returns null for a non-addressable tab id (-1)", async () => {
     chromeMock.tabs.__activeTab = { id: -1, url: "https://example.com" };
     expect(await captureActivePinnedTab()).toBeNull();
+  });
+});
+
+describe("captureAnchorTab (panel, at send)", () => {
+  it("returns the panel window's active tab with its window id", async () => {
+    chromeMock.tabs.__activeTab = { id: 7, windowId: 3, url: "https://example.com/x" } as never;
+    expect(await captureAnchorTab()).toEqual({ tabId: 7, windowId: 3, origin: "https://example.com" });
+  });
+  it("null when there is no tab", async () => {
+    expect(await captureAnchorTab()).toBeNull();
+  });
+});
+
+describe("capturePinnedTabById (SW, from the panel's anchor)", () => {
+  it("pins the given tab even when another tab is active", async () => {
+    chromeMock.tabs.__tabsById.set(11, { id: 11, url: "https://classroom.google.com/c/1" } as never);
+    chromeMock.tabs.__activeTab = { id: 22, url: "https://mail.google.com/" } as never;
+    expect(await capturePinnedTabById(11)).toEqual({ tabId: 11, origin: "https://classroom.google.com" });
+  });
+  it("null for a closed tab — no fallback to the active tab", async () => {
+    chromeMock.tabs.__activeTab = { id: 22, url: "https://mail.google.com/" } as never;
+    expect(await capturePinnedTabById(99)).toBeNull();
   });
 });

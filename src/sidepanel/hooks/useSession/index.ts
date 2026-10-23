@@ -36,7 +36,7 @@ import {
 } from "./runtime-map";
 import { createPortHandlers } from "./port-handlers";
 import { swPort } from "@/lib/sw-connection/manager";
-import { captureActivePinnedTab } from "@/lib/sessions/capture-active-pinned";
+import { captureActivePinnedTab, captureAnchorTab } from "@/lib/sessions/capture-active-pinned";
 import {
   type DownloadResult,
   registerDownload,
@@ -135,6 +135,14 @@ export interface UseSession {
   /** Provider RPM 限流：streamChat 正在排队等待时的预计恢复时刻（epoch ms）。
    *  null = 未在限流等待。WorkingIndicator 据此切换为倒计时变体。 */
   ratelimitResumeAt: number | null;
+  /** LLM request failed; the loop is backing off before retrying the same
+   *  step. WorkingIndicator shows "Provider error, retrying n/N…". */
+  llmRetry: import("./runtime-map").LlmRetryState | null;
+  /** Set when the loop paused this session itself (meta.pauseReason): LLM
+   *  retries ran out, or the task's tab was closed. Chat shows it with a
+   *  Retry button. */
+  pauseError: string | null;
+  pauseKind: "llm-error" | "tab-closed" | null;
   error: string | null;
   /** 最近一次 chat-error 的机读分类（见 ErrorKind）。null = 无/未分类。
    *  驱动 Chat 错误气泡下的 managed CTA（budget→管理订阅 / auth→重登提示）。 */
@@ -219,6 +227,8 @@ export interface UseSession {
 export function useSession(): UseSession {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<SessionStatus | null>(null);
+  const [pauseError, setPauseError] = useState<string | null>(null);
+  const [pauseKind, setPauseKind] = useState<"llm-error" | "tab-closed" | null>(null);
   // v1.5 — pinnedTabs[] replaces single pinnedOrigin/pinnedTabId state.
   const [pinnedTabsState, setPinnedTabsState] = useState<
     ReadonlyArray<{ tabId: number; origin: string }> | null
@@ -350,6 +360,7 @@ export function useSession(): UseSession {
         if (cancelled) return;
         setSessionId(meta.id);
         setStatus(meta.status);
+        setPauseError(null);
         setPinnedTabsState(null);
         setPinModeState(meta.pinMode ?? "auto");
         patchSlot(meta.id, EMPTY_SLOT);
@@ -424,7 +435,11 @@ export function useSession(): UseSession {
       // Status update is always adopted — the SW transitions (paused→active,
       // active→failed) must land even mid-stream (e.g. SW cold-start marking
       // a task paused while the panel thinks it's still running).
-      if (newMeta?.status !== undefined) setStatus(newMeta.status);
+      if (newMeta?.status !== undefined) {
+        setStatus(newMeta.status);
+        setPauseError(newMeta.status === "paused" ? newMeta.pauseReason?.error ?? null : null);
+        setPauseKind(newMeta.status === "paused" ? newMeta.pauseReason?.kind ?? null : null);
+      }
       // v1.5 — propagate pinMode + pinnedTabs[]. Subtle invariant:
       // when SW transitions task → auto via clearTaskPinIfActive, it
       // `delete`s pinnedTabs from the meta object. The deleted
@@ -497,6 +512,10 @@ export function useSession(): UseSession {
       if (slotsRef.current.get(sessionIdRef.current ?? "")?.streaming) return;
       const id = sessionIdRef.current;
       if (!id) return;
+      // Bind the task to the tab the user is on RIGHT NOW, in this panel's own
+      // window — started synchronously at send so switching to another window
+      // or workspace a moment later can't redirect the task.
+      const anchorPromise = captureAnchorTab();
       const userMessage: DisplayMessage = {
         role: "user",
         content: input.content,
@@ -535,6 +554,7 @@ export function useSession(): UseSession {
         error: null,
         errorKind: null,
         ratelimitResumeAt: null,
+        llmRetry: null,
       });
 
       // Build the LLM-facing chat history (text-only, slash-expanded).
@@ -592,75 +612,65 @@ export function useSession(): UseSession {
       // not the SW-facing expanded chatMessages).
       const fallbackTitle = deriveTitleFromMessages(updated);
 
-      const sent = swPort.send(id, {
-        type: "chat-start",
-        messages: chatMessages,
-        sessionId: id,
-        ...(fallbackTitle !== undefined ? { fallbackTitle } : {}),
-      });
-      if (!sent) {
-        // SW 连续两次拒收（罕见：连重连后的新 port 也立刻死）→ 撤回
-        // streaming 状态让用户能再次发送。用户消息已经持久化到 storage，
-        // 不会丢；下次 sendMessage 会基于现有 messages 数组继续追加。
-        patchSlot(id, {
-          streaming: false,
-          streamFinished: true,
-          error: t("errors.connectBackgroundFailedRetry"),
+      void anchorPromise.then((anchor) => {
+        const sent = swPort.send(id, {
+          type: "chat-start",
+          messages: chatMessages,
+          sessionId: id,
+          ...(fallbackTitle !== undefined ? { fallbackTitle } : {}),
+          ...(anchor ? { anchorTab: { tabId: anchor.tabId, windowId: anchor.windowId } } : {}),
         });
-        return;
-      }
+        if (!sent) {
+          // SW 连续两次拒收（罕见：连重连后的新 port 也立刻死）→ 撤回
+          // streaming 状态让用户能再次发送。用户消息已经持久化到 storage，
+          // 不会丢；下次 sendMessage 会基于现有 messages 数组继续追加。
+          patchSlot(id, {
+            streaming: false,
+            streamFinished: true,
+            error: t("errors.connectBackgroundFailedRetry"),
+          });
+          return;
+        }
 
-      // M3-U2 (post-acceptance) — pin capture is a separate
-      // fire-and-forget that ONLY patches pinnedTabId / pinnedOrigin
-      // (never `messages`). Critical: the chat-done handler also calls
-      // persistMessages(next-with-assistant). If the pin patch wrote
-      // `messages: updated` (the [user]-only snapshot) it could
-      // overwrite chat-done's [user, assistant] write under microtask
-      // ordering. Patching pin separately keeps the message persistence
-      // path untouched.
-      //
-      // First-task ordering note: SW's handleChatStream may read meta
-      // BEFORE the pin patch lands → ctx.pinnedTabs is empty → the
-      // loop falls back to chrome.tabs.query active-tab. That fallback
-      // returns the same tab the user just sent from (no tab switch in
-      // the microsecond gap), so the first task pins to the right tab
-      // via fallback. Subsequent chat-starts read the patched pin via
-      // ctx directly.
-      if (isFirstMessage) {
-        void (async () => {
-          try {
-            const meta = await getSessionMeta(id);
-            if (!meta || meta.status === "archived") return;
-            // v1.5 — skip if already has pinnedTabs[]
-            if (meta.pinnedTabs && meta.pinnedTabs.length > 0) return;
-            const pinEntry = await captureActivePinnedTab();
-            if (!pinEntry) return;
-            // Single-transaction conditional patch (replaces the old re-read +
-            // full write-back, whose window let concurrent writers clobber
-            // each other): skip if someone else pinned or archived meanwhile.
-            const wrote = await updateSessionMeta(id, (fresh) => {
-              if (fresh.status === "archived") return null;
-              if (fresh.pinnedTabs && fresh.pinnedTabs.length > 0) return null;
-              return {
-                ...fresh,
-                // M5 — first-message capture is the task-mode upgrade. Set
-                // pinMode='task' so the storage normalize-on-write invariant
-                // (auto mode never persists pin) doesn't strip it.
-                pinMode: "task",
-                // v1.5 — write source-of-truth pinnedTabs[].
-                pinnedTabs: [pinEntry],
-                lastAccessedAt: Date.now(),
-              };
-            });
-            if (wrote) {
-              setPinnedTabsState([pinEntry]);
-              setPinModeState("task");
+        // M3-U2 (post-acceptance) — pin capture is a separate patch that ONLY
+        // touches the pin fields (never `messages`): the chat-done handler
+        // also calls persistMessages(next-with-assistant), and a pin patch
+        // carrying the [user]-only snapshot could overwrite it. It reuses the
+        // anchor captured at send (same tab the SW binds the task to); the SW
+        // performs the authoritative upgrade from the same anchor.
+        if (isFirstMessage && anchor) {
+          const pinEntry = { tabId: anchor.tabId, origin: anchor.origin };
+          void (async () => {
+            try {
+              const meta = await getSessionMeta(id);
+              if (!meta || meta.status === "archived") return;
+              // v1.5 — skip if already has pinnedTabs[]
+              if (meta.pinnedTabs && meta.pinnedTabs.length > 0) return;
+              // Single-transaction conditional patch: skip if someone else
+              // pinned or archived meanwhile.
+              const wrote = await updateSessionMeta(id, (fresh) => {
+                if (fresh.status === "archived") return null;
+                if (fresh.pinnedTabs && fresh.pinnedTabs.length > 0) return null;
+                return {
+                  ...fresh,
+                  // M5 — first-message capture is the task-mode upgrade. Set
+                  // pinMode='task' so the storage normalize-on-write invariant
+                  // (auto mode never persists pin) doesn't strip it.
+                  pinMode: "task",
+                  pinnedTabs: [pinEntry],
+                  lastAccessedAt: Date.now(),
+                };
+              });
+              if (wrote) {
+                setPinnedTabsState([pinEntry]);
+                setPinModeState("task");
+              }
+            } catch (e) {
+              console.warn("[useSession] pin patch on first send failed:", e);
             }
-          } catch (e) {
-            console.warn("[useSession] pin patch on first send failed:", e);
-          }
-        })();
-      }
+          })();
+        }
+      });
     },
     [persistMessagesById, patchSlot],
   );
@@ -892,6 +902,10 @@ export function useSession(): UseSession {
     sessionIdRef.current = id;
     setSessionId(id);
     setStatus(metaForActivate.status);
+    setPauseError(
+      metaForActivate.status === "paused" ? metaForActivate.pauseReason?.error ?? null : null,
+    );
+    setPauseKind(metaForActivate.status === "paused" ? metaForActivate.pauseReason?.kind ?? null : null);
     const activatePins = metaForActivate.pinnedTabs;
     setPinnedTabsState(activatePins && activatePins.length > 0 ? activatePins : null);
     setPinModeState(metaForActivate.pinMode ?? "auto");
@@ -947,6 +961,7 @@ export function useSession(): UseSession {
     sessionIdRef.current = meta.id;
     setSessionId(meta.id);
     setStatus(meta.status);
+    setPauseError(null);
     setPinnedTabsState(null);
     setPinModeState("auto");
     patchSlot(meta.id, EMPTY_SLOT);
@@ -1045,6 +1060,9 @@ export function useSession(): UseSession {
     streamingText: active.streamingText,
     streamingThinking: active.streamingThinking,
     ratelimitResumeAt: active.ratelimitResumeAt,
+    llmRetry: active.llmRetry,
+    pauseError,
+    pauseKind,
     error: active.error,
     errorKind: active.errorKind,
     toast: active.toast,

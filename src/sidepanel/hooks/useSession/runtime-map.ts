@@ -38,7 +38,19 @@ export type SessionRuntimeSlot = {
   /** Provider RPM 限流：streamChat 正在排队等待时的预计恢复时刻（epoch ms）。
    *  null = 未在限流等待。收到任一真实进展消息即清除。 */
   ratelimitResumeAt: number | null;
+  /** An LLM request failed and the loop is backing off before retrying the
+   *  same step ("Provider error, retrying 2/5…"). null = not retrying.
+   *  Cleared by any real progress message, like ratelimitResumeAt. */
+  llmRetry: LlmRetryState | null;
 };
+
+export interface LlmRetryState {
+  attempt: number;
+  maxAttempts: number;
+  /** When the next attempt starts (epoch ms). */
+  resumeAt: number;
+  error: string;
+}
 
 export const EMPTY_SLOT: SessionRuntimeSlot = {
   streaming: false,
@@ -53,6 +65,7 @@ export const EMPTY_SLOT: SessionRuntimeSlot = {
   quotes: [],
   pendingByChatMessageId: new Map(),
   ratelimitResumeAt: null,
+  llmRetry: null,
 };
 
 /**

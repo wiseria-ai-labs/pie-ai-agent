@@ -440,6 +440,12 @@ describe("SEARCH_TOOL_GUIDANCE", () => {
 });
 
 describe("buildObservationMessage Phase 3 simplification", () => {
+  it("buildObservationMessage leads with the bound tab id when given", () => {
+    expect(buildObservationMessage("Hello", "https://x.com/", 42)).toBe(
+      "Tab: 42\nCurrent URL: https://x.com/\nPage title: Hello",
+    );
+  });
+
   it("只输出 url + title 头部，不渲染 elements", () => {
     const msg = buildObservationMessage("Hello", "https://x.com/");
     expect(msg).toContain("Current URL: https://x.com/");

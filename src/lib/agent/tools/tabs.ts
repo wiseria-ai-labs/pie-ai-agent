@@ -2,6 +2,7 @@ import type { ActionResult } from "../../dom-actions/types";
 import type { ConfirmedTabTarget, Tool, ToolHandlerContext } from "../types";
 import { escapeUntrustedWrappers, escapeWrapperAttribute } from "../untrusted-wrappers";
 import { waitForUrlSettle } from "../wait-for-url-settle";
+import { waitForPageReady } from "../wait-for-settle";
 import { excludePanelTabs, queryHostWindowTabs } from "../../panel-host/host-window";
 import { TAB_GROUP_TIMEOUT_MS, withHangGuard } from "./hang-guard";
 import { isOwnPanelUrl } from "../../panel-host/panel-page";
@@ -1184,6 +1185,7 @@ USE WHEN:
     // judge it. This mirrors loop.ts's advisory treatment of the same
     // UrlSettleResult (origin drift → <system_notice>, never a hard stop).
     const newTabId = newTab.id;
+    const openStartedAt = Date.now();
     const settle = await waitForUrlSettle(newTabId, parsed.origin, 5000);
     let landedOrigin = parsed.origin;
     let redirected = false;
@@ -1211,6 +1213,14 @@ USE WHEN:
       ? `${landedOrigin} (redirected from ${parsed.origin})`
       : landedOrigin;
 
+    // A commit is not a loaded page: wait (same 10s budget as click) until the
+    // document parsed, the DOM went quiet and no spinner is visible, so the
+    // next read_page sees the page and not a skeleton.
+    const ready = await waitForPageReady(newTabId, { deadline: openStartedAt + 10_000 });
+    const loadingNote = ready.ready || ready.reason === "unreachable"
+      ? ""
+      : " The page was still loading after 10s — read_page may show a partial page.";
+
     if (ctx.appendPinnedTab) {
       try {
         await ctx.appendPinnedTab({ tabId: newTabId, origin: landedOrigin });
@@ -1229,7 +1239,8 @@ USE WHEN:
       observation:
         `Opened tab ${newTabId} at ${where}` +
         (active ? " (focused: stole user's view)" : " (background)") +
-        `. Added to pinnedTabs[]; call focus_tab(${newTabId}) on the next iteration to operate on it.`,
+        `. Added to pinnedTabs[]; call focus_tab(${newTabId}) on the next iteration to operate on it.` +
+        loadingNote,
     };
   },
 };

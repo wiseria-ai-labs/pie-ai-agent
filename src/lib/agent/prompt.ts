@@ -445,6 +445,10 @@ export function buildAgentSystemPrompt(
 export function buildObservationMessage(
   title: string,
   currentUrl: string,
+  tabId?: number,
 ): string {
-  return `Current URL: ${currentUrl}\nPage title: ${title}`;
+  // The task's bound tab first, so the model can always tell which tab it is
+  // acting on (it never silently follows the user's focus to another tab).
+  const tab = tabId !== undefined ? `Tab: ${tabId}\n` : "";
+  return `${tab}Current URL: ${currentUrl}\nPage title: ${title}`;
 }

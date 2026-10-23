@@ -665,6 +665,88 @@ describe("chat-ratelimit-wait（RPM 限流等待）", () => {
   });
 });
 
+describe("chat-llm-retry / agent-paused (LLM retry)", () => {
+  const retry = (over: Record<string, unknown> = {}) =>
+    ({
+      type: "chat-llm-retry",
+      attempt: 2,
+      maxAttempts: 5,
+      reason: "server",
+      error: "HTTP 503",
+      resumeAt: 1234,
+      discardText: 0,
+      discardThinking: 0,
+      sessionId: "s1",
+      ...over,
+    }) as PortMessageToPanel;
+
+  it("sets llmRetry for the indicator", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage(retry());
+    expect(deps.slotsRef.current.get("s1")?.llmRetry).toEqual({
+      attempt: 2,
+      maxAttempts: 5,
+      resumeAt: 1234,
+      error: "HTTP 503",
+    });
+  });
+
+  it("drops exactly the failed attempt's partial output, keeping earlier text", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({ type: "chat-chunk", text: "Earlier answer. ", sessionId: "s1" } as PortMessageToPanel);
+    handleMessage({ type: "thinking-chunk", text: "hmm", sessionId: "s1" } as PortMessageToPanel);
+    handleMessage({ type: "chat-chunk", text: "Partial", sessionId: "s1" } as PortMessageToPanel);
+    handleMessage(retry({ discardText: 7, discardThinking: 3 }));
+    const slot = deps.slotsRef.current.get("s1")!;
+    expect(slot.accumulated).toBe("Earlier answer. ");
+    expect(slot.streamingText).toBe("Earlier answer. ");
+    expect(slot.streamingThinking).toBe("");
+  });
+
+  it("any real progress clears it", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    for (const msg of [
+      { type: "chat-chunk", text: "x", sessionId: "s1" },
+      { type: "thinking-chunk", text: "x", sessionId: "s1" },
+      { type: "chat-done", sessionId: "s1" },
+      { type: "chat-error", error: "e", sessionId: "s1" },
+      { type: "agent-step", sessionId: "s1", stepIndex: 0, tool: "click", args: {}, status: "pending" },
+    ] as PortMessageToPanel[]) {
+      handleMessage(retry());
+      handleMessage(msg);
+      expect(deps.slotsRef.current.get("s1")?.llmRetry).toBeNull();
+    }
+  });
+
+  it("agent-paused stops streaming, drops the failed attempt and keeps earlier text", () => {
+    const deps = makeDeps();
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({ type: "chat-chunk", text: "Kept. ", sessionId: "s1" } as PortMessageToPanel);
+    handleMessage({ type: "chat-chunk", text: "half", sessionId: "s1" } as PortMessageToPanel);
+    handleMessage(retry());
+    handleMessage({
+      type: "agent-paused",
+      error: "HTTP 502",
+      stepCount: 3,
+      discardText: 4,
+      discardThinking: 0,
+      sessionId: "s1",
+    } as PortMessageToPanel);
+    const slot = deps.slotsRef.current.get("s1")!;
+    expect(slot.streaming).toBe(false);
+    expect(slot.llmRetry).toBeNull();
+    expect(slot.accumulated).toBe("");
+    const last = slot.messages[slot.messages.length - 1];
+    expect(last).toMatchObject({ role: "assistant", content: "Kept. " });
+    // not a failure: no error banner, no failed summary card
+    expect(slot.error).toBeNull();
+    expect(slot.messages.some((m) => m.role === "agent-summary")).toBe(false);
+  });
+});
+
 describe("file-output-result", () => {
   beforeEach(() => {
     _clearPendingForTests();

@@ -34,6 +34,11 @@ export interface PortHandlers {
   makeDisconnectHandler: (sessionId: string) => () => void;
 }
 
+/** Drop the last `n` chars (the failed attempt's streamed output). */
+function dropTail(text: string, n: number): string {
+  return n > 0 ? text.slice(0, Math.max(0, text.length - n)) : text;
+}
+
 export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
   const { slotsRef, setSlots, persistMessages, postMessageRef, legacy } = deps;
 
@@ -93,17 +98,60 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    if (msg.type === "chat-llm-retry") {
+      // The failed attempt's partial output is dropped (the retry replays the
+      // same request); earlier text in the buffer is kept.
+      patchSlot(id, (prev) => {
+        const accumulated = dropTail(prev.accumulated, msg.discardText);
+        return {
+          accumulated,
+          streamingText: accumulated,
+          streamingThinking: dropTail(prev.streamingThinking, msg.discardThinking),
+          ratelimitResumeAt: null,
+          llmRetry: {
+            attempt: msg.attempt,
+            maxAttempts: msg.maxAttempts,
+            resumeAt: msg.resumeAt,
+            error: msg.error,
+          },
+        };
+      });
+      return;
+    }
+
+    if (msg.type === "agent-paused") {
+      // Retries ran out: the task is paused (session status flips to
+      // `paused` via the meta write, which brings up the Retry bar). Keep
+      // whatever earlier text was streamed; drop the failed attempt's output.
+      const prev = slotsRef.current.get(id);
+      const accumulated = dropTail(prev?.accumulated ?? "", msg.discardText);
+      const thinking = dropTail(prev?.streamingThinking ?? "", msg.discardThinking);
+      const { next } = buildAssistant(prev?.messages ?? [], accumulated, thinking);
+      patchSlot(id, {
+        messages: next,
+        accumulated: "",
+        streamingThinking: "",
+        streamingText: "",
+        streaming: false,
+        streamFinished: true,
+        ratelimitResumeAt: null,
+        llmRetry: null,
+      });
+      void persistMessages(id, next);
+      return;
+    }
+
     if (msg.type === "chat-chunk") {
       patchSlot(id, (prev) => {
         const accumulated = prev.accumulated + msg.text;
-        return { accumulated, streamingText: accumulated, ratelimitResumeAt: null };
+        return { accumulated, streamingText: accumulated, ratelimitResumeAt: null, llmRetry: null };
       });
       return;
     }
     if (msg.type === "thinking-chunk") {
       patchSlot(id, (prev) => ({
         streamingThinking: prev.streamingThinking + msg.text,
-        ratelimitResumeAt: null,
+        ratelimitResumeAt: null, llmRetry: null,
       }));
       return;
     }
@@ -120,7 +168,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streamingText: "",
         streaming: false,
         streamFinished: true,
-        ratelimitResumeAt: null,
+        ratelimitResumeAt: null, llmRetry: null,
       });
       void persistMessages(id, next);
       return;
@@ -141,7 +189,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streamingText: "",
         streaming: false,
         streamFinished: true,
-        ratelimitResumeAt: null,
+        ratelimitResumeAt: null, llmRetry: null,
       });
       void persistMessages(id, next);
       return;
@@ -195,7 +243,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
 
       patchSlot(id, {
         messages: nextMessages,
-        ratelimitResumeAt: null,
+        ratelimitResumeAt: null, llmRetry: null,
         ...(flushed ? { accumulated: "", streamingText: "", streamingThinking: "" } : {}),
       });
       return;
@@ -230,7 +278,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streamingText: "",
         streaming: false,
         streamFinished: true,
-        ratelimitResumeAt: null,
+        ratelimitResumeAt: null, llmRetry: null,
       });
       void persistMessages(id, next);
       return;

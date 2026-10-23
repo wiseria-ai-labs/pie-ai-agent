@@ -71,7 +71,7 @@ export interface ToolDefinition {
   parameters: Record<string, unknown>; // JSON Schema object
 }
 
-export type ErrorKind = "auth" | "budget" | "ratelimit" | "http" | "network";
+export type ErrorKind = "auth" | "budget" | "ratelimit" | "http" | "network" | "timeout";
 
 export type StreamEvent =
   | { type: "text-delta"; text: string }
@@ -103,4 +103,14 @@ export type StreamEvent =
       };
     }
   | { type: "ratelimit-wait"; resumeAt: number }
-  | { type: "error"; error: string; kind?: ErrorKind };
+  | {
+      type: "error";
+      error: string;
+      kind?: ErrorKind;
+      /** HTTP status when the failure was an HTTP response (absent for
+       *  network errors and in-stream error frames). Drives the agent loop's
+       *  retry decision: 429 / 5xx retry, other 4xx do not. */
+      status?: number;
+      /** Server's Retry-After hint, already converted to ms. */
+      retryAfterMs?: number;
+    };

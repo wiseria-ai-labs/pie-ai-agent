@@ -22,22 +22,29 @@ import type { AgentMessage, ContentBlock } from "../model-router/types";
  *     tool_use_id pairing is untouched (Anthropic only requires the block
  *     to exist with a matching id; its content is free-form).
  *
- * Non-snapshot tool results (read_struct / search_web / editor content …)
- * carry data the task may aggregate later and are never elided — see
- * isTargetEvidenceTag for how the target tools are told apart despite sharing
- * read_page's wrapper tag.
+ * Only the most recent KEEP_FULL_OBSERVATIONS (3) observations — page
+ * snapshots and read_struct results, counted together, newest first — stay in
+ * full; older ones are replaced with a short placeholder. read_struct results
+ * are extracted records, so their placeholder tells the model to re-run
+ * read_struct or keep the rows in the scratchpad. Other tool results
+ * (read_target / find_target evidence, search_web, editor content …) are
+ * never elided — see isTargetEvidenceTag for how the target tools are told
+ * apart despite sharing read_page's wrapper tag.
  *
  * The transform is monotone: a block elided at step N stays elided
- * byte-identically at every later step (only the previous last user turn
- * flips full → marker once, near the tail), so the wire prefix grows
- * append-only and auto-prefix caches (OpenAI / Moonshot / DeepSeek) keep
- * hitting across steps.
+ * byte-identically at every later step (each new observation flips the one
+ * that falls out of the keep window full → marker once, near the tail), so
+ * the wire prefix stays stable apart from that one block and auto-prefix
+ * caches (OpenAI / Moonshot / DeepSeek) keep hitting across steps.
  */
+
+/** Observations (page snapshots + read_struct results) kept in full. */
+export const KEEP_FULL_OBSERVATIONS = 3;
 
 /** Marker that replaces an elided snapshot's bulky part. */
 export const STALE_OBSERVATION_MARKER =
   "[This earlier page snapshot's interactive index and page content were omitted to save context. " +
-  "Only the most recent snapshot is shown in full. If you still need details from this " +
+  "Only the most recent snapshots are shown in full. If you still need details from this " +
   "page, re-read it (e.g. read_page) or rely on notes you kept in your reasoning.]";
 
 /**
@@ -51,6 +58,11 @@ export const STALE_OBSERVATION_MARKER =
  *     (atlas / content / full payloads).
  */
 const BULK_MARKERS = ["<interactive_index", "<untrusted_page_content"];
+
+/** Placeholder for an elided read_struct result. */
+export const STALE_STRUCT_MARKER =
+  "[This earlier read_struct result was omitted to save context. If you still need these " +
+  "records, call read_struct again, or keep rows you must not lose with the scratchpad tools.]";
 
 /**
  * Is this `<untrusted_page_content …>` opening tag carrying TARGET EVIDENCE
@@ -75,7 +87,19 @@ function isTargetEvidenceTag(text: string, tagStart: number): boolean {
   return text.slice(tagStart, tagEnd).includes("target_id=");
 }
 
-function elideText(text: string): string | null {
+type ObservationKind = "snapshot" | "struct";
+
+const STRUCT_TAG_RE = /<untrusted_page_content\b[^>]*\btool="read_struct"/;
+
+/** Is this text a page snapshot, a read_struct result, or neither? */
+function observationKind(text: string): ObservationKind | null {
+  if (snapshotCut(text) !== -1) return "snapshot";
+  if (STRUCT_TAG_RE.test(text)) return "struct";
+  return null;
+}
+
+/** Where a page snapshot's bulky part starts; -1 when there is none. */
+function snapshotCut(text: string): number {
   let cut = -1;
   for (const marker of BULK_MARKERS) {
     let idx = text.indexOf(marker);
@@ -84,66 +108,79 @@ function elideText(text: string): string | null {
     }
     if (idx !== -1 && (cut === -1 || idx < cut)) cut = idx;
   }
-  if (cut === -1) return null; // no snapshot bulk; leave as-is
+  return cut;
+}
+
+function elideText(text: string, kind: ObservationKind): string {
+  const cut = kind === "snapshot" ? snapshotCut(text) : text.search(STRUCT_TAG_RE);
+  const marker = kind === "snapshot" ? STALE_OBSERVATION_MARKER : STALE_STRUCT_MARKER;
   const header = text.slice(0, cut).trimEnd();
-  return header ? `${header}\n\n${STALE_OBSERVATION_MARKER}` : STALE_OBSERVATION_MARKER;
+  return header ? `${header}\n\n${marker}` : marker;
+}
+
+/** Already elided by an earlier pass — counts toward nothing, stays as is. */
+function isElided(text: string): boolean {
+  return text.endsWith(STALE_OBSERVATION_MARKER) || text.endsWith(STALE_STRUCT_MARKER);
 }
 
 /**
- * @param keepLatest  Keep the most-recent user turn's snapshot in full (the
- *   wire-time default — that turn is the page the agent is acting on). Pass
- *   false when the messages are headed for the compaction summarizer instead
- *   of the wire: there every snapshot is about to be replaced by a summary,
- *   and the summarizer is explicitly told to omit DOM listings, so shipping
- *   the raw payload is pure waste.
+ * @param keepFull  How many of the newest observations stay in full (the
+ *   wire-time default is KEEP_FULL_OBSERVATIONS). Pass 0 (or `false`) when the
+ *   messages are headed for the compaction summarizer instead of the wire:
+ *   there every snapshot is about to be replaced by a summary, and the
+ *   summarizer is explicitly told to omit DOM listings, so shipping the raw
+ *   payload is pure waste. `true` = the default, for older call sites.
  */
 export function elideStaleObservations(
   messages: AgentMessage[],
-  keepLatest: boolean = true,
+  keepFull: number | boolean = KEEP_FULL_OBSERVATIONS,
 ): AgentMessage[] {
-  // The most-recent user turn carries the current observation — never elide it.
-  let lastUserIdx = -1;
-  if (keepLatest) {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
-        lastUserIdx = i;
-        break;
-      }
-    }
-  }
+  const keep = keepFull === true ? KEEP_FULL_OBSERVATIONS : keepFull === false ? 0 : Math.max(0, keepFull);
 
-  return messages.map((msg, idx) => {
-    if (idx === lastUserIdx) return msg;
-    if (msg.role !== "user") return msg;
-    if (typeof msg.content === "string") return msg;
+  // Observation candidates per user turn: the LAST text block (push-mode
+  // observation) and every tool_result block (pull mode).
+  const candidates = (msg: AgentMessage): number[] => {
+    if (msg.role !== "user" || typeof msg.content === "string") return [];
     const blocks = msg.content as ContentBlock[];
-
-    // Lazily-cloned output; a message with nothing to elide keeps its identity.
-    let newBlocks: ContentBlock[] | null = null;
-    const replaceBlock = (i: number, block: ContentBlock) => {
-      if (!newBlocks) newBlocks = blocks.slice();
-      newBlocks[i] = block;
-    };
-
-    // The observation is the LAST text block in the user turn.
+    const out: number[] = [];
     for (let i = blocks.length - 1; i >= 0; i--) {
       if (blocks[i].type === "text") {
-        const textBlock = blocks[i] as Extract<ContentBlock, { type: "text" }>;
-        const elided = elideText(textBlock.text);
-        if (elided !== null) replaceBlock(i, { type: "text", text: elided });
+        out.push(i);
         break;
       }
     }
+    for (let i = 0; i < blocks.length; i++) if (blocks[i].type === "tool_result") out.push(i);
+    return out.sort((a, b) => a - b);
+  };
+  const textOf = (b: ContentBlock): string =>
+    b.type === "text" ? b.text : b.type === "tool_result" ? b.content : "";
 
-    // Stale read_page snapshots ride tool_result blocks (pull mode). Replace
-    // their bulky payload with the marker, preserving toolUseId pairing.
-    for (let i = 0; i < blocks.length; i++) {
+  // Walk newest → oldest; the first `keep` live observations stay full.
+  let kept = 0;
+  const out = messages.slice();
+  for (let m = messages.length - 1; m >= 0; m--) {
+    const msg = messages[m];
+    const idxs = candidates(msg);
+    if (idxs.length === 0) continue;
+    const blocks = msg.content as ContentBlock[];
+    let newBlocks: ContentBlock[] | null = null;
+    for (let k = idxs.length - 1; k >= 0; k--) {
+      const i = idxs[k];
       const block = blocks[i];
-      if (block.type !== "tool_result") continue;
-      const elided = elideText(block.content);
-      if (elided !== null) replaceBlock(i, { ...block, content: elided });
+      const text = textOf(block);
+      if (isElided(text)) continue;
+      const kind = observationKind(text);
+      if (!kind) continue;
+      if (kept < keep) {
+        kept++;
+        continue;
+      }
+      const elided = elideText(text, kind);
+      if (!newBlocks) newBlocks = blocks.slice();
+      newBlocks[i] =
+        block.type === "text" ? { type: "text", text: elided } : { ...(block as Extract<ContentBlock, { type: "tool_result" }>), content: elided };
     }
-
-    return newBlocks ? { ...msg, content: newBlocks } : msg;
-  });
+    if (newBlocks) out[m] = { ...msg, content: newBlocks } as AgentMessage;
+  }
+  return out;
 }
