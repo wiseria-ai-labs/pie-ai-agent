@@ -1,4 +1,4 @@
-import { buildClickTool, buildHoverTool, type MouseToolDeps } from "./tools/mouse";
+import { buildClickAtTool, buildClickTool, buildHoverTool, type MouseToolDeps } from "./tools/mouse";
 import type { ActResult } from "../dom-actions/act-core";
 import { execActInTab } from "../dom-actions/exec-act";
 import { scroll } from "../dom-actions/scroll";
@@ -46,12 +46,13 @@ export function getKeyboardTools(deps: KeyboardToolDeps): Tool[] {
 }
 
 /**
- * Phase 6 — mouse tools (hover + CDP click). Always returned (handlers
+ * Phase 6 — mouse tools (hover + CDP click + screenshot-coordinate click_at;
+ * click_at is vision-gated in loop.ts). Always returned (handlers
  * gate via requireCdpInput → inline onboarding flow). T16 wires this
  * into loop.ts alongside getKeyboardTools.
  */
 export function getMouseTools(deps: MouseToolDeps): Tool[] {
-  return [buildHoverTool(deps), buildClickTool(deps)];
+  return [buildHoverTool(deps), buildClickTool(deps), buildClickAtTool(deps)];
 }
 
 export type { MouseToolDeps };

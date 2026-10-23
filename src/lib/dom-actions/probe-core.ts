@@ -113,6 +113,10 @@ export type ProbeResult =
       html: string;
       interactiveElements: InteractiveElementSummary[];
       scrollableHints: ScrollableHint[];
+      /** The frame's own location / title at read time (the tab metadata
+       *  can lag an SPA route change). */
+      url?: string;
+      title?: string;
     }
   | {
       op: "atlas";
@@ -202,6 +206,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     "untrusted_scratchpad_preview",
     "untrusted_local_agent_output",
     "untrusted_skill_output_list",
+    "untrusted_mcp_output",
   ];
   const WRAPPER_TAGS = new Set(WRAPPER_TAGS_LIST);
 
@@ -440,6 +445,20 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     const input = target instanceof HTMLInputElement ? target : null;
     const option = target instanceof HTMLOptionElement ? target : null;
     const pieIdx = Number(el.getAttribute("data-pie-idx") ?? "-1");
+    let inViewport = false;
+    try {
+      const r = el.getBoundingClientRect();
+      const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+      inViewport = r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
+    } catch {
+      inViewport = false;
+    }
+    // Absolute (resolved against the document base) so the LLM can pass it
+    // straight to navigate / open_url; raw attribute only as a fallback.
+    const href = tag === "a"
+      ? normalizeSpace((target as HTMLAnchorElement).href || target.getAttribute("href") || "").slice(0, 500)
+      : "";
     return {
       pieIdx,
       tag,
@@ -456,6 +475,8 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       selected: option ? option.selected : target.hasAttribute("selected"),
       hasPopup: normalizeSpace(target.getAttribute("aria-haspopup") ?? ""),
       ariaExpanded: normalizeSpace(target.getAttribute("aria-expanded") ?? ""),
+      ...(href ? { href } : {}),
+      inViewport,
     };
   }
 
@@ -719,7 +740,14 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       });
     }
 
-    return { op: "snapshot", html, interactiveElements, scrollableHints };
+    return {
+      op: "snapshot",
+      html,
+      interactiveElements,
+      scrollableHints,
+      url: location.href,
+      title: document.title,
+    };
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -914,11 +942,19 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
       return UNSAFE_URL.test(collapsed);
     };
 
+    // Emits the ABSOLUTE URL (link.href resolves against the document base)
+    // so read_struct / extract_records links are directly usable with
+    // navigate / open_url. Not run through safeText: its 120-char summary cap
+    // would truncate real URLs; same markup filtering, URL-sized cap.
     const safeLinkHref = (link: HTMLAnchorElement): string => {
       const raw = link.getAttribute("href") ?? "";
       const normalized = link.href || raw;
       if (isUnsafeHrefValue(raw) || isUnsafeHrefValue(normalized)) return "";
-      return safeText(raw || normalized);
+      return sanitizeText(escapeWrapperMarkup(normalized))
+        .replace(SUMMARY_MARKUP_RE, "[filtered]")
+        .replace(/[<>]/g, "[filtered]")
+        .replace(/\s+/g, "")
+        .slice(0, 2048);
     };
 
     const scanTables = (): HTMLTableElement[] =>
@@ -1091,7 +1127,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
           if (href) put("link", href);
         }
         const img = item.querySelector("img[src]") as HTMLImageElement | null;
-        if (img) put("img", capText(img.getAttribute("src") ?? "", p.maxFieldChars));
+        if (img) put("img", capText(img.src || img.getAttribute("src") || "", p.maxFieldChars));
         // Remaining text leaves: elements with their own direct text, skipping
         // the heading subtree (already captured as title) to avoid duplication.
         let textIdx = 0;

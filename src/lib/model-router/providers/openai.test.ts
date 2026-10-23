@@ -292,7 +292,7 @@ describe("openai /v1/responses stream mapping", () => {
     try {
       const out: StreamEvent[] = [];
       for await (const ev of streamChat({ ...BASE, model: "gpt-5.6-sol" }, [{ role: "user", content: "hi" }])) out.push(ev);
-      expect(out).toEqual([{ type: "error", error: expect.stringContaining("(400)"), kind: "http" }]);
+      expect(out).toEqual([{ type: "error", error: expect.stringContaining("(400)"), kind: "http", status: 400 }]);
     } finally {
       fetchMock.mockRestore();
     }
@@ -431,7 +431,7 @@ describe("openai /v1/responses stream mapping", () => {
     try {
       const out: StreamEvent[] = [];
       for await (const ev of streamChat({ ...BASE, model: "gpt-5.6-sol" }, [{ role: "user", content: "hi" }])) out.push(ev);
-      expect(out).toEqual([{ type: "error", error: expect.stringContaining("API key"), kind: "auth" }]);
+      expect(out).toEqual([{ type: "error", error: expect.stringContaining("API key"), kind: "auth", status: 401 }]);
     } finally {
       fetchMock.mockRestore();
     }

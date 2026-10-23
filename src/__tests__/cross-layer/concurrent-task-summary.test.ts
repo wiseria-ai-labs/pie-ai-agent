@@ -18,7 +18,7 @@ describe("cross-layer: concurrent agent-done-task transit (#30)", () => {
     const portA = chromeMock.runtime.__ports.at(-1)!;
 
     // User starts a task on A (simulate sendMessage flow)
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "do thing" });
     });
     // chat-start was posted with sessionId: idA

@@ -1,5 +1,6 @@
 // Service Worker — background script for Pie
 
+import { clearLlmPause, hasResumableAgentState, pauseSessionWithReason } from "./llm-pause";
 import type {
   PageContent,
   ExtractedFrameContent,
@@ -47,6 +48,7 @@ import type { RoleViolation } from "@/lib/agent/history-validation";
 import { logHistoryRepaired } from "@/lib/agent/history-validation-telemetry";
 import {
   setSessionAgent,
+  updateSessionAgent,
   setPendingConfirm,
   getSessionAgent,
   getSessionMeta,
@@ -100,7 +102,7 @@ import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
 import { runStartupMigrations } from "@/lib/startup-migrations";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
 import { getEffectivePinMode, getPrimaryPin } from "@/lib/sessions/pin-state";
-import { captureActivePinnedTab } from "@/lib/sessions/capture-active-pinned";
+import { captureActivePinnedTab, capturePinnedTabById } from "@/lib/sessions/capture-active-pinned";
 import { chat } from "@/lib/model-router";
 import { generateTitle, maybeUpgradeFallbackTitle, resolveTitleSentinel } from "@/lib/sessions/title-generator";
 import {
@@ -144,7 +146,15 @@ import {
 import { addPending, cancelPending, drainPending } from "@/lib/sessions/pending-instructions";
 import { broadcastInstructionState } from "./instruction-broadcast";
 import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
-import type { ChatInstructionRejectedMessage } from "@/types/messages";
+import {
+  admitInstruction,
+  beginTask,
+  currentGeneration,
+  endTask,
+  makeGuardedTaskEmit,
+  settleQueuedInstruction,
+} from "./task-end-guard";
+import type { ChatInstructionRejectedMessage, PortMessageToPanel } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
 import { installLogCapture } from "@/lib/log-buffer";
 import {
@@ -1103,6 +1113,7 @@ async function handleResumeRequest(
   abortController: AbortController,
   inFlightSessionIds: Set<string>,
   keepAlive: KeepAlive,
+  taskGeneration: number,
 ): Promise<void> {
   try {
     const signal = abortController.signal;
@@ -1126,7 +1137,7 @@ async function handleResumeRequest(
     return;
   }
   const agent = await getSessionAgent(sessionId);
-  if (!agent || agent.stepIndex === 0) {
+  if (!hasResumableAgentState(meta, agent)) {
     console.warn(
       `[sw] resume-task ignored — session=${sessionId} has no in-flight agent state`,
     );
@@ -1143,7 +1154,11 @@ async function handleResumeRequest(
   // it). 'user' mode pins were chosen explicitly by the user; if the page
   // navigated, that's their decision — resume directly. 'auto' mode has no
   // pin so checkPinnedDrift would short-circuit anyway.
-  const driftEligibleMode = getEffectivePinMode(meta, agent) === "task";
+  // A task paused because its tab was closed resumes WITHOUT the drift card
+  // (whose only option is Discard): the loop tells the model the tab is gone
+  // and it can reopen the page itself.
+  const driftEligibleMode =
+    getEffectivePinMode(meta, agent) === "task" && meta.pauseReason?.kind !== "tab-closed";
   const drift = driftEligibleMode
     ? await checkPinnedDrift(meta, agent.stepIndex)
     : null;
@@ -1194,8 +1209,7 @@ async function handleResumeRequest(
   // Single-transaction patch — `meta` was read several awaits ago; writing it
   // back wholesale could clobber concurrent writers.
   await updateSessionMeta(sessionId, (current) => ({
-    ...current,
-    status: "active",
+    ...clearLlmPause(current),
     ...(current.instanceId ? {} : { instanceId: resumeSel.instanceId, model: resumeSel.model }),
   }));
 
@@ -1220,7 +1234,7 @@ async function handleResumeRequest(
   }
 
   await runAgentLoop({
-    emit: (m) => port.postMessage(m),
+    emit: makeTaskEmit(port, sessionId, taskGeneration, signal),
     task: taskForPrompt,
     modelConfig,
     instanceId: resumeSel.instanceId,
@@ -1228,7 +1242,10 @@ async function handleResumeRequest(
     sessionId,
     // M2-U1: shared handler that also throttles lastAccessedAt bumps.
     onStepSnapshot: makeStepSnapshotHandler(sessionId),
+    onLlmPause: (info) => pauseSessionWithReason(sessionId, info.reason ?? "llm-error", info.error),
     resumedAgentMessages: agent.agentMessages,
+    // A tab-closed pause was taken before that step's observation was added.
+    resumedObservationPending: meta.pauseReason?.kind === "tab-closed",
     resumedFromStep: agent.stepIndex,
     // Phase 5 — propagate prior hasImageContent flag across resume.
     resumedHasImageContent: agent.hasImageContent,
@@ -1331,6 +1348,14 @@ async function handleDiscardRequest(
     stepCount: lastStepIndex,
     sessionId,
   } satisfies AgentDoneTaskMessage);
+  // The task is over — the instruction queue will not be drained again.
+  // Generation-guarded: a task that was superseded while it was winding down
+  // must not close the queue of the task that replaced it.
+  endTask(
+    { post: (m) => port.postMessage(m), drainPending },
+    sessionId,
+    currentGeneration(sessionId),
+  );
 }
 
 // --- Agent Loop via Port ---
@@ -1367,9 +1392,10 @@ function makeStepSnapshotHandler(sessionId: string) {
     // lands AFTER setPendingConfirm. Previous behavior was correct only by
     // luck (the loop is suspended during user-confirm wait so no snapshot
     // fired); the merge makes the invariant explicit.
-    const existing = await getSessionAgent(sessionId);
-    const merged = mergeSessionAgentSnapshot(existing, snapshot);
-    await setSessionAgent(sessionId, merged);
+    // Atomic read-merge-write: a plain get → set here raced with the mid-task
+    // instruction queue (addPending) and wrote back a stale queue, dropping
+    // messages the user sent while the agent was working.
+    await updateSessionAgent(sessionId, (existing) => mergeSessionAgentSnapshot(existing, snapshot));
     if (snapshot.stepIndex % 5 === 0) {
       updateLastAccessed(sessionId).catch((e) => {
         console.warn(
@@ -1381,6 +1407,36 @@ function makeStepSnapshotHandler(sessionId: string) {
   };
 }
 
+/**
+ * Issue #34 follow-up — the task's emit wrapper.
+ *
+ * A task's final answer (`chat-done` for a plain reply, `agent-done-task` for
+ * a `done`/`fail` termination) closes the mid-task instruction queue: the
+ * loop drains it at the top of every step and there is no step after this
+ * one. An instruction that lands in the last window — between the loop's
+ * final queue check and this emit — would sit in the queue forever: the user
+ * sees it as sent, the agent never answers it.
+ *
+ * The SW arbitrates that window — see `task-end-guard.ts`. The task's
+ * generation is passed in (taken when the task was dispatched) so a
+ * superseded task's late terminal emit cannot close the queue of the task
+ * that replaced it.
+ */
+function makeTaskEmit(
+  port: chrome.runtime.Port,
+  sessionId: string,
+  taskGeneration: number,
+  signal: AbortSignal,
+): (m: PortMessageToPanel) => void {
+  return makeGuardedTaskEmit(
+    { post: (m) => port.postMessage(m), drainPending },
+    sessionId,
+    taskGeneration,
+    // A user abort keeps the queue for the next chat-start (P-MTI-9).
+    () => signal.aborted,
+  );
+}
+
 async function handleChatStream(
   port: chrome.runtime.Port,
   messages: ChatMessage[],
@@ -1388,7 +1444,9 @@ async function handleChatStream(
   abortController: AbortController,
   inFlightSessionIds: Set<string>,
   keepAlive: KeepAlive,
+  taskGeneration: number,
   fallbackTitle?: string,
+  anchorTab?: { tabId: number; windowId: number },
 ) {
   const signal = abortController.signal;
   try {
@@ -1411,6 +1469,15 @@ async function handleChatStream(
         sessionId,
       });
       return;
+    }
+    // A new message on a session the loop paused after LLM retries ran out
+    // abandons that paused task: the conversation (with the paused task's
+    // visible steps) is the new task's context. The paused resume seed is
+    // simply overwritten by this task's first step snapshot.
+    if (chatSessionMeta?.status === "paused" && chatSessionMeta.pauseReason) {
+      await updateSessionMeta(sessionId, (current) =>
+        current.status === "paused" ? clearLlmPause(current) : null,
+      );
     }
     // M2-U1 trigger (b) — bump lastAccessedAt when the SW receives a new
     // chat-start for this session. Fire-and-forget; failure is non-fatal.
@@ -1536,7 +1603,14 @@ async function handleChatStream(
     // Panel-side fire-and-forget capture (useSession.ts:783) may race with
     // this; both paths set pinMode='task', so the second write is a no-op
     // (idempotent invariant). SW-side path is the authoritative backstop.
-    await upgradeAutoToTaskAtChatStart(sessionId, captureActivePinnedTab).catch(
+    // Pin to the panel's anchor tab (captured at send, in the panel's own
+    // window). Without one (older panel) fall back to the active-tab query.
+    // With one that no longer exists, pin nothing — never "the active tab",
+    // which here means whichever window was focused last.
+    const captureTaskTab = anchorTab
+      ? () => capturePinnedTabById(anchorTab.tabId)
+      : captureActivePinnedTab;
+    await upgradeAutoToTaskAtChatStart(sessionId, captureTaskTab).catch(
       (e) => {
         console.warn(
           `[sw] upgradeAutoToTaskAtChatStart failed for session=${sessionId}:`,
@@ -1620,7 +1694,7 @@ async function handleChatStream(
         : ("auto" as const);
 
     await runAgentLoop({
-      emit: (m) => port.postMessage(m),
+      emit: makeTaskEmit(port, sessionId, taskGeneration, signal),
       task,
       modelConfig,
       instanceId: chatSel.instanceId,
@@ -1631,6 +1705,12 @@ async function handleChatStream(
       // (see makeStepSnapshotHandler). Errors caught + logged inside
       // runAgentLoop; this wrapper only does the storage calls.
       onStepSnapshot: makeStepSnapshotHandler(sessionId),
+      // LLM retries exhausted / bound tab closed → pause (keep history,
+      // panel shows the reason with Retry).
+      onLlmPause: (info) => pauseSessionWithReason(sessionId, info.reason ?? "llm-error", info.error),
+      // Startup fallback when the session has no pin: the anchor tab, never a
+      // fresh "active tab" query (the last-focused window may be another one).
+      ...(anchorTab ? { anchorTabId: anchorTab.tabId } : {}),
       // v1.5 multi-pin: replace single `pinned` with the full array.
       // synthMeta is post-upgradeAutoToTaskAtChatStart (fetched after the
       // upgrade at line 1035), so pinnedTabs[] reflects the upgraded state.
@@ -1774,6 +1854,10 @@ chrome.runtime.onConnect.addListener((port) => {
       rotateAbortController(abortRotation, () => {});
       inFlightSessionIds.add(message.sessionId);
       runningSessionIds.add(message.sessionId);
+      // A new task reopens the instruction queue. The generation identifies
+      // THIS task: a superseded task's late terminal emit must not close the
+      // queue of the task that replaced it.
+      const taskGeneration = beginTask(message.sessionId);
       keepAlive.ensure();
       handleChatStream(
         port,
@@ -1782,15 +1866,25 @@ chrome.runtime.onConnect.addListener((port) => {
         abortRotation.current,
         inFlightSessionIds,
         keepAlive,
+        taskGeneration,
         message.fallbackTitle,
+        message.anchorTab,
       );
     } else if (message.type === "chat-abort") {
       abortRotation.current.abort();
     } else if (message.type === "chat-instruction-add") {
       if (!verifyPortSession(message.sessionId, "chat-instruction-add")) return;
 
-      // Reject if loop has ended for this session — panel will fall back to chat-start
-      if (!inFlightSessionIds.has(message.sessionId)) {
+      // Reject if the loop has ended for this session — the panel falls back
+      // to chat-start. `admitInstruction` closes the last window: the task
+      // already produced its final answer, so nothing will drain the queue
+      // again and an instruction accepted now would sit there forever.
+      const admission = admitInstruction(
+        message.sessionId,
+        inFlightSessionIds.has(message.sessionId),
+      );
+      if (admission === "drop") return;
+      if (admission === "reject") {
         const reply: ChatInstructionRejectedMessage = {
           type: "chat-instruction-rejected",
           sessionId: message.sessionId,
@@ -1802,6 +1896,7 @@ chrome.runtime.onConnect.addListener((port) => {
       }
 
       // Append to queue then broadcast new state
+      const addGeneration = currentGeneration(message.sessionId);
       void (async () => {
         try {
           await addPending(message.sessionId, {
@@ -1814,6 +1909,15 @@ chrome.runtime.onConnect.addListener((port) => {
             ...(message.quotes?.length ? { quotes: message.quotes } : {}),
             createdAt: Date.now(),
           });
+          // The task may have ended (or been replaced) while this write was
+          // in flight — see settleQueuedInstruction.
+          const stillQueued = await settleQueuedInstruction(
+            { post: (m) => port.postMessage(m), cancelPending },
+            message.sessionId,
+            message.chatMessageId,
+            addGeneration,
+          );
+          if (!stillQueued) return;
           await broadcastInstructionState((m) => port.postMessage(m), message.sessionId);
         } catch (e) {
           console.warn("[sw] chat-instruction-add failed:", e);
@@ -1847,6 +1951,8 @@ chrome.runtime.onConnect.addListener((port) => {
       rotateAbortController(abortRotation, () => {});
       inFlightSessionIds.add(message.sessionId);
       runningSessionIds.add(message.sessionId);
+      // A resumed task reopens the instruction queue (see chat-start).
+      const taskGeneration = beginTask(message.sessionId);
       keepAlive.ensure();
       handleResumeRequest(
         port,
@@ -1854,6 +1960,7 @@ chrome.runtime.onConnect.addListener((port) => {
         abortRotation.current,
         inFlightSessionIds,
         keepAlive,
+        taskGeneration,
       ).catch((e) => {
         console.warn(
           `[sw] resume-task handler failed for session=${message.sessionId}:`,

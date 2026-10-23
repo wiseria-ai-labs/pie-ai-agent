@@ -107,4 +107,10 @@ export interface Tool {
   description: string;
   parameters: Record<string, unknown>; // JSON Schema object
   handler: (args: unknown, ctx: ToolHandlerContext) => Promise<ActionResult>;
+  /**
+   * Read/write class for tools whose names are not in the static registry
+   * (MCP tools: read only when the server sets annotations.readOnlyHint).
+   * Built-in tools leave this unset and are classified by TOOL_CLASSES.
+   */
+  toolClass?: "read" | "write";
 }

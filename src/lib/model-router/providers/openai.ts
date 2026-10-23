@@ -2,6 +2,7 @@ import type { ModelConfig } from "@/lib/model-router";
 import type { AgentMessage, ToolDefinition, StreamEvent } from "@/lib/model-router/types";
 import { readSSELines } from "@/lib/model-router/sse";
 import { displayProviderName } from "./_shared/openai-compat-core";
+import { isHardQuotaText, parseRetryAfter } from "../retry-hints";
 
 /**
  * OpenAI provider — Responses API (`/v1/responses`) wire.
@@ -172,13 +173,19 @@ export async function* streamChat(
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    if (response.status === 401) {
-      yield { type: "error", error: `Invalid ${name} API key`, kind: "auth" };
-    } else if (response.status === 429) {
-      const retryAfter = response.headers.get("retry-after");
-      yield { type: "error", error: `${name} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}`, kind: "ratelimit" };
+    const status = response.status;
+    const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+    if (status === 401) {
+      yield { type: "error", error: `Invalid ${name} API key`, kind: "auth", status };
+    } else if (status === 429) {
+      if (isHardQuotaText(text)) {
+        yield { type: "error", error: `${name} quota exceeded: ${text}`, kind: "budget", status };
+      } else {
+        const retryAfter = response.headers.get("retry-after");
+        yield { type: "error", error: `${name} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter}s` : ""}`, kind: "ratelimit", status, retryAfterMs };
+      }
     } else {
-      yield { type: "error", error: `${name} API error (${response.status}): ${text}`, kind: "http" };
+      yield { type: "error", error: `${name} API error (${status}): ${text}`, kind: "http", status, retryAfterMs };
     }
     return;
   }

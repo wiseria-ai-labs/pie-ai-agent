@@ -16,6 +16,10 @@ export interface InteractiveElementSummary {
   hasPopup?: string;
   /** Raw aria-expanded value ("true" | "false" | ""). */
   ariaExpanded?: string;
+  /** Link target (anchors only, raw attribute, capped) — lets read_page filter by URL. */
+  href?: string;
+  /** Box intersects the viewport at scan time — read_page lists these first when capping. */
+  inViewport?: boolean;
 }
 
 export interface InteractiveSummaryMatch {

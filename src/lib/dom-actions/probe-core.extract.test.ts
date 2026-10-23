@@ -136,9 +136,9 @@ describe("probePageInjected op=extract (collection)", () => {
     expect(r.found).toBe(true);
     expect(r.rows).toHaveLength(30); // not limited by atlas 20-item preview cap
     expect(r.rows[3].title).toBe("Item 3");
-    expect(r.rows[3].link).toBe("/p/3");
+    expect(r.rows[3].link).toBe(new URL("/p/3", location.href).href);
     expect(r.rows[3].price).toBe("¥300"); // class-stem naming
-    expect(r.rows[3].img).toBe("/img/3.jpg");
+    expect(r.rows[3].img).toBe(new URL("/img/3.jpg", location.href).href);
     // hash-like class (css-1x2y3z) is not a field name → position fallback
     expect(Object.keys(r.rows[3])).toContain("text_0");
   });
@@ -169,7 +169,7 @@ describe("probePageInjected op=extract (collection)", () => {
     const r = probePageInjected({ op: "extract", signature: sigOf(), cursor: 0, batchSize: 500, maxFieldChars: 2048 });
     if (r.op !== "extract") throw new Error("narrow");
     expect(r.rows[0].link).toBeUndefined();
-    expect(r.rows[1].link).toBe("/b");
+    expect(r.rows[1].link).toBe(new URL("/b", location.href).href);
   });
 
   it("same-name collision within an item gets _2 suffix", () => {

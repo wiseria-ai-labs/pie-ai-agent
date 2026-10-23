@@ -1,0 +1,74 @@
+name: CI
+
+# The extension test suite (3600+ tests) never ran in CI before: the only
+# workflow was `release.yml`, which fires on tags and doesn't call
+# `pnpm test`. This workflow runs the checks that catch a broken change
+# BEFORE it reaches a release tag.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  extension:
+    name: Extension — typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Check for hardcoded i18n strings
+        run: pnpm check:i18n
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify eval harness is NOT in the production bundle
+        # Pure Node string-scan of dist/ (no docker / Playwright / Python
+        # needed). The dev-only eval bridge must be tree-shaken out of
+        # `pnpm build`; this guard fails the release if it ever leaks in.
+        # See eval/README.md.
+        run: pnpm verify:no-eval-bridge
+
+  daemon:
+    name: Daemon — bun test
+    # Same platform as the release pipeline: the daemon's install/sandbox
+    # paths are platform-specific and its test suite is known-good on macOS.
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Daemon tests
+        run: cd daemon && bun install --frozen-lockfile && bun test

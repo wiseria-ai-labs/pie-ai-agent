@@ -15,7 +15,9 @@ import {
   ChevronRight,
   ZoomIn,
   RotateCcw,
+  Blocks,
 } from "lucide-react";
+import { listMcpServers } from "@/lib/mcp/store";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
 import { getSearchProviderStatus, ACTIVE_SEARCH_PROVIDER } from "@/lib/search-provider";
@@ -348,6 +350,7 @@ export default function SettingsRoot({
   // completes moments later (issue #298).
   const bridge = useBridgeStatus();
   const [searchConfigured, setSearchConfigured] = useState(false);
+  const [mcpCount, setMcpCount] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -357,6 +360,11 @@ export default function SettingsRoot({
     void getSearchProviderStatus(ACTIVE_SEARCH_PROVIDER).then((s) => {
       if (alive) setSearchConfigured(s.configured);
     });
+    void listMcpServers()
+      .then((l) => {
+        if (alive) setMcpCount(l.filter((s) => s.enabled).length);
+      })
+      .catch(() => {});
     return () => {
       alive = false;
     };
@@ -402,6 +410,13 @@ export default function SettingsRoot({
             label={t("settings.nav.search")}
             badge={searchConfigured ? t("settings.nav.configured") : undefined}
             onClick={() => onOpenPage("search")}
+          />
+          <NavRow
+            id="mcp"
+            icon={<Blocks {...ROW_ICON} />}
+            label={t("settings.nav.mcp")}
+            badge={mcpCount ? t("settings.nav.mcpCount", { count: String(mcpCount) }) : undefined}
+            onClick={() => onOpenPage("mcp")}
           />
           <CdpRow />
         </Group>

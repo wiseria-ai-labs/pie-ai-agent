@@ -76,6 +76,16 @@ export interface SessionMeta {
    */
   lastAccessedAt: number;
   status: SessionStatus;
+  /**
+   * Why the session is `paused`, when the agent loop paused it itself:
+   *   - "llm-error": every retry of an LLM request failed (429/5xx/network/
+   *     timeout/empty);
+   *   - "tab-closed": the tab the task was bound to was closed (the task never
+   *     falls back to whatever tab happens to be active).
+   * History is kept and the panel offers "Retry", which resumes the same step
+   * via `resume-task`. Absent for SW-restart pauses. Cleared on resume.
+   */
+  pauseReason?: { kind: "llm-error" | "tab-closed"; error: string; at: number };
   /** LLM-generated short title (M2-U3). Falls back to first-message prefix
    *  when LLM call fails or is in flight. */
   title?: string;
@@ -242,6 +252,13 @@ export interface SessionAgentState {
    * args — so the LLM cannot self-approve.
    */
   approvedSkillIds?: string[];
+  /**
+   * MCP servers (by StoredMcpServer.id) the user approved for this session
+   * ("Ask once per session" consent). Same lifecycle as approvedSkillIds:
+   * persisted, carried across the task-end tombstone, written only by the SW
+   * after a panel-request round-trip.
+   */
+  approvedMcpServerIds?: string[];
   /**
    * v1.5 — task-scoped pointer to the currently-focused tab among
    * `SessionMeta.pinnedTabs[]`. Snapshot is taken on this tab each

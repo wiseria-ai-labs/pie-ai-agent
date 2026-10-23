@@ -1,10 +1,22 @@
-import type { AgentMessage, ContentBlock, ToolDefinition, StreamEvent } from "../model-router/types";
+import type { AgentMessage, ContentBlock, StreamEvent, ErrorKind } from "../model-router/types";
+import {
+  DEFAULT_LLM_RETRY_POLICY,
+  EMPTY_RESPONSE_NUDGE,
+  classifyLlmError,
+  computeRetryDelay,
+  describeRetryReason,
+  retrySleep,
+  type LlmErrorEvent,
+  type LlmRetryPolicy,
+  type RetryReason,
+} from "./llm-retry";
 import type { ModelConfig } from "../model-router";
 import type { ChatMessage } from "../model-router";
 import { streamChat } from "../model-router";
 import { addImage, evictSession } from "../../background/image-cache";
 import { putArtifact } from "../files/output-store";
 import { dispatchCaptureVisibleTab, dispatchCaptureFullPageTab } from "./tools/screenshot";
+import { invalidateScreenshotGeometry } from "./screenshot-geometry";
 import { dispatchCaptureVideoFrame } from "./tools/video-frame";
 import { hydrateAttachments } from "./image-hydration";
 import {
@@ -15,7 +27,7 @@ import {
   isKeyboardToolName,
 } from "./tools";
 import type { Tool } from "./types";
-import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
+import { getToolClass, VISION_ONLY_TOOL_NAMES } from "./tool-names";
 import { escapeUntrustedWrappers, escapeTrustedWrappers } from "./untrusted-wrappers";
 import { classifyStreamCompletion } from "./stream-completion";
 import {
@@ -26,6 +38,8 @@ import {
 import { elideStaleObservations } from "./elide-stale-observations";
 import { applyTokenBudget, estimateTokens } from "./window-token-budget";
 import { diag, kv } from "./diag";
+import { coerceToolArgs } from "./coerce-tool-args";
+import { toolsToWireDefinitions, toolTakesTabId, toolNeedsActiveTab, createTabActivator } from "./tab-targeting";
 import { queryActiveHostTab } from "../panel-host/host-window";
 import { compactReactWindow, createDefaultSummarizer } from "./compact-react-window";
 import { resolveModelMeta } from "../model-router/providers/registry";
@@ -89,12 +103,15 @@ import {
   getSessionMeta,
   updateSessionMeta,
   getSessionAgent,
-  setSessionAgent,
+  updateSessionAgent,
   isSkillApprovedInSession,
   recordSkillApproval,
+  isMcpServerApprovedInSession,
+  recordMcpServerApproval,
 } from "../sessions/storage";
+import { prepareMcpForTask } from "../mcp/agent";
 import { addPinToMeta, removePinFromMeta } from "../sessions/pin-state";
-import { drainPending } from "../sessions/pending-instructions";
+import { drainPending, hasPending } from "../sessions/pending-instructions";
 import { buildMidTaskUserMessage } from "./loop-drain";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import {
@@ -137,6 +154,7 @@ const COMPACTION_FALLBACK_MAX_TOKENS = 32_000;
 
 /** Outbound message sink. Front-end path: `(m) => port.postMessage(m)`.
  *  Headless / scheduled path: write to Run record or discard streaming chunks. */
+
 export type AgentEmit = (msg: PortMessageToPanel) => void;
 
 export interface AgentLoopContext {
@@ -198,6 +216,29 @@ export interface AgentLoopContext {
    * fail-on-image precondition across restarts.
    */
   resumedHasImageContent?: boolean;
+  /**
+   * Called when every retry of an LLM request failed (llm-retry.ts). When
+   * set, the loop PAUSES the task instead of failing it: history is kept as a
+   * resume snapshot, `agent-paused` is emitted, and this hook marks the session
+   * paused so the panel offers "Retry" (resume-task → same step). Headless
+   * runs (schedules) leave it unset and keep the fail-the-task behaviour.
+   */
+  onLlmPause?: (info: { error: string; kind?: ErrorKind; reason?: "llm-error" | "tab-closed" }) => Promise<void>;
+  /**
+   * The tab the panel was on when the user pressed send (its own window).
+   * Used instead of an "active tab" query when the session has no pin at task
+   * start: in the service worker that query answers for the LAST-FOCUSED
+   * window, which may be another window the user switched to.
+   */
+  anchorTabId?: number;
+  /**
+   * Resume after a pause taken at the TOP of a step (before that step's
+   * observation was added — e.g. the bound tab was closed). The first resumed
+   * iteration then adds its observation as usual instead of skipping it.
+   */
+  resumedObservationPending?: boolean;
+  /** Overrides for the LLM retry policy (tests, headless tuning). */
+  llmRetryPolicy?: Partial<LlmRetryPolicy>;
   /**
    * Task 7 (progressive disclosure) — when resuming a paused task, the
    * persisted `SessionAgentState.activeToolGroups` (groups lit up by env
@@ -379,18 +420,10 @@ export function chatMessageToAgentMessage(
   return { role: "user", content: blocks };
 }
 
-function toolsToDefinitions(tools: Tool[]): ToolDefinition[] {
-  return tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    parameters: t.parameters,
-  }));
-}
-
-const SCREENSHOT_TOOL_NAME_SET = new Set<string>(SCREENSHOT_TOOL_NAMES);
+const VISION_ONLY_TOOL_NAME_SET = new Set<string>(VISION_ONLY_TOOL_NAMES);
 
 // #62 — fail-closed vision gating for the tool table offered to the LLM.
-// Screenshot tools attach an image block to the next turn; a model that
+// Covers VISION_ONLY_TOOL_NAMES (screenshot tools + click_at). Screenshot tools attach an image block to the next turn; a model that
 // can't ingest images either wastes a step on the runtime guard
 // (`vision === false`) or makes the provider API hard-reject the request
 // (`vision === undefined`, e.g. custom provider / unknown OpenRouter id).
@@ -403,7 +436,7 @@ export function filterToolsByVision<T extends { name: string }>(
   vision: boolean | undefined,
 ): T[] {
   if (vision === true) return tools;
-  return tools.filter((t) => !SCREENSHOT_TOOL_NAME_SET.has(t.name));
+  return tools.filter((t) => !VISION_ONLY_TOOL_NAME_SET.has(t.name));
 }
 
 /**
@@ -691,6 +724,33 @@ export async function interpretPinnedTabUrl(
  * field present in the snapshot wins; including `contextUsage` here
  * would clobber the value the usage block (~loop.ts:1491) just wrote.
  */
+// 空完成：无 tool call、无任何文本产出（stopReason 非 length）。通常是上游/中转在
+// 扣费后失败（#413）。重试仍为空时与 LLM-stream-error 同路处理（暂停或失败），
+// 让用户看到原因而非黑洞。TODO(#354): English fallback。
+export const EMPTY_COMPLETION_ERROR =
+  "The model returned an empty response (no text, no tool call). This " +
+  "usually means the upstream provider or relay failed after accepting " +
+  "the request. Check the provider's status, or try another model.";
+
+/**
+ * Request-only copy of `history` with EMPTY_RESPONSE_NUDGE appended to the
+ * trailing user turn (merged, not a new message — strict providers reject two
+ * user turns in a row). The persisted history is never touched.
+ */
+export function withEmptyResponseNudge(history: AgentMessage[]): AgentMessage[] {
+  const out = history.slice();
+  const last = out[out.length - 1];
+  if (last && last.role === "user") {
+    const blocks: ContentBlock[] =
+      typeof last.content === "string" ? [{ type: "text", text: last.content }] : [...last.content];
+    blocks.push({ type: "text", text: EMPTY_RESPONSE_NUDGE });
+    out[out.length - 1] = { role: "user", content: blocks };
+  } else {
+    out.push({ role: "user", content: EMPTY_RESPONSE_NUDGE });
+  }
+  return out;
+}
+
 export function buildSessionAgentSnapshot(
   history: AgentMessage[],
   stepIndex: number,
@@ -859,6 +919,7 @@ export function mergeSessionAgentSnapshot(
       ...snapshot,
       pendingInstructions: existing.pendingInstructions,
       ...(existing.approvedSkillIds ? { approvedSkillIds: existing.approvedSkillIds } : {}),
+      ...(existing.approvedMcpServerIds ? { approvedMcpServerIds: existing.approvedMcpServerIds } : {}),
     };
   }
   return { ...existing, ...snapshot };
@@ -990,7 +1051,7 @@ export function resolveFocusedPin(
  * on resume and not on iterations > startStepIndex).
  */
 export function buildFirstTurnReadPageHint(pinnedTabId: number): string {
-  return `You haven't called read_page yet. If the task involves the active page, call read_page({tabId: ${pinnedTabId}}) first to get element indices and frame versions.`;
+  return `You haven't called read_page yet. If the task involves the active page, call read_page({tabId: ${pinnedTabId}}) first to read it (add mode:"interactive" for element indices to click/type).`;
 }
 
 /**
@@ -1148,13 +1209,11 @@ export async function readFocusFromStorage(
       if (await isTabAlive(candidate.tabId)) {
         // Persist the new focus (same write path as focus_tab) so the next
         // iteration's resolveFocusedPin lands directly on the surviving tab.
-        const cur = await getSessionAgent(sessionId);
-        if (cur) {
-          await setSessionAgent(sessionId, {
-            ...cur,
-            currentFocusTabId: candidate.tabId,
-          });
-        }
+        // Atomic read-modify-write — a plain get → set wrote back a stale
+        // record and could drop a mid-task instruction queued in between.
+        await updateSessionAgent(sessionId, (cur) =>
+          cur ? { ...cur, currentFocusTabId: candidate.tabId } : null,
+        );
         return {
           focused: candidate,
           pinnedTabs: refreshedPins,
@@ -1248,11 +1307,13 @@ export function collectCrossSessionConflicts(
   args: Record<string, unknown>,
   _pinnedTabId: number,
   crossSessionPinnedTabIds: ReadonlySet<number> | undefined,
+  /** Tool.toolClass for runtime tools (MCP); falls back to the static registry. */
+  toolClass?: "read" | "write",
 ): number[] {
   if (!crossSessionPinnedTabIds || crossSessionPinnedTabIds.size === 0) {
     return [];
   }
-  if (getToolClass(toolName) !== "write") return [];
+  if ((toolClass ?? getToolClass(toolName)) !== "write") return [];
 
   const conflicts: number[] = [];
   if (Array.isArray(args.tabIds)) {
@@ -1438,6 +1499,69 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     sendAgentStep(emit, { ...msg, sessionId });
   };
 
+  // Every retry of an LLM request failed (llm-retry.ts). Interactive tasks
+  // PAUSE: the in-memory history (this step's observation and any drained
+  // instructions included) becomes the resume seed, the session is marked
+  // paused, and the panel offers "Retry", which goes through resume-task and
+  // re-runs this same step. Headless runs (no onLlmPause) fail as before.
+  const pauseOrFailAfterRetries = async (
+    failure: { reason: RetryReason; error: string; kind?: ErrorKind },
+    stepIndex: number,
+    discard: { discardText: number; discardThinking: number },
+  ): Promise<void> => {
+    const error = failure.reason === "empty" ? EMPTY_COMPLETION_ERROR : failure.error;
+    if (ctx.onLlmPause) {
+      await pauseTask("llm-error", error, stepIndex, discard, failure.kind);
+      return;
+    }
+    // Headless runs (no pause hook) fail as before.
+    emit(withSession({ type: "chat-error", error, kind: failure.kind }, sessionId));
+    await emitDone({
+      type: "agent-done-task",
+      success: false,
+      summary: failure.reason === "empty" ? error : `LLM stream error: ${error}`,
+      stepCount: stepIndex,
+    }, "fail");
+  };
+
+  // Pause (not fail) an interactive task: the in-memory history becomes the
+  // resume seed, the session is marked paused with `reason`, and the panel
+  // offers Retry (resume-task). Not a terminal state: no done emit, no
+  // tombstone, no task-pin release (the resumed run needs the pin). Also
+  // suppresses the finally's abort done.
+  const pauseTask = async (
+    reason: "llm-error" | "tab-closed",
+    error: string,
+    stepIndex: number,
+    discard: { discardText: number; discardThinking: number },
+    kind?: ErrorKind,
+  ): Promise<void> => {
+    doneEmitted = true;
+    if (ctx.onStepSnapshot) {
+      try {
+        // stepIndex - 1 = steps fully completed; resume starts again at
+        // stepIndex and skips the observation merge (it's already in history).
+        await ctx.onStepSnapshot({
+          ...buildSessionAgentSnapshot(history, stepIndex - 1, hasImageContent, [...activeToolGroups]),
+          taskActive: false,
+        });
+      } catch (e) {
+        console.warn(`[agent] pause snapshot failed for session=${sessionId}:`, e);
+      }
+    }
+    try {
+      await ctx.onLlmPause?.({ error, kind, reason });
+    } catch (e) {
+      console.warn(`[agent] pause hook failed for session=${sessionId}:`, e);
+    }
+    emit(
+      withSession(
+        { type: "agent-paused", error, kind, reason, stepCount: stepIndex - 1, ...discard },
+        sessionId,
+      ),
+    );
+  };
+
   // 1. Anchor tab + origin at task start.
   //
   // v1.5 multi-pin — preferred path: ctx carries the panel-captured pinnedTabs[].
@@ -1467,7 +1591,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // becomes the page-less NO_PAGE_SENTINEL. The agent starts regardless and
     // recovers through the existing advisory channel.
     try {
-      const tab = await queryActiveHostTab();
+      const tab =
+        ctx.anchorTabId !== undefined
+          ? await chrome.tabs.get(ctx.anchorTabId).catch(() => undefined)
+          : await queryActiveHostTab();
       ({ pinnedTabId, pinnedOrigin } = resolveStartupPin(tab));
     } catch {
       pinnedTabId = NO_PAGE_SENTINEL;
@@ -1489,6 +1616,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // depends on it. v1.5.1 backlog: refresh ownerToken on focus_tab as
   // defense-in-depth.
   ownerToken = { sessionId, tabId: pinnedTabId };
+  const ensureTabActive = createTabActivator(sessionId);
 
   // Curried CdpSession factory — passed to keyboard tools via closure.
   // INVARIANT: defined ONCE here, BEFORE the for-loop, so all per-iteration
@@ -1575,6 +1703,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // arm the `schedule` group in headless runs (recursive-scheduling guard).
   const isHeadless = !ctx.resumedAgentMessages && !(ctx.messages && ctx.messages.length > 0);
 
+  // MCP servers — each enabled server is an on-demand `mcp:<slug>` group, armed
+  // via load_tools. The system prompt lists the servers enabled at task start
+  // (stable prompt for caching); load_tools + tool assembly re-read the server
+  // list every iteration, so a server added / enabled mid-task (e.g. right after
+  // the user says "use my MCP") is loadable on the next step.
+  const prepareMcp = () =>
+    prepareMcpForTask({
+      vision: modelConfig.vision === true,
+      signal,
+      isApproved: (serverId) => isMcpServerApprovedInSession(sessionId, serverId),
+      requestConsent: (req) => requestFromPanel(sessionId, "mcp-tool-consent", req),
+      recordApproval: (serverId) => recordMcpServerApproval(sessionId, serverId),
+    });
+  const mcpAtStart = await prepareMcp();
+
   const systemMsg: AgentMessage = {
     role: "system",
     content: buildAgentSystemPrompt(
@@ -1604,6 +1747,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // #344 — user custom-rules snapshot (see above). Rendered as a trusted
       // user-preference block after response_language when non-empty.
       customRules,
+      // MCP — one catalog line per enabled server (snapshotted above).
+      mcpAtStart.catalogLines,
     ),
   };
 
@@ -1651,7 +1796,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   // observation merge. The prior step's snapshot already contains an
   // observation in the trailing user message; merging again would
   // produce a duplicate observation and confuse the LLM.
-  let isResumedFirstIteration = !!ctx.resumedAgentMessages;
+  let isResumedFirstIteration = !!ctx.resumedAgentMessages && !ctx.resumedObservationPending;
+  // Tabs this run has seen alive. Losing one of them pauses the task (see the
+  // per-step tab check) — never a silent switch to whatever tab is active. A
+  // tab that was already gone when this run started (a resume after exactly
+  // that pause) gets the advisory notice instead, so the model can reopen it.
+  const seenAliveTabIds = new Set<number>();
+  const lastUrlByTab = new Map<number, string>();
 
   // v1.5 Task 6+7 / Issue #33 — per-iteration refreshed pinnedTabs.
   // ctx.pinnedTabs is captured at task-start and frozen inside the loop
@@ -1684,11 +1835,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // clean tombstone. RMW-preserve so the resume path keeps its stepIndex and
     // history; buildSessionAgentTombstone clears it back to false at task end.
     try {
-      const cur = await getSessionAgent(sessionId);
-      await setSessionAgent(sessionId, {
+      await updateSessionAgent(sessionId, (cur) => ({
         ...(cur ?? buildSessionAgentTombstone()),
         taskActive: true,
-      });
+      }));
     } catch (e) {
       console.warn(`[agent] taskActive mark failed for session=${sessionId}:`, e);
     }
@@ -1704,6 +1854,21 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // abort exits this loop. The soft checkpoint (SOFT_STEP_BUDGET) is a
     // neutral periodic self-check, not a wrap-up signal; there is no absolute
     // step ceiling by design.
+    // The bound tab (and every other pinned tab — readFocusFromStorage has
+    // already failed over to a surviving one) is gone. Interactive tasks
+    // pause with a clear message instead of carrying on against some other
+    // tab; headless runs keep the advisory notice.
+    const pauseIfBoundTabClosed = async (stepIndex: number): Promise<boolean> => {
+      if (!ctx.onLlmPause || !seenAliveTabIds.has(pinnedTabId)) return false;
+      const lastUrl = lastUrlByTab.get(pinnedTabId);
+      await pauseTask(
+        "tab-closed",
+        `The tab this task was working in (tab ${pinnedTabId}${lastUrl ? `, ${lastUrl}` : ""}) was closed.`,
+        stepIndex,
+        { discardText: 0, discardThinking: 0 },
+      );
+      return true;
+    };
     for (let stepIndex = startStepIndex; !signal.aborted; stepIndex++) {
       lastStepIndex = stepIndex;
       if (signal.aborted) return; // → finally
@@ -1809,6 +1974,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           awaitSettle: waitForUrlSettle,
           signal,
         });
+        if (decision.kind === "notice" && decision.noticeKey === "tab-closed") {
+          if (await pauseIfBoundTabClosed(stepIndex)) return;
+        } else {
+          seenAliveTabIds.add(pinnedTabId);
+          if (currentTab.url) lastUrlByTab.set(pinnedTabId, currentTab.url);
+        }
         if (decision.kind === "notice") {
           currentUrl = decision.url || "(focused tab unavailable)";
           pageTitle = currentTab.title ?? "";
@@ -1824,6 +1995,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       } catch {
         if (signal.aborted) return;
         // chrome.tabs.get throws → the focused tab is genuinely gone.
+        if (await pauseIfBoundTabClosed(stepIndex)) return;
         currentUrl = "(focused tab unavailable)";
         pageTitle = "";
         if (lastNoticeKey !== "tab-closed") {
@@ -1887,7 +2059,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
 
       // Build observation text
-      let observationText = buildObservationMessage(pageTitle, currentUrl);
+      let observationText = buildObservationMessage(
+        pageTitle,
+        currentUrl,
+        pinnedTabId === NO_PAGE_SENTINEL ? undefined : pinnedTabId,
+      );
       // Advisory runtime notices (trusted block, NOT untrusted page data).
       // Navigation divergence is surfaced once per distinct change; the periodic
       // self-check checkpoint re-appears every BUDGET_NUDGE_INTERVAL steps past
@@ -2076,9 +2252,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // since the seed already contains every group). `filterToolsByVision` runs
       // AFTER selectTools as fail-closed defense — screenshot tools never reach a
       // non-vision model even if the `screenshot` group is somehow active.
+      const mcp = await prepareMcp();
       const loadToolsTool = buildLoadToolsTool({
         getActiveGroups: () => activeToolGroups,
         headless: isHeadless,
+        extraGroups: mcp.extraGroups,
       });
       // run_skill_script 需要 sessionId（运行确认卡走 panel-request）——
       // 与 mouse/keyboard 同模式 per-run 装配，不进 BUILT_IN_TOOLS 静态表。
@@ -2171,6 +2349,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         readSkillOutputTool,
         loadToolsTool,
         ...localBridgeTools, // Slice 0 — run_local_agent (bridge-gated)
+        // MCP — only servers whose `mcp:<slug>` group is loaded contribute tools.
+        ...(await mcp.toolsForActiveGroups(activeToolGroups)),
       ];
       const disclosed = selectTools(fullToolList, activeToolGroups);
       const allToolsBeforeExclude = filterToolsByVision(disclosed, modelConfig.vision);
@@ -2184,145 +2364,276 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const allTools = excludeSet
         ? allToolsBeforeExclude.filter((t) => !excludeSet.has(t.name))
         : allToolsBeforeExclude;
-      const toolDefinitions = toolsToDefinitions(allTools);
+      const toolDefinitions = toolsToWireDefinitions(allTools);
 
-      // Stream from LLM
+      // Stream from LLM. One request per attempt; transient failures (429 /
+      // 5xx / network / timeout / empty completion) are retried with
+      // exponential backoff + jitter (llm-retry.ts). Nothing is appended to
+      // history until an attempt succeeds, so every retry replays the exact
+      // same request. When retries run out the task is paused, not failed.
+      const retryPolicy: LlmRetryPolicy = { ...DEFAULT_LLM_RETRY_POLICY, ...ctx.llmRetryPolicy };
       let accumulatedText = "";
       let thinkingAccum = "";
       let thinkingReplay = false;
-      const thinkingBlocks: ThinkingContentBlock[] = [];
-      const openToolCalls = new Map<
+      let thinkingBlocks: ThinkingContentBlock[] = [];
+      let openToolCalls = new Map<
         number,
         { id: string; name: string; argsAccum: string; thoughtSignature?: string }
       >();
-      const completedToolCalls: Array<{ id: string; name: string; args: unknown }> = [];
+      let completedToolCalls: Array<{ id: string; name: string; args: unknown }> = [];
       // Arrival-ordered tool_use / remote_tool blocks for this assistant turn.
-      const turnBlocks: ContentBlock[] = [];
-
-      console.log("[sw][debug] streamChat entering", {
-        provider: modelConfig.provider,
-        model: modelConfig.model,
-        stepIndex,
-        sessionId,
-        historyLen: windowedHistory.length,
-        toolCount: toolDefinitions.length,
-      });
+      let turnBlocks: ContentBlock[] = [];
       let __sawAnyEvent = false;
       let lastStepUsage: Extract<StreamEvent, { type: "done" }>["usage"] | null = null;
       let lastStopReason: Extract<StreamEvent, { type: "done" }>["stopReason"];
-      for await (const event of streamChat(modelConfig, windowedHistory, signal, toolDefinitions)) {
-        if (!__sawAnyEvent) {
-          __sawAnyEvent = true;
-          console.log("[sw][debug] streamChat first event", { type: event.type });
-        }
-        if (signal.aborted) return; // → finally
+      let emptyCompletions = 0;
 
-        if (event.type === "text-delta") {
-          accumulatedText += event.text;
-          // Stream text to panel as it arrives (Phase 1 compatible)
-          emit(withSession({ type: "chat-chunk", text: event.text }, sessionId));
-        } else if (event.type === "thinking-start") {
-          thinkingAccum = "";
-          thinkingReplay = event.replay;
-        } else if (event.type === "thinking-delta") {
-          thinkingAccum += event.text;
-          emit(withSession({ type: "thinking-chunk", text: event.text }, sessionId));
-        } else if (event.type === "thinking-end") {
-          if (thinkingReplay && thinkingAccum) {
-            thinkingBlocks.push({
-              type: "thinking",
-              thinking: thinkingAccum,
-              ...(event.signature ? { signature: event.signature } : {}),
-            });
-          }
-          thinkingAccum = "";
-        } else if (event.type === "tool-call-start") {
-          openToolCalls.set(event.index, {
-            id: event.id,
-            name: event.name,
-            argsAccum: "",
-            ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
-          });
-        } else if (event.type === "tool-call-delta") {
-          const pending = openToolCalls.get(event.index);
-          if (pending) {
-            pending.argsAccum += event.argsDelta;
-          }
-        } else if (event.type === "tool-call-end") {
-          const pending = openToolCalls.get(event.index);
-          if (pending) {
-            let parsedArgs: unknown = {};
-            try {
-              parsedArgs = pending.argsAccum ? JSON.parse(pending.argsAccum) : {};
-            } catch {
-              parsedArgs = {};
+      for (let retry = 0; ; retry++) {
+        accumulatedText = "";
+        thinkingAccum = "";
+        thinkingReplay = false;
+        thinkingBlocks = [];
+        openToolCalls = new Map();
+        completedToolCalls = [];
+        turnBlocks = [];
+        __sawAnyEvent = false;
+        lastStepUsage = null;
+        lastStopReason = undefined;
+        let attemptThinkingChars = 0;
+        let streamError: LlmErrorEvent | null = null;
+        let sawRemoteTool = false;
+
+        // Second empty completion in a row → nudge the model on the wire
+        // (request-only; never persisted, so history stays clean).
+        const requestHistory = emptyCompletions >= 2 ? withEmptyResponseNudge(windowedHistory) : windowedHistory;
+
+        // Per-attempt abort: the user's Stop aborts it, and so does the idle
+        // watchdog (no stream event for idleTimeoutMs → timeout, retried).
+        const attemptCtl = new AbortController();
+        const onParentAbort = () => attemptCtl.abort();
+        signal.addEventListener("abort", onParentAbort, { once: true });
+        let timedOut = false;
+        let idleTimer: ReturnType<typeof setTimeout> | undefined;
+        const armIdle = (extraMs = 0) => {
+          if (idleTimer !== undefined) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            timedOut = true;
+            attemptCtl.abort();
+          }, retryPolicy.idleTimeoutMs + extraMs);
+        };
+        armIdle();
+
+        console.log("[sw][debug] streamChat entering", {
+          provider: modelConfig.provider,
+          model: modelConfig.model,
+          stepIndex,
+          sessionId,
+          historyLen: requestHistory.length,
+          toolCount: toolDefinitions.length,
+          retry,
+        });
+        try {
+          for await (const event of streamChat(modelConfig, requestHistory, attemptCtl.signal, toolDefinitions)) {
+            armIdle();
+            if (!__sawAnyEvent) {
+              __sawAnyEvent = true;
+              console.log("[sw][debug] streamChat first event", { type: event.type });
             }
-            completedToolCalls.push({
-              id: pending.id,
-              name: pending.name,
-              args: parsedArgs,
-            });
-            turnBlocks.push({
-              type: "tool_use",
-              id: pending.id,
-              name: pending.name,
-              input: parsedArgs,
-              ...(pending.thoughtSignature ? { thoughtSignature: pending.thoughtSignature } : {}),
-            });
-            openToolCalls.delete(event.index);
-          }
-        } else if (event.type === "remote-tool") {
-          for (const [index, pending] of openToolCalls) {
-            if (pending.id === event.callId) {
-              openToolCalls.delete(index);
+            if (signal.aborted) return; // → finally
+
+            if (event.type === "text-delta") {
+              accumulatedText += event.text;
+              // Stream text to panel as it arrives (Phase 1 compatible)
+              emit(withSession({ type: "chat-chunk", text: event.text }, sessionId));
+            } else if (event.type === "thinking-start") {
+              thinkingAccum = "";
+              thinkingReplay = event.replay;
+            } else if (event.type === "thinking-delta") {
+              thinkingAccum += event.text;
+              attemptThinkingChars += event.text.length;
+              emit(withSession({ type: "thinking-chunk", text: event.text }, sessionId));
+            } else if (event.type === "thinking-end") {
+              if (thinkingReplay && thinkingAccum) {
+                thinkingBlocks.push({
+                  type: "thinking",
+                  thinking: thinkingAccum,
+                  ...(event.signature ? { signature: event.signature } : {}),
+                });
+              }
+              thinkingAccum = "";
+            } else if (event.type === "tool-call-start") {
+              openToolCalls.set(event.index, {
+                id: event.id,
+                name: event.name,
+                argsAccum: "",
+                ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
+              });
+            } else if (event.type === "tool-call-delta") {
+              const pending = openToolCalls.get(event.index);
+              if (pending) {
+                pending.argsAccum += event.argsDelta;
+              }
+            } else if (event.type === "tool-call-end") {
+              const pending = openToolCalls.get(event.index);
+              if (pending) {
+                let parsedArgs: unknown = {};
+                try {
+                  parsedArgs = pending.argsAccum ? JSON.parse(pending.argsAccum) : {};
+                } catch {
+                  parsedArgs = {};
+                }
+                completedToolCalls.push({
+                  id: pending.id,
+                  name: pending.name,
+                  args: parsedArgs,
+                });
+                turnBlocks.push({
+                  type: "tool_use",
+                  id: pending.id,
+                  name: pending.name,
+                  input: parsedArgs,
+                  ...(pending.thoughtSignature ? { thoughtSignature: pending.thoughtSignature } : {}),
+                });
+                openToolCalls.delete(event.index);
+              }
+            } else if (event.type === "remote-tool") {
+              // A peer-executed tool already ran server-side — replaying the
+              // request could run it twice, so a failure after this isn't retried.
+              sawRemoteTool = true;
+              for (const [index, pending] of openToolCalls) {
+                if (pending.id === event.callId) {
+                  openToolCalls.delete(index);
+                  break;
+                }
+              }
+              const completedIdx = completedToolCalls.findIndex((tc) => tc.id === event.callId);
+              if (completedIdx >= 0) completedToolCalls.splice(completedIdx, 1);
+              const remoteBlock: ContentBlock = {
+                type: "remote_tool",
+                callId: event.callId,
+                name: event.name,
+                args: event.args,
+                output: event.output,
+                wire: "responses",
+                item: event.item,
+              };
+              const replaceIdx = turnBlocks.findIndex(
+                (b) => b.type === "tool_use" && b.id === event.callId,
+              );
+              if (replaceIdx >= 0) turnBlocks[replaceIdx] = remoteBlock;
+              else turnBlocks.push(remoteBlock);
+              emitStep({
+                type: "agent-step",
+                stepIndex,
+                tool: event.name,
+                args: redactArgsForPanel(event.name, argsForPanel(event.args)),
+                status: "ok",
+                remote: true,
+                observation: event.output,
+              });
+            } else if (event.type === "done") {
+              lastStopReason = event.stopReason;
+              // Issue #59 — capture real provider-reported usage for the ring.
+              // Stored to a local and applied after the stream finishes; abort
+              // and error paths skip the apply.
+              if (event.usage && event.usage.inputTokens > 0) {
+                lastStepUsage = event.usage;
+              }
+            } else if (event.type === "ratelimit-wait") {
+              // The user's own RPM gate is a legitimate silent wait — don't let
+              // the idle watchdog mistake it for a hung request.
+              armIdle(Math.max(0, event.resumeAt - Date.now()));
+              emit(withSession({ type: "chat-ratelimit-wait", resumeAt: event.resumeAt }, sessionId));
+            } else if (event.type === "error") {
+              // Decided after the stream (retry / pause / fail) — see below.
+              streamError = event;
               break;
             }
           }
-          const completedIdx = completedToolCalls.findIndex((tc) => tc.id === event.callId);
-          if (completedIdx >= 0) completedToolCalls.splice(completedIdx, 1);
-          const remoteBlock: ContentBlock = {
-            type: "remote_tool",
-            callId: event.callId,
-            name: event.name,
-            args: event.args,
-            output: event.output,
-            wire: "responses",
-            item: event.item,
+        } finally {
+          if (idleTimer !== undefined) clearTimeout(idleTimer);
+          signal.removeEventListener("abort", onParentAbort);
+        }
+        if (signal.aborted) return; // → finally
+
+        // ── What happened on this attempt? ──
+        let failure: { reason: RetryReason; error: string; kind?: ErrorKind; retryAfterMs?: number } | null = null;
+        if (timedOut) {
+          failure = {
+            reason: "timeout",
+            error: `No response from the model for ${Math.round(retryPolicy.idleTimeoutMs / 1000)}s`,
+            kind: "timeout",
           };
-          const replaceIdx = turnBlocks.findIndex(
-            (b) => b.type === "tool_use" && b.id === event.callId,
-          );
-          if (replaceIdx >= 0) turnBlocks[replaceIdx] = remoteBlock;
-          else turnBlocks.push(remoteBlock);
-          emitStep({
-            type: "agent-step",
-            stepIndex,
-            tool: event.name,
-            args: redactArgsForPanel(event.name, argsForPanel(event.args)),
-            status: "ok",
-            remote: true,
-            observation: event.output,
-          });
-        } else if (event.type === "done") {
-          lastStopReason = event.stopReason;
-          // Issue #59 — capture real provider-reported usage for the ring.
-          // Stored to a local and applied after the stream finishes; abort
-          // and error paths skip the apply.
-          if (event.usage && event.usage.inputTokens > 0) {
-            lastStepUsage = event.usage;
+        } else if (streamError) {
+          const decision = classifyLlmError(streamError);
+          if (!decision.retryable || sawRemoteTool) {
+            // auth / quota / other 4xx — retrying can't help. Fail as before.
+            emit(withSession({ type: "chat-error", error: streamError.error, kind: streamError.kind }, sessionId));
+            await emitDone({
+              type: "agent-done-task",
+              success: false,
+              summary: `LLM stream error: ${streamError.error}`,
+              stepCount: stepIndex,
+            }, "fail");
+            return;
           }
-        } else if (event.type === "ratelimit-wait") {
-          emit(withSession({ type: "chat-ratelimit-wait", resumeAt: event.resumeAt }, sessionId));
-        } else if (event.type === "error") {
-          emit(withSession({ type: "chat-error", error: event.error, kind: event.kind }, sessionId));
-          await emitDone({
-            type: "agent-done-task",
-            success: false,
-            summary: `LLM stream error: ${event.error}`,
-            stepCount: stepIndex,
-          }, "fail");
+          failure = {
+            reason: decision.reason!,
+            error: streamError.error,
+            kind: streamError.kind,
+            retryAfterMs: decision.retryAfterMs,
+          };
+        } else if (
+          classifyStreamCompletion({
+            stopReason: lastStopReason,
+            hasToolCalls: completedToolCalls.length > 0 || turnBlocks.some((b) => b.type === "remote_tool"),
+            hasText: accumulatedText.trim().length > 0,
+          }) === "empty"
+        ) {
+          // No tool call, no text (stopReason ≠ length): usually an upstream
+          // or relay that failed after accepting the request (#413).
+          emptyCompletions++;
+          failure = { reason: "empty", error: EMPTY_COMPLETION_ERROR };
+        }
+        if (!failure) break; // success — fall through to the normal step
+
+        const serverWantsLongWait =
+          failure.retryAfterMs !== undefined && failure.retryAfterMs > retryPolicy.maxRetryAfterMs;
+        if (retry >= retryPolicy.maxRetries || serverWantsLongWait) {
+          console.warn(
+            `[loop] LLM request failed after ${retry} retr${retry === 1 ? "y" : "ies"} (${describeRetryReason(failure.reason)}): ${failure.error}`,
+          );
+          await pauseOrFailAfterRetries(failure, stepIndex, {
+            discardText: accumulatedText.length,
+            discardThinking: attemptThinkingChars,
+          });
           return;
         }
+
+        const attempt = retry + 1;
+        const delayMs = computeRetryDelay(attempt, retryPolicy, failure.retryAfterMs);
+        console.warn(
+          `[loop] ${describeRetryReason(failure.reason)} — retry ${attempt}/${retryPolicy.maxRetries} in ${delayMs}ms: ${failure.error}`,
+        );
+        emit(
+          withSession(
+            {
+              type: "chat-llm-retry",
+              attempt,
+              maxAttempts: retryPolicy.maxRetries,
+              reason: failure.reason,
+              error: failure.error,
+              resumeAt: Date.now() + delayMs,
+              // The failed attempt may have streamed partial text — the panel
+              // drops exactly that much so the retry doesn't duplicate it.
+              discardText: accumulatedText.length,
+              discardThinking: attemptThinkingChars,
+            },
+            sessionId,
+          ),
+        );
+        await retrySleep(delayMs, signal);
+        if (signal.aborted) return; // → finally
       }
       console.log("[sw][debug] streamChat exited", {
         sawAnyEvent: __sawAnyEvent,
@@ -2389,29 +2700,40 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // successful step.
       if (lastStepUsage) {
         try {
-          const cur = await getSessionAgent(sessionId);
-          const nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage);
-          await setSessionAgent(sessionId, withContextUsage(cur, nextUsage));
+          // Atomic read-modify-write — the old get → set wrote back a stale
+          // record and dropped a mid-task instruction queued in between.
+          // The merged usage is captured from inside the transaction so the
+          // emit below reports exactly the numbers that were committed.
+          const usageBox: {
+            value: NonNullable<SessionAgentState["contextUsage"]> | null;
+          } = { value: null };
+          await updateSessionAgent(sessionId, (cur) => {
+            const merged = mergeContextUsage(cur?.contextUsage, lastStepUsage!);
+            usageBox.value = merged;
+            return withContextUsage(cur, merged);
+          });
+          const usage = usageBox.value;
+          if (!usage) throw new Error("context usage merge produced nothing");
           try {
             emit(
               withSession(
                 {
                   type: "agent-usage",
-                  lastInputTokens: nextUsage.lastInputTokens,
-                  lastOutputTokens: nextUsage.lastOutputTokens,
-                  totalInputTokens: nextUsage.totalInputTokens,
-                  totalOutputTokens: nextUsage.totalOutputTokens,
-                  ...(nextUsage.lastCachedTokens != null
-                    ? { lastCachedTokens: nextUsage.lastCachedTokens }
+                  lastInputTokens: usage.lastInputTokens,
+                  lastOutputTokens: usage.lastOutputTokens,
+                  totalInputTokens: usage.totalInputTokens,
+                  totalOutputTokens: usage.totalOutputTokens,
+                  ...(usage.lastCachedTokens != null
+                    ? { lastCachedTokens: usage.lastCachedTokens }
                     : {}),
-                  ...(nextUsage.lastPromptTotalTokens != null
-                    ? { lastPromptTotalTokens: nextUsage.lastPromptTotalTokens }
+                  ...(usage.lastPromptTotalTokens != null
+                    ? { lastPromptTotalTokens: usage.lastPromptTotalTokens }
                     : {}),
-                  ...(nextUsage.totalCachedTokens != null &&
-                  nextUsage.totalPromptTokens != null
+                  ...(usage.totalCachedTokens != null &&
+                  usage.totalPromptTokens != null
                     ? {
-                        totalCachedTokens: nextUsage.totalCachedTokens,
-                        totalPromptTokens: nextUsage.totalPromptTokens,
+                        totalCachedTokens: usage.totalCachedTokens,
+                        totalPromptTokens: usage.totalPromptTokens,
                       }
                     : {}),
                 },
@@ -2468,24 +2790,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         }, "fail");
         return;
       }
-      if (completion === "empty") {
-        // 空完成：无 tool call、无任何文本产出（stopReason 非 length）。通常是上游/
-        // 中转在扣费后失败（#413），却被静默当成一次空回复然后结束任务——不走
-        // chat-done，改与 LLM-stream-error 同路失败，让用户看到红色报错而非黑洞。
-        // TODO(#354): English fallback，同 truncated-empty。
-        const msg =
-          "The model returned an empty response (no text, no tool call). This " +
-          "usually means the upstream provider or relay failed after accepting " +
-          "the request. Check the provider's status, or try another model.";
-        emit(withSession({ type: "chat-error", error: msg }, sessionId));
-        await emitDone({
-          type: "agent-done-task",
-          success: false,
-          summary: msg,
-          stepCount: stepIndex,
-        }, "fail");
-        return;
-      }
+      // "empty" never reaches here: the retry loop above either retried it into
+      // a real answer or paused / failed the task.
       if (completion === "truncated-partial") {
         // 部分答案已流式发出但不完整——追加可见提示，再走正常 pure-text 收尾。
         emit(
@@ -2552,6 +2858,20 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             }
           }
         }
+        // Issue #34 follow-up — the user queued an instruction while this final
+        // reply was streaming. Ending here would strand it in the queue until
+        // they send yet another message. Keep the reply in history and loop:
+        // the top-of-loop drain delivers the queued message as the next turn.
+        if (!signal.aborted && (await hasPending(sessionId))) {
+          if (!hasRemoteTools) {
+            const replyBlocks = assembleAssistantBlocks(thinkingBlocks, accumulatedText, turnBlocks);
+            if (replyBlocks.length > 0) history.push({ role: "assistant", content: replyBlocks });
+          }
+          // The panel keeps accumulating streamed text until chat-done; keep the
+          // next answer from running into this one.
+          if (accumulatedText.trim()) emit(withSession({ type: "chat-chunk", text: "\n\n" }, sessionId));
+          continue;
+        }
         if (ctx.onTaskDone) {
           try {
             await ctx.onTaskDone();
@@ -2601,8 +2921,36 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
       // Process each tool call in order
       for (const tc of completedToolCalls) {
-        const args = tc.args as Record<string, unknown>;
         const tool = allTools.find((t) => t.name === tc.name);
+
+        // Weak models send wrong JSON types ("tabId":"1.04e+09", "true" for a
+        // boolean, …). Repair them against the tool's schema before anything
+        // (R7 lock, panel events, handler, history) reads the args.
+        if (tool?.parameters) {
+          const { args: fixed, coerced } = coerceToolArgs(tc.args, tool.parameters);
+          if (coerced.length > 0) {
+            tc.args = fixed;
+            for (const b of assistantBlocks) {
+              if (b.type === "tool_use" && b.id === tc.id) b.input = fixed;
+            }
+            diag("tool-args-coerced", kv({ tool: tc.name, paths: coerced.join(",") }));
+          }
+        }
+        // tabId is optional for the model on every built-in tool (the wire
+        // schema drops it from `required`); left out / non-numeric means "the
+        // task's current tab". Fill it in here so the R7 lock, panel, handler
+        // and history all see the real id. MCP tools are not touched.
+        if (tool && toolTakesTabId(tool) && tc.args && typeof tc.args === "object" && !Array.isArray(tc.args)) {
+          const raw = (tc.args as Record<string, unknown>).tabId;
+          if (typeof raw !== "number" || !Number.isFinite(raw)) {
+            const filled = { ...(tc.args as Record<string, unknown>), tabId: pinnedTabId };
+            tc.args = filled;
+            for (const b of assistantBlocks) {
+              if (b.type === "tool_use" && b.id === tc.id) b.input = filled;
+            }
+          }
+        }
+        const args = tc.args as Record<string, unknown>;
 
         if (!tool) {
           const errorMsg = `Unknown tool: ${tc.name}`;
@@ -2665,6 +3013,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           args,
           pinnedTabId,
           crossSessionPinnedTabIds,
+          tool.toolClass,
         );
         if (r7Conflicts.length > 0) {
           // Drop the "or wait for it to finish" suggestion — even with the
@@ -2705,6 +3054,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           resolvedElement,
           status: "pending",
         });
+
+        // The tab a page tool works in must be the active tab of ITS window —
+        // background tabs don't render lazy-loaded SPA content. Tab-level only
+        // (never windows.update / focused), so the user's focus elsewhere is
+        // left alone. Failure never fails the tool.
+        if (toolNeedsActiveTab(tc.name)) {
+          const target = typeof args?.tabId === "number" && toolTakesTabId(tool) ? args.tabId : pinnedTabId;
+          if (target !== NO_PAGE_SENTINEL) await ensureTabActive(target);
+        }
 
         // Screenshot tool dispatch (R5/R6) — direct capture without confirm.
         if (
@@ -2810,6 +3168,28 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           continue;
         }
 
+        // Defense-in-depth for a mid-task switch to a non-vision model (the
+        // tool table is already filtered by filterToolsByVision).
+        if (tc.name === "click_at" && modelConfig.vision === false) {
+          const noVisionObs = `click_at unavailable: current model (${modelConfig.model}) does not support vision, so it cannot read screenshot coordinates. Use click with a read_page element index.`;
+          toolResultBlocks.push({
+            type: "tool_result",
+            toolUseId: tc.id,
+            isError: true,
+            content: noVisionObs,
+          });
+          emitStep({
+            type: "agent-step",
+            stepIndex,
+            tool: tc.name,
+            args: redactArgsForPanel(tc.name, tc.args),
+            resolvedElement,
+            status: "error",
+            observation: noVisionObs,
+          });
+          continue;
+        }
+
         // Execute tool
         liveStepMeta = {
           stepIndex,
@@ -2847,9 +3227,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               );
             },
             setCurrentFocusTabId: async (tabId) => {
-              const cur = await getSessionAgent(sessionId);
-              if (!cur) return;
-              await setSessionAgent(sessionId, { ...cur, currentFocusTabId: tabId });
+              // Atomic read-modify-write — a plain get → set wrote back a
+              // stale record and could drop a mid-task instruction queued
+              // in between.
+              await updateSessionAgent(sessionId, (cur) =>
+                cur ? { ...cur, currentFocusTabId: tabId } : null,
+              );
             },
             // Issue #110 — unpin_tab removes a tab from SessionMeta.pinnedTabs[]
             // (persisted) AND from the live stepPinView (so a same-turn
@@ -2870,6 +3253,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             success: false,
             error: e instanceof Error ? e.message : "Tool execution failed",
           };
+        }
+
+        // click_at maps against the last capture_visible_tab; any action that
+        // may have moved pixels (input, scroll — including inner-container
+        // scrolls window.scrollY can't see, e.g. Google Docs) makes it stale.
+        // Attempted-but-failed actions count too: they may have partly applied.
+        if (getToolClass(tc.name) === "write" || tc.name === "scroll") {
+          invalidateScreenshotGeometry(sessionId, pinnedTabId);
         }
 
         let observation = result.observation ?? result.error ?? "";
@@ -2994,7 +3385,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         });
       }
 
-      // Terminal tool check
+      // Terminal tool check. Issue #34 follow-up — a queued instruction
+      // overrides done/fail: the tool_result is already in history, and the
+      // top-of-loop drain hands the model the user's new message next turn.
+      if (shouldTerminate && terminationResult && !signal.aborted && (await hasPending(sessionId))) {
+        continue;
+      }
       if (shouldTerminate && terminationResult) {
         await emitDone({
           type: "agent-done-task",
@@ -3043,3 +3439,4 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     }
   }
 }
+

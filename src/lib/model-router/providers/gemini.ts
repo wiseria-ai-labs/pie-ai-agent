@@ -1,6 +1,7 @@
 import type { ModelConfig } from "@/lib/model-router";
 import type { AgentMessage, ToolDefinition, StreamEvent } from "@/lib/model-router/types";
 import { readSSELines } from "@/lib/model-router/sse";
+import { isHardQuotaText, parseRetryAfter } from "../retry-hints";
 
 interface GeminiPart {
   text?: string;
@@ -131,18 +132,22 @@ export async function* streamChat(
     });
   } catch (e) {
     if (signal?.aborted) return;
-    yield { type: "error", error: `Network error: ${e instanceof Error ? e.message : "Failed to connect to Gemini API"}` };
+    yield { type: "error", error: `Network error: ${e instanceof Error ? e.message : "Failed to connect to Gemini API"}`, kind: "network" };
     return;
   }
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    if (response.status === 401 || response.status === 403) {
-      yield { type: "error", error: "Invalid Gemini API key" };
-    } else if (response.status === 429) {
-      yield { type: "error", error: "Gemini rate limit exceeded" };
+    const status = response.status;
+    const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+    if (status === 401 || status === 403) {
+      yield { type: "error", error: "Invalid Gemini API key", kind: "auth", status };
+    } else if (status === 429) {
+      yield isHardQuotaText(text)
+        ? { type: "error", error: `Gemini quota exceeded: ${text}`, kind: "budget", status }
+        : { type: "error", error: "Gemini rate limit exceeded", kind: "ratelimit", status, retryAfterMs };
     } else {
-      yield { type: "error", error: `Gemini API error (${response.status}): ${text}` };
+      yield { type: "error", error: `Gemini API error (${status}): ${text}`, kind: "http", status, retryAfterMs };
     }
     return;
   }
@@ -201,7 +206,7 @@ export async function* streamChat(
     yield { type: "done", stopReason, usage };
   } catch (e) {
     if (signal?.aborted) return;
-    yield { type: "error", error: `Stream interrupted: ${e instanceof Error ? e.message : "Unknown error"}` };
+    yield { type: "error", error: `Stream interrupted: ${e instanceof Error ? e.message : "Unknown error"}`, kind: "network" };
   }
 }
 

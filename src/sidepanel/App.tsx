@@ -10,6 +10,7 @@ import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
 import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
 import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
 import CustomRulesPage from "@/sidepanel/components/settings/pages/CustomRulesPage";
+import McpServersPage from "@/sidepanel/components/settings/pages/McpServersPage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import { type ThemeMode, UI_SCALE_KEY, applyUiScale, parseUiScale } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
@@ -494,6 +495,8 @@ export default function App() {
               <BridgePage />
             ) : settingsPage === "search" ? (
               <SearchProviderSection />
+            ) : settingsPage === "mcp" ? (
+              <McpServersPage />
             ) : settingsPage === "uiLanguage" ? (
               <UiLanguagePage />
             ) : settingsPage === "assistantLanguage" ? (

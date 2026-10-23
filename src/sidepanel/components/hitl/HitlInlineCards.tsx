@@ -7,6 +7,7 @@ import { RunLocalAgentCard } from "../RunLocalAgentCard";
 import { HandoffCard } from "../HandoffCard";
 import { LocalFileRequestCard } from "../LocalFileRequestCard";
 import { CdpOnboardingCard } from "../CdpOnboardingCard";
+import { McpToolConsentCard } from "../McpToolConsentCard";
 
 export interface HitlInlineCardsProps {
   request: ActivePanelRequest | null;
@@ -78,6 +79,13 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
           key={request.requestId}
           onChoose={onChooseLocalFile}
           onCancel={() => respond(request.requestId, { ok: false, reason: "cancelled by user" })}
+        />
+      )}
+      {request?.kind === "mcp-tool-consent" && (
+        <McpToolConsentCard
+          key={request.requestId}
+          payload={request.payload as import("@/lib/mcp/tools").McpConsentRequest}
+          onDecision={(approved) => respond(request.requestId, { ok: true, data: approved })}
         />
       )}
       {request?.kind === "cdp-consent" && (

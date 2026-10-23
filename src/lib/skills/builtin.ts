@@ -248,9 +248,10 @@ they're labelled — never by a hardcoded selector.
      like / share row and re-run read_page({mode:"interactive"}).
    - Look for a control labelled "Show transcript" / "Transcript" /
      "显示转写稿" / "转写稿" and click it.
-3. Once the panel is open, read its full text with read_page({mode:"content"})
-   (or read_page over the transcript region). The panel is a scrollable list
-   of timestamped caption lines; re-run read_page to page through it if long.
+3. Once the panel is open, read its text with read_page({mode:"text", scope:"page"})
+   (the transcript panel usually sits outside the page's main content area).
+   The panel is a list of timestamped caption lines; when the result ends with
+   "Next: read_page({…, offset:N})", call that to read the next part.
 4. Timestamps are noise for summarizing: each line is prefixed by an
    "m:ss" stamp. If the panel offers a "Toggle timestamps" option, use it
    to hide them; otherwise just ignore the leading stamp and read the

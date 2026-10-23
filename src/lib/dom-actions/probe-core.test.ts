@@ -792,19 +792,19 @@ describe("probePageInjected op=atlas", () => {
         records: expect.arrayContaining([
           expect.objectContaining({
             id: expect.any(String),
-            fields: { title: "Red Shoe", link: "/p/red-shoe" },
+            fields: { title: "Red Shoe", link: new URL("/p/red-shoe", location.href).href },
             text: expect.stringContaining("Red Shoe"),
             evidence: "a[href]",
           }),
           expect.objectContaining({
             id: expect.any(String),
-            fields: { title: "Blue Hat", link: "/p/blue-hat" },
+            fields: { title: "Blue Hat", link: new URL("/p/blue-hat", location.href).href },
             text: expect.stringContaining("Blue Hat"),
             evidence: "a[href]",
           }),
           expect.objectContaining({
             id: expect.any(String),
-            fields: { title: "Green Bag", link: "/p/green-bag" },
+            fields: { title: "Green Bag", link: new URL("/p/green-bag", location.href).href },
             text: expect.stringContaining("Green Bag"),
             evidence: "a[href]",
           }),
@@ -920,8 +920,28 @@ describe("probePageInjected op=atlas", () => {
     expect(collection!.records).toEqual(expect.arrayContaining([
       expect.objectContaining({ fields: { title: "Bad JS" } }),
       expect.objectContaining({ fields: { title: "Bad Data" } }),
-      expect.objectContaining({ fields: { title: "Safe Link", link: "/safe" } }),
+      expect.objectContaining({ fields: { title: "Safe Link", link: new URL("/safe", location.href).href } }),
     ]));
+  });
+
+  it("emits ABSOLUTE links in collection records (relative hrefs resolved against the page URL)", () => {
+    document.body.innerHTML = `
+      <section aria-label="Classes">
+        <article class="product-card"><a href="/u/1/c/abc">Algebra</a></article>
+        <article class="product-card"><a href="c/def?x=1">Biology</a></article>
+        <article class="product-card"><a href="https://other.example/full">Chem</a></article>
+      </section>
+    `;
+    const r = probePageInjected({ op: "atlas" });
+    if (r.op !== "atlas") throw new Error("narrow");
+    const collection = r.targets.find((target) => target.type === "collection");
+    const links = collection!.records!.map((rec) => rec.fields.link);
+    expect(links).toEqual([
+      new URL("/u/1/c/abc", location.href).href,
+      new URL("c/def?x=1", location.href).href,
+      "https://other.example/full",
+    ]);
+    for (const l of links) expect(l).toMatch(/^https?:\/\//);
   });
 
   it("does not emit newline or tab obfuscated unsafe links from collection records", () => {
@@ -947,7 +967,7 @@ describe("probePageInjected op=atlas", () => {
     expect(collection!.records).toEqual(expect.arrayContaining([
       expect.objectContaining({ fields: { title: "Bad JS" } }),
       expect.objectContaining({ fields: { title: "Bad Data" } }),
-      expect.objectContaining({ fields: { title: "Still Safe", link: "/still-safe" } }),
+      expect.objectContaining({ fields: { title: "Still Safe", link: new URL("/still-safe", location.href).href } }),
     ]));
   });
 

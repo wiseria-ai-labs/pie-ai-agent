@@ -2,6 +2,8 @@ import type { ActionResult } from "../../dom-actions/types";
 import type { ConfirmedTabTarget, Tool, ToolHandlerContext } from "../types";
 import { escapeUntrustedWrappers, escapeWrapperAttribute } from "../untrusted-wrappers";
 import { waitForUrlSettle } from "../wait-for-url-settle";
+import { invalidateElementIndices, waitForPageReady } from "../wait-for-settle";
+import { pageAtlasStore } from "./page-atlas/state";
 import { excludePanelTabs, queryHostWindowTabs } from "../../panel-host/host-window";
 import { TAB_GROUP_TIMEOUT_MS, withHangGuard } from "./hang-guard";
 import { isOwnPanelUrl } from "../../panel-host/panel-page";
@@ -915,7 +917,7 @@ USE WHEN:
 
 **DO NOT USE WHEN:**
 - You only want the USER to see a tab without changing where your actions go — use activate_tab.
-- The tab isn't pinned yet — focus only works on session-pinned tabs (open a new one with open_url first).`,
+- The tab isn't pinned yet — focus only works on session-pinned tabs (open a new one with open_url new_tab=true first).`,
   parameters: {
     type: "object",
     properties: {
@@ -943,7 +945,7 @@ USE WHEN:
       const ids = ctx.pinnedTabs.map((p) => p.tabId).join(", ");
       return {
         success: false,
-        error: `focus_tab: tab ${a.tabId} not in pinnedTabs (current: [${ids}]). Use open_url to create a new pinned tab, or pick an existing one.`,
+        error: `focus_tab: tab ${a.tabId} not in pinnedTabs (current: [${ids}]). Use open_url with new_tab=true to create a new pinned tab, or pick an existing one.`,
       };
     }
     if (!ctx.setCurrentFocusTabId) {
@@ -1078,83 +1080,85 @@ function httpOrigin(url: string | undefined): string | null {
 }
 
 /**
- * open_url — creates a new browser tab loading the given http/https URL.
+ * open_url — go to an http(s) URL. By default it loads in the task's bound
+ * (focused) tab via the same core as `navigate` (loadUrlInTab): no new tab,
+ * relative URLs resolve against the tab's current page, the tab is made
+ * active in its window if it isn't already (never window focus).
+ *
+ * A new tab is created only when `new_tab: true`, or when there is no usable
+ * current tab (task started on a chrome:// page → ctx.tabId sentinel / tab
+ * gone). The new tab is created ACTIVE in its window — background tabs don't
+ * render lazy-loaded SPA content — then pinned at the origin it actually
+ * committed to and made the agent's focus tab.
  *
  * Security invariants:
- *   - Strict http: / https: allowlist via URL constructor + protocol check.
- *     All other schemes (javascript:, data:, file:, chrome:, blob:, ftp:,
- *     ws:, mailto:, view-source:, etc.) are rejected with "unsafe-url-scheme".
+ *   - Strict http: / https: allowlist, checked on the RESOLVED URL. All other
+ *     schemes (javascript:, data:, file:, chrome:, blob:, ftp:, ws:, …) are
+ *     rejected with "unsafe-url-scheme".
  *   - URL length capped at OPEN_URL_MAX_LEN (4096) chars.
- *   - Must be an absolute URL (relative paths throw in `new URL()`).
- *
- * Pin integration:
- *   - On success, calls ctx.appendPinnedTab to push the new tab into the
- *     session's pinnedTabs array, using the origin the tab ACTUALLY
- *     committed to (which differs from the requested one when the server
- *     redirects across origins). The agent must then call
- *     focus_tab(newTabId) on the NEXT iteration to operate on the tab.
- *   - If appendPinnedTab is absent (test/legacy harness), the tab is still
- *     created; the observation mentions the gap so the harness caller is aware.
- *
- * Risk: always high (ALWAYS_HIGH_TAB_TOOLS). Each call requires user
- * approval. Confirm card UI variant is Task 8.
- *
- * G-1 gate: open_url is in TAB_TOOL_NAMES AND ALWAYS_HIGH_TAB_TOOLS.
+ *   - Never calls chrome.windows.update.
  */
 const openUrlTool: Tool = {
   name: "open_url",
   description:
-    `Open a new browser tab at the given URL (http/https only; other schemes rejected). The new tab auto-joins this session's pinned tab list — call focus_tab(newTabId) on the next iteration to operate on it. If the site redirects to another origin (e.g. apex → www), the tab is pinned at the origin it actually landed on and the observation names both.
+    `Go to a URL (http/https only). By default it loads in your current tab — same tab id, no new tab. \`url\` may be absolute or relative to the current page (e.g. "/c/123"). Pass new_tab=true only when you must keep the current page open alongside the new one; the new tab becomes your focused tab and joins your pinned tabs.
 
-USE WHEN:
-- You need to visit a URL that isn't open in any current tab.
-
-**DO NOT USE WHEN:**
-- The page is already open in a pinned tab — use focus_tab to switch to it instead of opening a duplicate.
-- You only want to surface an already-open tab to the user — use activate_tab.`,
+After it returns, element indices from earlier read_page calls are invalid — call read_page again.`,
   parameters: {
     type: "object",
     properties: {
       url: {
         type: "string",
-        description: `Absolute http: or https: URL to open. Max ${OPEN_URL_MAX_LEN} chars.`,
+        description: `Absolute http(s) URL, or a URL relative to the current page. Max ${OPEN_URL_MAX_LEN} chars.`,
       },
-      active: {
+      new_tab: {
         type: "boolean",
-        description:
-          "If true, the new tab takes focus (steals the user's view). Default false (loads in background).",
+        description: "Open in a new tab instead of the current one. Default false.",
       },
     },
     required: ["url"],
     additionalProperties: false,
   },
   handler: async (args, ctx) => {
-    const a = (args ?? {}) as { url?: unknown; active?: unknown };
-    if (typeof a.url !== "string" || a.url.length === 0) {
+    const a = (args ?? {}) as { url?: unknown; new_tab?: unknown };
+    if (typeof a.url !== "string" || a.url.trim().length === 0) {
       return { success: false, error: "open_url: url must be a non-empty string" };
     }
-    if (a.url.length > OPEN_URL_MAX_LEN) {
+    const rawUrl = a.url.trim();
+    if (rawUrl.length > OPEN_URL_MAX_LEN) {
       return {
         success: false,
         error: `open_url: url-too-long (>${OPEN_URL_MAX_LEN} chars)`,
       };
     }
-    let parsed: URL;
-    try {
-      parsed = new URL(a.url);
-    } catch {
-      return { success: false, error: "open_url: invalid URL" };
+
+    // The bound tab (if any) — target of the default mode and the base for
+    // relative URLs in both modes.
+    const boundId = ctx?.tabId;
+    let bound: chrome.tabs.Tab | undefined;
+    if (typeof boundId === "number" && Number.isInteger(boundId) && boundId >= 0) {
+      try {
+        bound = await chrome.tabs.get(boundId);
+      } catch {
+        bound = undefined; // closed → fall back to a new tab
+      }
     }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return {
-        success: false,
-        error: `open_url: unsafe-url-scheme "${parsed.protocol}" (only http: and https: are allowed)`,
-      };
+
+    const resolved = resolveHttpUrl("open_url", rawUrl, bound?.url);
+    if (!resolved.ok) return { success: false, error: resolved.error };
+
+    if (a.new_tab !== true && bound && typeof boundId === "number") {
+      return loadUrlInTab("open_url", boundId, resolved.href, ctx, {
+        activate: true,
+        allowHistory: false,
+      });
     }
-    const active = a.active === true;
+
     let newTab: chrome.tabs.Tab;
     try {
-      newTab = await chrome.tabs.create({ url: a.url, active });
+      // Active in its window (tab-level) — background tabs don't render lazy
+      // SPA content. Never chrome.windows.update.
+      newTab = await chrome.tabs.create({ url: resolved.href, active: true });
     } catch (e) {
       return {
         success: false,
@@ -1172,20 +1176,15 @@ USE WHEN:
     // open (the LLM can close_tabs([id]) explicitly) and skip appendPinnedTab
     // so pinnedTabs[] never holds an entry that won't pass origin check.
     //
-    // A cross-origin SERVER redirect is not a failure. Chrome follows 30x
-    // hops before committing, so `https://pie.chat` (apex → 308 →
-    // `https://www.pie.chat`) commits exactly once, at the destination —
-    // strict origin equality then reported a perfectly good navigation as
-    // "did not commit", left the tab unpinned (so focus_tab couldn't reach
-    // it), and told the LLM to "retry with a different URL" without ever
-    // naming the URL it landed on. Any commit that reached a usable http(s)
-    // origin now counts as success and is pinned at the origin the tab
-    // ACTUALLY has; the observation names both ends of the hop so the LLM can
-    // judge it. This mirrors loop.ts's advisory treatment of the same
-    // UrlSettleResult (origin drift → <system_notice>, never a hard stop).
+    // A cross-origin SERVER redirect is not a failure (Chrome follows 30x
+    // hops before committing, e.g. apex → www): any commit that reached a
+    // usable http(s) origin counts as success and is pinned at the origin the
+    // tab ACTUALLY has; the observation names both ends of the hop. This
+    // mirrors loop.ts's advisory treatment of the same UrlSettleResult.
     const newTabId = newTab.id;
-    const settle = await waitForUrlSettle(newTabId, parsed.origin, 5000);
-    let landedOrigin = parsed.origin;
+    const openStartedAt = Date.now();
+    const settle = await waitForUrlSettle(newTabId, resolved.origin, 5000);
+    let landedOrigin = resolved.origin;
     let redirected = false;
     if (!settle.committed) {
       const landed =
@@ -1199,7 +1198,7 @@ USE WHEN:
         return {
           success: false,
           error:
-            `open_url: tab ${newTabId} created but navigation did not commit to ${parsed.origin} ` +
+            `open_url: tab ${newTabId} created but navigation did not commit to ${resolved.origin} ` +
             `within 5s (${settle.reason}).${seen} The tab is left open — use close_tabs([${newTabId}]) to clean up ` +
             `or retry with a different URL.`,
         };
@@ -1208,8 +1207,16 @@ USE WHEN:
       redirected = true;
     }
     const where = redirected
-      ? `${landedOrigin} (redirected from ${parsed.origin})`
+      ? `${landedOrigin} (redirected from ${resolved.origin})`
       : landedOrigin;
+
+    // A commit is not a loaded page: wait (same 10s budget as click) until the
+    // document parsed, the DOM went quiet and no spinner is visible, so the
+    // next read_page sees the page and not a skeleton.
+    const ready = await waitForPageReady(newTabId, { deadline: openStartedAt + 10_000 });
+    const loadingNote = ready.ready || ready.reason === "unreachable"
+      ? ""
+      : " The page was still loading after 10s — read_page may show a partial page.";
 
     if (ctx.appendPinnedTab) {
       try {
@@ -1224,12 +1231,22 @@ USE WHEN:
         };
       }
     }
+    // The new tab becomes the agent's focus tab (like switch_to_new_tab).
+    let focusNote = ` Call focus_tab(${newTabId}) to operate on it.`;
+    if (ctx.setCurrentFocusTabId) {
+      try {
+        await ctx.setCurrentFocusTabId(newTabId);
+        focusNote = " It is now your focused tab (from the next step); read_page/click target it.";
+      } catch {
+        // keep the focus_tab hint
+      }
+    }
     return {
       success: true,
       observation:
-        `Opened tab ${newTabId} at ${where}` +
-        (active ? " (focused: stole user's view)" : " (background)") +
-        `. Added to pinnedTabs[]; call focus_tab(${newTabId}) on the next iteration to operate on it.`,
+        `Opened new tab ${newTabId} at ${where}. Added to pinnedTabs[].` +
+        focusNote +
+        loadingNote,
     };
   },
 };
@@ -1355,6 +1372,270 @@ USE WHEN:
 
 export { switchToNewTabTool };
 
+// ── navigate — load a URL in an existing (pinned) tab ────────────────────────
+
+const NAVIGATE_COMMIT_TIMEOUT_MS = 5000;
+const NAVIGATE_READY_BUDGET_MS = 10_000;
+const NAVIGATE_URL_DISPLAY_MAX = 300;
+
+/** Page-derived URL → single-line, truncated, wrapper-escaped display string. */
+function sanitizeUrlForObservation(url: string): string {
+  let cleaned = url.replace(LINE_BREAK_RE, " ").replace(CONTROL_CHARS_RE, "");
+  if (cleaned.length > NAVIGATE_URL_DISPLAY_MAX) {
+    cleaned = cleaned.slice(0, NAVIGATE_URL_DISPLAY_MAX) + "…";
+  }
+  return escapeUntrustedWrappers(cleaned);
+}
+
+/**
+ * Resolve once the tab's top frame commits a navigation (cross-document
+ * commit, SPA history update or fragment change), or after `timeoutMs`.
+ * Listeners are attached synchronously, BEFORE the caller triggers the
+ * navigation, so the commit can't be missed. Without this gate
+ * waitForPageReady would probe the OLD (already settled) document and return
+ * immediately.
+ */
+function watchTopFrameCommit(tabId: number, timeoutMs: number): {
+  committed: Promise<boolean>;
+  cancel: () => void;
+} {
+  const wn = chrome.webNavigation;
+  const events = [wn?.onCommitted, wn?.onHistoryStateUpdated, wn?.onReferenceFragmentUpdated].filter(
+    (e): e is NonNullable<typeof e> => !!e && typeof e.addListener === "function",
+  );
+  let done: (v: boolean) => void = () => {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const listener = (d: { tabId: number; frameId: number }) => {
+    if (d.tabId === tabId && d.frameId === 0) finish(true);
+  };
+  const finish = (v: boolean) => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    for (const e of events) e.removeListener(listener);
+    done(v);
+  };
+  const committed = new Promise<boolean>((resolve) => {
+    done = resolve;
+  });
+  for (const e of events) e.addListener(listener);
+  timer = setTimeout(() => finish(false), timeoutMs);
+  return { committed, cancel: () => finish(false) };
+}
+
+/**
+ * Shared core of `navigate` and `open_url` (default, same-tab mode): load a
+ * URL (absolute, relative to the tab's current page, or — when allowHistory —
+ * "back"/"forward") in a tab this session owns, wait for the top frame to
+ * commit and the page to settle, then drop the tab's Page Atlas entries and
+ * data-pie-idx stamps so stale indices can't resolve on the new page.
+ *
+ * `activate` makes the tab the active tab of ITS window (tab-level only —
+ * never chrome.windows.update / window focus) when it isn't already: Chrome
+ * throttles background tabs and lazy SPA content (e.g. Classroom streams)
+ * never renders there.
+ */
+async function loadUrlInTab(
+  tool: "navigate" | "open_url",
+  tabId: number,
+  rawUrl: string,
+  ctx: ToolHandlerContext,
+  opts: { activate: boolean; allowHistory: boolean },
+): Promise<ActionResult> {
+  if (rawUrl.length > OPEN_URL_MAX_LEN) {
+    return { success: false, error: `${tool}: url-too-long (>${OPEN_URL_MAX_LEN} chars)` };
+  }
+
+  // Target gate: only tabs this session owns.
+  const pins = ctx.pinnedTabs ?? [];
+  const allowed = pins.length > 0 ? pins.some((p) => p.tabId === tabId) : tabId === ctx.tabId;
+  if (!allowed) {
+    const ids = pins.length > 0 ? pins.map((p) => p.tabId).join(", ") : String(ctx.tabId);
+    return {
+      success: false,
+      error:
+        `${tool}: tab ${tabId} is not one of this session's tabs (yours: [${ids}]; focused: ${ctx.tabId}). ` +
+        `Navigate your focused tab ${ctx.tabId}, or use open_url with new_tab=true to open a new tab.`,
+    };
+  }
+
+  let before: chrome.tabs.Tab;
+  try {
+    before = await chrome.tabs.get(tabId);
+  } catch {
+    return { success: false, error: `${tool}: tab ${tabId} not found (closed?)` };
+  }
+
+  const lower = rawUrl.toLowerCase();
+  const history = opts.allowHistory && (lower === "back" || lower === "forward") ? lower : null;
+  let target: string | null = null;
+  if (!history) {
+    const resolved = resolveHttpUrl(tool, rawUrl, before.url);
+    if (!resolved.ok) return { success: false, error: resolved.error };
+    target = resolved.href;
+  }
+
+  const startedAt = Date.now();
+  const watch = watchTopFrameCommit(tabId, NAVIGATE_COMMIT_TIMEOUT_MS);
+  try {
+    if (history === "back") await chrome.tabs.goBack(tabId);
+    else if (history === "forward") await chrome.tabs.goForward(tabId);
+    // URL only — activation (if any) is a separate tab-level call below.
+    else await chrome.tabs.update(tabId, { url: target! });
+  } catch (e) {
+    watch.cancel();
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      success: false,
+      error: history
+        ? `${tool}: cannot go ${history} in tab ${tabId} (${msg}) — there may be no ${history} history entry.`
+        : `${tool}: chrome.tabs.update failed — ${msg}`,
+    };
+  }
+  if (opts.activate && !before.active) {
+    try {
+      await chrome.tabs.update(tabId, { active: true });
+    } catch {
+      // best-effort: a background tab still loads, just may render less.
+    }
+  }
+  const committed = await watch.committed;
+
+  const ready = await waitForPageReady(tabId, { deadline: startedAt + NAVIGATE_READY_BUDGET_MS });
+  // Whatever happened, earlier indices / atlases must not survive.
+  pageAtlasStore.invalidateTab(tabId);
+  await invalidateElementIndices(tabId);
+
+  let after: chrome.tabs.Tab | undefined;
+  try {
+    after = await chrome.tabs.get(tabId);
+  } catch {
+    return { success: false, error: `${tool}: tab ${tabId} disappeared during navigation` };
+  }
+  const finalUrl = after.url || after.pendingUrl || target || "";
+  const title = sanitizeTabTitle(after.title);
+
+  const notes: string[] = [];
+  if (!committed) {
+    notes.push(
+      history
+        ? ` No navigation was detected — there may be no ${history} history entry.`
+        : " No navigation was detected within 5s — the page may be unchanged; check with read_page.",
+    );
+  }
+  if (!ready.ready && ready.reason !== "unreachable") {
+    notes.push(" The page was still loading after 10s — read_page may show a partial page.");
+  }
+  const prevOrigin = parseTabOrigin(before.url);
+  const newOrigin = parseTabOrigin(finalUrl);
+  if (prevOrigin && newOrigin && prevOrigin !== newOrigin) {
+    notes.push(
+      ` The site changed (${prevOrigin} → ${newOrigin}); a system notice about the origin change is expected — continue.`,
+    );
+  }
+
+  const head =
+    tool === "open_url"
+      ? `Opened ${sanitizeUrlForObservation(finalUrl)} in your current tab ${tabId} (no new tab) — `
+      : `Navigated tab ${tabId} to ${sanitizeUrlForObservation(finalUrl)} — `;
+  return {
+    success: true,
+    observation:
+      head +
+      `<untrusted_tab_metadata>${title}</untrusted_tab_metadata>. ` +
+      `Element indices from earlier reads are no longer valid; call read_page (mode=text to read, mode=interactive to act).` +
+      notes.join(""),
+  };
+}
+
+/**
+ * Resolve `rawUrl` (absolute or relative to `baseUrl`) and enforce the
+ * http(s)-only allowlist on the RESOLVED URL.
+ */
+function resolveHttpUrl(
+  tool: string,
+  rawUrl: string,
+  baseUrl: string | undefined,
+): { ok: true; href: string; origin: string } | { ok: false; error: string } {
+  let parsed: URL;
+  try {
+    parsed = baseUrl ? new URL(rawUrl, baseUrl) : new URL(rawUrl);
+  } catch {
+    return {
+      ok: false,
+      error: `${tool}: invalid URL "${sanitizeUrlForObservation(rawUrl)}" (use an absolute https:// URL or a path relative to the current page)`,
+    };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return {
+      ok: false,
+      error: `${tool}: unsafe-url-scheme "${parsed.protocol}" (only http: and https: are allowed)`,
+    };
+  }
+  return { ok: true, href: parsed.href, origin: parsed.origin };
+}
+
+/**
+ * navigate — load a URL (absolute, relative, or history back/forward) in an
+ * EXISTING tab the session already owns. The simple "go there in my current
+ * tab" primitive: no new tab, no new tab id to track, no focus change.
+ *
+ * Security / UX invariants:
+ *   - http(s) only after resolution; javascript:/data:/file:/chrome:/… rejected.
+ *   - chrome.tabs.update(tabId, { url }) WITHOUT `active` — never steals the
+ *     user's view or focuses a window.
+ *   - Target must be one of the session's pinned tabs (or ctx.tabId when the
+ *     harness carries no pin list) — the agent can't hijack arbitrary tabs.
+ *     Class = write, so the R7 cross-session lock checks args.tabId.
+ *   - After the page is ready, the tab's Page Atlas entries and data-pie-idx
+ *     stamps are dropped: indices from earlier reads must not resolve on the
+ *     new page.
+ *
+ * The pin's recorded origin is NOT rewritten on a cross-origin navigate; the
+ * loop's advisory origin re-check surfaces that as a <system_notice> (same as
+ * a cross-origin link click), which the observation pre-empts.
+ */
+const navigateTool: Tool = {
+  name: "navigate",
+  description:
+    `Go to a URL in an existing tab (normally your focused tab) — like typing in the address bar. The tab id stays the same; no new tab is opened. \`url\` may be absolute (https://…), relative to the tab's current page (e.g. "/c/123", "?page=2"), or "back" / "forward" for browser history. http/https only.
+
+USE WHEN:
+- You know (or can read from the page) the URL you want and just need to go there in the current tab — prefer this over clicking a link by a possibly-stale index.
+
+**DO NOT USE WHEN:**
+- You need the current page to stay open alongside the new one — use open_url with new_tab=true.
+
+After it returns, element indices from earlier read_page calls are invalid — call read_page again.`,
+  parameters: {
+    type: "object",
+    properties: {
+      tabId: {
+        type: "integer",
+        description: "Leave out to navigate the current tab. Otherwise one of this session's pinned tabs.",
+      },
+      url: {
+        type: "string",
+        description: `Absolute http(s) URL, a URL relative to the tab's current page, or "back" / "forward". Max ${OPEN_URL_MAX_LEN} chars.`,
+      },
+    },
+    required: ["url"],
+    additionalProperties: false,
+  },
+  handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const a = (args ?? {}) as { tabId?: unknown; url?: unknown };
+    const tabId = typeof a.tabId === "number" ? a.tabId : ctx?.tabId;
+    if (typeof tabId !== "number" || !Number.isInteger(tabId) || tabId < 0) {
+      return { success: false, error: "navigate: no tabId given and no current tab" };
+    }
+    if (typeof a.url !== "string" || a.url.trim().length === 0) {
+      return { success: false, error: "navigate: url must be a non-empty string" };
+    }
+    return loadUrlInTab("navigate", tabId, a.url.trim(), ctx, { activate: false, allowHistory: true });
+  },
+};
+
+export { navigateTool };
+
 export const TAB_TOOLS: Tool[] = [
   listTabsTool,
   closeTabsTool,
@@ -1365,5 +1646,6 @@ export const TAB_TOOLS: Tool[] = [
   focusTabTool,
   unpinTabTool,
   openUrlTool,
+  navigateTool,
   switchToNewTabTool,
 ];

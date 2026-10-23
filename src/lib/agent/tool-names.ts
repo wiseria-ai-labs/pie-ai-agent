@@ -10,6 +10,9 @@
 const PHASE_2_TOOL_NAMES = [
   "click",
   "hover",
+  // click_at — screenshot-coordinate CDP click (built by getMouseTools like
+  // click/hover). Vision-gated via VISION_ONLY_TOOL_NAMES below.
+  "click_at",
   "type",
   "scroll",
   "select",
@@ -66,6 +69,7 @@ export const TAB_TOOL_NAMES = [
   "move_tabs",
   "focus_tab", // v1.5 multi-pin
   "open_url",  // v1.5
+  "navigate",  // load a URL / back / forward in an existing pinned tab (same tab id)
   "unpin_tab", // Issue #110 — remove a tab from session pins so it can be closed
   "switch_to_new_tab", // v1.1 cross-tab replay
 ] as const;
@@ -80,6 +84,15 @@ export const SCREENSHOT_TOOL_NAMES = [
   // L1.5 — seek the page's primary <video> then captureVisibleTab. class=read:
   // seeking currentTime is incidental to reading a frame (same family as scroll).
   "capture_video_frame",
+] as const;
+
+// Tools hidden from models not KNOWN to support vision (filterToolsByVision in
+// loop.ts). The screenshot tools attach images; click_at takes coordinates
+// that only exist in a screenshot. Separate from SCREENSHOT_TOOL_NAMES so the
+// read/write classification and the screenshot dispatch intercept stay as-is.
+export const VISION_ONLY_TOOL_NAMES = [
+  ...SCREENSHOT_TOOL_NAMES,
+  "click_at",
 ] as const;
 
 // Web search tool (always present in BUILT_IN_TOOLS).
@@ -217,6 +230,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // Phase 2 DOM tools
   click: "write",
   hover: "write",
+  click_at: "write",
   type: "write",
   select: "write",
   scroll: "read",
@@ -252,6 +266,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   move_tabs: "write",
   focus_tab: "read", // mutates only internal session pointer, no tab state change
   open_url: "write", // creates a new tab; mutates browser state
+  navigate: "write", // replaces the page in an existing tab; R7 lock checks args.tabId
   unpin_tab: "read", // Issue #110 — removes a session pin; no tab/page state change
   switch_to_new_tab: "read", // adopts a child tab this session spawned + sets focus; no page mutation
 
@@ -367,7 +382,7 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   extract_records: "core",
   list_tabs: "core", close_tabs: "core", activate_tab: "core", group_tabs: "core",
   ungroup_tabs: "core", move_tabs: "core", focus_tab: "core", open_url: "core",
-  unpin_tab: "core", switch_to_new_tab: "core",
+  navigate: "core", unpin_tab: "core", switch_to_new_tab: "core",
   search_web: "core",
   output_file: "core",
   dispatch_keyboard_input: "core", press_key: "core",
@@ -376,6 +391,9 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   // env-lit
   capture_visible_tab: "screenshot", capture_fullpage_tab: "screenshot",
   capture_video_frame: "screenshot",
+  // Lit together with the screenshot tools (vision models only) — it is useless
+  // without a capture_visible_tab image to read coordinates from.
+  click_at: "screenshot",
   use_skill: "skill-mediation", read_skill_file: "skill-mediation",
   run_skill_script: "skill-mediation", read_skill_output: "skill-mediation",
   read_pdf: "pdf", search_pdf: "pdf", get_pdf_outline: "pdf",

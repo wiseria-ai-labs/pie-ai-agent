@@ -180,7 +180,7 @@ export function renderPageAtlas(atlas: PageAtlasState, options: RenderAtlasOptio
     const attrs = [attr("controls", omittedControls), attr("targets", omittedTargets)];
     const hint =
       "Showing the most relevant entries (visible in viewport first). " +
-      "For the full element index use read_page({mode:\"interactive\"}).";
+      "To find a specific control use read_page({mode:\"interactive\", query:\"…\"}).";
     omittedLines.push(`  <omitted ${attrs.join(" ")} ${attr("hint", hint)} />`);
   }
 

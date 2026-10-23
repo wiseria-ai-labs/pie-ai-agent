@@ -20,6 +20,8 @@ import {
   setSessionAgent,
   isSkillApprovedInSession,
   recordSkillApproval,
+  isMcpServerApprovedInSession,
+  recordMcpServerApproval,
   setSessionMeta,
   updateLastAccessed,
   setLastTaskSynth,
@@ -493,6 +495,21 @@ describe("skill-run approvals — ADR 0007 (isSkillApprovedInSession / recordSki
     expect(agent?.stepIndex).toBe(3);
     expect(agent?.currentFocusTabId).toBe(42);
     expect(agent?.approvedSkillIds).toEqual(["s"]);
+  });
+});
+
+describe("MCP server approvals (Ask once per session)", () => {
+  it("records idempotently, per session, alongside skill approvals", async () => {
+    const a = await createSession({ now: 1 });
+    const b = await createSession({ now: 2 });
+    await recordSkillApproval(a.id, "skill-x");
+    await recordMcpServerApproval(a.id, "srv1");
+    await recordMcpServerApproval(a.id, "srv1");
+    const agent = await getSessionAgent(a.id);
+    expect(agent?.approvedMcpServerIds).toEqual(["srv1"]);
+    expect(agent?.approvedSkillIds).toEqual(["skill-x"]);
+    expect(await isMcpServerApprovedInSession(a.id, "srv1")).toBe(true);
+    expect(await isMcpServerApprovedInSession(b.id, "srv1")).toBe(false);
   });
 });
 

@@ -34,8 +34,7 @@ import {
   createSession,
   setSessionMeta,
   getSessionMeta,
-  setSessionAgent,
-  getSessionAgent,
+  updateSessionAgent,
 } from "@/lib/sessions/storage";
 import { deriveTitleFromMessages } from "@/lib/sessions/title";
 
@@ -415,8 +414,12 @@ export async function runSchedule(
           // live steps AND applies the tombstone reset semantics + carries
           // lastTaskSynth / contextUsage from the done snapshot — exactly what
           // makes a headless run browsable in the panel.
-          const existing = await getSessionAgent(sessionId);
-          await setSessionAgent(sessionId, mergeSessionAgentSnapshot(existing, snapshot));
+          //
+          // Atomic read-merge-write: a plain get → set raced with the
+          // mid-task instruction queue and wrote back a stale queue.
+          await updateSessionAgent(sessionId, (existing) =>
+            mergeSessionAgentSnapshot(existing, snapshot),
+          );
         },
         // Task 6.2 — pass pinnedTabs when a background tab was opened; empty otherwise.
         pinnedTabs,
