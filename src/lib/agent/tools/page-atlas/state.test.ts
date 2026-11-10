@@ -322,3 +322,14 @@ describe("page atlas store", () => {
     });
   });
 });
+
+describe("invalidateTab (#471)", () => {
+  it("drops only the navigated tab's atlases", () => {
+    const store = createPageAtlasStore();
+    store.save(atlas({ atlasId: "a", tabId: 7 }));
+    store.save(atlas({ atlasId: "b", tabId: 8 }));
+    store.invalidateTab(7);
+    expect(store.get("a")).toBeUndefined();
+    expect(store.get("b")).toBeDefined();
+  });
+});
