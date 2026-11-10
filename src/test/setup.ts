@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto";
-import { beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
+import { cleanup } from "@testing-library/react";
 import { __resetSwPort } from "@/lib/sw-connection/manager";
 
 // chrome.storage.local mock — backed by a single in-memory record reset
@@ -403,6 +404,13 @@ beforeEach(() => {
   downloads.download.mockClear();
   extension.isAllowedFileSchemeAccess.mockReset();
   extension.isAllowedFileSchemeAccess.mockResolvedValue(true);
+});
+
+// globals:false → Testing Library can't auto-register its cleanup, so mounted
+// React trees would leak across tests and React 19 scheduler callbacks could
+// fire after happy-dom teardown ("window is not defined"). Unmount explicitly.
+afterEach(() => {
+  cleanup();
 });
 
 export { chromeMock };
