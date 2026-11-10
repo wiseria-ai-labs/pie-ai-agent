@@ -452,3 +452,7 @@ class FakeImageBitmap {
   }
   return new FakeImageBitmap(3000, 2000);
 };
+
+// LLM transient-error retry (#474): never actually wait between attempts in tests.
+import { retryTiming } from "@/lib/model-router/providers/_shared/fetch-retry";
+retryTiming.sleep = (_ms, signal) => (signal?.aborted ? Promise.reject(signal.reason) : Promise.resolve());
