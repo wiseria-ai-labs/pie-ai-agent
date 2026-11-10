@@ -186,7 +186,7 @@ registro y los archivos.
 2. Agrega un modelo — pega tu clave de API (BYOK) o inicia sesión para usar la suscripción oficial
 3. Cambia a **Chat** y envía tu primer mensaje
 
-## Compilar y contribuir
+## Compilar desde el código fuente
 
 ```bash
 pnpm install
@@ -196,8 +196,10 @@ pnpm build        # build de producción a dist/
 ```
 
 Pie es una extensión Manifest V3 hecha con React 19, TypeScript y Vite. Las notas
-de arquitectura y la guía para contribuir están en
-[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) y [`CLAUDE.md`](../../CLAUDE.md).
+de arquitectura están en [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md).
+
+Los reportes de bugs y las solicitudes de funciones son bienvenidos como issues;
+no aceptamos pull requests externos. Consulta [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
 
 ## Roadmap
 

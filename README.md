@@ -183,7 +183,7 @@ account, firewall rules, registry keys, and files.
 2. Add a model — paste your API key (BYOK) or sign in for the official subscription
 3. Switch to **Chat** and send your first message
 
-## Build & contribute
+## Build from source
 
 ```bash
 pnpm install
@@ -193,8 +193,10 @@ pnpm build        # production build to dist/
 ```
 
 Pie is a Manifest V3 extension built with React 19, TypeScript, and Vite.
-Architecture notes and contributor guidance live in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`CLAUDE.md`](CLAUDE.md).
+Architecture notes live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+Bug reports and feature requests are welcome as issues; we don't accept
+external pull requests. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Roadmap
 

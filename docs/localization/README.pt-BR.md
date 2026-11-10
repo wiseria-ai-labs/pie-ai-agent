@@ -185,7 +185,7 @@ conta local do sandbox, as regras de firewall, as chaves de registro e os arquiv
 2. Adicione um modelo — cole a sua chave de API (BYOK) ou entre para usar a assinatura oficial
 3. Mude para **Chat** e envie a sua primeira mensagem
 
-## Compilar e contribuir
+## Compilar a partir do código-fonte
 
 ```bash
 pnpm install
@@ -195,8 +195,10 @@ pnpm build        # build de produção para dist/
 ```
 
 O Pie é uma extensão Manifest V3 feita com React 19, TypeScript e Vite. Notas de
-arquitetura e orientação para contribuidores estão em
-[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) e [`CLAUDE.md`](../../CLAUDE.md).
+arquitetura estão em [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md).
+
+Relatos de bugs e pedidos de funcionalidades são bem-vindos como issues; não
+aceitamos pull requests externos. Veja [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
 
 ## Roadmap
 

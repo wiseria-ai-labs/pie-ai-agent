@@ -159,7 +159,7 @@ pnpm build
 2. 添加一个模型 —— 粘贴你的 API key（BYOK），或登录使用官方订阅
 3. 切到 **Chat**，发出第一条消息
 
-## 构建与参与贡献
+## 从源码构建
 
 ```bash
 pnpm install
@@ -168,8 +168,9 @@ pnpm test         # 跑测试
 pnpm build        # 生产构建至 dist/
 ```
 
-Pie 是基于 React 19、TypeScript、Vite 的 Manifest V3 扩展。架构说明与贡献者指南见
-[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) 和 [`CLAUDE.md`](../../CLAUDE.md)。
+Pie 是基于 React 19、TypeScript、Vite 的 Manifest V3 扩展。架构说明见 [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)。
+
+欢迎通过 issue 反馈 bug 和需求；本仓库不接受外部 PR，详见 [`CONTRIBUTING.md`](../../CONTRIBUTING.md)。
 
 ## 路线图
 
