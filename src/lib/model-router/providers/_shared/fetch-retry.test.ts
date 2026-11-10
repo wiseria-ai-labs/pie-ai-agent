@@ -48,6 +48,7 @@ describe("fetchWithRetry", () => {
   it.each([
     '{"error":{"message":"Quota exceeded for metric: GenerateRequestsPerDayPerProjectPerModel"}}',
     '{"error":{"code":"insufficient_quota"}}',
+    '{"error":{"type":"exceeded_current_quota_error"}}',
     '{"error":{"type":"budget_exceeded"}}',
   ])("does not retry daily-quota 429: %s", async (body) => {
     const f = stubFetch(res(429, body), res(200));
@@ -55,6 +56,18 @@ describe("fetchWithRetry", () => {
     expect(r.status).toBe(429);
     expect(await r.text()).toBe(body); // body still readable by the caller
     expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries Gemini per-minute 429 (body mentions billing + 'Quota exceeded for metric')", async () => {
+    const body = JSON.stringify({ error: {
+      code: 429,
+      message: "You exceeded your current quota, please check your plan and billing details. Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 10",
+      status: "RESOURCE_EXHAUSTED",
+      details: [{ violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }] }],
+    } });
+    const f = stubFetch(res(429, body), res(200, "ok"));
+    expect((await fetchWithRetry("u", {})).status).toBe(200);
+    expect(f).toHaveBeenCalledTimes(2);
   });
 
   it("honors Retry-After, capped at 30 s", async () => {

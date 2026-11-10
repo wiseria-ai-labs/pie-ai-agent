@@ -2218,7 +2218,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // exact same request up to EMPTY_REPLAY_DELAYS_MS.length times before the
       // "empty response" error below. Nothing from the empty attempt reaches history.
       let emptyReplays = 0;
-      for (;;) {
+      for (;;) { // ── empty-replay loop (body left unindented to keep the diff small) ──
       for await (const event of streamChat(modelConfig, windowedHistory, signal, toolDefinitions)) {
         if (!__sawAnyEvent) {
           __sawAnyEvent = true;
@@ -2354,7 +2354,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         continue;
       }
       break;
-      }
+      } // ── end empty-replay loop ──
       console.log("[sw][debug] streamChat exited", {
         sawAnyEvent: __sawAnyEvent,
         stepIndex,

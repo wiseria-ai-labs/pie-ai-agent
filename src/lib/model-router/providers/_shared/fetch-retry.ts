@@ -9,7 +9,7 @@
 
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 /** 429 bodies that mean "quota gone", not "slow down": retrying just delays the error. */
-const NON_RETRYABLE_429 = /PerDay|per_day|insufficient_quota|budget_exceeded|billing|quota exceeded for metric/i;
+const NON_RETRYABLE_429 = /PerDay|per_day|insufficient_quota|exceeded_current_quota|budget_exceeded/i;
 const MAX_RETRY_AFTER_MS = 30_000;
 
 /** setTimeout that rejects with the abort reason the moment `signal` aborts. */
