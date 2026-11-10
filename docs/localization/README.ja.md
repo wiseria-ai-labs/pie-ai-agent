@@ -176,7 +176,7 @@ pnpm build
 2. モデルを追加します —— API key を貼り付ける（BYOK）か、ログインして公式サブスクリプションを使います
 3. **Chat** に切り替えて、最初のメッセージを送ります
 
-## ビルドと貢献
+## ソースからビルド
 
 ```bash
 pnpm install
@@ -186,8 +186,10 @@ pnpm build        # dist/ への本番ビルド
 ```
 
 Pie は React 19、TypeScript、Vite で作られた Manifest V3 拡張機能です。アーキテクチャ
-の解説や貢献ガイドは [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) と
-[`CLAUDE.md`](../../CLAUDE.md) にあります。
+の解説は [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) にあります。
+
+バグ報告や機能要望は issue で歓迎します。外部からの pull request は受け付けて
+いません。詳しくは [`CONTRIBUTING.md`](../../CONTRIBUTING.md) をご覧ください。
 
 ## ロードマップ
 
