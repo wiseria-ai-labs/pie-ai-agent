@@ -1,6 +1,7 @@
 import { isValidElement, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { useT } from "@/lib/i18n";
@@ -178,7 +179,7 @@ export default function MarkdownContent({ content }: MarkdownContentProps) {
   const normalized = normalizeMath(stripIncidentalIndentedCode(content));
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
+      remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
       rehypePlugins={[rehypeKatex]}
       components={{
         h1: ({ children }) => (
