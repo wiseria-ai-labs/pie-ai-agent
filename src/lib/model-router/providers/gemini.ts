@@ -1,6 +1,7 @@
 import type { ModelConfig } from "@/lib/model-router";
 import type { AgentMessage, ToolDefinition, StreamEvent } from "@/lib/model-router/types";
 import { readSSELines } from "@/lib/model-router/sse";
+import { fetchWithRetry } from "./_shared/fetch-retry";
 
 interface GeminiPart {
   text?: string;
@@ -123,7 +124,7 @@ export async function* streamChat(
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetchWithRetry(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),

@@ -1,6 +1,7 @@
 import type { ModelConfig } from "@/lib/model-router";
 import type { AgentMessage, ToolDefinition, StreamEvent } from "@/lib/model-router/types";
 import { readSSELines } from "@/lib/model-router/sse";
+import { fetchWithRetry } from "./fetch-retry";
 import { createThinkTagSplitter } from "../../think-tag-splitter";
 
 /**
@@ -181,7 +182,7 @@ export async function* streamChatOpenAICompat(
 
   let response: Response;
   try {
-    response = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(requestBody), signal });
+    response = await fetchWithRetry(endpoint, { method: "POST", headers, body: JSON.stringify(requestBody), signal });
   } catch (e) {
     if (signal?.aborted) return;
     yield { type: "error", error: `Network error: ${e instanceof Error ? e.message : `Failed to connect to ${displayProviderName(config)} API`}`, kind: "network" };

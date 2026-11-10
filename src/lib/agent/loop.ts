@@ -18,6 +18,7 @@ import type { Tool } from "./types";
 import { getToolClass, SCREENSHOT_TOOL_NAMES } from "./tool-names";
 import { escapeUntrustedWrappers, escapeTrustedWrappers } from "./untrusted-wrappers";
 import { classifyStreamCompletion } from "./stream-completion";
+import { retryTiming } from "@/lib/model-router/providers/_shared/fetch-retry";
 import {
   buildAgentSystemPrompt,
   buildCurrentTimeBlock,
@@ -107,6 +108,9 @@ import { synthesizeAgentTurnText, type TerminationReason } from "./synthesize-ag
 import { waitForUrlSettle, type UrlSettleResult } from "./wait-for-url-settle";
 import { assembleAssistantBlocks, type ThinkingContentBlock } from "./assistant-blocks";
 import { parseTextToolInvocations } from "./text-tool-invocation";
+
+const EMPTY_REPLAY_DELAYS_MS = [1500, 3000];
+
 // setLastTaskSynth removed from emitDone — lastTaskSynth is now folded into
 // the tombstone write by buildSessionAgentTombstone(synth) to prevent the
 // two-write race on the agent key (AD1 fix). No import needed.
@@ -2210,6 +2214,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       let __sawAnyEvent = false;
       let lastStepUsage: Extract<StreamEvent, { type: "done" }>["usage"] | null = null;
       let lastStopReason: Extract<StreamEvent, { type: "done" }>["stopReason"];
+      // #474: an empty completion (no text, no tool call) is replayed with the
+      // exact same request up to EMPTY_REPLAY_DELAYS_MS.length times before the
+      // "empty response" error below. Nothing from the empty attempt reaches history.
+      let emptyReplays = 0;
+      for (;;) {
       for await (const event of streamChat(modelConfig, windowedHistory, signal, toolDefinitions)) {
         if (!__sawAnyEvent) {
           __sawAnyEvent = true;
@@ -2323,6 +2332,28 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           }, "fail");
           return;
         }
+      }
+      if (
+        !signal.aborted &&
+        emptyReplays < EMPTY_REPLAY_DELAYS_MS.length &&
+        classifyStreamCompletion({
+          stopReason: lastStopReason,
+          hasToolCalls: completedToolCalls.length > 0 || turnBlocks.length > 0,
+          hasText: accumulatedText.trim().length > 0,
+        }) === "empty"
+      ) {
+        console.warn(`[agent] empty completion, replaying step ${stepIndex} (#${emptyReplays + 1})`);
+        try {
+          await retryTiming.sleep(EMPTY_REPLAY_DELAYS_MS[emptyReplays++], signal);
+        } catch {
+          return; // aborted during the wait → finally
+        }
+        // ponytail: usage of the empty attempt is overwritten by the replay's; it is tiny.
+        thinkingBlocks.length = 0;
+        lastStopReason = undefined;
+        continue;
+      }
+      break;
       }
       console.log("[sw][debug] streamChat exited", {
         sawAnyEvent: __sawAnyEvent,

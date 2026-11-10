@@ -1,6 +1,7 @@
 import type { ModelConfig } from "@/lib/model-router";
 import type { AgentMessage, ToolDefinition, StreamEvent } from "@/lib/model-router/types";
 import { readSSELines } from "@/lib/model-router/sse";
+import { fetchWithRetry } from "./_shared/fetch-retry";
 import { displayProviderName } from "./_shared/openai-compat-core";
 
 /**
@@ -158,7 +159,7 @@ export async function* streamChat(
 
   let response: Response;
   try {
-    response = await fetch(endpoint, {
+    response = await fetchWithRetry(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
       body: JSON.stringify(requestBody),
