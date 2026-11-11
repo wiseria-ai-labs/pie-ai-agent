@@ -195,7 +195,17 @@ function withDeadline<T>(
   });
 }
 
-async function probeTopFrame(tabId: number, deadline?: number): Promise<NavProbe | null> {
+/**
+ * Explicit probe outcome — callers must NOT re-derive timeout vs inject
+ * failure from wall-clock (`Date.now() >= deadline` races the timer callback
+ * by ~1ms; #471 review round 3).
+ */
+type ProbeOutcome =
+  | { kind: "ok"; probe: NavProbe }
+  | { kind: "timeout" }
+  | { kind: "unavailable" };
+
+async function probeTopFrame(tabId: number, deadline?: number): Promise<ProbeOutcome> {
   try {
     const exec = chrome.scripting.executeScript({
       target: { tabId, frameIds: [0] },
@@ -204,12 +214,12 @@ async function probeTopFrame(tabId: number, deadline?: number): Promise<NavProbe
       injectImmediately: true,
     });
     const settled = deadline !== undefined ? await withDeadline(exec, deadline) : await exec;
-    if (settled === DEADLINE_TIMEOUT) return null;
+    if (settled === DEADLINE_TIMEOUT) return { kind: "timeout" };
     const [r] = settled;
     const p = r?.result as NavProbe | undefined;
-    return p && typeof p.url === "string" ? p : null;
+    return p && typeof p.url === "string" ? { kind: "ok", probe: p } : { kind: "unavailable" };
   } catch {
-    return null;
+    return { kind: "unavailable" };
   }
 }
 
@@ -278,8 +288,14 @@ export async function waitForPageLoad(
   const startedAt = Date.now();
   let seen = false; // ponytail: a failed FIRST probe = unprobeable page, skip the wait
   while (Date.now() < deadline) {
-    const p = await probeTopFrame(tabId, deadline);
-    if (p) {
+    const outcome = await probeTopFrame(tabId, deadline);
+    if (outcome.kind === "timeout") {
+      // Known deadline hit — always "loading", even if wall clock still
+      // reads deadline-1 when the timer callback runs.
+      return "loading";
+    }
+    if (outcome.kind === "ok") {
+      const p = outcome.probe;
       seen = true;
       if (!p.tracked) {
         await injectBounded(tabId, installMutationTracker, deadline);
@@ -291,10 +307,7 @@ export async function waitForPageLoad(
         return "loaded";
       }
     } else if (!seen) {
-      // Timed out or threw on the first probe. If the deadline is already
-      // gone, treat as still loading (hanging inject); otherwise the page
-      // is unprobeable (restricted / blocked) — don't burn the budget.
-      if (Date.now() >= deadline) return "loading";
+      // Genuine inject failure (restricted / blocked) — don't burn the budget.
       return "unavailable";
     }
     const remaining = deadline - Date.now();
@@ -417,7 +430,8 @@ export async function withActionSettle<T extends ActionResult>(
     const prepDeadline = Date.now() + navObserveMs;
     trackerInstalled = await injectBounded(tabId, installMutationTracker, prepDeadline);
     if (trackerInstalled) {
-      pre = await probeTopFrame(tabId, prepDeadline);
+      const prep = await probeTopFrame(tabId, prepDeadline);
+      pre = prep.kind === "ok" ? prep.probe : null;
     }
   } else {
     try {
@@ -548,19 +562,19 @@ export async function withActionSettle<T extends ActionResult>(
           navStartAt = navSignalAt;
           break;
         }
-        const p = await probeTopFrame(tabId, observeDeadline);
-        if (!p || !p.tracked) {
-          // Old document torn down (or replaced) — cross-document navigation.
-          // A deadline-timed-out probe (null, old doc still there) is NOT
-          // teardown — only treat as newDoc when we got an untracked probe
-          // or the inject threw mid-teardown (null after we already had pre).
-          // Distinguishing: null with time left ≈ throw/teardown; null at
-          // observeDeadline ≈ hung inject (don't invent a navigation).
-          if (!p && Date.now() >= observeDeadline) break;
+        const outcome = await probeTopFrame(tabId, observeDeadline);
+        if (outcome.kind === "timeout") {
+          // Hung inject hit the observe budget — do not invent a navigation.
+          break;
+        }
+        if (outcome.kind === "unavailable" || !outcome.probe.tracked) {
+          // Inject throw / untracked doc = cross-document teardown (not a
+          // timer race — kind is explicit).
           newDoc = true;
           navStartAt = Date.now();
-          if (p) last = p;
+          if (outcome.kind === "ok") last = outcome.probe;
         } else {
+          const p = outcome.probe;
           last = p;
           if (routeUrl(p.url) !== routeUrl(pre.url) || p.title !== pre.title || p.heading !== pre.heading) {
             navStartAt = Date.now();
@@ -576,7 +590,7 @@ export async function withActionSettle<T extends ActionResult>(
         await quietSettle(quietDeadline);
         if (reportNoChange && pre.mutN >= 0 && !navSignalAt) {
           const after = await probeTopFrame(tabId, quietDeadline);
-          if (after && after.tracked && after.mutN === pre.mutN) {
+          if (after.kind === "ok" && after.probe.tracked && after.probe.mutN === pre.mutN) {
             appendNote(result, "No navigation or page change detected — the page may be unchanged (form-control state such as a checkbox is not tracked). Call read_page to check before retrying.");
           }
         }
@@ -589,15 +603,15 @@ export async function withActionSettle<T extends ActionResult>(
           const remain = deadline - Date.now();
           if (remain <= 0) break;
           await sleep(Math.min(navPollMs, remain));
-          const p = await probeTopFrame(tabId, deadline);
-          if (!p) {
-            // Mid-teardown / new doc not injectable yet — or probe hit the
-            // deadline. Only extend the wait when budget remains.
-            if (Date.now() >= deadline) break;
+          const outcome = await probeTopFrame(tabId, deadline);
+          if (outcome.kind === "timeout") break;
+          if (outcome.kind === "unavailable") {
+            // Mid-teardown / new doc not injectable yet.
             newDoc = true;
             lastSignalAt = Date.now();
             continue;
           }
+          const p = outcome.probe;
           last = p;
           if (!p.tracked) {
             newDoc = true;

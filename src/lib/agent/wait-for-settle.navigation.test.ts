@@ -416,6 +416,11 @@ describe("waitForPageLoad (open_url)", () => {
     restricted = true;
     expect(await waitForPageLoad(TAB, Date.now() + 5000, { pollMs: 50 })).toBe("unavailable");
   });
+  it("restricted page stays unavailable even near the deadline", async () => {
+    // Inject throw must remain unavailable — not reclassified as loading.
+    restricted = true;
+    expect(await waitForPageLoad(TAB, Date.now() + 30, { pollMs: 5 })).toBe("unavailable");
+  });
   it("hanging executeScript returns by the shared deadline", async () => {
     g.chrome.scripting = {
       executeScript: vi.fn(async () => new Promise(() => {})),
@@ -423,6 +428,29 @@ describe("waitForPageLoad (open_url)", () => {
     const t0 = Date.now();
     const status = await waitForPageLoad(TAB, Date.now() + 100, { quietMs: 50, pollMs: 20 });
     expect(Date.now() - t0).toBeLessThan(300);
+    expect(status).toBe("loading");
+  });
+  it("deadline timeout stays loading when wall clock still reads deadline-1ms", async () => {
+    // Review #479 round 3: timer callback already fired, but Date.now is
+    // still one tick behind — must not guess unavailable from the clock.
+    g.chrome.scripting = {
+      executeScript: vi.fn(async () => new Promise(() => {})),
+    };
+    const originalNow = Date.now;
+    const originalSetTimeout = globalThis.setTimeout;
+    const deadline = originalNow() + 100;
+    globalThis.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) =>
+      originalSetTimeout(() => {
+        Date.now = () => deadline - 1;
+        if (typeof callback === "function") callback(...args);
+      }, delay)) as unknown as typeof setTimeout;
+    let status: "loaded" | "loading" | "unavailable";
+    try {
+      status = await waitForPageLoad(TAB, deadline, { pollMs: 20, quietMs: 50 });
+    } finally {
+      Date.now = originalNow;
+      globalThis.setTimeout = originalSetTimeout;
+    }
     expect(status).toBe("loading");
   });
 });
