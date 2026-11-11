@@ -175,6 +175,70 @@ describe("withActionSettle — navigation awareness (#471)", () => {
     expect(document.querySelectorAll("[data-pie-idx]")).toHaveLength(0);
   });
 
+  it("beforeNavigate alone does not start URL-only grace — waits for late commit", async () => {
+    // Review #479: old document stays complete/tracked until commit at 700ms;
+    // urlOnlyGraceMs must not fire off navStartAt from onBeforeNavigate.
+    pageAtlasStore.save(fakeAtlas("atl_late", TAB));
+    const { out, ms } = await timed(
+      () => {
+        emit("__beforeNavigateListeners");
+        later(700, () => {
+          loadNewDocument("/late", "Late", `<h1>Late</h1><button data-pie-idx="9">x</button>`);
+          emit("__committedListeners");
+        });
+      },
+      { ...FAST, urlOnlyGraceMs: 200, navMaxMs: 1200, navObserveMs: 100 },
+    );
+    expect(ms).toBeGreaterThanOrEqual(700);
+    expect(out.observation).toContain("The page navigated. Now at ");
+    expect(out.observation).toContain("/late");
+    expect(pageAtlasStore.get("atl_late")).toBeUndefined();
+    expect(document.querySelectorAll("[data-pie-idx]")).toHaveLength(0);
+  });
+
+  it("beforeNavigate that never commits waits out the nav budget without clearing refs", async () => {
+    pageAtlasStore.save(fakeAtlas("atl_keep", TAB));
+    const { out, ms } = await timed(
+      () => {
+        emit("__beforeNavigateListeners");
+      },
+      { ...FAST, urlOnlyGraceMs: 200, navMaxMs: 800, navObserveMs: 100 },
+    );
+    expect(ms).toBeGreaterThanOrEqual(800);
+    expect(out.observation).toMatch(/navigation was signalled but the page had not changed/);
+    expect(pageAtlasStore.get("atl_keep")).toBeDefined();
+    expect(document.querySelector('[data-pie-idx="0"]')).not.toBeNull();
+  });
+
+  it("hanging executeScript during nav wait returns by deadline and cleans listeners", async () => {
+    let actionDone = false;
+    g.chrome.scripting = {
+      executeScript: vi.fn(async ({ func, args }: { func: (...a: unknown[]) => unknown; args?: unknown[] }) => {
+        if (restricted) throw new Error("Cannot access contents of the page");
+        if (torndown) throw new Error("Frame with ID 0 was removed.");
+        // Pre-action install + fingerprint must succeed; post-action probes hang.
+        if (actionDone && func.name === "readNavProbe") {
+          return new Promise(() => {});
+        }
+        return [{ frameId: 0, result: func(...(args ?? [])) }];
+      }),
+    };
+    const t0 = Date.now();
+    const out = await withActionSettle(
+      TAB,
+      async () => {
+        actionDone = true;
+        emit("__beforeNavigateListeners");
+        return { ...ok };
+      },
+      { ...FAST, navMaxMs: 100, navObserveMs: 50, navPollMs: 10 },
+    );
+    const ms = Date.now() - t0;
+    expect(ms).toBeLessThan(300);
+    expect(out.success).toBe(true);
+    expect(out.observation).toMatch(/navigation was signalled/);
+  });
+
   it("non-navigating toggle: ~observe window, no note, idx kept", async () => {
     const { out, ms } = await timed(() => {
       document.getElementById("panel")!.innerHTML = "<p>expanded</p>";
@@ -265,5 +329,14 @@ describe("waitForPageLoad (open_url)", () => {
   it("returns unavailable on an unprobeable page", async () => {
     restricted = true;
     expect(await waitForPageLoad(TAB, Date.now() + 5000, { pollMs: 50 })).toBe("unavailable");
+  });
+  it("hanging executeScript returns by the shared deadline", async () => {
+    g.chrome.scripting = {
+      executeScript: vi.fn(async () => new Promise(() => {})),
+    };
+    const t0 = Date.now();
+    const status = await waitForPageLoad(TAB, Date.now() + 100, { quietMs: 50, pollMs: 20 });
+    expect(Date.now() - t0).toBeLessThan(300);
+    expect(status).toBe("loading");
   });
 });

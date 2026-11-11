@@ -168,18 +168,70 @@ export function clearPieIdxInjected(): number {
   return n;
 }
 
-async function probeTopFrame(tabId: number): Promise<NavProbe | null> {
+const DEADLINE_TIMEOUT = Symbol("deadline-timeout");
+
+/**
+ * Resolve `promise` or return `DEADLINE_TIMEOUT` when `deadline` elapses.
+ * A never-resolving `executeScript` must not outlive the shared nav budget
+ * (#471 review: click/open_url hang when the probe never settles).
+ */
+function withDeadline<T>(
+  promise: Promise<T>,
+  deadline: number,
+): Promise<T | typeof DEADLINE_TIMEOUT> {
+  const remaining = Math.max(0, deadline - Date.now());
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(DEADLINE_TIMEOUT), remaining);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+async function probeTopFrame(tabId: number, deadline?: number): Promise<NavProbe | null> {
   try {
-    const [r] = await chrome.scripting.executeScript({
+    const exec = chrome.scripting.executeScript({
       target: { tabId, frameIds: [0] },
       func: readNavProbe,
       // Read mid-load state; the default (document_idle) would block here.
       injectImmediately: true,
     });
+    const settled = deadline !== undefined ? await withDeadline(exec, deadline) : await exec;
+    if (settled === DEADLINE_TIMEOUT) return null;
+    const [r] = settled;
     const p = r?.result as NavProbe | undefined;
     return p && typeof p.url === "string" ? p : null;
   } catch {
     return null;
+  }
+}
+
+/** Best-effort inject bounded by the shared settle deadline (never hangs past it). */
+async function injectBounded(
+  tabId: number,
+  func: () => void,
+  deadline?: number,
+): Promise<void> {
+  try {
+    const exec = chrome.scripting.executeScript({
+      target: { tabId },
+      func,
+      injectImmediately: true,
+    });
+    if (deadline !== undefined) {
+      await withDeadline(exec, deadline);
+    } else {
+      await exec;
+    }
+  } catch {
+    // best-effort
   }
 }
 
@@ -192,10 +244,18 @@ const routeUrl = (u: string): string => u.replace(/#(?![!/]).*$/, "");
  * describes a page that no longer exists. Per-frame fan-out (never
  * allFrames:true — zombie frames, PR#264).
  */
-export async function invalidatePageRefs(tabId: number): Promise<void> {
+export async function invalidatePageRefs(tabId: number, deadline?: number): Promise<void> {
   pageAtlasStore.invalidateTab(tabId);
   try {
-    await executeScriptAllFrames(tabId, clearPieIdxInjected);
+    const remaining = deadline !== undefined ? Math.max(0, deadline - Date.now()) : undefined;
+    await executeScriptAllFrames(
+      tabId,
+      clearPieIdxInjected,
+      undefined,
+      remaining !== undefined
+        ? { topFrameTimeoutMs: remaining, subFrameTimeoutMs: remaining }
+        : undefined,
+    );
   } catch {
     // Tab gone / frames unreachable — nothing left to clear.
   }
@@ -214,15 +274,11 @@ export async function waitForPageLoad(
   const startedAt = Date.now();
   let seen = false; // ponytail: a failed FIRST probe = unprobeable page, skip the wait
   while (Date.now() < deadline) {
-    const p = await probeTopFrame(tabId);
+    const p = await probeTopFrame(tabId, deadline);
     if (p) {
       seen = true;
       if (!p.tracked) {
-        try {
-          await chrome.scripting.executeScript({ target: { tabId }, func: installMutationTracker, injectImmediately: true });
-        } catch {
-          // best-effort
-        }
+        await injectBounded(tabId, installMutationTracker, deadline);
       } else if (
         p.readyState !== "loading"
         && !p.busy
@@ -231,10 +287,15 @@ export async function waitForPageLoad(
         return "loaded";
       }
     } else if (!seen) {
-      // Unprobeable (restricted / blocked) — don't burn the budget.
+      // Timed out or threw on the first probe. If the deadline is already
+      // gone, treat as still loading (hanging inject); otherwise the page
+      // is unprobeable (restricted / blocked) — don't burn the budget.
+      if (Date.now() >= deadline) return "loading";
       return "unavailable";
     }
-    await new Promise<void>((r) => setTimeout(r, pollMs));
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await new Promise<void>((r) => setTimeout(r, Math.min(pollMs, remaining)));
   }
   return seen ? "loading" : "unavailable";
 }
@@ -296,7 +357,11 @@ export interface ActionSettleOptions {
   reportNoChange?: boolean;
   navObserveMs?: number;
   navMaxMs?: number;
-  /** URL-only change: how long to wait for title/heading to follow. */
+  /**
+   * After the URL has actually changed, how long to wait for title/heading
+   * to follow before accepting a URL-only settle. Does NOT apply to a bare
+   * onBeforeNavigate while the old document is still unchanged.
+   */
   urlOnlyGraceMs?: number;
   navPollMs?: number;
 }
@@ -457,15 +522,24 @@ export async function withActionSettle<T extends ActionResult>(
       let navStartAt = 0;
       let last: NavProbe = pre;
       let newDoc = false;
-      while (!navStartAt && Date.now() - performedAt < navObserveMs) {
-        await sleep(navPollMs);
+      const observeDeadline = performedAt + navObserveMs;
+      while (!navStartAt && Date.now() < observeDeadline) {
+        const remainObs = observeDeadline - Date.now();
+        if (remainObs <= 0) break;
+        await sleep(Math.min(navPollMs, remainObs));
         if (navSignalAt) {
           navStartAt = navSignalAt;
           break;
         }
-        const p = await probeTopFrame(tabId);
+        const p = await probeTopFrame(tabId, observeDeadline);
         if (!p || !p.tracked) {
           // Old document torn down (or replaced) — cross-document navigation.
+          // A deadline-timed-out probe (null, old doc still there) is NOT
+          // teardown — only treat as newDoc when we got an untracked probe
+          // or the inject threw mid-teardown (null after we already had pre).
+          // Distinguishing: null with time left ≈ throw/teardown; null at
+          // observeDeadline ≈ hung inject (don't invent a navigation).
+          if (!p && Date.now() >= observeDeadline) break;
           newDoc = true;
           navStartAt = Date.now();
           if (p) last = p;
@@ -493,10 +567,14 @@ export async function withActionSettle<T extends ActionResult>(
         let urlChangedAt = 0;
         let loaded = false;
         while (Date.now() < deadline) {
-          await sleep(navPollMs);
-          const p = await probeTopFrame(tabId);
+          const remain = deadline - Date.now();
+          if (remain <= 0) break;
+          await sleep(Math.min(navPollMs, remain));
+          const p = await probeTopFrame(tabId, deadline);
           if (!p) {
-            // Mid-teardown / new doc not injectable yet.
+            // Mid-teardown / new doc not injectable yet — or probe hit the
+            // deadline. Only extend the wait when budget remains.
+            if (Date.now() >= deadline) break;
             newDoc = true;
             lastSignalAt = Date.now();
             continue;
@@ -505,17 +583,16 @@ export async function withActionSettle<T extends ActionResult>(
           if (!p.tracked) {
             newDoc = true;
             lastSignalAt = Date.now();
-            try {
-              await chrome.scripting.executeScript({ target: { tabId }, func: installMutationTracker, injectImmediately: true });
-            } catch {
-              // best-effort
-            }
+            await injectBounded(tabId, installMutationTracker, deadline);
             continue;
           }
           const now = Date.now();
           if (!urlChangedAt && routeUrl(p.url) !== routeUrl(pre.url)) urlChangedAt = now;
           const contentChanged = newDoc || p.title !== pre.title || p.heading !== pre.heading;
-          const graceOver = now - (urlChangedAt || navStartAt) >= urlOnlyGraceMs;
+          // URL-only grace starts ONLY after the URL actually changed — a
+          // lone onBeforeNavigate while the old document is still complete
+          // must keep waiting for commit or the nav budget (#471 review).
+          const graceOver = urlChangedAt > 0 && now - urlChangedAt >= urlOnlyGraceMs;
           const quiet = now - Math.max(lastSignalAt, p.mutAt, navStartAt) >= quietMs;
           if (p.readyState !== "loading" && quiet && !p.busy && (contentChanged || graceOver)) {
             loaded = true;
@@ -525,7 +602,7 @@ export async function withActionSettle<T extends ActionResult>(
 
         const navigated = newDoc || urlChangedAt > 0 || last.title !== pre.title || last.heading !== pre.heading;
         if (navigated) {
-          await invalidatePageRefs(tabId);
+          await invalidatePageRefs(tabId, deadline);
           let url = last.url;
           if (last === pre) {
             url = (await chrome.tabs.get(tabId).catch(() => undefined))?.url ?? "an unknown URL";
