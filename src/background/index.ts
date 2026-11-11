@@ -46,7 +46,6 @@ import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 import type { RoleViolation } from "@/lib/agent/history-validation";
 import { logHistoryRepaired } from "@/lib/agent/history-validation-telemetry";
 import {
-  setSessionAgent,
   setPendingConfirm,
   getSessionAgent,
   getSessionMeta,
@@ -142,6 +141,15 @@ import {
   broadcastPickerExit,
 } from "./quote-bridge";
 import { addPending, cancelPending, drainPending } from "@/lib/sessions/pending-instructions";
+import {
+  beginTask,
+  claimRejection,
+  isCurrentTask,
+  isTaskEnded,
+  makeTaskEmit,
+  updateCurrentTaskAgent,
+  waitForTaskReclaim,
+} from "./task-end-guard";
 import { broadcastInstructionState } from "./instruction-broadcast";
 import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
@@ -1103,6 +1111,7 @@ async function handleResumeRequest(
   abortController: AbortController,
   inFlightSessionIds: Set<string>,
   keepAlive: KeepAlive,
+  gen: number,
 ): Promise<void> {
   try {
     const signal = abortController.signal;
@@ -1219,15 +1228,16 @@ async function handleResumeRequest(
     taskForPrompt = typeof c === "string" ? c : "(resumed task)";
   }
 
+  await waitForTaskReclaim(sessionId);
   await runAgentLoop({
-    emit: (m) => port.postMessage(m),
+    emit: makeTaskEmit(port, sessionId, gen, signal),
     task: taskForPrompt,
     modelConfig,
     instanceId: resumeSel.instanceId,
     signal,
     sessionId,
     // M2-U1: shared handler that also throttles lastAccessedAt bumps.
-    onStepSnapshot: makeStepSnapshotHandler(sessionId),
+    onStepSnapshot: makeStepSnapshotHandler(sessionId, gen),
     resumedAgentMessages: agent.agentMessages,
     resumedFromStep: agent.stepIndex,
     // Phase 5 — propagate prior hasImageContent flag across resume.
@@ -1259,8 +1269,12 @@ async function handleResumeRequest(
     },
   });
   } finally {
-    inFlightSessionIds.delete(sessionId);
-    runningSessionIds.delete(sessionId);
+    // Issue #470 — a superseded task's teardown must not close the newer
+    // task's in-flight state (instruction-adds would be rejected).
+    if (isCurrentTask(sessionId, gen)) {
+      inFlightSessionIds.delete(sessionId);
+      runningSessionIds.delete(sessionId);
+    }
     keepAlive.maybeStop();
   }
 }
@@ -1354,7 +1368,7 @@ async function handleDiscardRequest(
  * Both `handleChatStream` and `handleResumeRequest` use this factory
  * to keep the two call sites in sync.
  */
-function makeStepSnapshotHandler(sessionId: string) {
+function makeStepSnapshotHandler(sessionId: string, gen: number) {
   return async (snapshot: import("@/lib/sessions/types").SessionAgentState) => {
     // v1.5: merge with existing state so fields written between snapshots
     // (e.g., currentFocusTabId via setCurrentFocusTabId, pendingConfirm via
@@ -1367,10 +1381,14 @@ function makeStepSnapshotHandler(sessionId: string) {
     // lands AFTER setPendingConfirm. Previous behavior was correct only by
     // luck (the loop is suspended during user-confirm wait so no snapshot
     // fired); the merge makes the invariant explicit.
-    const existing = await getSessionAgent(sessionId);
-    const merged = mergeSessionAgentSnapshot(existing, snapshot);
-    await setSessionAgent(sessionId, merged);
-    if (snapshot.stepIndex % 5 === 0) {
+    //
+    // Issue #470 — merge inside ONE readwrite transaction: a get+set pair here
+    // wrote back a stale pendingInstructions and dropped instructions queued
+    // between the read and the write.
+    const wrote = await updateCurrentTaskAgent(sessionId, gen, (existing) =>
+      mergeSessionAgentSnapshot(existing, snapshot),
+    );
+    if (wrote && snapshot.stepIndex % 5 === 0) {
       updateLastAccessed(sessionId).catch((e) => {
         console.warn(
           `[agent] lastAccessedAt bump failed for session=${sessionId} stepIndex=${snapshot.stepIndex}:`,
@@ -1388,6 +1406,7 @@ async function handleChatStream(
   abortController: AbortController,
   inFlightSessionIds: Set<string>,
   keepAlive: KeepAlive,
+  gen: number,
   fallbackTitle?: string,
 ) {
   const signal = abortController.signal;
@@ -1490,6 +1509,7 @@ async function handleChatStream(
     // Issue #34 — if a prior abort left pending instructions, merge them
     // into the last user message of the new task so the user's earlier
     // mid-task additions aren't lost.
+    await waitForTaskReclaim(sessionId);
     const carryover = await drainPending(sessionId);
     if (carryover.length > 0) {
       const merged = mergeCarryoverIntoMessages(messages, carryover);
@@ -1502,6 +1522,13 @@ async function handleChatStream(
         );
       } else {
         messages = merged;
+        if (isCurrentTask(sessionId, gen)) {
+          port.postMessage({
+            type: "chat-instructions-consumed",
+            sessionId,
+            chatMessageIds: carryover.map((instruction) => instruction.chatMessageId),
+          });
+        }
       }
       // Broadcast empty pending so panel removes pending decorations
       await broadcastInstructionState((m) => port.postMessage(m), sessionId);
@@ -1620,7 +1647,7 @@ async function handleChatStream(
         : ("auto" as const);
 
     await runAgentLoop({
-      emit: (m) => port.postMessage(m),
+      emit: makeTaskEmit(port, sessionId, gen, signal),
       task,
       modelConfig,
       instanceId: chatSel.instanceId,
@@ -1630,7 +1657,7 @@ async function handleChatStream(
       // upgrade: also bumps lastAccessedAt every 5 steps + on tombstone
       // (see makeStepSnapshotHandler). Errors caught + logged inside
       // runAgentLoop; this wrapper only does the storage calls.
-      onStepSnapshot: makeStepSnapshotHandler(sessionId),
+      onStepSnapshot: makeStepSnapshotHandler(sessionId, gen),
       // v1.5 multi-pin: replace single `pinned` with the full array.
       // synthMeta is post-upgradeAutoToTaskAtChatStart (fetched after the
       // upgrade at line 1035), so pinnedTabs[] reflects the upgraded state.
@@ -1672,8 +1699,12 @@ async function handleChatStream(
       sessionId,
     });
   } finally {
-    inFlightSessionIds.delete(sessionId);
-    runningSessionIds.delete(sessionId);
+    // Issue #470 — a superseded task's teardown must not close the newer
+    // task's in-flight state (instruction-adds would be rejected).
+    if (isCurrentTask(sessionId, gen)) {
+      inFlightSessionIds.delete(sessionId);
+      runningSessionIds.delete(sessionId);
+    }
     keepAlive.maybeStop();
   }
 }
@@ -1782,6 +1813,7 @@ chrome.runtime.onConnect.addListener((port) => {
         abortRotation.current,
         inFlightSessionIds,
         keepAlive,
+        beginTask(message.sessionId),
         message.fallbackTitle,
       );
     } else if (message.type === "chat-abort") {
@@ -1789,8 +1821,11 @@ chrome.runtime.onConnect.addListener((port) => {
     } else if (message.type === "chat-instruction-add") {
       if (!verifyPortSession(message.sessionId, "chat-instruction-add")) return;
 
-      // Reject if loop has ended for this session — panel will fall back to chat-start
-      if (!inFlightSessionIds.has(message.sessionId)) {
+      // Reject if loop has ended for this session — panel will fall back to chat-start.
+      // Issue #470 — also once the task's final emit fired (before teardown);
+      // only one rejection per ended task (the fallback re-sends everything).
+      if (!inFlightSessionIds.has(message.sessionId) || isTaskEnded(message.sessionId)) {
+        if (!claimRejection(message.sessionId)) return;
         const reply: ChatInstructionRejectedMessage = {
           type: "chat-instruction-rejected",
           sessionId: message.sessionId,
@@ -1854,6 +1889,7 @@ chrome.runtime.onConnect.addListener((port) => {
         abortRotation.current,
         inFlightSessionIds,
         keepAlive,
+        beginTask(message.sessionId),
       ).catch((e) => {
         console.warn(
           `[sw] resume-task handler failed for session=${message.sessionId}:`,

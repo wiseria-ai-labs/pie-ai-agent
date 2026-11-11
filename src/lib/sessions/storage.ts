@@ -14,6 +14,8 @@ import {
   getIndex,
   writeSessionBatch,
   updateSessionRecordWithIndex,
+  updateSessionRecord,
+  updateSessionRecordPair,
 } from "@/lib/idb/sessions-store";
 import { tx, STORES } from "@/lib/idb/db";
 import type { DisplayMessage } from "@/types";
@@ -464,6 +466,33 @@ export async function setSessionAgent(
 }
 
 /**
+ * Issue #470 — atomic read-modify-write of the agent record in ONE readwrite
+ * transaction (agent-record twin of `updateSessionMeta`). The agent record has
+ * several writers (per-step snapshot, the mid-task instruction queue, confirm /
+ * synth / usage / focus writers); a two-transaction getSessionAgent →
+ * setSessionAgent pair writes back a stale copy and silently drops whatever
+ * landed in between (most visibly: a just-queued user instruction).
+ *
+ * INVARIANT: never add a new get+set pair on the agent record — use this.
+ * `setSessionAgent` stays for deliberate whole-record overwrites only.
+ *
+ * `transform` runs INSIDE the transaction, sees the latest committed record
+ * (null when absent), MUST be synchronous (no awaits — the transaction would
+ * auto-commit). Return the next record, or null / the same reference to skip.
+ * Returns true when a write was committed.
+ */
+export async function updateSessionAgent(
+  id: string,
+  transform: (current: SessionAgentState | null) => SessionAgentState | null,
+): Promise<boolean> {
+  return updateSessionRecord(agentKey(id), (raw) => {
+    const current = (raw ?? null) as SessionAgentState | null;
+    const next = transform(current);
+    return next === current ? null : next;
+  });
+}
+
+/**
  * ADR 0007 — has the user approved running scripts for `skillId` in this
  * session? Reads the persisted per-session approval set (survives SW death).
  */
@@ -480,16 +509,17 @@ export async function isSkillApprovedInSession(id: string, skillId: string): Pro
  * approval; the next step-end snapshot merges it forward (spread-existing-first).
  */
 export async function recordSkillApproval(id: string, skillId: string): Promise<void> {
-  const agent = await getSessionAgent(id);
-  const existing = agent?.approvedSkillIds ?? [];
-  if (existing.includes(skillId)) return;
-  const approvedSkillIds = [...existing, skillId];
-  await setSessionAgent(
-    id,
-    agent
-      ? { ...agent, approvedSkillIds }
-      : { agentMessages: [], pendingInstructions: [], stepIndex: 0, hasImageContent: false, approvedSkillIds },
-  );
+  await updateSessionAgent(id, (agent) => {
+    const existing = agent?.approvedSkillIds ?? [];
+    if (existing.includes(skillId)) return null;
+    const approvedSkillIds = [...existing, skillId];
+    return agent ? { ...agent, approvedSkillIds } : { ...emptySessionAgent(), approvedSkillIds };
+  });
+}
+
+/** Minimal agent record for seeding a session that has no agent record yet. */
+export function emptySessionAgent(): SessionAgentState {
+  return { agentMessages: [], pendingInstructions: [], stepIndex: 0, hasImageContent: false };
 }
 
 /**
@@ -720,9 +750,9 @@ export async function setPendingConfirm(
   sessionId: string,
   record: PendingConfirmRecord,
 ): Promise<void> {
-  const current = await getSessionAgent(sessionId);
-  if (!current) return;
-  await setSessionAgent(sessionId, { ...current, pendingConfirm: record });
+  await updateSessionAgent(sessionId, (current) =>
+    current ? { ...current, pendingConfirm: record } : null,
+  );
 }
 
 /**
@@ -736,14 +766,15 @@ export async function setPendingConfirm(
  * startup, so a missed scrub does not leak across SW lifetimes.
  */
 export async function scrubPendingConfirm(sessionId: string): Promise<void> {
-  const current = await getSessionAgent(sessionId);
-  if (!current || current.pendingConfirm == null) return;
-  // Build a copy without the field — explicit removal so the storage
-  // value doesn't keep `pendingConfirm: undefined` (which serializes
-  // identically but is awkward to assert against in tests).
-  const { pendingConfirm: _drop, ...rest } = current;
-  void _drop;
-  await setSessionAgent(sessionId, rest);
+  await updateSessionAgent(sessionId, (current) => {
+    if (!current || current.pendingConfirm == null) return null;
+    // Build a copy without the field — explicit removal so the storage
+    // value doesn't keep `pendingConfirm: undefined` (which serializes
+    // identically but is awkward to assert against in tests).
+    const { pendingConfirm: _drop, ...rest } = current;
+    void _drop;
+    return rest;
+  });
 }
 
 // ── U3 — lastTaskSynth helpers ────────────────────────────────────────────────
@@ -780,9 +811,9 @@ export async function setLastTaskSynth(
   sessionId: string,
   synth: string,
 ): Promise<void> {
-  const agent = await getSessionAgent(sessionId);
-  if (!agent) return;
-  await setSessionAgent(sessionId, { ...agent, lastTaskSynth: synth });
+  await updateSessionAgent(sessionId, (agent) =>
+    agent ? { ...agent, lastTaskSynth: synth } : null,
+  );
 }
 
 /**
@@ -793,11 +824,12 @@ export async function setLastTaskSynth(
  * No-op if the session does not exist or `lastTaskSynth` is already absent.
  */
 export async function clearLastTaskSynth(sessionId: string): Promise<void> {
-  const agent = await getSessionAgent(sessionId);
-  if (!agent || agent.lastTaskSynth == null) return;
-  const { lastTaskSynth: _drop, ...rest } = agent;
-  void _drop;
-  await setSessionAgent(sessionId, rest);
+  await updateSessionAgent(sessionId, (agent) => {
+    if (!agent || agent.lastTaskSynth == null) return null;
+    const { lastTaskSynth: _drop, ...rest } = agent;
+    void _drop;
+    return rest;
+  });
 }
 
 /**
@@ -814,22 +846,13 @@ export async function clearLastTaskSynth(sessionId: string): Promise<void> {
 export async function migrateLastTaskSynthFromMeta(
   sessionId: string,
 ): Promise<boolean> {
-  const meta = await getSessionMeta(sessionId);
-  // Cast to access the pre-AD1 field that no longer exists in the type.
-  const staleSynth = (meta as Record<string, unknown> | null)?.["lastTaskSynth"] as string | undefined;
-  if (!staleSynth) return false;
-
-  const agent = await getSessionAgent(sessionId);
-  if (!agent) return false;
-
-  // Move synth to agent state, strip from meta — single atomic batch (D9).
-  const { lastTaskSynth: _drop, ...metaRest } = meta as typeof meta & { lastTaskSynth?: string };
-  void _drop;
-  await writeAtomic({
-    [metaKey(sessionId)]: metaRest,
-    [agentKey(sessionId)]: { ...agent, lastTaskSynth: staleSynth },
+  return updateSessionRecordPair(metaKey(sessionId), agentKey(sessionId), (rawMeta, rawAgent) => {
+    const meta = rawMeta as (SessionMeta & { lastTaskSynth?: string }) | undefined;
+    const agent = rawAgent as SessionAgentState | undefined;
+    if (!meta?.lastTaskSynth || !agent) return null;
+    const { lastTaskSynth, ...metaRest } = meta;
+    return [metaRest, { ...agent, lastTaskSynth }];
   });
-  return true;
 }
 
 /**

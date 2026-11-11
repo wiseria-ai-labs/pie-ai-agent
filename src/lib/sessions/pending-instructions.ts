@@ -1,21 +1,26 @@
-import type { PendingInstruction, SessionAgentState } from "./types";
-import { agentKey, getSessionAgent, writeAtomic } from "./storage";
+import type { PendingInstruction } from "./types";
+import { emptySessionAgent, getSessionAgent, updateSessionAgent } from "./storage";
+
+// Issue #470 — every queue op is a single-transaction read-modify-write
+// (updateSessionAgent) so a concurrent step-snapshot / confirm / usage write
+// can never write back a stale queue.
 
 /**
- * Append a PendingInstruction to the session's queue.
- * Read-modify-write on session_{id}_agent.
+ * Append a PendingInstruction to the session's queue. Seeds a minimal agent
+ * record when none exists yet (brand-new session before its first step
+ * snapshot) — the first snapshot's non-tombstone merge keeps the queue.
  */
 export async function addPending(
   sessionId: string,
   instruction: PendingInstruction,
 ): Promise<void> {
-  const state = await getSessionAgent(sessionId);
-  if (!state) return;
-  const next: SessionAgentState = {
-    ...state,
-    pendingInstructions: [...state.pendingInstructions, instruction],
-  };
-  await writeAtomic({ [agentKey(sessionId)]: next });
+  await updateSessionAgent(sessionId, (state) => {
+    const base = state ?? emptySessionAgent();
+    return {
+      ...base,
+      pendingInstructions: [...(base.pendingInstructions ?? []), instruction],
+    };
+  });
 }
 
 /**
@@ -26,16 +31,12 @@ export async function cancelPending(
   sessionId: string,
   chatMessageId: string,
 ): Promise<boolean> {
-  const state = await getSessionAgent(sessionId);
-  if (!state) return false;
-  const before = state.pendingInstructions.length;
-  const filtered = state.pendingInstructions.filter(
-    (p) => p.chatMessageId !== chatMessageId,
-  );
-  if (filtered.length === before) return false;
-  const next: SessionAgentState = { ...state, pendingInstructions: filtered };
-  await writeAtomic({ [agentKey(sessionId)]: next });
-  return true;
+  return updateSessionAgent(sessionId, (state) => {
+    const queue = state?.pendingInstructions ?? [];
+    const filtered = queue.filter((p) => p.chatMessageId !== chatMessageId);
+    if (!state || filtered.length === queue.length) return null;
+    return { ...state, pendingInstructions: filtered };
+  });
 }
 
 /**
@@ -46,11 +47,16 @@ export async function cancelPending(
 export async function drainPending(
   sessionId: string,
 ): Promise<PendingInstruction[]> {
-  const state = await getSessionAgent(sessionId);
-  if (!state) return [];
-  const drained = state.pendingInstructions;
-  if (drained.length === 0) return [];
-  const next: SessionAgentState = { ...state, pendingInstructions: [] };
-  await writeAtomic({ [agentKey(sessionId)]: next });
+  let drained: PendingInstruction[] = [];
+  await updateSessionAgent(sessionId, (state) => {
+    drained = state?.pendingInstructions ?? [];
+    if (!state || drained.length === 0) return null;
+    return { ...state, pendingInstructions: [] };
+  });
   return drained;
+}
+
+/** Non-destructive peek: does the session have queued instructions? */
+export async function hasPending(sessionId: string): Promise<boolean> {
+  return ((await getSessionAgent(sessionId))?.pendingInstructions?.length ?? 0) > 0;
 }

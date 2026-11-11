@@ -271,6 +271,199 @@ describe("useSession — sendMessage / streaming", () => {
   });
 });
 
+describe("useSession — queued instruction ordering", () => {
+  it("separates a plain-text response from the next response after a multi-instruction drain", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const port = chromeMock.runtime.__ports[0]!;
+    const sid = result.current.sessionId!;
+
+    act(() => {
+      result.current.sendMessage({ content: "original" });
+      emitWithSession(port, { type: "thinking-chunk", text: "first thought" }, sid);
+      emitWithSession(port, { type: "chat-chunk", text: "first answer" }, sid);
+      result.current.addPendingInstruction({ content: "first follow-up" });
+      result.current.addPendingInstruction({ content: "second follow-up" });
+    });
+    const first = result.current.messages[1]!;
+    const second = result.current.messages[2]!;
+    if (first.role !== "user" || second.role !== "user") throw new Error("expected queued users");
+    act(() => {
+      emitWithSession(port, {
+        type: "chat-instruction-state",
+        pending: [
+          { chatMessageId: first.id, createdAt: 1 },
+          { chatMessageId: second.id, createdAt: 2 },
+        ],
+      }, sid);
+      emitWithSession(port, {
+        type: "chat-instructions-consumed",
+        chatMessageIds: [first.id, second.id],
+      }, sid);
+      emitWithSession(port, { type: "chat-chunk", text: "second " }, sid);
+      // A repeated delivery must not split the next response.
+      emitWithSession(port, {
+        type: "chat-instructions-consumed",
+        chatMessageIds: [first.id, second.id],
+      }, sid);
+      emitWithSession(port, { type: "chat-chunk", text: "answer" }, sid);
+      emitWithSession(port, { type: "chat-done" }, sid);
+    });
+
+    const expected = [
+      { role: "user", content: "original" },
+      { role: "assistant", content: "first answer", thinking: "first thought" },
+      first,
+      second,
+      { role: "assistant", content: "second answer" },
+    ];
+    expect(result.current.messages).toEqual(expected);
+    expect(result.current.pendingByChatMessageId.size).toBe(0);
+    await waitFor(async () => expect((await getSessionMeta(sid))?.messages).toEqual(expected));
+    expect(result.current.messages).toEqual(expected);
+  });
+
+  it("handles a drain before the first response and a later partial drain", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const port = chromeMock.runtime.__ports[0]!;
+    const sid = result.current.sessionId!;
+    act(() => {
+      result.current.sendMessage({ content: "original" });
+      result.current.addPendingInstruction({ content: "early" });
+      result.current.addPendingInstruction({ content: "later" });
+    });
+    const early = result.current.messages[1]!;
+    const later = result.current.messages[2]!;
+    if (early.role !== "user" || later.role !== "user") throw new Error("expected queued users");
+    act(() => {
+      emitWithSession(port, { type: "chat-instructions-consumed", chatMessageIds: [early.id] }, sid);
+      emitWithSession(port, { type: "chat-chunk", text: "answer to early" }, sid);
+      emitWithSession(port, { type: "chat-instructions-consumed", chatMessageIds: [later.id] }, sid);
+      emitWithSession(port, { type: "chat-chunk", text: "answer to later" }, sid);
+      emitWithSession(port, { type: "chat-done" }, sid);
+    });
+    expect(result.current.messages).toEqual([
+      { role: "user", content: "original" }, early,
+      { role: "assistant", content: "answer to early" }, later,
+      { role: "assistant", content: "answer to later" },
+    ]);
+  });
+
+  it("resends unacknowledged instructions after chat-done with the newest user turn last", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const port = chromeMock.runtime.__ports[0]!;
+    const sid = result.current.sessionId!;
+    act(() => {
+      result.current.sendMessage({ content: "original" });
+      emitWithSession(port, { type: "chat-chunk", text: "first answer" }, sid);
+      result.current.addPendingInstruction({ content: "/first", expandedForLLM: "expanded first" });
+      result.current.addPendingInstruction({ content: "latest" });
+    });
+    const first = result.current.messages[1]!;
+    const latest = result.current.messages[2]!;
+    if (first.role !== "user" || latest.role !== "user") throw new Error("expected queued users");
+    act(() => {
+      emitWithSession(port, { type: "chat-done" }, sid);
+      emitWithSession(port, { type: "chat-instruction-rejected", chatMessageId: first.id, reason: "not-streaming" }, sid);
+      emitWithSession(port, { type: "chat-instruction-rejected", chatMessageId: latest.id, reason: "not-streaming" }, sid);
+    });
+    const starts = port.postMessage.mock.calls.filter((call) => call[0].type === "chat-start");
+    expect(starts).toHaveLength(2);
+    expect(starts[1]![0]).toEqual({
+      type: "chat-start", sessionId: sid,
+      messages: [
+        { role: "user", content: "original" },
+        { role: "assistant", content: "first answer" },
+        { role: "user", content: "expanded first" },
+        { role: "user", content: "latest" },
+      ],
+    });
+    expect(result.current.messages).toEqual([
+      { role: "user", content: "original" },
+      { role: "assistant", content: "first answer" }, first, latest,
+    ]);
+    expect(result.current.streaming).toBe(true);
+    act(() => {
+      result.current.addPendingInstruction({ content: "new task instruction" });
+      emitWithSession(port, { type: "chat-instruction-rejected", chatMessageId: first.id, reason: "not-streaming" }, sid);
+    });
+    expect(port.postMessage.mock.calls.filter((call) => call[0].type === "chat-start")).toHaveLength(2);
+  });
+
+  it("restores an optimistically cancelled instruction if SW already consumed it", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const port = chromeMock.runtime.__ports[0]!;
+    const sid = result.current.sessionId!;
+    act(() => {
+      result.current.sendMessage({ content: "original" });
+      emitWithSession(port, { type: "chat-chunk", text: "first answer" }, sid);
+      result.current.addPendingInstruction({ content: "cancelled too late" });
+      result.current.addPendingInstruction({ content: "next" });
+    });
+    const cancelled = result.current.messages[1]!;
+    const next = result.current.messages[2]!;
+    if (cancelled.role !== "user" || !cancelled.id || next.role !== "user" || !next.id) {
+      throw new Error("expected queued users");
+    }
+    act(() => result.current.cancelPendingInstruction(cancelled.id!));
+    expect(result.current.messages).toEqual([{ role: "user", content: "original" }, next]);
+    act(() => {
+      emitWithSession(port, { type: "chat-instructions-consumed", chatMessageIds: [cancelled.id] }, sid);
+      // A stale queue broadcast must not resurrect the pending badge.
+      emitWithSession(port, {
+        type: "chat-instruction-state",
+        pending: [{ chatMessageId: cancelled.id, createdAt: 1 }],
+      }, sid);
+    });
+    await waitFor(async () => expect((await getSessionMeta(sid))?.messages).toEqual([
+      { role: "user", content: "original" },
+      { role: "assistant", content: "first answer" }, cancelled, next,
+    ]));
+    act(() => {
+      emitWithSession(port, { type: "chat-chunk", text: "answer to restored instruction" }, sid);
+      emitWithSession(port, { type: "chat-done" }, sid);
+      // A stale cancel click after consumption must be harmless.
+      result.current.cancelPendingInstruction(cancelled.id!);
+    });
+    expect(result.current.messages).toEqual([
+      { role: "user", content: "original" },
+      { role: "assistant", content: "first answer" }, cancelled,
+      { role: "assistant", content: "answer to restored instruction" }, next,
+    ]);
+    expect(result.current.pendingByChatMessageId.size).toBe(0);
+  });
+
+  it("uses a cancelled instruction's rejection to resend its still-waiting sibling", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const port = chromeMock.runtime.__ports[0]!;
+    const sid = result.current.sessionId!;
+    act(() => {
+      result.current.sendMessage({ content: "original" });
+      emitWithSession(port, { type: "chat-chunk", text: "answer" }, sid);
+      result.current.addPendingInstruction({ content: "cancel me" });
+      result.current.addPendingInstruction({ content: "keep me" });
+    });
+    const cancelled = result.current.messages[1]!;
+    if (cancelled.role !== "user" || !cancelled.id) throw new Error("expected queued user");
+    act(() => {
+      result.current.cancelPendingInstruction(cancelled.id!);
+      emitWithSession(port, { type: "chat-done" }, sid);
+      emitWithSession(port, { type: "chat-instruction-rejected", chatMessageId: cancelled.id, reason: "not-streaming" }, sid);
+    });
+    const starts = port.postMessage.mock.calls.filter((call) => call[0].type === "chat-start");
+    expect(starts).toHaveLength(2);
+    expect(starts[1]![0].messages).toEqual([
+      { role: "user", content: "original" },
+      { role: "assistant", content: "answer" },
+      { role: "user", content: "keep me" },
+    ]);
+  });
+});
+
 describe("useSession — persistence boundaries", () => {
   it("appends assistant message and persists on chat-done", async () => {
     const { result } = renderHook(() => useSession());

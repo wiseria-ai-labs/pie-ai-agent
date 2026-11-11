@@ -35,6 +35,14 @@ export type SessionRuntimeSlot = {
   /** Issue #34 — broadcast snapshot of SW pendingInstructions for this session.
    *  Keyed by chatMessageId for O(1) lookup in chat-bubble render. */
   pendingByChatMessageId: Map<string, { createdAt: number }>;
+  /** Locally queued IDs awaiting consumption or fallback, including cancelled
+   *  IDs until the task settles so a late rejection can still resend siblings.
+   *  Unlike the SW snapshot, this is updated synchronously on submission. */
+  unconsumedInstructionIds: Set<string>;
+  /** Optimistically removed messages, restored only if SW already drained them. */
+  cancelledInstructionMessages: Map<string, Extract<DisplayMessage, { role: "user" }>>;
+  /** Ignore delayed queue snapshots for consumed, cancelled, or resent IDs. */
+  settledInstructionIds: Set<string>;
   /** Provider RPM 限流：streamChat 正在排队等待时的预计恢复时刻（epoch ms）。
    *  null = 未在限流等待。收到任一真实进展消息即清除。 */
   ratelimitResumeAt: number | null;
@@ -52,6 +60,9 @@ export const EMPTY_SLOT: SessionRuntimeSlot = {
   streamFinished: true,
   quotes: [],
   pendingByChatMessageId: new Map(),
+  unconsumedInstructionIds: new Set(),
+  cancelledInstructionMessages: new Map(),
+  settledInstructionIds: new Set(),
   ratelimitResumeAt: null,
 };
 

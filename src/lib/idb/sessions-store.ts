@@ -59,6 +59,57 @@ export async function setIndex(index: SessionIndexEntry[]): Promise<void> {
 }
 
 /**
+ * Atomic read-modify-write of ONE session record in a single readwrite
+ * transaction on the sessions store (no index). Same contract as
+ * `updateSessionRecordWithIndex`: `transform` MUST be synchronous, return null
+ * to skip the write. Returns true when a write was committed.
+ */
+export async function updateSessionRecord(
+  recordId: string,
+  transform: (current: unknown) => unknown | null,
+): Promise<boolean> {
+  let wrote = false;
+  await txMulti([STORES.sessions], "readwrite", (m) => {
+    const req = m[STORES.sessions].get(recordId) as IDBRequest<Wrapped | undefined>;
+    req.onsuccess = () => {
+      const next = transform(req.result?.value);
+      if (next === null) return;
+      m[STORES.sessions].put({ id: recordId, value: next });
+      wrote = true;
+    };
+  });
+  if (wrote) publishChange("sessions", "put", recordId);
+  return wrote;
+}
+
+/** Atomically transform two session records together. */
+export async function updateSessionRecordPair(
+  firstId: string,
+  secondId: string,
+  transform: (first: unknown, second: unknown) => [unknown, unknown] | null,
+): Promise<boolean> {
+  let wrote = false;
+  await txMulti([STORES.sessions], "readwrite", (m) => {
+    const store = m[STORES.sessions];
+    const first = store.get(firstId) as IDBRequest<Wrapped | undefined>;
+    const second = store.get(secondId) as IDBRequest<Wrapped | undefined>;
+    let pending = 2;
+    const ready = () => {
+      if (--pending) return;
+      const result = transform(first.result?.value, second.result?.value);
+      if (!result) return;
+      store.put({ id: firstId, value: result[0] });
+      store.put({ id: secondId, value: result[1] });
+      wrote = true;
+    };
+    first.onsuccess = ready;
+    second.onsuccess = ready;
+  });
+  if (wrote) publishChange("sessions", "put");
+  return wrote;
+}
+
+/**
  * Atomic read-modify-write of ONE session record (+ optionally the index) in a
  * SINGLE readwrite transaction spanning sessions + session_index. IDB
  * serializes readwrite transactions per store, so `transform` always sees the

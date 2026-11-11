@@ -130,6 +130,13 @@ export interface PendingInstructionStatePayload {
   createdAt: number;
 }
 
+/** SW → panel: these instructions were drained into the next LLM request. */
+export interface ChatInstructionsConsumedMessage {
+  type: "chat-instructions-consumed";
+  sessionId: string;
+  chatMessageIds: string[];
+}
+
 /**
  * Issue #34 — SW → panel: instruction-add arrived after loop ended.
  * Panel reaction: fall back to normal chat-start with the same content.
@@ -657,6 +664,7 @@ export type PortMessageToPanel =
   | RecordingAbortedBroadcast          // NEW
   | QuoteAddedMessage                  // issue #38
   | ChatInstructionStateMessage        // Issue #34
+  | ChatInstructionsConsumedMessage    // Issue #470
   | ChatInstructionRejectedMessage    // Issue #34
   | NeedsFileAccessMessage            // local file access card
   | FileOutputMessage                 // output_file download card

@@ -535,6 +535,13 @@ export function useSession(): UseSession {
         error: null,
         errorKind: null,
         ratelimitResumeAt: null,
+        // A new task supersedes any delayed rejection from the previous one.
+        unconsumedInstructionIds: new Set(),
+        cancelledInstructionMessages: new Map(),
+        settledInstructionIds: new Set([
+          ...(slotsRef.current.get(id)?.settledInstructionIds ?? []),
+          ...(slotsRef.current.get(id)?.unconsumedInstructionIds ?? []),
+        ]),
       });
 
       // Build the LLM-facing chat history (text-only, slash-expanded).
@@ -695,6 +702,8 @@ export function useSession(): UseSession {
       // write BEFORE sendMessage fires chat-start guarantees the SW reads the
       // cleared state (single shared IDB), so chat-start rebuilds the LLM head
       // purely from the truncated wire history.
+      // Deliberate whole-record overwrite (rewind resets agent state; the
+      // session is idle so there is no queue to preserve) — not a RMW.
       await setSessionAgent(id, buildRewindAgentTombstone());
 
       // Re-guard after the await: an abort/send couldn't have raced (idle-only
@@ -734,7 +743,12 @@ export function useSession(): UseSession {
         ...(input.fileAttachments?.length ? { fileAttachments: input.fileAttachments } : {}),
       };
       const updated = [...(slot.messages ?? []), userMessage];
-      patchSlot(id, { messages: updated });
+      // This must precede the asynchronous SW queue acknowledgement: the
+      // current task can finish before the first instruction-state arrives.
+      patchSlot(id, {
+        messages: updated,
+        unconsumedInstructionIds: new Set([...slot.unconsumedInstructionIds, chatMessageId]),
+      });
       void persistMessagesById(id, updated);
 
       swPort.send(id, {
@@ -761,10 +775,27 @@ export function useSession(): UseSession {
       if (!id) return;
       const slot = slotsRef.current.get(id);
       if (!slot) return;
-      const updated = (slot.messages ?? []).filter(
-        (m) => !("id" in m && m.id === chatMessageId),
+      // A click from an old render must not remove an instruction which the
+      // SW has already reported as consumed.
+      if (!slot.unconsumedInstructionIds.has(chatMessageId) &&
+          !slot.pendingByChatMessageId.has(chatMessageId)) return;
+      const message = slot.messages.find(
+        (m): m is Extract<DisplayMessage, { role: "user" }> =>
+          m.role === "user" && m.id === chatMessageId,
       );
-      patchSlot(id, { messages: updated });
+      if (!message) return;
+      const updated = slot.messages.filter((m) => m !== message);
+      const cancelledInstructionMessages = new Map(slot.cancelledInstructionMessages);
+      cancelledInstructionMessages.set(chatMessageId, message);
+      const pendingByChatMessageId = new Map(slot.pendingByChatMessageId);
+      pendingByChatMessageId.delete(chatMessageId);
+      patchSlot(id, {
+        messages: updated,
+        cancelledInstructionMessages,
+        pendingByChatMessageId,
+        unconsumedInstructionIds: new Set([...slot.unconsumedInstructionIds, chatMessageId]),
+        settledInstructionIds: new Set([...slot.settledInstructionIds, chatMessageId]),
+      });
       void persistMessagesById(id, updated);
 
       swPort.send(id, {
@@ -825,7 +856,15 @@ export function useSession(): UseSession {
   const clearMessages = useCallback(async () => {
     const id = sessionIdRef.current;
     if (!id) return;
-    patchSlot(id, { messages: [], error: null, errorKind: null, toast: null });
+    patchSlot(id, {
+      messages: [],
+      error: null,
+      errorKind: null,
+      toast: null,
+      pendingByChatMessageId: new Map(),
+      unconsumedInstructionIds: new Set(),
+      cancelledInstructionMessages: new Map(),
+    });
     await persistMessagesById(id, []);
   }, [patchSlot, persistMessagesById]);
 
@@ -912,6 +951,12 @@ export function useSession(): UseSession {
         streaming: false,
         streamFinished: true,
         usage: agent?.contextUsage, // Issue #59 — rehydrate context ring data
+        unconsumedInstructionIds: new Set([
+          ...prev.unconsumedInstructionIds,
+          ...(agent?.pendingInstructions ?? [])
+            .map((instruction) => instruction.chatMessageId)
+            .filter((chatMessageId) => !prev.settledInstructionIds.has(chatMessageId)),
+        ]),
       };
     });
 
