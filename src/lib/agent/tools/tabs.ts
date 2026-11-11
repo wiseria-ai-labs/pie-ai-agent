@@ -2,6 +2,7 @@ import type { ActionResult } from "../../dom-actions/types";
 import type { ConfirmedTabTarget, Tool, ToolHandlerContext } from "../types";
 import { escapeUntrustedWrappers, escapeWrapperAttribute } from "../untrusted-wrappers";
 import { waitForUrlSettle } from "../wait-for-url-settle";
+import { waitForPageLoad } from "../wait-for-settle";
 import { excludePanelTabs, queryHostWindowTabs } from "../../panel-host/host-window";
 import { TAB_GROUP_TIMEOUT_MS, withHangGuard } from "./hang-guard";
 import { isOwnPanelUrl } from "../../panel-host/panel-page";
@@ -1152,6 +1153,8 @@ USE WHEN:
       };
     }
     const active = a.active === true;
+    // #471 — one 10s budget covers commit + page load.
+    const loadDeadline = Date.now() + 10_000;
     let newTab: chrome.tabs.Tab;
     try {
       newTab = await chrome.tabs.create({ url: a.url, active });
@@ -1210,6 +1213,12 @@ USE WHEN:
     const where = redirected
       ? `${landedOrigin} (redirected from ${parsed.origin})`
       : landedOrigin;
+    // #471 — wait for the page to finish loading so the next read_page
+    // doesn't see a skeleton. Unprobeable pages just skip the note.
+    const loadNote =
+      (await waitForPageLoad(newTabId, loadDeadline)) === "loading"
+        ? " The page was still loading after 10s; read_page may see partial content."
+        : "";
 
     if (ctx.appendPinnedTab) {
       try {
@@ -1229,7 +1238,8 @@ USE WHEN:
       observation:
         `Opened tab ${newTabId} at ${where}` +
         (active ? " (focused: stole user's view)" : " (background)") +
-        `. Added to pinnedTabs[]; call focus_tab(${newTabId}) on the next iteration to operate on it.`,
+        `. Added to pinnedTabs[]; call focus_tab(${newTabId}) on the next iteration to operate on it.` +
+        loadNote,
     };
   },
 };

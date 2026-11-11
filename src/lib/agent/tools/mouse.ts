@@ -209,7 +209,9 @@ USE WHEN:
             success: true,
             observation: `Clicked [${a.elementIndex}] in frame ${frameId} via synthetic events (real mouse input is top-frame only). If the page did not react, the control may require trusted input.`,
           };
-        });
+          // #471 — top-frame navigation awareness; in-iframe DOM changes are
+          // invisible to the top-frame tracker, so no "unchanged" note here.
+        }, { detectNavigation: true, reportNoChange: false });
       }
 
       const gate = await requireCdpInput({
@@ -244,7 +246,7 @@ USE WHEN:
           success: true,
           observation: `Clicked [${a.elementIndex}] at (${Math.round(point.x)},${Math.round(point.y)}).`,
         };
-      });
+      }, { detectNavigation: true });
     },
   };
 }

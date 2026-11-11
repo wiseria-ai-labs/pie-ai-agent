@@ -1,7 +1,7 @@
 import type { Tool, ToolHandlerContext } from "../types";
 import type { ActionResult } from "../../dom-actions/types";
 import { probePageInjected, type ProbeResult } from "../../dom-actions/probe-core";
-import { escapeWrapperAttribute, escapeUntrustedWrappers } from "../untrusted-wrappers";
+import { escapeWrapperAttribute, escapeUntrustedWrappers, escapeTrustedWrappers } from "../untrusted-wrappers";
 import { isRestrictedSchemeForGrouping } from "./tabs";
 import { isPdfTabAsync } from "@/lib/pdf/detect";
 import { pageAtlasStore, parseOrigin, type PageAtlasState } from "./page-atlas";
@@ -74,6 +74,24 @@ function renderAtlasUnreachableFrames(
   return ["<frame_map>", ...lines, "</frame_map>"].join("\n");
 }
 
+/**
+ * #471 — `Current URL / Page title` prelude. Values come from the document
+ * itself (tab metadata lags SPA routes / mid-navigation); the title is
+ * page-controlled and sits OUTSIDE any wrapper, so wrapper tags are escaped.
+ */
+function pageHeaderLines(docUrl: string, docTitle: string, tabUrl: string | undefined): string[] {
+  const lines = [
+    `Current URL: ${docUrl}`,
+    `Page title: ${escapeTrustedWrappers(escapeUntrustedWrappers(docTitle))}`,
+  ];
+  if (tabUrl && docUrl && tabUrl !== docUrl) {
+    lines.push(
+      `Note: the tab reports ${tabUrl}, but the document read is at ${docUrl} — the page may still be navigating; call read_page again if this looks like the wrong page.`,
+    );
+  }
+  return lines;
+}
+
 function attr(name: string, value: string | number | boolean): string {
   return `${name}="${escapeWrapperAttribute(String(value))}"`;
 }
@@ -82,15 +100,14 @@ function elementText(value: string): string {
   return escapeWrapperAttribute(escapeUntrustedWrappers(value));
 }
 
-function wrapPageAtlasObservation(atlas: PageAtlasState, body: string): string {
+function wrapPageAtlasObservation(atlas: PageAtlasState, body: string, tabUrl?: string): string {
   return [
     // Header mirrors the snapshot path's `Current URL / Page title` prelude so
     // elideStaleObservations has something cheap to keep before its cut point.
     // Without it a stale atlas result elides down to a bare marker — every one
     // of them byte-identical — and the LLM can no longer tell which step read
     // which page, so it re-runs read_page instead of relying on history.
-    `Current URL: ${atlas.url}`,
-    `Page title: ${atlas.title}`,
+    ...pageHeaderLines(atlas.url, atlas.title, tabUrl),
     ``,
     `<untrusted_page_content ${attr("tool", "read_page")} ${attr("mode", "atlas")} ${attr("atlas_id", atlas.atlasId)} ${attr("tab_id", atlas.tabId)}>`,
     body,
@@ -307,8 +324,9 @@ export const readPageTool: Tool = {
       const { frames, results: atlasResults, timedOutFrameIds } = injection;
 
       const top = frames.find((f) => f.frameId === 0);
-      const topUrl = top?.url ?? tab.url ?? "";
       const topAtlasResult = atlasResults.find((r) => r.frameId === 0)?.result;
+      const topUrl = (topAtlasResult?.op === "atlas" ? topAtlasResult.fingerprint.url : undefined)
+        || top?.url || tab.url || "";
       const topFingerprint = topAtlasResult?.op === "atlas"
         ? topAtlasResult.fingerprint
         : {
@@ -325,7 +343,7 @@ export const readPageTool: Tool = {
         tabId: a.tabId,
         url: topUrl,
         origin: parseOrigin(topUrl),
-        title: tab.title ?? topFingerprint.title,
+        title: topAtlasResult?.op === "atlas" ? topFingerprint.title : (tab.title ?? ""),
         createdAt: Date.now(),
         fingerprint: topFingerprint,
         targets: [],
@@ -354,7 +372,7 @@ export const readPageTool: Tool = {
       const unreachableBlock = renderAtlasUnreachableFrames(frames, reachableFrameIds, timedOutFrameIds);
       const rendered = renderPageAtlas(atlas);
       const atlasBody = unreachableBlock ? `${rendered}\n${unreachableBlock}` : rendered;
-      const observation = wrapPageAtlasObservation(atlas, atlasBody);
+      const observation = wrapPageAtlasObservation(atlas, atlasBody, tab.url);
 
       const actionBlock = blockOf(atlasBody, "<action_surfaces>", "</action_surfaces>");
       const dataBlock = blockOf(atlasBody, "<data_surfaces>", "</data_surfaces>");
@@ -396,7 +414,10 @@ export const readPageTool: Tool = {
     const { frames, results, timedOutFrameIds } = snapshotInjection;
 
     const top = frames.find((f) => f.frameId === 0);
-    const topUrl = top?.url ?? tab.url ?? "";
+    const topData = results.find((r) => r.frameId === 0)?.result;
+    const topDoc = topData?.op === "snapshot" ? topData : undefined;
+    const topUrl = topDoc?.url || top?.url || tab.url || "";
+    const topTitle = topDoc?.title ?? tab.title ?? "";
 
     function rewriteIframePlaceholders(parentFrameId: number, html: string): string {
       const childFrames = frames!
@@ -522,8 +543,7 @@ export const readPageTool: Tool = {
     }
 
     const headerLines = [
-      `Current URL: ${topUrl}`,
-      `Page title: ${tab.title ?? ""}`,
+      ...pageHeaderLines(topUrl, topTitle, tab.url),
       ``,
       `<frame_map>`,
       ...frameMapLines,
