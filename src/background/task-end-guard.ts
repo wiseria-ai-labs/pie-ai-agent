@@ -10,6 +10,7 @@
 // late terminal emit (abort path emits from the loop's finally, after the new
 // task started) can't end the NEW task.
 
+import { trackReclaimCancellations } from "@/lib/sessions/pending-instructions";
 import { updateSessionAgent } from "@/lib/sessions/storage";
 import type { SessionAgentState } from "@/lib/sessions/types";
 import type { ChatInstructionRejectedMessage, PortMessageToPanel } from "@/types/messages";
@@ -106,30 +107,38 @@ async function reclaimStrandedInstructions(
   sessionId: string,
   gen: number,
 ): Promise<void> {
-  let stranded: NonNullable<SessionAgentState["pendingInstructions"]> = [];
-  await updateCurrentTaskAgent(sessionId, gen, (state) => {
-    stranded = state?.pendingInstructions ?? [];
-    return state && stranded.length ? { ...state, pendingInstructions: [] } : null;
-  });
-  if (stranded.length === 0) return;
-  if (!isCurrentTask(sessionId, gen)) {
-    // 新任务在回收提交后启动时，先恢复队列；新任务会等待此操作完成。
-    await updateSessionAgent(sessionId, (state) => state
-      ? { ...state, pendingInstructions: [...stranded, ...state.pendingInstructions] }
-      : null);
-    return;
+  const tracker = trackReclaimCancellations(sessionId);
+  try {
+    let stranded: NonNullable<SessionAgentState["pendingInstructions"]> = [];
+    await updateCurrentTaskAgent(sessionId, gen, (state) => {
+      stranded = state?.pendingInstructions ?? [];
+      return state && stranded.length ? { ...state, pendingInstructions: [] } : null;
+    });
+    if (stranded.length === 0) return;
+    if (!isCurrentTask(sessionId, gen)) {
+      // 取消可能在清空之后、恢复之前完成；恢复时必须重新检查。
+      await updateSessionAgent(sessionId, (state) => {
+        if (!state) return null;
+        const remaining = stranded.filter((item) => !tracker.cancelled.has(item.chatMessageId));
+        return remaining.length ? { ...state, pendingInstructions: [...remaining, ...state.pendingInstructions] } : null;
+      });
+      return;
+    }
+    const remaining = stranded.filter((item) => !tracker.cancelled.has(item.chatMessageId));
+    if (remaining.length === 0 || !claimRejection(sessionId)) return;
+    const reply: ChatInstructionRejectedMessage = {
+      type: "chat-instruction-rejected",
+      sessionId,
+      chatMessageId: remaining[0]!.chatMessageId,
+      reason: "not-streaming",
+    };
+    port.postMessage(reply);
+    await broadcastInstructionState((m) => {
+      if (isCurrentTask(sessionId, gen)) port.postMessage(m);
+    }, sessionId);
+  } finally {
+    tracker.stop();
   }
-  if (!claimRejection(sessionId)) return;
-  const reply: ChatInstructionRejectedMessage = {
-    type: "chat-instruction-rejected",
-    sessionId,
-    chatMessageId: stranded[0]!.chatMessageId,
-    reason: "not-streaming",
-  };
-  port.postMessage(reply);
-  await broadcastInstructionState((m) => {
-    if (isCurrentTask(sessionId, gen)) port.postMessage(m);
-  }, sessionId);
 }
 
 /** Test-only reset. */

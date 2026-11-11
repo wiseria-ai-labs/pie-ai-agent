@@ -1,6 +1,23 @@
 import type { PendingInstruction } from "./types";
 import { emptySessionAgent, getSessionAgent, updateSessionAgent } from "./storage";
 
+const reclaimCancellations = new Map<string, Set<Set<string>>>();
+
+/** 记录回收期间发起的取消，防止恢复暂存队列时复活已取消的指令。 */
+export function trackReclaimCancellations(sessionId: string): { cancelled: Set<string>; stop: () => void } {
+  const cancelled = new Set<string>();
+  const trackers = reclaimCancellations.get(sessionId) ?? new Set<Set<string>>();
+  trackers.add(cancelled);
+  reclaimCancellations.set(sessionId, trackers);
+  return {
+    cancelled,
+    stop: () => {
+      trackers.delete(cancelled);
+      if (trackers.size === 0) reclaimCancellations.delete(sessionId);
+    },
+  };
+}
+
 // Issue #470 — every queue op is a single-transaction read-modify-write
 // (updateSessionAgent) so a concurrent step-snapshot / confirm / usage write
 // can never write back a stale queue.
@@ -31,6 +48,7 @@ export async function cancelPending(
   sessionId: string,
   chatMessageId: string,
 ): Promise<boolean> {
+  for (const cancelled of reclaimCancellations.get(sessionId) ?? []) cancelled.add(chatMessageId);
   return updateSessionAgent(sessionId, (state) => {
     const queue = state?.pendingInstructions ?? [];
     const filtered = queue.filter((p) => p.chatMessageId !== chatMessageId);

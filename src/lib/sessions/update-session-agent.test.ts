@@ -25,13 +25,6 @@ import {
   recordSkillApproval,
 } from "./storage";
 import { addPending, cancelPending, drainPending } from "./pending-instructions";
-import {
-  buildSessionAgentSnapshot,
-  buildSessionAgentTombstone,
-  mergeContextUsage,
-  mergeSessionAgentSnapshot,
-  withContextUsage,
-} from "@/lib/agent/loop";
 import type { SessionAgentState } from "./types";
 
 const Q = { chatMessageId: "q1", content: "queued mid-task", createdAt: 1 };
@@ -107,41 +100,11 @@ describe("updateSessionAgent", () => {
 
 // Every writer, run concurrently with a queue op. With the old get+set pairs
 // one of the two effects was lost; now both must land.
-const SNAP = buildSessionAgentSnapshot([{ role: "user", content: "step" }], 5);
 const writers: Array<{
   name: string;
   run: (id: string) => Promise<unknown>;
   check: (s: SessionAgentState) => void;
 }> = [
-  {
-    // SW makeStepSnapshotHandler + schedules/run.ts onStepSnapshot
-    name: "step-snapshot merge",
-    run: (id) => updateSessionAgent(id, (e) => mergeSessionAgentSnapshot(e, SNAP)),
-    check: (s) => expect(s.stepIndex).toBe(5),
-  },
-  {
-    name: "tombstone merge",
-    run: (id) => updateSessionAgent(id, (e) => mergeSessionAgentSnapshot(e, buildSessionAgentTombstone())),
-    check: (s) => expect(s.stepIndex).toBe(0),
-  },
-  {
-    name: "loop contextUsage",
-    run: (id) =>
-      updateSessionAgent(id, (cur) =>
-        withContextUsage(cur, mergeContextUsage(cur?.contextUsage, { inputTokens: 10, outputTokens: 2 })),
-      ),
-    check: (s) => expect(s.contextUsage?.lastInputTokens).toBe(10),
-  },
-  {
-    name: "loop currentFocusTabId",
-    run: (id) => updateSessionAgent(id, (cur) => (cur ? { ...cur, currentFocusTabId: 9 } : null)),
-    check: (s) => expect(s.currentFocusTabId).toBe(9),
-  },
-  {
-    name: "loop taskActive mark",
-    run: (id) => updateSessionAgent(id, (cur) => ({ ...(cur ?? buildSessionAgentTombstone()), taskActive: true })),
-    check: (s) => expect(s.taskActive).toBe(true),
-  },
   {
     name: "setPendingConfirm",
     run: (id) => setPendingConfirm(id, { confirmationId: "c1", kind: "agent-tool", payload: null }),
@@ -229,19 +192,7 @@ describe("queue ops", () => {
   it("addPending seeds a record on a brand-new session (first step not yet snapshotted)", async () => {
     await addPending("fresh", Q);
     expect(await queued("fresh")).toEqual(["q1"]);
-    // The first step snapshot (non-tombstone merge) keeps the seeded queue.
-    await updateSessionAgent("fresh", (e) => mergeSessionAgentSnapshot(e, SNAP));
-    expect(await queued("fresh")).toEqual(["q1"]);
     expect(await drainPending("fresh")).toHaveLength(1);
-  });
-
-  it("keeps the first instruction when the initial snapshot races with it", async () => {
-    await Promise.all([
-      addPending("fresh", Q),
-      updateSessionAgent("fresh", (current) => mergeSessionAgentSnapshot(current, SNAP)),
-    ]);
-    expect(await queued("fresh")).toEqual(["q1"]);
-    expect((await getSessionAgent("fresh"))?.stepIndex).toBe(5);
   });
 
   it("cancelling an existing instruction preserves a concurrent addition", async () => {

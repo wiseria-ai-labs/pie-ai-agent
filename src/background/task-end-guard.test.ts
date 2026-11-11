@@ -3,7 +3,8 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import * as sessionsStore from "@/lib/idb/sessions-store";
 import "@/test/setup";
 import { _resetForTests } from "@/lib/idb/db";
-import { addPending } from "@/lib/sessions/pending-instructions";
+import { addPending, cancelPending, drainPending } from "@/lib/sessions/pending-instructions";
+import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import { getSessionAgent } from "@/lib/sessions/storage";
 import {
   __resetTaskEndGuard,
@@ -114,6 +115,67 @@ describe("task-end guard", () => {
     expect(posted.filter((m) => m.type === "chat-instruction-rejected")).toHaveLength(0);
   });
 
+  it("does not restore a cancellation between reclaim and replacement task", async () => {
+    const { posted, port } = fakePort();
+    const gen = beginTask(SID);
+    await addPending(SID, { ...Q("a"), content: "cancelled instruction" });
+    await addPending(SID, { ...Q("b"), content: "retained instruction" });
+    const put = IDBObjectStore.prototype.put;
+    let cancellation: Promise<boolean> | undefined;
+    let addition: Promise<void> | undefined;
+    const spy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) {
+      const request = put.apply(this, args);
+      if (!cancellation) {
+        cancellation = cancelPending(SID, "a");
+        beginTask(SID);
+        addition = addPending(SID, { ...Q("c"), content: "new instruction" });
+      }
+      return request;
+    });
+    try {
+      makeTaskEmit(port, SID, gen, new AbortController().signal)({ type: "chat-done", sessionId: SID });
+      await waitForTaskReclaim(SID);
+      expect(cancellation).toBeDefined();
+      expect(addition).toBeDefined();
+      await Promise.all([cancellation, addition]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await getSessionAgent(SID))?.pendingInstructions.map((item) => item.chatMessageId)).toEqual(["b", "c"]);
+    const input = mergeCarryoverIntoMessages([{ role: "user", content: "new task" }], await drainPending(SID));
+    expect(input[0]!.content).toContain("new task");
+    expect(input[0]!.content).toContain("retained instruction");
+    expect(input[0]!.content).toContain("new instruction");
+    expect(input[0]!.content).not.toContain("cancelled instruction");
+    expect(posted.filter((m) => m.type === "chat-instruction-rejected")).toHaveLength(0);
+  });
+
+  it("rejects an uncancelled sibling when a reclaimed instruction is cancelled", async () => {
+    const { posted, port } = fakePort();
+    const gen = beginTask(SID);
+    await addPending(SID, Q("a"));
+    await addPending(SID, Q("b"));
+    const put = IDBObjectStore.prototype.put;
+    let cancellation: Promise<boolean> | undefined;
+    const spy = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args) {
+      const request = put.apply(this, args);
+      if (!cancellation) cancellation = cancelPending(SID, "a");
+      return request;
+    });
+    try {
+      makeTaskEmit(port, SID, gen, new AbortController().signal)({ type: "chat-done", sessionId: SID });
+      await waitForTaskReclaim(SID);
+      expect(cancellation).toBeDefined();
+      await cancellation;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(posted.filter((m) => m.type === "chat-instruction-rejected")).toEqual([
+      expect.objectContaining({ chatMessageId: "b" }),
+    ]);
+    expect((await getSessionAgent(SID))?.pendingInstructions).toEqual([]);
+  });
+
   it("abort keeps the queue for chat-start carryover", async () => {
     const { posted, port } = fakePort();
     const gen = beginTask(SID);
@@ -126,12 +188,13 @@ describe("task-end guard", () => {
     expect(posted.filter((m) => m.type === "chat-instruction-rejected")).toHaveLength(0);
   });
 
-  it("a new task reopens the queue", () => {
+  it("a new task reopens the queue", async () => {
     const gen = beginTask(SID);
     const { port } = fakePort();
     makeTaskEmit(port, SID, gen, new AbortController().signal)({ type: "chat-done", sessionId: SID });
     expect(isTaskEnded(SID)).toBe(true);
     beginTask(SID);
     expect(isTaskEnded(SID)).toBe(false);
+    await waitForTaskReclaim(SID);
   });
 });
