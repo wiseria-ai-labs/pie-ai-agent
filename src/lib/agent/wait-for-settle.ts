@@ -213,12 +213,15 @@ async function probeTopFrame(tabId: number, deadline?: number): Promise<NavProbe
   }
 }
 
-/** Best-effort inject bounded by the shared settle deadline (never hangs past it). */
+/**
+ * Best-effort inject bounded by the shared settle deadline (never hangs past it).
+ * Returns false on throw or deadline timeout.
+ */
 async function injectBounded(
   tabId: number,
   func: () => void,
   deadline?: number,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const exec = chrome.scripting.executeScript({
       target: { tabId },
@@ -226,12 +229,13 @@ async function injectBounded(
       injectImmediately: true,
     });
     if (deadline !== undefined) {
-      await withDeadline(exec, deadline);
-    } else {
-      await exec;
+      const settled = await withDeadline(exec, deadline);
+      return settled !== DEADLINE_TIMEOUT;
     }
+    await exec;
+    return true;
   } catch {
-    // best-effort
+    return false;
   }
 }
 
@@ -403,19 +407,29 @@ export async function withActionSettle<T extends ActionResult>(
   // — injection can fail on restricted pages, mid-navigation tear-down,
   // or detached tabs; in those cases we fall back to webNavigation-only
   // observation, which still covers cross-doc nav and SPA pushState.
+  //
+  // #471 review round 2 — detectNavigation prep (install + fingerprint)
+  // shares a prep deadline of navObserveMs so a hung executeScript cannot
+  // block the action forever. Timeout → quiet-only fallback (pre = null).
   let trackerInstalled = false;
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: installMutationTracker,
-    });
-    trackerInstalled = true;
-  } catch {
-    trackerInstalled = false;
+  let pre: NavProbe | null = null;
+  if (detectNavigation) {
+    const prepDeadline = Date.now() + navObserveMs;
+    trackerInstalled = await injectBounded(tabId, installMutationTracker, prepDeadline);
+    if (trackerInstalled) {
+      pre = await probeTopFrame(tabId, prepDeadline);
+    }
+  } else {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: installMutationTracker,
+      });
+      trackerInstalled = true;
+    } catch {
+      trackerInstalled = false;
+    }
   }
-
-  // #471 — pre-action fingerprint. null → old (quiet-only) behaviour.
-  const pre = detectNavigation && trackerInstalled ? await probeTopFrame(tabId) : null;
 
   let lastSignalAt = 0;
   let navSignalAt = 0;
@@ -464,6 +478,11 @@ export async function withActionSettle<T extends ActionResult>(
     if (!result.success) return result;
 
     const performedAt = Date.now();
+    // Compatible post-action budgets (#471 review round 2):
+    //   observeDeadline = performedAt + navObserveMs
+    //   quietDeadline   = performedAt + maxMs   (plain quiet + final no-change probe)
+    //   navDeadline     = performedAt + navMaxMs (phase-2 nav wait + ref clear)
+    const quietDeadline = performedAt + maxMs;
 
     // Quiet settle. `lastActivityAt` is the maximum of three timestamps:
     //   - performedAt: floor so we always wait at least quietMs after the
@@ -472,19 +491,25 @@ export async function withActionSettle<T extends ActionResult>(
     //   - lastSignalAt: bumped by webNavigation events.
     //   - pageMutAt: bumped by the page-side MutationObserver via the
     //     latest poll.
-    const quietSettle = async (): Promise<void> => {
-      while (true) {
-        await sleep(pollMs);
+    // Every inject is capped by `deadline` so observe-timeout cannot fall
+    // into an unbounded quiet wait.
+    const quietSettle = async (deadline: number): Promise<void> => {
+      while (Date.now() < deadline) {
+        const remain = deadline - Date.now();
+        if (remain <= 0) break;
+        await sleep(Math.min(pollMs, remain));
         const now = Date.now();
 
         let pageMutAt = 0;
         if (trackerInstalled) {
           try {
-            const results = await chrome.scripting.executeScript({
+            const exec = chrome.scripting.executeScript({
               target: { tabId },
               func: readMutationTimestamp,
             });
-            pageMutAt = (results[0]?.result as number) ?? 0;
+            const settled = await withDeadline(exec, deadline);
+            if (settled === DEADLINE_TIMEOUT) break;
+            pageMutAt = (settled[0]?.result as number) ?? 0;
           } catch {
             // Cross-doc tear-down in progress — the script context is
             // gone. Treat that itself as a signal (extend the wait by one
@@ -495,17 +520,9 @@ export async function withActionSettle<T extends ActionResult>(
             // webNavigation-only observation.
             trackerInstalled = false;
             lastSignalAt = now;
-            chrome.scripting
-              .executeScript({
-                target: { tabId },
-                func: installMutationTracker,
-              })
-              .then(() => {
-                trackerInstalled = true;
-              })
-              .catch(() => {
-                // best-effort; the new doc may be inaccessible
-              });
+            void injectBounded(tabId, installMutationTracker, deadline).then((ok) => {
+              if (ok) trackerInstalled = true;
+            });
           }
         }
 
@@ -516,7 +533,7 @@ export async function withActionSettle<T extends ActionResult>(
     };
 
     if (!pre) {
-      await quietSettle();
+      await quietSettle(quietDeadline);
     } else {
       // ── #471 phase 1: did the action start a navigation? ──
       let navStartAt = 0;
@@ -553,10 +570,12 @@ export async function withActionSettle<T extends ActionResult>(
       if (!navStartAt && navSignalAt) navStartAt = navSignalAt;
 
       if (!navStartAt) {
-        // Plain button / toggle click — original quiet settle.
-        await quietSettle();
+        // Plain button / toggle click — quiet settle bounded by maxMs.
+        // Final no-change probe shares the same quietDeadline; timeout
+        // skips the note and returns (must not hang the ordinary click).
+        await quietSettle(quietDeadline);
         if (reportNoChange && pre.mutN >= 0 && !navSignalAt) {
-          const after = await probeTopFrame(tabId);
+          const after = await probeTopFrame(tabId, quietDeadline);
           if (after && after.tracked && after.mutN === pre.mutN) {
             appendNote(result, "No navigation or page change detected — the page may be unchanged (form-control state such as a checkbox is not tracked). Call read_page to check before retrying.");
           }

@@ -239,6 +239,92 @@ describe("withActionSettle — navigation awareness (#471)", () => {
     expect(out.observation).toMatch(/navigation was signalled/);
   });
 
+  it("hanging final no-change probe returns by quiet deadline and cleans listeners", async () => {
+    // Review #479 round 2: prep + observe + quiet timestamp succeed; only the
+    // optional post-quiet no-change probe hangs.
+    let quietRead = false;
+    g.chrome.scripting = {
+      executeScript: vi.fn(async ({ func, args }: { func: (...a: unknown[]) => unknown; args?: unknown[] }) => {
+        if (func.name === "readMutationTimestamp") {
+          quietRead = true;
+          return [{ frameId: 0, result: func(...(args ?? [])) }];
+        }
+        if (func.name === "readNavProbe" && quietRead) {
+          return new Promise(() => {});
+        }
+        return [{ frameId: 0, result: func(...(args ?? [])) }];
+      }),
+    };
+    const t0 = Date.now();
+    const out = await withActionSettle(TAB, async () => ({ ...ok }), {
+      ...FAST,
+      navObserveMs: 30,
+      maxMs: 50,
+      navMaxMs: 100,
+      quietMs: 5,
+      pollMs: 5,
+      navPollMs: 5,
+    });
+    expect(Date.now() - t0).toBeLessThan(300);
+    expect(out.success).toBe(true);
+    // Timed out → skip the no-change note rather than hang.
+    expect(out.observation).toBe("Clicked [0].");
+  });
+
+  it("hanging pre-action fingerprint returns by prep deadline and cleans listeners", async () => {
+    let probeCalls = 0;
+    g.chrome.scripting = {
+      executeScript: vi.fn(async ({ func, args }: { func: (...a: unknown[]) => unknown; args?: unknown[] }) => {
+        if (func.name === "readNavProbe") {
+          probeCalls++;
+          // First probe is the pre-action fingerprint — hang it.
+          if (probeCalls === 1) return new Promise(() => {});
+        }
+        return [{ frameId: 0, result: func(...(args ?? [])) }];
+      }),
+    };
+    const t0 = Date.now();
+    const out = await withActionSettle(TAB, async () => ({ ...ok }), {
+      ...FAST,
+      navObserveMs: 40,
+      maxMs: 50,
+      quietMs: 5,
+      pollMs: 5,
+      navPollMs: 5,
+    });
+    expect(Date.now() - t0).toBeLessThan(300);
+    expect(out.success).toBe(true);
+    // Prep timeout → quiet-only fallback (no navigation detection / no-change note).
+    expect(out.observation).toBe("Clicked [0].");
+  });
+
+  it("no nav signal + all post-action injects hanging returns by budget and cleans listeners", async () => {
+    let actionDone = false;
+    g.chrome.scripting = {
+      executeScript: vi.fn(async ({ func, args }: { func: (...a: unknown[]) => unknown; args?: unknown[] }) => {
+        // Prep install + fingerprint succeed; every post-action inject hangs.
+        if (actionDone) return new Promise(() => {});
+        return [{ frameId: 0, result: func(...(args ?? [])) }];
+      }),
+    };
+    const t0 = Date.now();
+    const out = await withActionSettle(TAB, async () => {
+      actionDone = true;
+      return { ...ok };
+    }, {
+      ...FAST,
+      navObserveMs: 30,
+      maxMs: 50,
+      navMaxMs: 100,
+      quietMs: 5,
+      pollMs: 5,
+      navPollMs: 5,
+    });
+    expect(Date.now() - t0).toBeLessThan(300);
+    expect(out.success).toBe(true);
+    expect(out.observation).toBe("Clicked [0].");
+  });
+
   it("non-navigating toggle: ~observe window, no note, idx kept", async () => {
     const { out, ms } = await timed(() => {
       document.getElementById("panel")!.innerHTML = "<p>expanded</p>";
