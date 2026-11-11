@@ -11,6 +11,7 @@ function mockResponse(status: number, body: string, headers: Record<string, stri
   return {
     ok: false, status,
     text: async () => body,
+    clone() { return this; },
     headers: { get: (k: string) => headers[k.toLowerCase()] ?? null },
   } as unknown as Response;
 }

@@ -581,6 +581,33 @@ describe("open_url tool", () => {
     expect(r.observation).toMatch(/focus_tab\(999\)/);
   });
 
+  it("#471: notes a page still loading after the 10s budget", async () => {
+    vi.useFakeTimers();
+    try {
+      chromeMock.tabs.__tabsById.set(999, { id: 999, url: "https://example.com/" });
+      (chromeMock as unknown as { scripting?: unknown }).scripting = {
+        executeScript: vi.fn().mockResolvedValue([
+          {
+            frameId: 0,
+            result: {
+              url: "https://example.com/", title: "", heading: "", readyState: "complete",
+              busy: true, tracked: true, mutAt: 0, mutN: 0,
+            },
+          },
+        ]),
+      };
+      const handlerPromise = openUrlTool.handler({ url: "https://example.com/" }, { tabId: 12 });
+      await fireOnCommittedNext(999, 0);
+      await vi.advanceTimersByTimeAsync(11_000);
+      const r = await handlerPromise;
+      expect(r.success).toBe(true);
+      expect(r.observation).toMatch(/still loading after 10s/);
+    } finally {
+      delete (chromeMock as unknown as { scripting?: unknown }).scripting;
+      vi.useRealTimers();
+    }
+  });
+
   it("respects active=true", async () => {
     chromeMock.tabs.__tabsById.set(999, {
       id: 999,
