@@ -18,7 +18,28 @@ describe("overlay settings", () => {
     });
     expect(
       normalizeOverlaySettings({ barEnabled: false, excludedHosts: ["a.com", 3], retentionMinutes: 10 }),
-    ).toEqual({ barEnabled: false, excludedHosts: ["a.com"], position: "anchor", retentionMinutes: 10 });
+    ).toEqual({
+      barEnabled: false,
+      excludedHosts: ["a.com"],
+      position: "anchor",
+      retentionMinutes: 10,
+      recentRewriteStyles: [],
+    });
+  });
+
+  it("keeps remembered translate/rewrite preferences, capped at 3", () => {
+    const s = normalizeOverlaySettings({
+      lastTranslateLang: "ja",
+      recentRewriteStyles: ["a", "b", 7, "", "c", "d"],
+    });
+    expect(s.lastTranslateLang).toBe("ja");
+    expect(s.recentRewriteStyles).toEqual(["a", "b", "c"]);
+
+    // Junk in, usable record out.
+    expect(normalizeOverlaySettings({ lastTranslateLang: 42, recentRewriteStyles: "x" })).toMatchObject({
+      recentRewriteStyles: [],
+    });
+    expect(normalizeOverlaySettings({ lastTranslateLang: 42 })).not.toHaveProperty("lastTranslateLang");
   });
 
   it("hides the bar when disabled or on an excluded host", () => {

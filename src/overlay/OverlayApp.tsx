@@ -1,26 +1,56 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import Markdown from "@/sidepanel/components/Markdown";
-import { useT } from "@/lib/i18n";
+import { getLocale, useT } from "@/lib/i18n";
 import type { DictKey } from "@/lib/i18n";
+import { LOCALE_REGISTRY } from "@/lib/i18n/locales";
 import { getConfig } from "@/lib/idb/config-store";
 import { getToolClass } from "@/lib/agent/tool-names";
 import type { DisplayMessage } from "@/types";
-import type { OverlayOpenState, OverlayReplaceResult, OverlaySelection } from "@/lib/overlay/protocol";
+import {
+  REWRITE_STYLE_IDS,
+  type OverlayIntent,
+  type OverlayOpenState,
+  type OverlayReplaceResult,
+  type OverlaySelection,
+  type OverlayTask,
+  type RewriteStyleId,
+} from "@/lib/overlay/protocol";
 import { buildOverlayWireContent as buildWireContent } from "@/lib/overlay/wire";
+import { getOverlaySettings, rememberRewriteStyle, rememberTranslateLang } from "@/lib/overlay/settings";
 import { startMemoryPrefetch, type MemoryPrefetch } from "@/lib/memory/selector";
 import type { MemoryEntry } from "@/lib/memory/types";
 import { MEMORY_SEND_WAIT_MS, shouldReuseMemoryPick } from "@/lib/overlay/memory-task";
 import { MemoryEventRow, MemoryUsedChip } from "@/sidepanel/components/MemoryRows";
+import { useStickToBottom } from "@/sidepanel/hooks/useStickToBottom";
 import { useOverlaySession } from "./useOverlaySession";
 
 /** Below this the composer never collapses — matches the host's min height. */
 const MAX_TEXTAREA_LINES = 3;
+/** Transparent padding inside the iframe so the card's shadow is not clipped
+ *  (the iframe element itself must stay shadow-free). */
+const CARD_PAD = 18;
+/** Fallback cap until the host reports the real viewport-derived one. */
+const FALLBACK_MAX_HEIGHT = 620;
+
+function currentColorScheme(): string {
+  try {
+    return getComputedStyle(document.documentElement).colorScheme || "light";
+  } catch {
+    return "light";
+  }
+}
 
 function reportHeight(): void {
   const root = document.getElementById("overlay-root");
   if (!root) return;
   window.parent.postMessage(
-    { type: "pie-overlay:resize", height: Math.ceil(root.getBoundingClientRect().height) },
+    {
+      type: "pie-overlay:resize",
+      height: Math.ceil(root.getBoundingClientRect().height),
+      // The host copies this onto the iframe element: a color-scheme mismatch
+      // makes Chrome paint an opaque base behind the frame (opaque corners).
+      colorScheme: currentColorScheme(),
+    },
     "*",
   );
 }
@@ -28,6 +58,31 @@ function reportHeight(): void {
 function requestClose(): void {
   window.parent.postMessage({ type: "pie-overlay:close" }, "*");
 }
+
+function langLabel(code: string): string {
+  const meta = LOCALE_REGISTRY[code as keyof typeof LOCALE_REGISTRY];
+  return meta?.nativeLabel ?? code;
+}
+
+/** Language name in the UI language — `Intl` owns the translations, so the
+ *  translate chip needs no six-dictionary table of language names. */
+function localizedLangName(code: string): string {
+  try {
+    const name = new Intl.DisplayNames([getLocale()], { type: "language" }).of(code);
+    if (name) return name;
+  } catch {
+    // Old runtime without Intl.DisplayNames — fall back to the native label.
+  }
+  return langLabel(code);
+}
+
+const STYLE_LABEL_KEY: Record<RewriteStyleId, DictKey> = {
+  formal: "overlay.ui.styleFormal",
+  concise: "overlay.ui.styleConcise",
+  casual: "overlay.ui.styleCasual",
+  proofread: "overlay.ui.styleProofread",
+  expand: "overlay.ui.styleExpand",
+};
 
 interface RewriteCardState {
   to: string;
@@ -39,6 +94,7 @@ export default function OverlayApp() {
   const params = useMemo(() => new URLSearchParams(location.search), []);
   const sessionId = params.get("sessionId") ?? "";
   const tabId = Number(params.get("tabId") ?? "-1");
+  const urlIntent = (params.get("intent") as OverlayIntent | null) ?? "hotkey";
 
   const [openState, setOpenState] = useState<OverlayOpenState | null>(null);
   const [runningElsewhere, setRunningElsewhere] = useState(false);
@@ -48,9 +104,18 @@ export default function OverlayApp() {
   const [replaced, setReplaced] = useState<Record<number, "ok" | "undone">>({});
   const [staleIndexes, setStaleIndexes] = useState<Record<number, true>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [maxHeight, setMaxHeight] = useState(FALLBACK_MAX_HEIGHT);
+  const [translateTarget, setTranslateTarget] = useState("en");
+  const [langOpen, setLangOpen] = useState(false);
+  const [recentStyles, setRecentStyles] = useState<string[]>([]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendRef = useRef<() => void>(() => {});
+  const { containerRef, onScroll, stickIfNeeded } = useStickToBottom<HTMLDivElement>();
+
+  // The SW's open state is authoritative: the document can be reused for a
+  // later open, and then its URL still carries the first intent.
+  const intent: OverlayIntent = openState?.intent ?? urlIntent;
 
   const session = useOverlaySession({ sessionId, tabId, runningElsewhere });
   const { messages, streaming, streamingText, streamingThinking } = session;
@@ -102,36 +167,78 @@ export default function OverlayApp() {
       } else {
         delete document.documentElement.dataset.theme;
       }
+      reportHeight();
     });
   }, []);
 
   // ── Open state (selection / prefill / auto-send) ──────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const reply = (await chrome.runtime.sendMessage({
-          type: "overlay:get-state",
-          sessionId,
-          tabId,
-        })) as { state?: OverlayOpenState | null; running?: boolean } | undefined;
-        if (cancelled) return;
-        const state = reply?.state ?? null;
-        setOpenState(state);
-        setRunningElsewhere(reply?.running === true);
-        if (state?.selection) {
-          setSelection(state.selection);
-          setSelectionConsumed(false);
-        }
-        if (state?.prompt) setInput(state.prompt);
-      } catch {
-        // SW unavailable — the overlay still works as a plain conversation.
+  // The SAME document serves several opens on one tab (hide keeps it alive),
+  // so the state is re-read every time the host announces an open — not just
+  // on mount. `openSeq` lets the translate prefill refresh per open.
+  const aliveRef = useRef(true);
+  const [openSeq, setOpenSeq] = useState(0);
+  const autoSentRef = useRef(false);
+  /** `openedAt` of the open that last reset the auto-send guard. */
+  const autoOpenTokenRef = useRef<number | null>(null);
+
+  const fetchOpenState = useCallback(async () => {
+    try {
+      const reply = (await chrome.runtime.sendMessage({
+        type: "overlay:get-state",
+        sessionId,
+        tabId,
+      })) as { state?: OverlayOpenState | null; running?: boolean } | undefined;
+      if (!aliveRef.current) return;
+      const state = reply?.state ?? null;
+      setOpenState(state);
+      setRunningElsewhere(reply?.running === true);
+      setOpenSeq((n) => n + 1);
+      if (state?.translateTarget) setTranslateTarget(state.translateTarget);
+      setSelection(state?.selection ?? null);
+      setSelectionConsumed(false);
+      if (state?.prompt) setInput(state.prompt);
+      if (state?.openedAt !== undefined && state.openedAt !== autoOpenTokenRef.current) {
+        autoOpenTokenRef.current = state.openedAt;
+        autoSentRef.current = false;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    } catch {
+      // SW unavailable — the overlay still works as a plain conversation.
+    }
   }, [sessionId, tabId]);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    void fetchOpenState();
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [fetchOpenState]);
+
+  // Recent custom rewrite instructions (global settings, shared with the
+  // settings page's clear button).
+  useEffect(() => {
+    void getOverlaySettings().then((s) => setRecentStyles(s.recentRewriteStyles));
+  }, []);
+
+  // ── Host ↔ document: height cap + "a new open just happened" ──────────────
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.source !== window.parent) return;
+      const data = e.data as { type?: string; height?: number } | null;
+      if (data?.type === "pie-overlay:opened") {
+        void fetchOpenState();
+        return;
+      }
+      if (data?.type !== "pie-overlay:max-height" || typeof data.height !== "number") return;
+      if (!Number.isFinite(data.height)) return;
+      setMaxHeight(Math.max(120, Math.round(data.height)));
+    }
+    window.addEventListener("message", onMessage);
+    // Ask the host for the cap + open state once our listeners are attached;
+    // its load-time pushes may have fired before this effect ran.
+    window.parent.postMessage({ type: "pie-overlay:ready" }, "*");
+    return () => window.removeEventListener("message", onMessage);
+  }, [fetchOpenState]);
 
   // ── Memory prefetch kick-off ──────────────────────────────────────────────
   useEffect(() => {
@@ -147,29 +254,80 @@ export default function OverlayApp() {
     return () => prefetch.abort();
   }, [openState]);
 
-  // ── Auto-send (explain / translate / rewrite / omnibox) ───────────────────
-  const autoSentRef = useRef(false);
-  const sendRefForAuto = session.send;
+  const rewriteMode = intent === "rewrite" && selection !== null;
+  const translateMode = intent === "translate" && selection !== null;
+  const langName = localizedLangName(translateTarget);
+  const translateShort = t("overlay.ui.translateShort", { lang: langName });
+
+  // Translate opens with its short instruction pre-filled; switching the
+  // language rewrites that pre-fill until the user edits the field.
+  const autoComposerRef = useRef("");
+  useEffect(() => {
+    if (!translateMode) return;
+    const next = translateShort;
+    // Compare against the value captured NOW: React runs the updater during
+    // the next render, by which time autoComposerRef already holds `next`.
+    const prevAuto = autoComposerRef.current;
+    setInput((cur) => (cur === "" || cur === prevAuto ? next : cur));
+    autoComposerRef.current = next;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translateMode, translateShort, openSeq]);
+
+  /** One send path for every mode: pick memory, then hand the turn to the
+   *  session (structured tasks carry the overlay intent, not a prompt text). */
+  const dispatch = useCallback(
+    (
+      content: string,
+      opts: {
+        wireText?: string;
+        overlayTask?: OverlayTask;
+        editableSelection?: boolean;
+        rememberCustom?: string;
+      } = {},
+    ) => {
+      const text = content.trim();
+      if (!text || streaming || !session.ready || sendingRef.current) return false;
+      sendingRef.current = true;
+      void (async () => {
+        const mem = await takeMemoryPick(text);
+        session.send({
+          content: text,
+          ...(opts.wireText !== undefined ? { expandedForLLM: opts.wireText } : {}),
+          ...(opts.editableSelection ? { editableSelection: true } : {}),
+          ...(mem ? { memoryPick: mem.pick, memoryPickAsOf: mem.at } : {}),
+          ...(opts.overlayTask ? { overlayTask: opts.overlayTask } : {}),
+        });
+        sendingRef.current = false;
+      })();
+      if (opts.rememberCustom) {
+        void rememberRewriteStyle(opts.rememberCustom).then((s) =>
+          setRecentStyles(s.recentRewriteStyles),
+        );
+      }
+      return true;
+    },
+    [session, streaming, takeMemoryPick],
+  );
+
+  // ── Auto-send (explain / omnibox) ─────────────────────────────────────────
   const readyForAuto = session.ready;
   useEffect(() => {
     if (autoSentRef.current) return;
-    if (!openState || !openState.autoSend || !openState.prompt) return;
+    if (!openState || !openState.autoSend) return;
     if (!readyForAuto) return;
     autoSentRef.current = true;
     const sel = openState.selection;
-    const prompt = openState.prompt;
-    void (async () => {
-      const mem = await takeMemoryPick(prompt);
-      sendRefForAuto({
-        content: prompt,
-        expandedForLLM: buildWireContent(prompt, sel),
-        editableSelection: sel?.editable === true,
-        ...(mem ? { memoryPick: mem.pick, memoryPickAsOf: mem.at } : {}),
+    if (intent === "explain" && sel) {
+      dispatch(t("overlay.ui.explainShort"), {
+        overlayTask: { kind: "explain", selection: { text: sel.text, url: sel.url } },
       });
-    })();
+    } else if (openState.prompt) {
+      dispatch(openState.prompt, { wireText: buildWireContent(openState.prompt, sel) });
+    }
     setSelectionConsumed(true);
     setInput("");
-  }, [openState, readyForAuto, sendRefForAuto, takeMemoryPick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openState, readyForAuto, intent]);
 
   // ── Height reporting for the iframe host ──────────────────────────────────
   useEffect(() => {
@@ -183,7 +341,13 @@ export default function OverlayApp() {
 
   useEffect(() => {
     reportHeight();
-  }, [messages.length, streaming, streamingText, notice]);
+  }, [maxHeight]);
+
+  // Stick to the tail like the side panel: follow new content while the user
+  // is at the bottom, stop following as soon as they scroll up.
+  useEffect(() => {
+    stickIfNeeded();
+  }, [messages, streamingText, streamingThinking, session.panelNotice, stickIfNeeded]);
 
   // ── Focus on open ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -192,25 +356,74 @@ export default function OverlayApp() {
 
   const send = useCallback(() => {
     const text = input.trim();
-    if (!text || streaming || !session.ready || sendingRef.current) return;
+    if (!text) return;
     const sel = selectionConsumed ? null : selection;
-    setInput("");
-    setSelectionConsumed(true);
-    setNotice(null);
-    sendingRef.current = true;
-    void (async () => {
-      const mem = await takeMemoryPick(text);
-      session.send({
-        content: text,
-        expandedForLLM: buildWireContent(text, sel),
-        editableSelection: sel?.editable === true,
-        ...(mem ? { memoryPick: mem.pick, memoryPickAsOf: mem.at } : {}),
+    let sent = false;
+    if (rewriteMode && selection) {
+      // Typed text IS the rewrite instruction; a style chip click sends
+      // separately through `sendRewriteStyle`.
+      sent = dispatch(text, {
+        overlayTask: {
+          kind: "rewrite",
+          custom: text,
+          selection: { text: selection.text, url: selection.url },
+        },
+        rememberCustom: text,
       });
-      sendingRef.current = false;
-    })();
-  }, [input, selection, selectionConsumed, session, streaming, takeMemoryPick]);
+    } else if (translateMode && selection && text === translateShort) {
+      sent = dispatch(text, {
+        overlayTask: {
+          kind: "translate",
+          targetLang: translateTarget,
+          selection: { text: selection.text, url: selection.url },
+        },
+      });
+    } else {
+      sent = dispatch(text, {
+        wireText: buildWireContent(text, sel),
+        ...(sel?.editable ? { editableSelection: true } : {}),
+      });
+    }
+    if (sent) {
+      setInput("");
+      setSelectionConsumed(true);
+      setNotice(null);
+    }
+  }, [input, rewriteMode, selection, selectionConsumed, translateMode, translateShort, translateTarget, dispatch]);
 
   sendRef.current = send;
+
+  const sendRewriteStyle = useCallback(
+    (style: RewriteStyleId) => {
+      if (!selection) return;
+      const styleLabel = t(STYLE_LABEL_KEY[style]);
+      dispatch(t("overlay.ui.rewriteShort", { style: styleLabel }), {
+        overlayTask: {
+          kind: "rewrite",
+          style,
+          selection: { text: selection.text, url: selection.url },
+        },
+      });
+      setSelectionConsumed(true);
+      setNotice(null);
+    },
+    [dispatch, selection, t],
+  );
+
+  const chooseTranslateLang = useCallback(
+    (lang: string) => {
+      setTranslateTarget(lang);
+      setLangOpen(false);
+      // Update the prefill right here: the effect below can miss the change
+      // when the textarea's value no longer matches its last auto value.
+      const next = t("overlay.ui.translateShort", { lang: localizedLangName(lang) });
+      const prevAuto = autoComposerRef.current;
+      setInput((cur) => (cur === "" || cur === prevAuto ? next : cur));
+      autoComposerRef.current = next;
+      void rememberTranslateLang(lang);
+    },
+    [t],
+  );
 
   const toPanel = useCallback(() => {
     void chrome.runtime.sendMessage({ type: "overlay:to-panel", sessionId, tabId });
@@ -229,6 +442,11 @@ export default function OverlayApp() {
     function onKeyDown(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
       if (e.key === "Escape") {
+        if (langOpen) {
+          e.preventDefault();
+          setLangOpen(false);
+          return;
+        }
         e.preventDefault();
         requestClose();
         return;
@@ -245,7 +463,7 @@ export default function OverlayApp() {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [newChat, toPanel]);
+  }, [newChat, toPanel, langOpen]);
 
   const onTextareaKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== "Enter" || e.shiftKey) return;
@@ -332,133 +550,216 @@ export default function OverlayApp() {
 
   const chat = messages.length > 0 || streaming;
   const busy = streaming;
+  const cardMaxHeight = Math.max(120, maxHeight - CARD_PAD * 2);
+
+  const modeChips = translateMode || rewriteMode ? (
+    <div className="relative flex shrink-0 flex-wrap items-center gap-1.5 border-t border-line px-3 py-2">
+      {rewriteMode &&
+        REWRITE_STYLE_IDS.map((style) => (
+          <ChipButton key={style} onClick={() => sendRewriteStyle(style)} disabled={busy}>
+            {t(STYLE_LABEL_KEY[style])}
+          </ChipButton>
+        ))}
+      {rewriteMode &&
+        recentStyles.map((text) => (
+          <ChipButton
+            key={`recent-${text}`}
+            onClick={() =>
+              selection &&
+              dispatch(text, {
+                overlayTask: {
+                  kind: "rewrite",
+                  custom: text,
+                  selection: { text: selection.text, url: selection.url },
+                },
+              })
+            }
+            disabled={busy}
+            title={text}
+          >
+            {text}
+          </ChipButton>
+        ))}
+      {translateMode && (
+        <>
+          <ChipButton onClick={() => setLangOpen((v) => !v)} disabled={busy} aria-expanded={langOpen}>
+            {t("overlay.ui.translateChip", { lang: langName })} ▾
+          </ChipButton>
+          {langOpen && (
+            // In flow, not a popover: the card clips its children (rounded
+            // corners + scrolling thread), so an absolutely-positioned list
+            // was cut off entirely. Wrapping to a second row keeps it visible.
+            <div
+              role="listbox"
+              className="order-last grid w-full grid-cols-2 gap-0.5 rounded-[8px] border border-line bg-surface p-1"
+            >
+              {Object.values(LOCALE_REGISTRY).map((meta) => (
+                <button
+                  key={meta.locale}
+                  type="button"
+                  role="option"
+                  aria-selected={meta.locale === translateTarget}
+                  onClick={() => chooseTranslateLang(meta.locale)}
+                  className={`truncate rounded-[6px] px-2 py-1 text-left text-[12px] hover:bg-field ${
+                    meta.locale === translateTarget ? "font-medium text-fg-1" : "text-fg-2"
+                  }`}
+                >
+                  {localizedLangName(meta.locale)}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div
       id="overlay-root"
       data-mode={chat ? "chat" : "spot"}
-      className="flex w-full flex-col overflow-hidden rounded-[16px] border border-line bg-surface font-sans text-fg-1 shadow-[0_16px_48px_rgba(20,24,29,0.22)]"
+      className="flex w-full flex-col"
+      style={{ padding: CARD_PAD }}
     >
-      {chat && (
-        <div className="flex h-[42px] shrink-0 items-center gap-2 border-b border-line px-3">
-          <span className="h-[13px] w-[13px] shrink-0 rounded-full bg-[radial-gradient(circle_at_34%_30%,#fafbfc_0_52%,#14181d_53%_100%)] ring-1 ring-line" />
-          <span className="truncate text-[12.5px] font-medium">{sessionTitle(messages, t("overlay.ui.newChat"))}</span>
-          <span className="shrink-0 text-[11.5px] text-fg-3">· {t("overlay.ui.sameSession")}</span>
-          <span className="flex-1" />
-          <IconBtn label={t("overlay.ui.newChat")} onClick={newChat}>＋</IconBtn>
-          <IconBtn label={t("overlay.ui.toPanel")} onClick={toPanel} disabled={busy}>⤢</IconBtn>
-          <IconBtn label={t("common.close")} onClick={requestClose}>×</IconBtn>
-        </div>
-      )}
+      <div
+        data-card
+        className="flex w-full flex-col overflow-hidden rounded-[16px] border border-line bg-surface font-sans text-fg-1 shadow-[0_10px_30px_rgba(20,24,29,0.20)]"
+        style={{ maxHeight: cardMaxHeight }}
+      >
+        {chat && (
+          <div className="flex h-[42px] shrink-0 items-center gap-2 border-b border-line px-3">
+            <PieMark className="h-[15px] w-[15px] shrink-0" />
+            <span className="truncate text-[12.5px] font-medium">{sessionTitle(messages, t("overlay.ui.newChat"))}</span>
+            <span className="shrink-0 text-[11.5px] text-fg-3">· {t("overlay.ui.sameSession")}</span>
+            <span className="flex-1" />
+            <IconBtn label={t("overlay.ui.newChat")} onClick={newChat}>＋</IconBtn>
+            <IconBtn label={t("overlay.ui.toPanel")} onClick={toPanel} disabled={busy}>⤢</IconBtn>
+            <IconBtn label={t("common.close")} onClick={requestClose}>×</IconBtn>
+          </div>
+        )}
 
-      {chat && (
-        <div className="flex max-h-[min(52vh,440px)] flex-col gap-3 overflow-y-auto px-4 py-3">
-          {messages.map((m, i) => (
-            <MessageRow
-              key={i}
-              m={m}
-              rewrite={rewriteCards[i]}
-              replaceState={replaced[i]}
-              stale={staleIndexes[i] === true}
-              canReplace={
-                i === latestRewriteIndex &&
-                replaced[i] === undefined &&
-                !taskRanAfter(i) &&
-                !streaming
-              }
-              onReplace={() => void doReplace(i, rewriteCards[i]!)}
-              onUndo={() => void doUndo(i, rewriteCards[i]!)}
-              onCopy={copyText}
-              onMemoryWrong={openMemorySettings}
-            />
-          ))}
-          {session.panelNotice === "panel-request" && (
-            <div className="text-[11.5px] text-fg-3" data-testid="overlay-panel-notice">
-              {t("overlay.ui.needsPanelConfirm")}
-            </div>
-          )}
-          {streaming && (
-            <div className="flex flex-col gap-1.5">
-              {streamingThinking && (
-                <div className="flex items-center gap-2 text-[11.5px] text-fg-3">
-                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                  <span className="truncate">{streamingThinking.slice(-160)}</span>
-                </div>
-              )}
-              {streamingText ? (
-                <div className="text-[13px] leading-[19px]">
-                  <Markdown content={streamingText} />
-                  <span className="ml-0.5 inline-block h-[13px] w-[2px] animate-pulse bg-accent align-middle" />
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-[12px] text-fg-3">
-                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                  <span>{t("overlay.ui.thinking")}</span>
-                  <button type="button" className="ml-auto text-[11.5px] text-accent hover:underline" onClick={session.abort}>
-                    {t("common.stop")}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          {session.error && (
-            <div className="rounded-[10px] border border-warning-line bg-warning-tint px-2.5 py-2 text-[12px] text-warning">
-              {t("overlay.ui.error", { error: session.error })}
-            </div>
-          )}
-          {runningElsewhere && streaming && (
-            <div className="text-[11px] text-fg-3">{t("overlay.ui.viewerNotice")}</div>
-          )}
-        </div>
-      )}
-
-      <div className="flex shrink-0 flex-col gap-1 px-3 pb-2 pt-2">
-        <div className="flex items-end gap-2 rounded-[11px] border border-line bg-field px-2.5 py-1.5">
-          <span className="mb-1 h-[13px] w-[13px] shrink-0 rounded-full bg-[radial-gradient(circle_at_34%_30%,#fafbfc_0_52%,#14181d_53%_100%)] ring-1 ring-line" />
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onTextareaKeyDown}
-            placeholder={busy ? t("overlay.ui.placeholderBusy") : t("overlay.ui.placeholder")}
-            className="max-h-[57px] min-h-[20px] flex-1 resize-none bg-transparent text-[13.5px] leading-[19px] text-fg-1 outline-none placeholder:text-fg-3"
-            style={{ height: "auto" }}
-            onInput={(e) => {
-              const el = e.currentTarget;
-              el.style.height = "auto";
-              el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_LINES * 19)}px`;
-            }}
-          />
-          <button
-            type="button"
-            onClick={send}
-            disabled={busy || input.trim().length === 0}
-            aria-label={t("common.send")}
-            className="mb-0.5 flex h-[26px] w-[26px] items-center justify-center rounded-full bg-accent text-[13px] text-white disabled:opacity-40"
+        {chat && (
+          <div
+            ref={containerRef}
+            onScroll={onScroll}
+            data-thread
+            className="flex min-h-0 flex-col gap-3 overflow-y-auto px-4 py-3"
           >
-            ↑
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5 px-1 text-[11px] text-fg-3">
-          <Chip label={t("overlay.ui.chipPage")} />
-          {selection && !selectionConsumed && (
-            <Chip
-              label={
-                selection.editable
-                  ? t("overlay.ui.chipSelectionEditable", { count: charCount(selection.text) })
-                  : t("overlay.ui.chipSelection", { count: charCount(selection.text) })
+            {messages.map((m, i) => (
+              <MessageRow
+                key={i}
+                m={m}
+                rewrite={rewriteCards[i]}
+                replaceState={replaced[i]}
+                stale={staleIndexes[i] === true}
+                canReplace={
+                  i === latestRewriteIndex &&
+                  replaced[i] === undefined &&
+                  !taskRanAfter(i) &&
+                  !streaming
+                }
+                onReplace={() => void doReplace(i, rewriteCards[i]!)}
+                onUndo={() => void doUndo(i, rewriteCards[i]!)}
+                onCopy={copyText}
+                onMemoryWrong={openMemorySettings}
+              />
+            ))}
+            {session.panelNotice === "panel-request" && (
+              <div className="text-[11.5px] text-fg-3" data-testid="overlay-panel-notice">
+                {t("overlay.ui.needsPanelConfirm")}
+              </div>
+            )}
+            {streaming && (
+              <div className="flex flex-col gap-1.5">
+                {streamingThinking && (
+                  <div className="flex items-center gap-2 text-[11.5px] text-fg-3">
+                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                    <span className="truncate">{streamingThinking.slice(-160)}</span>
+                  </div>
+                )}
+                {streamingText ? (
+                  <div className="text-[13px] leading-[19px]">
+                    <Markdown content={streamingText} />
+                    <span className="ml-0.5 inline-block h-[13px] w-[2px] animate-pulse bg-accent align-middle" />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-[12px] text-fg-3">
+                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                    <span>{t("overlay.ui.thinking")}</span>
+                    <button type="button" className="ml-auto text-[11.5px] text-accent hover:underline" onClick={session.abort}>
+                      {t("common.stop")}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {session.error && (
+              <div className="rounded-[10px] border border-warning-line bg-warning-tint px-2.5 py-2 text-[12px] text-warning">
+                {t("overlay.ui.error", { error: session.error })}
+              </div>
+            )}
+            {runningElsewhere && streaming && (
+              <div className="text-[11px] text-fg-3">{t("overlay.ui.viewerNotice")}</div>
+            )}
+          </div>
+        )}
+
+        {modeChips}
+
+        <div className="flex shrink-0 flex-col gap-1 px-3 pb-2 pt-2">
+          <div className="flex items-end gap-2 rounded-[11px] border border-line bg-field px-2.5 py-1.5">
+            <PieMark className="mb-1 h-[13px] w-[13px] shrink-0" />
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onTextareaKeyDown}
+              placeholder={
+                busy
+                  ? t("overlay.ui.placeholderBusy")
+                  : rewriteMode
+                    ? t("overlay.ui.rewritePlaceholder")
+                    : t("overlay.ui.placeholder")
               }
-              onRemove={() => {
-                setSelection(null);
-                setSelectionConsumed(true);
+              className="max-h-[57px] min-h-[20px] flex-1 resize-none bg-transparent text-[13.5px] leading-[19px] text-fg-1 outline-none placeholder:text-fg-3"
+              style={{ height: "auto" }}
+              onInput={(e) => {
+                const el = e.currentTarget;
+                el.style.height = "auto";
+                el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_LINES * 19)}px`;
               }}
             />
-          )}
-          <span className="flex-1" />
-          <span className="truncate">{chat ? t("overlay.ui.hintsChat") : t("overlay.ui.hints")}</span>
+            <button
+              type="button"
+              onClick={send}
+              disabled={busy || input.trim().length === 0}
+              aria-label={t("common.send")}
+              className="mb-0.5 flex h-[26px] w-[26px] items-center justify-center rounded-full bg-accent text-[13px] text-white disabled:opacity-40"
+            >
+              ↑
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5 px-1 text-[11px] text-fg-3">
+            <Chip label={t("overlay.ui.chipPage")} />
+            {selection && !selectionConsumed && (
+              <Chip
+                label={
+                  selection.editable
+                    ? t("overlay.ui.chipSelectionEditable", { count: charCount(selection.text) })
+                    : t("overlay.ui.chipSelection", { count: charCount(selection.text) })
+                }
+                onRemove={() => {
+                  setSelection(null);
+                  setSelectionConsumed(true);
+                }}
+              />
+            )}
+            <span className="flex-1" />
+            <span className="truncate">{chat ? t("overlay.ui.hintsChat") : t("overlay.ui.hints")}</span>
+          </div>
+          {notice && <div className="px-1 text-[11px] text-warning">{notice}</div>}
         </div>
-        {notice && <div className="px-1 text-[11px] text-warning">{notice}</div>}
       </div>
     </div>
   );
@@ -466,6 +767,19 @@ export default function OverlayApp() {
 
 function charCount(text: string): number {
   return Array.from(text).length;
+}
+
+/** The bite-marked white disc from the app icon — no square plate. */
+function PieMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 128 128" className={`pie-mark ${className ?? ""}`} aria-hidden="true">
+      <mask id="pie-mark-bite">
+        <rect width="128" height="128" fill="#fff" />
+        <circle cx="98" cy="30" r="22" fill="#000" />
+      </mask>
+      <circle cx="64" cy="64" r="44" fill="#FAFBFC" mask="url(#pie-mark-bite)" />
+    </svg>
+  );
 }
 
 function sessionTitle(messages: DisplayMessage[], fallback: string): string {
@@ -488,6 +802,33 @@ function selectionTextFor(
   // Only the turn that produced the card counts — a later user message means
   // this card belongs to an older turn and we no longer know its selection.
   return after.some((m) => m.role === "user") ? null : selectionText;
+}
+
+function ChipButton({
+  children,
+  onClick,
+  disabled,
+  title,
+  ...rest
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  title?: string;
+  "aria-expanded"?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className="max-w-[220px] truncate rounded-full border border-line bg-field px-2.5 py-[3px] text-[11.5px] text-fg-2 hover:text-fg-1 disabled:opacity-40"
+      {...rest}
+    >
+      {children}
+    </button>
+  );
 }
 
 function IconBtn({
@@ -567,6 +908,13 @@ function MessageRow({
       </div>
     );
   }
+  // Pie 2.0 memory — F4 rows. "不对" jumps to the panel's memory page.
+  if (m.role === "memory-used") {
+    return <MemoryUsedChip items={m.items} onWrong={onMemoryWrong} />;
+  }
+  if (m.role === "memory-event") {
+    return <MemoryEventRow msg={m} />;
+  }
   if (m.role === "agent-step" && m.tool === "propose_rewrite") {
     if (!rewrite) {
       // Restored card: no original to compare, so no write-back (prototype:
@@ -620,13 +968,6 @@ function MessageRow({
         </div>
       </div>
     );
-  }
-  // Pie 2.0 memory — F4 rows. "不对" jumps to the panel's memory page.
-  if (m.role === "memory-used") {
-    return <MemoryUsedChip items={m.items} onWrong={onMemoryWrong} />;
-  }
-  if (m.role === "memory-event") {
-    return <MemoryEventRow msg={m} />;
   }
   if (m.role === "agent-summary") {
     return (

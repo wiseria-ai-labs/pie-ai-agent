@@ -174,6 +174,7 @@ import {
   capsuleForTab,
   closeOverlayOnTab,
   detachOverlayRun,
+  markOverlayClosedByUser,
   detachPanelFromRun,
   forgetTabOverlay,
   handleCapsuleAction,
@@ -204,6 +205,9 @@ import { wrapEmitWithMemoryChip } from "@/lib/agent/memory-chip";
 import { buildUserMemoryBlock } from "@/lib/memory/prompt";
 import { escapeTrustedWrappers } from "@/lib/agent/untrusted-wrappers";
 import type { MemoryEntry } from "@/lib/memory/types";
+import { buildOverlayTaskInstruction } from "@/lib/overlay/task-text";
+import { buildOverlayWireContent } from "@/lib/overlay/wire";
+import type { OverlayTask } from "@/lib/overlay/protocol";
 import { excludeHostForSelectionBar } from "@/lib/overlay/settings";
 import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
@@ -1068,8 +1072,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // The page-side host and the overlay document both talk to the SW over
   // runtime messages; the agent stream itself keeps using the chat-stream port.
   if (message?.type === "overlay:intent") {
-    const m = message as { intent: OverlayIntent; selection: OverlaySelection | null; prompt?: string };
-    void handleOverlayIntent(sender.tab?.id, m.intent, m.selection ?? null, m.prompt).catch((e) => {
+    const m = message as { intent: OverlayIntent; selection: OverlaySelection | null };
+    void handleOverlayIntent(sender.tab?.id, m.intent, m.selection ?? null).catch((e) => {
       console.warn("[sw] overlay intent failed:", e);
     });
     return;
@@ -1078,8 +1082,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "overlay:closed") {
     const m = message as { sessionId?: string };
     // `keep` = a task is still running on that session; the document must stay
-    // mounted (hidden) because its port is the task's lifeline.
-    sendResponse({ keep: shouldKeepOverlayDocument(m.sessionId) });
+    // mounted (hidden) because its port is the task's lifeline. A live run is
+    // ALSO the only thing that may raise the capsule: the user closed the
+    // overlay while work continues, so the capsule takes its place.
+    const keep = shouldKeepOverlayDocument(m.sessionId);
+    if (keep) markOverlayClosedByUser(m.sessionId, sender.tab?.id);
+    sendResponse({ keep });
     return;
   }
 
@@ -1683,6 +1691,7 @@ async function handleChatStream(
   overlayRun?: RunRuntime | null,
   memoryPick?: MemoryEntry[],
   memoryPickAsOf?: number,
+  overlayTask?: OverlayTask,
 ) {
   const signal = abortController.signal;
   try {
@@ -1779,6 +1788,33 @@ async function handleChatStream(
         sessionId,
       });
       return;
+    }
+
+    // 2.0 overlay — structured selection task (explain / translate / rewrite).
+    // The user message keeps the short DISPLAY text the overlay showed; the
+    // wire content the model sees is built here: an English instruction plus
+    // the untrusted page quote. Doing it SW-side is what gives translate an
+    // explicit target language and rewrite its style.
+    if (overlayTask) {
+      const uiLocale = await resolveLocale();
+      const setting = await getAssistantLanguageSetting();
+      const resolved = resolveAssistantLanguage(setting, uiLocale);
+      const answerLang = resolved === "auto-detect-user-message" ? uiLocale : resolved;
+      const instruction = buildOverlayTaskInstruction(overlayTask, answerLang);
+      const wire = buildOverlayWireContent(
+        instruction,
+        overlayTask.selection
+          ? {
+              text: overlayTask.selection.text,
+              editable: false,
+              url: overlayTask.selection.url,
+            }
+          : null,
+      );
+      const last = messages[messages.length - 1];
+      if (wire && last?.role === "user") {
+        messages = [...messages.slice(0, -1), { ...last, content: wire }];
+      }
     }
 
     // Issue #34 — if a prior abort left pending instructions, merge them
@@ -2193,6 +2229,7 @@ chrome.runtime.onConnect.addListener((port) => {
         overlayRun,
         message.memoryPick,
         message.memoryPickAsOf,
+        message.overlayTask,
       );
     } else if (message.type === "chat-abort") {
       abortRotation.current.abort();

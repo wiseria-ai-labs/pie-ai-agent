@@ -2,12 +2,16 @@
  * AgentStepLine — compact single-row representation of one agent step.
  *
  * Three visual states:
- *   - pending: spinning dot + "正在调用 X..." (in-place text replaces between
- *     tool calls, so React reconciliation keeps the same DOM and the
- *     bubble-in animation does NOT replay each step)
- *   - ok:      check mark + tool name (faint)
- *   - error:   ✕ + tool name + first line of observation (always visible,
+ *   - pending: spinning dot + the localized activity line ("正在读取页面",
+ *     in-place text replaces between tool calls, so React reconciliation
+ *     keeps the same DOM and the bubble-in animation does NOT replay)
+ *   - ok:      check mark + the activity line (faint)
+ *   - error:   ✕ + activity line + first line of observation (always visible,
  *     never auto-collapsed — errors deserve attention)
+ *
+ * The collapsed row shows the SAME copy as the in-page capsule (both render
+ * tool-activity.ts keys, see TOOL_ACTIVITY_DICT_KEY). Tool name and args are
+ * not lost: expanding the row shows the raw tool name and the args JSON.
  *
  * The whole header row is the toggle: clicking it expands args + observation
  * + resolvedElement. The affordance is a small ">" chevron sitting right after
@@ -18,6 +22,7 @@
 
 import { useState } from "react";
 import { useT } from "@/lib/i18n";
+import { activityTextFor } from "@/lib/agent/tool-activity";
 import { Collapse } from "./ui/Collapse";
 import type { ResolvedElement } from "@/types";
 import type { AgentStepImageExtras, AgentStepProgress } from "@/types/messages";
@@ -52,6 +57,8 @@ export default function AgentStepLine({
 }: AgentStepLineProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const t = useT();
+  // One line per tool family, shared with the capsule's copy.
+  const activity = activityTextFor(tool, t);
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -64,20 +71,11 @@ export default function AgentStepLine({
       >
         <StatusDot status={status} remote={remote} />
         <span className={statusTextClass(status)}>
-          {status === "pending" ? (
-            <>
-              {t("agentStep.callingToolPrefix")} <code className="font-mono text-fg-1">{tool}</code>
-              <span className="text-fg-3">…</span>
-              {progress && (
-                <span className="ml-1.5 font-mono text-[11px] text-fg-3">
-                  {progress.state === "queued"
-                    ? t("agentStep.queued")
-                    : formatElapsed(progress.elapsedMs)}
-                </span>
-              )}
-            </>
-          ) : (
-            <code className="font-mono text-fg-1">{tool}</code>
+          {activity}
+          {status === "pending" && progress && (
+            <span className="ml-1.5 font-mono text-[11px] text-fg-3">
+              {progress.state === "queued" ? t("agentStep.queued") : formatElapsed(progress.elapsedMs)}
+            </span>
           )}
         </span>
         {remote && (
@@ -105,6 +103,14 @@ export default function AgentStepLine({
       </button>
 
       <Collapse open={expanded} className="ml-4 flex flex-col gap-1.5 border-l border-line pl-2.5 text-[11px]">
+          {/* Folded copy is human, expanded copy is raw — the tool name and
+              args stay available for debugging. */}
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
+              {t("agentStep.tool")}
+            </div>
+            <code className="mt-1 inline-block font-mono leading-4 text-fg-1">{tool}</code>
+          </div>
           {resolvedElement && (
             <div className="font-mono leading-4 text-fg-2">
               <span className="text-fg-3">{t("agentStep.element")}</span>

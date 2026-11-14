@@ -1,7 +1,7 @@
 /**
  * AgentStepGroup — collapses a run of consecutive agent-step messages into
- * a compact section. The user wants in-place "正在调用 X..." status instead
- * of stacked cards.
+ * a compact section. The user wants one in-place activity line ("正在读取页面"…
+ * same copy as the in-page capsule) instead of stacked cards.
  *
  * Layout (top to bottom):
  *   1. Optional "N STEPS DONE" toggle row that expands a tight list of all

@@ -24,6 +24,7 @@ import { canHostOverlay } from "@/lib/overlay/eligibility";
 import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 import {
   CAPSULE_STATE,
+  OVERLAY_AUTO_SEND_INTENTS,
   OVERLAY_CLOSE,
   OVERLAY_OPEN,
   OVERLAY_REPLACE,
@@ -36,18 +37,21 @@ import {
   type OverlayReplaceResult,
   type OverlaySelection,
 } from "@/lib/overlay/protocol";
+import { resolveInitialTranslateTarget } from "@/lib/overlay/translate-target";
+import { TOOL_ACTIVITY_DICT_KEY } from "@/lib/agent/tool-activity";
 import {
   applyOverlayEmit,
   capsuleSteps,
   createOverlayRun,
-  currentStepLabel,
   detachedMessagesToPersist,
   isTerminalEmit,
-  isWriteStep,
   markStopped,
   type OverlayRun,
 } from "@/lib/overlay/run-state";
 import { getOverlaySettings, type OverlaySettings } from "@/lib/overlay/settings";
+import { getAssistantLanguageSetting, resolveAssistantLanguage } from "@/lib/i18n/assistant-language";
+import { resolveLocale } from "@/lib/i18n/locale-resolver";
+import type { Locale } from "@/lib/i18n/locales";
 import {
   attachPanel,
   clearPanelLog,
@@ -84,7 +88,7 @@ export interface RunRuntime {
   /** Side-panel client of the same run (live handoff). */
   panel: PanelFanout;
   abort: AbortController | null;
-  /** True once the capsule was shown for this run (write tool ran). */
+  /** True while the capsule stands in for the surface the user closed. */
   capsuleShown: boolean;
   finishedAt: number | null;
 }
@@ -194,8 +198,13 @@ export function detachOverlayRun(sessionId: string): void {
   if (!rt) return;
   rt.run = { ...rt.run, detached: true };
   rt.port = null;
-  // Re-push capsule state: the page's own content script may still be there.
-  void pushCapsule(rt);
+  // The page replaced the document mid-task: that is the one case where the
+  // capsule is the ONLY surviving surface, so it is shown (a user-closed
+  // overlay keeps its hidden document and does not come through here).
+  if (rt.run.status === "run") {
+    rt.capsuleShown = true;
+    void pushCapsule(rt);
+  }
 }
 
 /** The overlay reopened on the same tab while a task is still running. */
@@ -203,9 +212,36 @@ export function rebindOverlayRunPort(sessionId: string, port: chrome.runtime.Por
   const rt = runs.get(sessionId);
   if (!rt || rt.run.status !== "run") return false;
   rt.port = port;
+  // The user is back in the live conversation: the capsule has no job.
+  clearCapsule(rt);
   // `detached` stays true: the SW remains the owner of persistence for this
   // run, so a re-attached overlay does not double-write the messages.
   return true;
+}
+
+/** The overlay surface is visible again (reused document or new mount). */
+export function markOverlayReopened(sessionId: string | undefined): void {
+  const rt = sessionId ? runs.get(sessionId) : undefined;
+  if (!rt) return;
+  clearCapsule(rt);
+}
+
+function clearCapsule(rt: RunRuntime): void {
+  if (!rt.capsuleShown) return;
+  rt.capsuleShown = false;
+  void sendToTab(rt.run.tabId, { type: CAPSULE_STATE, state: null });
+}
+
+/**
+ * The user closed the overlay (Esc / outside click / ×). If the task is still
+ * running, THAT is when the capsule appears — never merely because a tool ran.
+ */
+export function markOverlayClosedByUser(sessionId: string | undefined, tabId?: number): void {
+  const rt = sessionId ? runs.get(sessionId) : undefined;
+  if (!rt || rt.run.status !== "run") return;
+  if (typeof tabId === "number" && tabId !== rt.run.tabId) return;
+  rt.capsuleShown = true;
+  void pushCapsule(rt);
 }
 
 export function abortOverlayRun(sessionId: string): void {
@@ -233,10 +269,10 @@ export function wrapOverlayEmit(
     // it gets the same events, incl. the replay log for late attach.
     postToPanel(runtime.panel, m);
 
-    if (m.type === "agent-step" && m.status === "pending" && isWriteStep(m.tool)) {
-      runtime.capsuleShown = true;
-      void pushCapsule(runtime);
-    } else if (m.type === "agent-step" && runtime.capsuleShown) {
+    // The capsule only mirrors a run the user already closed the overlay on.
+    // Tool steps NEVER create it themselves (a bookmark write used to, which
+    // collapsed the overlay for a tool that never touches the page).
+    if (m.type === "agent-step" && runtime.capsuleShown) {
       void pushCapsule(runtime);
     }
 
@@ -251,17 +287,7 @@ export function wrapOverlayEmit(
 
 function capsuleStateFor(run: OverlayRun): OverlayCapsuleState {
   const steps = capsuleSteps(run);
-  const base = { sessionId: run.sessionId, steps, label: currentStepLabel(run) };
-  switch (run.status) {
-    case "done":
-      return { status: "done", ...base };
-    case "failed":
-      return { status: "failed", ...base };
-    case "stopped":
-      return { status: "stopped", ...base };
-    default:
-      return { status: "run", ...base };
-  }
+  return { status: run.status, sessionId: run.sessionId, steps };
 }
 
 async function pushCapsule(runtime: RunRuntime): Promise<void> {
@@ -441,7 +467,7 @@ export async function openOverlayOnTabId(tabId: number, opts: OpenOverlayOptions
   const { sessionId, resumed } = await resolveOverlaySession(tabId, settings);
   const selection = opts.selection ?? (await askTabSelection(tabId));
   const prompt = opts.prompt;
-  const autoSend = opts.autoSend && prompt !== null;
+  const autoSend = opts.autoSend;
   const pageTitle = tab.title ?? "";
   const pageUrl = tab.url ?? "";
 
@@ -457,10 +483,14 @@ export async function openOverlayOnTabId(tabId: number, opts: OpenOverlayOptions
     pageTitle,
     pageUrl,
   };
+  // Reopening the surface = back to the live conversation; a capsule standing
+  // in for the closed overlay has no job any more.
+  markOverlayReopened(sessionId);
   pendingOpens.set(tabId, {
     state: {
       sessionId,
       tabId,
+      intent: opts.intent,
       selection,
       prompt,
       autoSend,
@@ -481,21 +511,20 @@ export async function openOverlayFromCommand(): Promise<void> {
   await openOverlayOnTabId(tab.id, { intent: "hotkey", selection: null, prompt: null, autoSend: false });
 }
 
-/** Selection-bar entry: the page already decided the intent (and ships the
- *  localized prompt, because that is the context that knows the UI language). */
+/** Selection-bar entry: the page already knows the intent; the overlay (not
+ *  the page) builds the display text from its own dictionary, and the SW turns
+ *  the structured task into the English model instruction. */
 export async function handleOverlayIntent(
   senderTabId: number | undefined,
   intent: OverlayIntent,
   selection: OverlaySelection | null,
-  prompt?: string,
 ): Promise<void> {
   if (typeof senderTabId !== "number") return;
-  const autoSend = intent !== "ask";
   await openOverlayOnTabId(senderTabId, {
     intent,
     selection,
-    prompt: autoSend ? (prompt ?? null) : null,
-    autoSend,
+    prompt: null,
+    autoSend: OVERLAY_AUTO_SEND_INTENTS.has(intent),
   });
 }
 
@@ -602,6 +631,7 @@ export async function startNewOverlayChat(tabId: number): Promise<void> {
     state: {
       sessionId: meta.id,
       tabId,
+      intent: "hotkey",
       selection: null,
       prompt: null,
       autoSend: false,
@@ -639,9 +669,18 @@ const PENDING_OPEN_TTL_MS = 5 * 60_000;
 /** Mount state for the overlay document (it only knows its URL params). */
 export async function overlayOpenState(sessionId: string, tabId: number): Promise<OverlayOpenState | null> {
   if (!sessionId) return null;
+  const settings = await getOverlaySettings();
   const pending = pendingOpens.get(tabId);
   if (pending && pending.state.sessionId === sessionId && Date.now() - pending.at < PENDING_OPEN_TTL_MS) {
-    return pending.state;
+    return {
+      ...pending.state,
+      openedAt: pending.at,
+      translateTarget: resolveInitialTranslateTarget(
+        settings.lastTranslateLang,
+        await resolveOverlayAnswerLocale(),
+        pending.state.selection?.text ?? "",
+      ),
+    };
   }
   // No pending open (re-opened document): re-read the page identity so the
   // memory prefetch still gets title/URL.
@@ -654,17 +693,31 @@ export async function overlayOpenState(sessionId: string, tabId: number): Promis
   } catch {
     // Tab gone — the prefetch just runs without page context.
   }
-  const settings = await getOverlaySettings();
   return {
     sessionId,
     tabId,
+    // No pending open: the document was reloaded; the intent came from its URL.
+    intent: "hotkey",
     selection: null,
     prompt: null,
     autoSend: false,
     resumed: false,
     position: settings.position,
+    translateTarget: resolveInitialTranslateTarget(
+      settings.lastTranslateLang,
+      await resolveOverlayAnswerLocale(),
+      "",
+    ),
     ...(pageTitle !== undefined ? { pageTitle, pageUrl } : {}),
   };
+}
+
+/** The locale the assistant answers in (auto-detect → the UI locale). */
+async function resolveOverlayAnswerLocale(): Promise<Locale> {
+  const setting = await getAssistantLanguageSetting();
+  const ui = await resolveLocale();
+  const resolved = resolveAssistantLanguage(setting, ui);
+  return resolved === "auto-detect-user-message" ? ui : resolved;
 }
 
 export function isOverlaySessionRunning(sessionId: string): boolean {
@@ -742,13 +795,8 @@ export async function overlayConfigReply(browserLanguage?: string): Promise<Over
       barTranslate: t("overlay.bar.translate"),
       barQuote: t("overlay.bar.quote"),
       barRewrite: t("overlay.bar.rewrite"),
-      barFormal: t("overlay.bar.formal"),
       barMore: t("overlay.bar.more"),
       barHideSite: t("overlay.bar.hideSite"),
-      promptExplain: t("overlay.prompt.explain"),
-      promptTranslate: t("overlay.prompt.translate"),
-      promptRewrite: t("overlay.prompt.rewrite"),
-      promptFormal: t("overlay.prompt.formal"),
       capsuleStop: t("overlay.capsule.stop"),
       capsuleExpand: t("overlay.capsule.expand"),
       capsuleView: t("overlay.capsule.view"),
@@ -757,6 +805,18 @@ export async function overlayConfigReply(browserLanguage?: string): Promise<Over
       capsuleDone: t("overlay.capsule.done"),
       capsuleStopped: t("overlay.capsule.stopped"),
       capsuleFailed: t("overlay.capsule.failed"),
+      // Same dictionary keys the side panel renders (tool-activity.ts) —
+      // single source for both surfaces.
+      activityReadPage: t(TOOL_ACTIVITY_DICT_KEY.readPage),
+      activityActPage: t(TOOL_ACTIVITY_DICT_KEY.actPage),
+      activityOpenPage: t(TOOL_ACTIVITY_DICT_KEY.openPage),
+      activityReadPdf: t(TOOL_ACTIVITY_DICT_KEY.readPdf),
+      activitySearchBookmarks: t(TOOL_ACTIVITY_DICT_KEY.searchBookmarks),
+      activitySearchHistory: t(TOOL_ACTIVITY_DICT_KEY.searchHistory),
+      activityBookmarks: t(TOOL_ACTIVITY_DICT_KEY.bookmarks),
+      activityMemory: t(TOOL_ACTIVITY_DICT_KEY.memory),
+      activityMonitor: t(TOOL_ACTIVITY_DICT_KEY.monitor),
+      activityOther: t(TOOL_ACTIVITY_DICT_KEY.other),
     },
   };
 }

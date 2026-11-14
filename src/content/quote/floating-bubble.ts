@@ -22,7 +22,6 @@ export type SelectionBarAction =
   | "translate"
   | "quote"
   | "rewrite"
-  | "formal"
   | "hide-site";
 
 let host: HTMLElement | null = null;
@@ -135,7 +134,6 @@ export function showSelectionBar(args: ShowSelectionBarArgs): void {
         '<span class="sep"></span>',
         buttonHTML("rewrite", args.strings.barRewrite),
         buttonHTML("translate", args.strings.barTranslate),
-        buttonHTML("formal", args.strings.barFormal),
       ]
     : [
         buttonHTML("ask", args.strings.barAsk, "pie"),
@@ -214,5 +212,4 @@ export function __test__isMenuOpen(): boolean {
 /** Bar actions that only exist when the selection is editable. */
 export const EDITABLE_BAR_ACTIONS: ReadonlySet<SelectionBarAction> = new Set<SelectionBarAction>([
   "rewrite",
-  "formal",
 ]);

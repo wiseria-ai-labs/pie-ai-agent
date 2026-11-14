@@ -9,6 +9,7 @@ import {
   normalizeSkillSlashKey,
 } from "@/lib/skills";
 import { resolveModelMeta } from "@/lib/model-router/providers/registry";
+import { useStickToBottom } from "@/sidepanel/hooks/useStickToBottom";
 import { resolveSupportsVision } from "./chat-vision";
 import ContextRing from "./ContextRing";
 import { listInstances, getInstance, updateInstance, type DecryptedInstance } from "@/lib/instances";
@@ -261,9 +262,8 @@ export default function Chat({
   // are already pinned to the bottom — e.g. the loop just exited and appended
   // its summary — an instant jump to the unchanged position is a no-op, so the
   // visible "re-scroll" wobble is gone. Scrolling up to read mid-stream is no
-  // longer hijacked back to the bottom.
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const atBottomRef = useRef(true);
+  // longer hijacked back to the bottom. Shared with the overlay thread.
+  const { containerRef: scrollContainerRef, onScroll: handleMessagesScroll, stickIfNeeded } = useStickToBottom<HTMLDivElement>();
 
   // Phase 5 image input state
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -417,16 +417,8 @@ export default function Chat({
   });
 
   useEffect(() => {
-    if (!atBottomRef.current) return;
-    const c = scrollContainerRef.current;
-    if (c) c.scrollTop = c.scrollHeight;
-  }, [messages, streamingText, panelRequest?.requestId]);
-
-  const handleMessagesScroll = () => {
-    const c = scrollContainerRef.current;
-    if (!c) return;
-    atBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight <= 60;
-  };
+    stickIfNeeded();
+  }, [messages, streamingText, panelRequest?.requestId, stickIfNeeded]);
 
   useEffect(() => {
     if (prefillInput) {

@@ -14,6 +14,9 @@ import {
   OVERLAY_OPEN,
   OVERLAY_REPLACE,
   SURFACE_HIDE,
+  SURFACE_PAGE_GUARD,
+  SURFACE_PEEK_HIDE,
+  SURFACE_PEEK_SHOW,
   SURFACE_SHOW,
   type OverlayCapsuleState,
   type OverlayConfigReply,
@@ -21,6 +24,7 @@ import {
   type OverlayOpenPayload,
   type OverlayReplaceResult,
   type OverlaySelection,
+  type PageOperationTarget,
 } from "@/lib/overlay/protocol";
 import { applyReplacement, captureSelectionSnapshot, editableTargetFor, selectionAnchorRect } from "@/lib/overlay/selection";
 import { loadOverlayConfig, getCachedOverlayConfig, setOverlayConfig } from "./config";
@@ -32,8 +36,10 @@ import {
   isOverlayVisible,
   openOverlaySurface,
   setSurfaceHidden,
+  setSurfacePeekHidden,
 } from "./host";
-import { hideCapsule, setCapsuleSurfaceHidden, showCapsule } from "./capsule";
+import { hideCapsule, setCapsulePeekHidden, setCapsuleSurfaceHidden, showCapsule } from "./capsule";
+import { beginPageGuard, endPageGuard } from "./page-guard";
 import { clearSelectionMemory, getLastSelectionRect, getRememberedTarget, rememberSelection, rememberTarget } from "./state";
 import { hideBubble } from "@/content/quote/floating-bubble";
 import { safeSendMessage } from "@/content/quote/safe-send-message";
@@ -140,13 +146,18 @@ async function probeCapsule(): Promise<void> {
 function renderCapsule(state: OverlayCapsuleState): void {
   const strings = getCachedOverlayConfig()?.strings;
   if (!strings) return;
+  // Never two surfaces at once: if the overlay is on screen the user is in the
+  // live conversation, so a stale capsule push is dropped instead of hiding it
+  // (that hide-on-capsule is what used to collapse the overlay mid-task).
+  if (isOverlayVisible()) {
+    hideCapsule();
+    return;
+  }
   showCapsule(state, strings, {
     onAction: (action) => {
       safeSendMessage({ type: "overlay:capsule-action", action, sessionId: state.sessionId });
     },
   });
-  // Prototype: the capsule replaces the overlay while the agent touches the page.
-  if (isOverlayVisible()) hideOverlaySurface();
 }
 
 function handleReplace(msg: { original?: unknown; text?: unknown }): OverlayReplaceResult {
@@ -226,6 +237,25 @@ export function attachOverlayContentScript(): void {
     if (type === SURFACE_SHOW) {
       setSurfaceHidden(false);
       setCapsuleSurfaceHidden(false);
+      return;
+    }
+
+    if (type === SURFACE_PEEK_HIDE) {
+      setSurfacePeekHidden(true);
+      setCapsulePeekHidden(true);
+      return;
+    }
+
+    if (type === SURFACE_PEEK_SHOW) {
+      setSurfacePeekHidden(false);
+      setCapsulePeekHidden(false);
+      return;
+    }
+
+    if (type === SURFACE_PAGE_GUARD) {
+      const m = message as { phase?: string; target?: PageOperationTarget };
+      if (m.phase === "begin") beginPageGuard(m.target ?? {});
+      else if (m.phase === "end") endPageGuard();
       return;
     }
 

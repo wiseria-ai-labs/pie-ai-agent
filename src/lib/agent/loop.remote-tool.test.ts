@@ -52,6 +52,7 @@ vi.mock("./tools", () => ({
 }));
 vi.mock("./tool-names", () => ({
   getToolClass: vi.fn(() => "read"),
+  getToolSurface: vi.fn(() => "none"),
   SCREENSHOT_TOOL_NAMES: [],
   SCREENSHOT_TOOL_NAME_SET: new Set<string>(),
   getToolGroup: vi.fn(() => "core"),

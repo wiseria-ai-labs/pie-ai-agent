@@ -5,6 +5,7 @@ import type { FileAttachment } from "@/lib/files/types";
 import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/types";
 import type { Quote, QuoteAddedMessage, PickerStartMessage, PickerStopMessage } from "./quotes";
 import type { MemoryEntry } from "@/lib/memory/types";
+import type { OverlayTask } from "@/lib/overlay/protocol";
 
 // --- Page Content ---
 
@@ -95,6 +96,13 @@ export interface ChatStartMessage {
   memoryPick?: MemoryEntry[];
   /** When the pick ran (the block's `as_of` timestamp). */
   memoryPickAsOf?: number;
+  /**
+   * 2.0 overlay — structured selection task (explain / translate / rewrite).
+   * The overlay sends the DISPLAY text as the user message; the SW turns this
+   * into the English model-facing instruction and the wire content. Absent
+   * for plain chat.
+   */
+  overlayTask?: OverlayTask;
 }
 
 export interface ChatAbortMessage {
