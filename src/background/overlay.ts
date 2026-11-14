@@ -24,6 +24,7 @@ import { canHostOverlay } from "@/lib/overlay/eligibility";
 import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 import {
   CAPSULE_STATE,
+  OVERLAY_AUTO_SEND_INTENTS,
   OVERLAY_CLOSE,
   OVERLAY_OPEN,
   OVERLAY_REPLACE,
@@ -36,6 +37,7 @@ import {
   type OverlayReplaceResult,
   type OverlaySelection,
 } from "@/lib/overlay/protocol";
+import { resolveInitialTranslateTarget } from "@/lib/overlay/translate-target";
 import {
   applyOverlayEmit,
   capsuleSteps,
@@ -48,6 +50,9 @@ import {
   type OverlayRun,
 } from "@/lib/overlay/run-state";
 import { getOverlaySettings, type OverlaySettings } from "@/lib/overlay/settings";
+import { getAssistantLanguageSetting, resolveAssistantLanguage } from "@/lib/i18n/assistant-language";
+import { resolveLocale } from "@/lib/i18n/locale-resolver";
+import type { Locale } from "@/lib/i18n/locales";
 import {
   attachPanel,
   clearPanelLog,
@@ -441,7 +446,7 @@ export async function openOverlayOnTabId(tabId: number, opts: OpenOverlayOptions
   const { sessionId, resumed } = await resolveOverlaySession(tabId, settings);
   const selection = opts.selection ?? (await askTabSelection(tabId));
   const prompt = opts.prompt;
-  const autoSend = opts.autoSend && prompt !== null;
+  const autoSend = opts.autoSend;
   const pageTitle = tab.title ?? "";
   const pageUrl = tab.url ?? "";
 
@@ -461,6 +466,7 @@ export async function openOverlayOnTabId(tabId: number, opts: OpenOverlayOptions
     state: {
       sessionId,
       tabId,
+      intent: opts.intent,
       selection,
       prompt,
       autoSend,
@@ -481,21 +487,20 @@ export async function openOverlayFromCommand(): Promise<void> {
   await openOverlayOnTabId(tab.id, { intent: "hotkey", selection: null, prompt: null, autoSend: false });
 }
 
-/** Selection-bar entry: the page already decided the intent (and ships the
- *  localized prompt, because that is the context that knows the UI language). */
+/** Selection-bar entry: the page already knows the intent; the overlay (not
+ *  the page) builds the display text from its own dictionary, and the SW turns
+ *  the structured task into the English model instruction. */
 export async function handleOverlayIntent(
   senderTabId: number | undefined,
   intent: OverlayIntent,
   selection: OverlaySelection | null,
-  prompt?: string,
 ): Promise<void> {
   if (typeof senderTabId !== "number") return;
-  const autoSend = intent !== "ask";
   await openOverlayOnTabId(senderTabId, {
     intent,
     selection,
-    prompt: autoSend ? (prompt ?? null) : null,
-    autoSend,
+    prompt: null,
+    autoSend: OVERLAY_AUTO_SEND_INTENTS.has(intent),
   });
 }
 
@@ -602,6 +607,7 @@ export async function startNewOverlayChat(tabId: number): Promise<void> {
     state: {
       sessionId: meta.id,
       tabId,
+      intent: "hotkey",
       selection: null,
       prompt: null,
       autoSend: false,
@@ -639,9 +645,18 @@ const PENDING_OPEN_TTL_MS = 5 * 60_000;
 /** Mount state for the overlay document (it only knows its URL params). */
 export async function overlayOpenState(sessionId: string, tabId: number): Promise<OverlayOpenState | null> {
   if (!sessionId) return null;
+  const settings = await getOverlaySettings();
   const pending = pendingOpens.get(tabId);
   if (pending && pending.state.sessionId === sessionId && Date.now() - pending.at < PENDING_OPEN_TTL_MS) {
-    return pending.state;
+    return {
+      ...pending.state,
+      openedAt: pending.at,
+      translateTarget: resolveInitialTranslateTarget(
+        settings.lastTranslateLang,
+        await resolveOverlayAnswerLocale(),
+        pending.state.selection?.text ?? "",
+      ),
+    };
   }
   // No pending open (re-opened document): re-read the page identity so the
   // memory prefetch still gets title/URL.
@@ -654,17 +669,31 @@ export async function overlayOpenState(sessionId: string, tabId: number): Promis
   } catch {
     // Tab gone — the prefetch just runs without page context.
   }
-  const settings = await getOverlaySettings();
   return {
     sessionId,
     tabId,
+    // No pending open: the document was reloaded; the intent came from its URL.
+    intent: "hotkey",
     selection: null,
     prompt: null,
     autoSend: false,
     resumed: false,
     position: settings.position,
+    translateTarget: resolveInitialTranslateTarget(
+      settings.lastTranslateLang,
+      await resolveOverlayAnswerLocale(),
+      "",
+    ),
     ...(pageTitle !== undefined ? { pageTitle, pageUrl } : {}),
   };
+}
+
+/** The locale the assistant answers in (auto-detect → the UI locale). */
+async function resolveOverlayAnswerLocale(): Promise<Locale> {
+  const setting = await getAssistantLanguageSetting();
+  const ui = await resolveLocale();
+  const resolved = resolveAssistantLanguage(setting, ui);
+  return resolved === "auto-detect-user-message" ? ui : resolved;
 }
 
 export function isOverlaySessionRunning(sessionId: string): boolean {
@@ -742,13 +771,8 @@ export async function overlayConfigReply(browserLanguage?: string): Promise<Over
       barTranslate: t("overlay.bar.translate"),
       barQuote: t("overlay.bar.quote"),
       barRewrite: t("overlay.bar.rewrite"),
-      barFormal: t("overlay.bar.formal"),
       barMore: t("overlay.bar.more"),
       barHideSite: t("overlay.bar.hideSite"),
-      promptExplain: t("overlay.prompt.explain"),
-      promptTranslate: t("overlay.prompt.translate"),
-      promptRewrite: t("overlay.prompt.rewrite"),
-      promptFormal: t("overlay.prompt.formal"),
       capsuleStop: t("overlay.capsule.stop"),
       capsuleExpand: t("overlay.capsule.expand"),
       capsuleView: t("overlay.capsule.view"),

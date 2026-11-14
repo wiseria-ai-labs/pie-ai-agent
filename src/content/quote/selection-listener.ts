@@ -29,7 +29,6 @@ const INTENT_BY_ACTION: Partial<Record<SelectionBarAction, OverlayIntent>> = {
   explain: "explain",
   translate: "translate",
   rewrite: "rewrite",
-  formal: "formal",
 };
 
 function handleSelection(): void {
@@ -81,17 +80,10 @@ function handleSelection(): void {
 
       const intent = INTENT_BY_ACTION[action];
       if (!intent) return;
-      const prompt =
-        intent === "explain"
-          ? config.strings.promptExplain
-          : intent === "translate"
-            ? config.strings.promptTranslate
-            : intent === "rewrite"
-              ? config.strings.promptRewrite
-              : intent === "formal"
-                ? config.strings.promptFormal
-                : undefined;
-      safeSendMessage({ type: OVERLAY_INTENT, intent, selection: snapshot, host, prompt });
+      // No prompt text: the overlay renders the short display instruction from
+      // its own dictionary and the SW writes the model-facing instruction from
+      // the structured intent (translate target / rewrite style live there).
+      safeSendMessage({ type: OVERLAY_INTENT, intent, selection: snapshot, host });
     },
   });
 }

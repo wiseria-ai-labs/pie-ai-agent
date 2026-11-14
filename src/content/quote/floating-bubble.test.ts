@@ -8,13 +8,8 @@ const strings: OverlayUiStrings = {
   barTranslate: "Translate",
   barQuote: "Quote",
   barRewrite: "Rewrite",
-  barFormal: "More formal",
   barMore: "More",
   barHideSite: "Don't show on this site",
-  promptExplain: "Explain this selection",
-  promptTranslate: "Translate this selection",
-  promptRewrite: "Rewrite this to sound more formal",
-  promptFormal: "Make this more formal",
   capsuleStop: "Stop",
   capsuleExpand: "Open panel",
   capsuleView: "View",
@@ -63,9 +58,9 @@ describe("selection bar", () => {
     expect(labels(host)).toEqual(["ask", "explain", "translate", "quote", "more"]);
   });
 
-  it("editable selection shows rewrite / translate / formal — no quote", () => {
+  it("editable selection shows ask / rewrite / translate / more — no quote", () => {
     const host = show(true);
-    expect(labels(host)).toEqual(["ask", "rewrite", "translate", "formal", "more"]);
+    expect(labels(host)).toEqual(["ask", "rewrite", "translate", "more"]);
   });
 
   it("places the bar above the selection when there is room", () => {

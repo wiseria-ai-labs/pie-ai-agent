@@ -13,12 +13,16 @@
 import type { OverlayOpenPayload } from "@/lib/overlay/protocol";
 
 const HOST_ATTR = "data-pie-overlay-host";
-const OVERLAY_WIDTH = 560;
+/** Wrapper width: the card is ~420px, plus the transparent padding the
+ *  document reserves so the card's shadow is not clipped by the iframe. */
+const OVERLAY_WIDTH = 456;
 const EDGE = 12;
 const BELOW_SELECTION_GAP = 14;
 const MIN_SPACE_BELOW = 280;
 const MAX_HEIGHT_EDGE = 16;
 const MIN_HEIGHT = 120;
+/** Cap on the overlay's height, as a share of the page viewport. */
+const MAX_HEIGHT_RATIO = 0.7;
 
 let host: HTMLDivElement | null = null;
 let iframe: HTMLIFrameElement | null = null;
@@ -76,28 +80,73 @@ function createHost(payload: OverlayOpenPayload): void {
   iframe.className = "frame";
   iframe.setAttribute("allowtransparency", "true");
   iframe.setAttribute("title", "Pie");
+  iframe.style.colorScheme = "light dark";
+  iframe.addEventListener("load", () => {
+    pushMaxHeight();
+    pushOpened();
+  });
   iframe.src = buildUrl(payload);
   shadow.append(style, iframe);
 
   document.documentElement.appendChild(host);
   wireResize();
+  window.addEventListener("resize", pushMaxHeight);
 }
 
-/** The overlay page reports its content height; only our own frame may. */
+/** The overlay page reports its content height; only our own frame may.
+ *
+ * The document also reports its used `color-scheme`: Chrome paints an OPAQUE
+ * base background behind an iframe whose color-scheme does not match the
+ * embedding element, which showed up as a translucent-looking box outside the
+ * card's rounded corners. Keep the iframe element in lock-step with the
+ * document. */
+let resizeWired = false;
+
 function wireResize(): void {
+  if (resizeWired) return;
+  resizeWired = true;
   window.addEventListener("message", (e) => {
     if (!iframe || e.source !== iframe.contentWindow) return;
-    const data = e.data as { type?: string; height?: number } | null;
-    if (!data || data.type !== "pie-overlay:resize") return;
+    const data = e.data as { type?: string; height?: number; colorScheme?: string } | null;
+    if (!data) return;
+    // The document announces its listeners: the load-event pushes can land
+    // before React mounts and would otherwise be lost (cap stayed on the
+    // document's fallback height).
+    if (data.type === "pie-overlay:ready") {
+      pushMaxHeight();
+      pushOpened();
+      return;
+    }
+    if (data.type !== "pie-overlay:resize") return;
+    if (typeof data.colorScheme === "string" && data.colorScheme) {
+      iframe.style.colorScheme = data.colorScheme;
+    }
     if (typeof data.height !== "number" || !Number.isFinite(data.height)) return;
     const max = maxHeight();
     iframe.style.height = `${Math.round(Math.max(MIN_HEIGHT, Math.min(max, data.height)))}px`;
   });
 }
 
+/** A new open on a document that was only hidden: tell it to re-read the open
+ *  state (intent / selection / prefill / auto-send). */
+function pushOpened(): void {
+  iframe?.contentWindow?.postMessage({ type: "pie-overlay:opened" }, "*");
+}
+
+/** Tell the document how tall it may grow, so its thread scrolls internally
+ *  instead of pushing the iframe past the cap. */
+function pushMaxHeight(): void {
+  if (!iframe?.contentWindow) return;
+  iframe.contentWindow.postMessage({ type: "pie-overlay:max-height", height: maxHeight() }, "*");
+}
+
 function maxHeight(): number {
   const top = host ? parseFloat(host.style.top || "0") : 0;
-  return Math.max(MIN_HEIGHT, window.innerHeight - top - MAX_HEIGHT_EDGE);
+  const cap70 = Math.round(window.innerHeight * MAX_HEIGHT_RATIO);
+  return Math.max(
+    MIN_HEIGHT,
+    Math.min(cap70, window.innerHeight - top - MAX_HEIGHT_EDGE),
+  );
 }
 
 function place(anchor: DOMRect | null, position: "anchor" | "top"): void {
@@ -113,7 +162,9 @@ function place(anchor: DOMRect | null, position: "anchor" | "top"): void {
   host.style.left = `${Math.round(Math.max(EDGE, (window.innerWidth - width) / 2))}px`;
   if (iframe) {
     iframe.style.width = `${Math.round(width)}px`;
-    iframe.style.height = `${Math.round(Math.max(MIN_HEIGHT, maxHeight()))}px`;
+    // Height is content-driven; the document is told the cap and reports back.
+    iframe.style.height = `${MIN_HEIGHT}px`;
+    pushMaxHeight();
   }
 }
 
@@ -152,6 +203,7 @@ export function openOverlaySurface(payload: OverlayOpenPayload, anchor: DOMRect 
   mountedSessionId = payload.sessionId;
   place(anchor, payload.position);
   show();
+  pushOpened();
 }
 
 /** Hide without tearing down (keeps the overlay document — and its task — alive). */
@@ -174,6 +226,7 @@ export function destroyOverlaySurface(): void {
   iframe = null;
   hidden = false;
   mountedSessionId = null;
+  window.removeEventListener("resize", pushMaxHeight);
 }
 
 /** Only our own frame may ask the host to close (page scripts can't). */

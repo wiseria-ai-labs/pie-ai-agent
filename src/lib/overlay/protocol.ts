@@ -20,22 +20,49 @@ export interface OverlaySelection {
 }
 
 /** Why the overlay opened — decides the pre-filled prompt and auto-send. */
-export type OverlayIntent = "ask" | "explain" | "translate" | "rewrite" | "formal" | "hotkey" | "omnibox";
+export type OverlayIntent = "ask" | "explain" | "translate" | "rewrite" | "hotkey" | "omnibox";
 
-export const OVERLAY_PROMPT_BY_INTENT: Partial<Record<OverlayIntent, string>> = {
-  explain: "解释一下这段内容",
-  translate: "翻译这段内容",
-  rewrite: "把这段改得正式一点",
-  formal: "把这段改得更正式一些",
-};
-
+/** Only these send themselves the moment the overlay is ready. Translate and
+ *  rewrite open with their chips so the user picks a language/style first. */
 export const OVERLAY_AUTO_SEND_INTENTS: ReadonlySet<OverlayIntent> = new Set<OverlayIntent>([
   "explain",
-  "translate",
-  "rewrite",
-  "formal",
   "omnibox",
 ]);
+
+/**
+ * Structured task for a selection action. The overlay only knows the DISPLAY
+ * text (a short instruction in the UI language); the SW turns the structured
+ * intent into the English model-facing instruction. Reason: the target language
+ * / rewrite style used to be baked into a localized template that was then sent
+ * as the user's message — the model got Chinese boilerplate and no explicit
+ * target language (user-reported).
+ */
+export type OverlayTask =
+  | { kind: "explain"; selection: { text: string; url: string } | null }
+  | {
+      kind: "translate";
+      /** Locale code the text should be translated into. */
+      targetLang: string;
+      selection: { text: string; url: string } | null;
+    }
+  | {
+      kind: "rewrite";
+      /** Built-in style chip id, or undefined for a custom instruction. */
+      style?: RewriteStyleId;
+      /** Custom instruction typed by the user (verbatim). */
+      custom?: string;
+      selection: { text: string; url: string } | null;
+    };
+
+export type RewriteStyleId = "formal" | "concise" | "casual" | "proofread" | "expand";
+
+export const REWRITE_STYLE_IDS: readonly RewriteStyleId[] = [
+  "formal",
+  "concise",
+  "casual",
+  "proofread",
+  "expand",
+];
 
 /** Payload the SW hands to the page-side host when opening the overlay. */
 export interface OverlayOpenPayload {
@@ -59,6 +86,9 @@ export interface OverlayOpenPayload {
 export interface OverlayOpenState {
   sessionId: string;
   tabId: number;
+  /** Authoritative intent for THIS open (the document's URL params go stale
+   *  when the same document is reused for a later open on the same tab). */
+  intent: OverlayIntent;
   selection: OverlaySelection | null;
   prompt: string | null;
   autoSend: boolean;
@@ -66,6 +96,12 @@ export interface OverlayOpenState {
   position: OverlayPosition;
   pageTitle?: string;
   pageUrl?: string;
+  /** Translate chip's initial target (last choice, else answer language with
+   *  the "already that language → English" rule applied). */
+  translateTarget?: string;
+  /** Timestamp of this open — lets a reused document tell a genuinely new
+   *  open apart from a repeated fetch of the same one (auto-send guard). */
+  openedAt?: number;
 }
 
 export interface OverlayUiStrings {
@@ -74,14 +110,8 @@ export interface OverlayUiStrings {
   barTranslate: string;
   barQuote: string;
   barRewrite: string;
-  barFormal: string;
   barMore: string;
   barHideSite: string;
-  /** Prompts sent automatically when a bar button starts a task. */
-  promptExplain: string;
-  promptTranslate: string;
-  promptRewrite: string;
-  promptFormal: string;
   capsuleStop: string;
   capsuleExpand: string;
   capsuleView: string;

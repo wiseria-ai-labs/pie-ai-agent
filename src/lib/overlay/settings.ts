@@ -19,13 +19,20 @@ export interface OverlaySettings {
   position: OverlayPosition;
   /** How long a closed overlay remembers its conversation on the same tab. */
   retentionMinutes: OverlayRetentionMinutes;
+  /** Last target language the user picked in the translate chip (global). */
+  lastTranslateLang?: string;
+  /** Most recent custom rewrite instructions, newest first (max 3, global). */
+  recentRewriteStyles: string[];
 }
+
+export const MAX_RECENT_REWRITE_STYLES = 3;
 
 export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   barEnabled: true,
   excludedHosts: [],
   position: "anchor",
   retentionMinutes: 30,
+  recentRewriteStyles: [],
 };
 
 /** Coerce a stored (possibly partial / legacy / hand-edited) record. */
@@ -39,6 +46,14 @@ export function normalizeOverlaySettings(raw: unknown): OverlaySettings {
       : [],
     position: r.position === "top" ? "top" : "anchor",
     retentionMinutes: retention === 10 || retention === 60 ? retention : 30,
+    ...(typeof r.lastTranslateLang === "string" && r.lastTranslateLang.length > 0
+      ? { lastTranslateLang: r.lastTranslateLang }
+      : {}),
+    recentRewriteStyles: Array.isArray(r.recentRewriteStyles)
+      ? r.recentRewriteStyles
+          .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+          .slice(0, MAX_RECENT_REWRITE_STYLES)
+      : [],
   };
 }
 
@@ -48,6 +63,35 @@ export async function getOverlaySettings(): Promise<OverlaySettings> {
 
 export async function setOverlaySettings(patch: Partial<OverlaySettings>): Promise<OverlaySettings> {
   const next = normalizeOverlaySettings({ ...(await getOverlaySettings()), ...patch });
+  await setConfig(OVERLAY_SETTINGS_KEY, next);
+  return next;
+}
+
+/** Remember a custom rewrite instruction for the style chips (newest first). */
+export async function rememberRewriteStyle(text: string): Promise<OverlaySettings> {
+  const clean = text.trim().slice(0, 200);
+  if (!clean) return getOverlaySettings();
+  const current = await getOverlaySettings();
+  const next = [clean, ...current.recentRewriteStyles.filter((s) => s !== clean)].slice(
+    0,
+    MAX_RECENT_REWRITE_STYLES,
+  );
+  return setOverlaySettings({ recentRewriteStyles: next });
+}
+
+/** Remember the translate chip's language for the next overlay. */
+export async function rememberTranslateLang(lang: string): Promise<OverlaySettings> {
+  if (!lang) return getOverlaySettings();
+  return setOverlaySettings({ lastTranslateLang: lang });
+}
+
+/** Settings page "clear": drop the remembered translate language + styles. */
+export async function clearOverlayPreferences(): Promise<OverlaySettings> {
+  const next = normalizeOverlaySettings({
+    ...(await getOverlaySettings()),
+    lastTranslateLang: undefined,
+    recentRewriteStyles: [],
+  });
   await setConfig(OVERLAY_SETTINGS_KEY, next);
   return next;
 }

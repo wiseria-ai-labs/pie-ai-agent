@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/lib/model-router";
 import type { DisplayMessage, PortMessageToPanel, PortMessageToWorker } from "@/types";
 import type { MemoryEntry } from "@/lib/memory/types";
+import type { OverlayTask } from "@/lib/overlay/protocol";
 import { getSessionMeta, persistSessionMessages } from "@/lib/sessions/storage";
 import { deriveTitleFromMessages } from "@/lib/sessions/title";
 import { swPort } from "@/lib/sw-connection/manager";
@@ -25,6 +26,8 @@ export interface OverlaySendInput {
   /** Pie 2.0 memory — overlay prefetch result for this turn (spec §5.5). */
   memoryPick?: MemoryEntry[];
   memoryPickAsOf?: number;
+  /** Structured selection task; the SW builds the English instruction + wire. */
+  overlayTask?: OverlayTask;
 }
 
 export interface OverlaySessionApi {
@@ -310,6 +313,7 @@ export function useOverlaySession(args: {
           ? { memoryPick: input.memoryPick }
           : {}),
         ...(input.memoryPickAsOf !== undefined ? { memoryPickAsOf: input.memoryPickAsOf } : {}),
+        ...(input.overlayTask ? { overlayTask: input.overlayTask } : {}),
         ...(fallbackTitle !== undefined ? { fallbackTitle } : {}),
       } satisfies PortMessageToWorker);
 

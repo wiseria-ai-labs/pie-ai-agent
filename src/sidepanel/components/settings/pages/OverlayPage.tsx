@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
+import { LOCALE_REGISTRY } from "@/lib/i18n/locales";
 import { Switch } from "@/sidepanel/components/ui/Switch";
 import {
+  clearOverlayPreferences,
   getOverlaySettings,
   setOverlaySettings,
   type OverlayRetentionMinutes,
@@ -212,6 +214,43 @@ export default function OverlayPage() {
                 ]}
                 onChange={(v) => update({ retentionMinutes: v })}
               />
+            }
+          />
+        </Group>
+      </div>
+
+      <div>
+        <GroupLabel>{t("settings.overlay.groupRemembered")}</GroupLabel>
+        <Group>
+          <Row
+            label={t("settings.overlay.translateLangLabel")}
+            control={
+              <span className="text-[12px] text-fg-2" data-testid="overlay-remembered-lang">
+                {settings?.lastTranslateLang
+                  ? (LOCALE_REGISTRY[settings.lastTranslateLang as keyof typeof LOCALE_REGISTRY]
+                      ?.nativeLabel ?? settings.lastTranslateLang)
+                  : t("settings.overlay.rememberedEmpty")}
+              </span>
+            }
+          />
+          <Row
+            label={t("settings.overlay.rewriteStylesLabel")}
+            hint={
+              (settings?.recentRewriteStyles.length ?? 0) > 0
+                ? settings!.recentRewriteStyles.join(" · ")
+                : t("settings.overlay.rememberedEmpty")
+            }
+            control={
+              settings?.lastTranslateLang || (settings?.recentRewriteStyles.length ?? 0) > 0 ? (
+                <button
+                  type="button"
+                  data-testid="overlay-remembered-clear"
+                  onClick={() => void clearOverlayPreferences().then(setSettings)}
+                  className="text-[11.5px] text-accent hover:underline"
+                >
+                  {t("settings.overlay.clearRemembered")}
+                </button>
+              ) : undefined
             }
           />
         </Group>
