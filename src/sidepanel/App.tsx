@@ -12,7 +12,8 @@ import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/se
 import CustomRulesPage from "@/sidepanel/components/settings/pages/CustomRulesPage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import { type ThemeMode, UI_SCALE_KEY, applyUiScale, parseUiScale } from "@/sidepanel/theme";
-import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
+import AutomationPanel from "@/sidepanel/components/automation/AutomationPanel";
+import { unreadInboxCount } from "@/lib/inbox/store";
 import ResearchPanel from "@/sidepanel/components/research/ResearchPanel";
 import { getInstance, listInstances } from "@/lib/instances";
 import { resolveSelection } from "@/lib/model-selection-resolver";
@@ -57,6 +58,8 @@ export default function App() {
   const [subscribeNonce, setSubscribeNonce] = useState(0);
   // M1: theme mode owned at App level so the button reflects state and we
   // can persist to localStorage. M2 will wire data-theme to actually switch.
+  // Pie 2.0 §1 / F3 — unread automation entries drive the top-bar dot.
+  const [unreadAutomation, setUnreadAutomation] = useState(0);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     const stored = localStorage.getItem("theme-mode");
     return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
@@ -152,6 +155,7 @@ export default function App() {
 
     loadProviderLabel();
     void refreshResearchGate();
+    void unreadInboxCount().then(setUnreadAutomation);
   }, [refreshSessionIndex, refreshResearchGate]);
 
   // ── Deep-link: website "Subscribe" → managed-subscribe screen ──────────────
@@ -208,6 +212,11 @@ export default function App() {
     if (c.id === undefined || !c.id.endsWith(":agent")) {
       void refreshSessionIndex();
     }
+  });
+
+  // Automation dot — refreshed on every inbox write (trigger / run done / pause).
+  useStoreChange("inbox", () => {
+    void unreadInboxCount().then(setUnreadAutomation);
   });
 
   // Provider label depends on the active selection (config: last_model_selection
@@ -398,6 +407,7 @@ export default function App() {
         streaming={session.streaming}
         onTogglePinTab={(tabId, origin) => void session.togglePinTab(tabId, origin)}
         onClearUserPin={() => void session.clearUserPin()}
+        unreadAutomation={unreadAutomation}
       />
 
       {/* ── Main content area ─────────────────────────────────────────────── */}
@@ -440,7 +450,7 @@ export default function App() {
             }
           />
         ) : view === "schedules" ? (
-          <SchedulesPanel
+          <AutomationPanel
             onOpenSession={(id) => void handleOpenSessionFromSchedule(id)}
             onCreateViaChat={(template) => void handleCreateScheduleViaChat(template)}
           />

@@ -24,6 +24,7 @@
 // broken notifications API never crashes the schedule run or the cascade delete.
 
 import { getRun, updateRun } from "./store";
+import { addInboxEntry } from "@/lib/inbox/store";
 import { tryOpenSidePanel } from "@/background/panel/sidepanel-probe";
 import { openFallbackPanelWindow } from "@/background/panel/fallback-window";
 
@@ -99,7 +100,22 @@ export async function notifyRunDone(opts: NotifyRunDoneOpts): Promise<void> {
   // clips long notification messages; 100 chars is a comfortable visible limit).
   const message = summary.slice(0, 100) || (succeeded ? "Run completed." : "Run failed.");
 
+  // Show the toast first, then land the feed row: the notification is the
+  // ephemeral signal and must not be delayed behind an IDB round-trip.
   await createNotification(`${RUN_NOTIF_PREFIX}${recordId}`, title, message);
+
+  // Pie 2.0 §6 — every finished run leaves one 动态 entry. Done here rather
+  // than at the four terminal call sites in run.ts: the notification and the
+  // feed row are the same event, and duplicating the write per exit path is
+  // how the two would drift apart.
+  await addInboxEntry({
+    source: "schedule",
+    refId: recordId,
+    kind: succeeded ? "done" : "needs_action",
+    title: scheduleTitle,
+    body: summary.slice(0, 200),
+    data: { status, sessionId: opts.sessionId },
+  });
 }
 
 // ── notifySchedulePaused ────────────────────────────────────────────────────
