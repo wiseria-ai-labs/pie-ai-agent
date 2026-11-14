@@ -90,12 +90,12 @@ import {
   getSessionMeta,
   updateSessionMeta,
   getSessionAgent,
-  setSessionAgent,
+  updateSessionAgent,
   isSkillApprovedInSession,
   recordSkillApproval,
 } from "../sessions/storage";
 import { addPinToMeta, removePinFromMeta } from "../sessions/pin-state";
-import { drainPending } from "../sessions/pending-instructions";
+import { drainPending, hasPending } from "../sessions/pending-instructions";
 import { buildMidTaskUserMessage } from "./loop-drain";
 import { broadcastInstructionState } from "@/background/instruction-broadcast";
 import {
@@ -1152,13 +1152,9 @@ export async function readFocusFromStorage(
       if (await isTabAlive(candidate.tabId)) {
         // Persist the new focus (same write path as focus_tab) so the next
         // iteration's resolveFocusedPin lands directly on the surviving tab.
-        const cur = await getSessionAgent(sessionId);
-        if (cur) {
-          await setSessionAgent(sessionId, {
-            ...cur,
-            currentFocusTabId: candidate.tabId,
-          });
-        }
+        await updateSessionAgent(sessionId, (cur) =>
+          cur ? { ...cur, currentFocusTabId: candidate.tabId } : null,
+        );
         return {
           focused: candidate,
           pinnedTabs: refreshedPins,
@@ -1390,8 +1386,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
     }
 
-    sendAgentDone(emit, { ...msg, sessionId });
-
     // Phase 5 — R13 path (a): evict image cache on any terminal state.
     evictSession(sessionId);
 
@@ -1436,6 +1430,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         );
       }
     }
+    // 终止通知放在持久化之后，避免新任务读到上一代未清理的状态。
+    sendAgentDone(emit, { ...msg, sessionId });
   };
   // M2-U2 P1-11 — session-bound sendAgentStep that auto-injects sessionId.
   const emitStep = (msg: Omit<AgentStepMessage, "sessionId">): void => {
@@ -1688,11 +1684,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // clean tombstone. RMW-preserve so the resume path keeps its stepIndex and
     // history; buildSessionAgentTombstone clears it back to false at task end.
     try {
-      const cur = await getSessionAgent(sessionId);
-      await setSessionAgent(sessionId, {
+      await updateSessionAgent(sessionId, (cur) => ({
         ...(cur ?? buildSessionAgentTombstone()),
         taskActive: true,
-      });
+      }));
     } catch (e) {
       console.warn(`[agent] taskActive mark failed for session=${sessionId}:`, e);
     }
@@ -1760,6 +1755,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const midTaskMsg = buildMidTaskUserMessage(pendingDrained);
       if (midTaskMsg) {
         history.push(midTaskMsg);
+        emit(withSession({
+          type: "chat-instructions-consumed" as const,
+          chatMessageIds: pendingDrained.map((instruction) => instruction.chatMessageId),
+        }, sessionId));
         // Broadcast empty pending so panel updates UI immediately
         // (without waiting for next step write).
         await broadcastInstructionState(emit, sessionId);
@@ -2420,9 +2419,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // successful step.
       if (lastStepUsage) {
         try {
-          const cur = await getSessionAgent(sessionId);
-          const nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage);
-          await setSessionAgent(sessionId, withContextUsage(cur, nextUsage));
+          let nextUsage!: NonNullable<SessionAgentState["contextUsage"]>;
+          await updateSessionAgent(sessionId, (cur) => {
+            nextUsage = mergeContextUsage(cur?.contextUsage, lastStepUsage!);
+            return withContextUsage(cur, nextUsage);
+          });
           try {
             emit(
               withSession(
@@ -2555,7 +2556,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // stale pinMode='task'. Awaiting onTaskDone first forces the SW
       // write to land synchronously before panel ever sees chat-done.
       if (completedToolCalls.length === 0) {
-        if (hasRemoteTools) {
+        // Issue #470 — an instruction the user queued during this final turn
+        // would otherwise be stranded (nothing drains after the loop ends).
+        // Keep the reply in history and run another turn; the top-of-step
+        // drain hands the instruction to the LLM. Not a runtime intervention:
+        // termination stays with the LLM, this only delivers user input.
+        const queuedAfterReply = await hasPending(sessionId);
+        if (hasRemoteTools || queuedAfterReply) {
           // Snapshot is only for eval-bridge's offline trace (eval-bridge.ts
           // keeps the last non-empty agentMessages). The tombstone ~30 lines
           // below writes agentMessages:[] and wipes storage; panel history
@@ -2583,6 +2590,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             }
           }
         }
+        if (queuedAfterReply) {
+          // The next drain emits the boundary before the next model turn.
+          continue;
+        }
         if (ctx.onTaskDone) {
           try {
             await ctx.onTaskDone();
@@ -2593,8 +2604,6 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             );
           }
         }
-        emit(withSession({ type: "chat-done" }, sessionId));
-        normalTextReply = true;
         // M1-U3 v2 — pure-text replies don't push history, so no
         // per-step snapshot has fired this turn. But a prior task's
         // stale (stepIndex > 0) snapshot might still be in storage.
@@ -2614,6 +2623,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             );
           }
         }
+        emit(withSession({ type: "chat-done" }, sessionId));
+        normalTextReply = true;
         return;
       }
 
@@ -2878,9 +2889,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               );
             },
             setCurrentFocusTabId: async (tabId) => {
-              const cur = await getSessionAgent(sessionId);
-              if (!cur) return;
-              await setSessionAgent(sessionId, { ...cur, currentFocusTabId: tabId });
+              await updateSessionAgent(sessionId, (cur) =>
+                cur ? { ...cur, currentFocusTabId: tabId } : null,
+              );
             },
             // Issue #110 — unpin_tab removes a tab from SessionMeta.pinnedTabs[]
             // (persisted) AND from the live stepPinView (so a same-turn
@@ -3025,8 +3036,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         });
       }
 
-      // Terminal tool check
-      if (shouldTerminate && terminationResult) {
+      // Terminal tool check. Issue #470 — instructions queued during this
+      // turn hand control back to the LLM instead of being stranded; the
+      // done/fail round-trip is already in history.
+      if (shouldTerminate && terminationResult && !(await hasPending(sessionId))) {
         await emitDone({
           type: "agent-done-task",
           success: terminationResult.success,

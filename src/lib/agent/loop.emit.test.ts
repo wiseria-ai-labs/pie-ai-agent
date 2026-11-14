@@ -136,6 +136,7 @@ vi.mock("../sessions/storage", () => ({
   setSessionMeta: vi.fn(async () => {}),
   getSessionAgent: vi.fn(async () => null),
   setSessionAgent: vi.fn(async () => {}),
+  updateSessionAgent: vi.fn(async () => true),
 }));
 vi.mock("../sessions/pin-state", () => ({
   addPinToMeta: vi.fn(async () => {}),
@@ -143,6 +144,7 @@ vi.mock("../sessions/pin-state", () => ({
 }));
 vi.mock("../sessions/pending-instructions", () => ({
   drainPending: vi.fn(async () => []),
+  hasPending: vi.fn(async () => false),
 }));
 vi.mock("./loop-drain", () => ({ buildMidTaskUserMessage: vi.fn(() => null) }));
 vi.mock("@/background/instruction-broadcast", () => ({
@@ -292,11 +294,16 @@ describe("runAgentLoop — maxSteps hard cap (Task 5.3)", () => {
     const { streamChat } = await import("../model-router");
 
     const emitted: unknown[] = [];
-    const emit: AgentEmit = (msg) => { emitted.push(msg); };
+    let snapshotSettled = false;
+    const emit: AgentEmit = (msg) => {
+      if (msg.type === "agent-done-task") expect(snapshotSettled).toBe(true);
+      emitted.push(msg);
+    };
 
     const controller = new AbortController();
     await runAgentLoop({
       emit,
+      onStepSnapshot: async () => { snapshotSettled = true; },
       task: "test task with step cap",
       modelConfig: {
         provider: "openai",
@@ -376,8 +383,11 @@ describe("runAgentLoop — Issue #59 pure-text tombstone is awaited", () => {
       snapshotSettled = true;
     });
 
+    const emit = vi.fn((message: { type: string }) => {
+      if (message.type === "chat-done") expect(snapshotSettled).toBe(true);
+    });
     await runAgentLoop({
-      emit: vi.fn(),
+      emit,
       task: "Say hello",
       modelConfig: {
         provider: "openai",
@@ -393,6 +403,7 @@ describe("runAgentLoop — Issue #59 pure-text tombstone is awaited", () => {
     });
 
     expect(snapshotSettled).toBe(true);
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: "chat-done" }));
     expect(onStepSnapshot).toHaveBeenCalled();
     const last = snaps.at(-1);
     expect(last?.taskActive).toBe(false);
@@ -466,5 +477,134 @@ describe("ratelimit-wait 转发（RPM 限流）", () => {
     expect(rl).toBeDefined();
     expect(rl!.resumeAt).toBe(1234567);
     expect(rl!.sessionId).toBe("s-rl");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #470 — an instruction queued during the FINAL turn must not strand:
+// the loop keeps the reply in history and runs another LLM turn.
+// ---------------------------------------------------------------------------
+describe("Issue #470 — queued instruction during the final turn", () => {
+  const QUEUED = { chatMessageId: "q1", content: "also do X", createdAt: 1 };
+  // The user queues during the FIRST LLM turn (after step 1's top drain).
+  let queue: (typeof QUEUED)[] = [];
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const pending = await import("../sessions/pending-instructions");
+    const drain = await import("./loop-drain");
+    const blocks = await import("./assistant-blocks");
+    queue = [];
+    vi.mocked(pending.hasPending).mockImplementation(async () => queue.length > 0);
+    vi.mocked(pending.drainPending).mockImplementation(async () => {
+      const d = queue;
+      queue = [];
+      return d;
+    });
+    vi.mocked(drain.buildMidTaskUserMessage).mockImplementation((items) =>
+      items.length > 0 ? { role: "user", content: items.map((i) => i.content).join("\n") } : null,
+    );
+    vi.mocked(blocks.assembleAssistantBlocks).mockImplementation(
+      (_thinking, text) => (text ? [{ type: "text", text }] : []) as never,
+    );
+  });
+
+  afterEach(async () => {
+    const pending = await import("../sessions/pending-instructions");
+    const drain = await import("./loop-drain");
+    const blocks = await import("./assistant-blocks");
+    const { streamChat } = await import("../model-router");
+    vi.mocked(pending.hasPending).mockImplementation(async () => false);
+    vi.mocked(pending.drainPending).mockImplementation(async () => []);
+    vi.mocked(drain.buildMidTaskUserMessage).mockImplementation(() => null);
+    vi.mocked(blocks.assembleAssistantBlocks).mockImplementation(() => []);
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: "text-delta", text: "Hello world" };
+      yield { type: "done", stopReason: "end" };
+    });
+  });
+
+  const baseCtx = (emit: AgentEmit) => ({
+    emit,
+    task: "t",
+    modelConfig: { provider: "openai", model: "gpt-4o", apiKey: "sk", vision: false },
+    signal: new AbortController().signal,
+    sessionId: "s-470",
+    pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+    initialFocusTabId: 1,
+  });
+
+  it("pure-text final answer → second LLM turn sees the queued message + first answer; one chat-done", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const { streamChat } = await import("../model-router");
+    const seen: unknown[][] = [];
+    let call = 0;
+    vi.mocked(streamChat).mockImplementation(async function* (_cfg, msgs) {
+      seen.push(structuredClone(msgs as unknown[]));
+      call++;
+      if (call === 1) queue.push(QUEUED);
+      yield { type: "text-delta", text: call === 1 ? "first answer" : "second answer" } as const;
+      yield { type: "done", stopReason: "end" } as const;
+    });
+    const emitted: Array<{ type: string; text?: string }> = [];
+    await runAgentLoop(baseCtx((m) => { emitted.push(m as (typeof emitted)[number]); }) as never);
+
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    const second = JSON.stringify(seen[1]);
+    expect(second).toContain("first answer");
+    expect(second).toContain("also do X");
+    expect(emitted.filter((m) => m.type === "chat-done")).toHaveLength(1);
+    expect(emitted.filter((m) => m.type === "agent-done-task")).toHaveLength(0);
+    expect(emitted).toContainEqual({
+      type: "chat-instructions-consumed",
+      sessionId: "s-470",
+      chatMessageIds: ["q1"],
+    });
+  });
+
+  it("done tool → continues instead of ending; no agent-done-task for the first done", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const { streamChat } = await import("../model-router");
+    const tools = await import("./tools");
+    const doneTool = {
+      name: "done",
+      description: "",
+      parameters: { type: "object", properties: {} },
+      handler: async () => ({ success: true, observation: "finished" }),
+    };
+    (tools.BUILT_IN_TOOLS as unknown[]).push(doneTool);
+    try {
+      let call = 0;
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        call++;
+        if (call === 1) {
+          queue.push(QUEUED);
+          yield { type: "tool-call-start", id: "c1", index: 0, name: "done" } as const;
+          yield { type: "tool-call-delta", index: 0, argsDelta: '{"result":"ok"}' } as const;
+          yield { type: "tool-call-end", index: 0 } as const;
+        } else {
+          yield { type: "text-delta", text: "handled X" } as const;
+        }
+        yield { type: "done", stopReason: "end" } as const;
+      });
+      const emitted: Array<{ type: string }> = [];
+      await runAgentLoop(baseCtx((m) => { emitted.push(m as (typeof emitted)[number]); }) as never);
+
+      expect(streamChat).toHaveBeenCalledTimes(2);
+      expect(emitted.filter((m) => m.type === "agent-done-task")).toHaveLength(0);
+      expect(emitted.filter((m) => m.type === "chat-done")).toHaveLength(1);
+    } finally {
+      (tools.BUILT_IN_TOOLS as unknown[]).pop();
+    }
+  });
+
+  it("empty queue → single LLM turn (unchanged behavior)", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const { streamChat } = await import("../model-router");
+    const pending = await import("../sessions/pending-instructions");
+    vi.mocked(pending.hasPending).mockImplementation(async () => false);
+    vi.mocked(pending.drainPending).mockImplementation(async () => []);
+    await runAgentLoop(baseCtx(vi.fn()) as never);
+    expect(streamChat).toHaveBeenCalledTimes(1);
   });
 });

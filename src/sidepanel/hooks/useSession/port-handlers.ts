@@ -1,6 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { DisplayMessage, PortMessageToPanel, PortMessageToWorker, QuoteAddedMessage } from "@/types";
-import { withSlot, type SessionRuntimeSlot } from "./runtime-map";
+import { EMPTY_SLOT, withSlot, type SessionRuntimeSlot } from "./runtime-map";
 import { resolveDownload } from "./download-pending";
 
 export interface CreatePortHandlersDeps {
@@ -68,10 +68,24 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
     }
   }
 
+  const insertBeforeInstructions = (
+    base: DisplayMessage[],
+    entry: DisplayMessage,
+    instructionIds: ReadonlySet<string>,
+  ): DisplayMessage[] => {
+    const index = base.findIndex(
+      (m) => m.role === "user" && m.id !== undefined && instructionIds.has(m.id),
+    );
+    return index < 0
+      ? [...base, entry]
+      : [...base.slice(0, index), entry, ...base.slice(index)];
+  };
+
   const buildAssistant = (
     base: DisplayMessage[],
     accumulated: string,
     thinking: string,
+    instructionIds: ReadonlySet<string>,
   ): { next: DisplayMessage[]; flushed: boolean } => {
     if (!accumulated.trim() && !thinking.trim()) return { next: base, flushed: false };
     const m: DisplayMessage = {
@@ -79,7 +93,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       content: accumulated,
       ...(thinking.trim() ? { thinking } : {}),
     };
-    return { next: [...base, m], flushed: true };
+    return { next: insertBeforeInstructions(base, m, instructionIds), flushed: true };
   };
 
   const handleMessage = (msg: PortMessageToPanel) => {
@@ -112,7 +126,9 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       const accumulated = prev?.accumulated ?? "";
       const thinking = prev?.streamingThinking ?? "";
       const baseMessages = prev?.messages ?? [];
-      const { next } = buildAssistant(baseMessages, accumulated, thinking);
+      const { next } = buildAssistant(
+        baseMessages, accumulated, thinking, prev?.unconsumedInstructionIds ?? EMPTY_SLOT.unconsumedInstructionIds,
+      );
       patchSlot(id, {
         messages: next,
         accumulated: "",
@@ -131,7 +147,9 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       const accumulated = prev?.accumulated ?? "";
       const thinking = prev?.streamingThinking ?? "";
       const baseMessages = prev?.messages ?? [];
-      const { next } = buildAssistant(baseMessages, accumulated, thinking);
+      const { next } = buildAssistant(
+        baseMessages, accumulated, thinking, prev?.unconsumedInstructionIds ?? EMPTY_SLOT.unconsumedInstructionIds,
+      );
       patchSlot(id, {
         error: msg.error,
         errorKind: msg.kind ?? null,
@@ -155,12 +173,17 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
 
       // 1. Flush pending accumulated text / thinking first (legacy behavior
       //    preserved from useSession.ts:349-365).
-      const { next: flushedMsgs, flushed } = buildAssistant(baseMessages, accumulated, thinking);
+      const instructionIds = prev?.unconsumedInstructionIds ?? EMPTY_SLOT.unconsumedInstructionIds;
+      const { next: flushedMsgs, flushed } = buildAssistant(baseMessages, accumulated, thinking, instructionIds);
       let nextMessages: DisplayMessage[] = flushedMsgs;
 
-      // 2. Either update the trailing matching step in place, or append.
+      // 2. Either update the last step before queued instructions, or insert
+      //    a new one there. The user may have queued input between step events.
       const { stepIndex, tool, args, resolvedElement, status, observation, image, progress, remote } = msg;
-      const tail = nextMessages.length - 1;
+      const firstQueued = nextMessages.findIndex(
+        (m) => m.role === "user" && m.id !== undefined && instructionIds.has(m.id),
+      );
+      const tail = (firstQueued < 0 ? nextMessages.length : firstQueued) - 1;
       const last = tail >= 0 ? nextMessages[tail] : null;
       // Remote steps are emitted once at status "ok" and never in-place-updated.
       // stepIndex is the loop iteration, so two same-named remotes in one turn
@@ -188,9 +211,9 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       };
 
       if (matchesTail) {
-        nextMessages = [...nextMessages.slice(0, tail), stepEntry];
+        nextMessages = [...nextMessages.slice(0, tail), stepEntry, ...nextMessages.slice(tail + 1)];
       } else {
-        nextMessages = [...nextMessages, stepEntry];
+        nextMessages = insertBeforeInstructions(nextMessages, stepEntry, instructionIds);
       }
 
       patchSlot(id, {
@@ -210,9 +233,10 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       // otherwise the reset below discards what the user just saw on screen.
       const accumulated = prev?.accumulated ?? "";
       const thinking = prev?.streamingThinking ?? "";
-      const { next: flushedMsgs } = buildAssistant(baseMessages, accumulated, thinking);
-      const next: DisplayMessage[] = [
-        ...flushedMsgs,
+      const instructionIds = prev?.unconsumedInstructionIds ?? EMPTY_SLOT.unconsumedInstructionIds;
+      const { next: flushedMsgs } = buildAssistant(baseMessages, accumulated, thinking, instructionIds);
+      const next = insertBeforeInstructions(
+        flushedMsgs,
         {
           role: "agent-summary",
           success: msg.success,
@@ -222,7 +246,8 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
           ...(msg.summaryKey ? { summaryKey: msg.summaryKey } : {}),
           stepCount: msg.stepCount,
         },
-      ];
+        instructionIds,
+      );
       patchSlot(id, {
         messages: next,
         accumulated: "",
@@ -290,47 +315,113 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    // A drain starts a new LLM turn, even when it happens before the first
+    // request and there is no assistant text to flush yet.
+    if (msg.type === "chat-instructions-consumed") {
+      const prev = slotsRef.current.get(id);
+      if (!prev) return;
+      const consumed = new Set(msg.chatMessageIds.filter(
+        (chatMessageId) => !prev.settledInstructionIds.has(chatMessageId) ||
+          prev.unconsumedInstructionIds.has(chatMessageId),
+      ));
+      if (consumed.size === 0) return;
+      const unconsumedInstructionIds = new Set(prev.unconsumedInstructionIds);
+      const cancelledInstructionMessages = new Map(prev.cancelledInstructionMessages);
+      const settledInstructionIds = new Set([...prev.settledInstructionIds, ...consumed]);
+      const pendingByChatMessageId = new Map(prev.pendingByChatMessageId);
+      let messages = prev.messages;
+      const queuedIds = [...unconsumedInstructionIds];
+      // Cancellation is optimistic. If drain won the race, restore the user
+      // bubble in queue order: the model will in fact see that instruction.
+      for (const [index, chatMessageId] of queuedIds.entries()) {
+        const cancelled = cancelledInstructionMessages.get(chatMessageId);
+        if (!cancelled || !consumed.has(chatMessageId)) continue;
+        const followingIds = new Set(queuedIds.slice(index + 1));
+        messages = insertBeforeInstructions(messages, cancelled, followingIds);
+      }
+      const beforeIds = new Set([...unconsumedInstructionIds, ...consumed]);
+      const { next } = buildAssistant(messages, prev.accumulated, prev.streamingThinking, beforeIds);
+      for (const chatMessageId of consumed) {
+        unconsumedInstructionIds.delete(chatMessageId);
+        cancelledInstructionMessages.delete(chatMessageId);
+        pendingByChatMessageId.delete(chatMessageId);
+      }
+      patchSlot(id, {
+        messages: next,
+        accumulated: "",
+        streamingText: "",
+        streamingThinking: "",
+        unconsumedInstructionIds,
+        cancelledInstructionMessages,
+        settledInstructionIds,
+        pendingByChatMessageId,
+      });
+      // A cancelled bubble was already removed from storage. Restore it there
+      // too if the SW drained it before cancellation reached the queue.
+      if (messages !== prev.messages) void persistMessages(id, next);
+      return;
+    }
+
     // Issue #34 — SW → panel: update pending instruction state for this session.
     if (msg.type === "chat-instruction-state") {
       const map = new Map<string, { createdAt: number }>();
+      const settled = slotsRef.current.get(id)?.settledInstructionIds;
       for (const p of msg.pending) {
-        map.set(p.chatMessageId, { createdAt: p.createdAt });
+        if (!settled?.has(p.chatMessageId)) {
+          map.set(p.chatMessageId, { createdAt: p.createdAt });
+        }
       }
       patchSlot(msg.sessionId, { pendingByChatMessageId: map });
       return;
     }
 
-    // Issue #34 — SW → panel: instruction-add arrived after loop ended; fall
-    // back to a normal chat-start so the user's message is still processed.
+    // A late rejection may refer to a cancelled instruction. Keep its ID
+    // until the task settles so it can still trigger a resend of its siblings.
     if (msg.type === "chat-instruction-rejected") {
-      const slot = slotsRef.current.get(msg.sessionId);
-      if (!slot) return;
-      const flat = (slot.messages ?? []).filter(
-        (m): m is
-          | { role: "user"; content: string; expandedForLLM?: string; id?: string }
-          | { role: "assistant"; content: string } =>
+      const slot = slotsRef.current.get(id);
+      if (!slot || !slot.unconsumedInstructionIds.has(msg.chatMessageId)) return;
+      const { next, flushed } = buildAssistant(
+        slot.messages, slot.accumulated, slot.streamingThinking, slot.unconsumedInstructionIds,
+      );
+      const flat = next.filter(
+        (m): m is Extract<DisplayMessage, { role: "user" | "assistant" }> =>
           m.role === "user" || m.role === "assistant",
       );
-      const chatMessages = flat.map((m) => ({
+      const isWaiting = (m: (typeof flat)[number]) =>
+        m.role === "user" && m.id !== undefined && slot.unconsumedInstructionIds.has(m.id);
+      const waiting = flat.filter(isWaiting);
+      // The current task must be a user message. Keep all still-waiting turns
+      // together at the end even if an older display snapshot is out of order.
+      const ordered = [...flat.filter((m) => !isWaiting(m)), ...waiting];
+      const chatMessages = ordered.map((m) => ({
         role: m.role,
-        content:
-          m.role === "user" && "expandedForLLM" in m && m.expandedForLLM
-            ? m.expandedForLLM
-            : m.content,
+        content: m.role === "user" && m.expandedForLLM ? m.expandedForLLM : m.content,
+        ...(isWaiting(m) && m.role === "user" && m.attachments?.length
+          ? { attachments: m.attachments }
+          : {}),
       }));
-      patchSlot(msg.sessionId, {
-        streaming: true,
-        streamFinished: false,
+      patchSlot(id, {
+        messages: next,
+        streaming: waiting.length > 0,
+        streamFinished: waiting.length === 0,
         accumulated: "",
         streamingText: "",
+        streamingThinking: "",
         error: null,
         errorKind: null,
+        pendingByChatMessageId: new Map(),
+        unconsumedInstructionIds: new Set(),
+        cancelledInstructionMessages: new Map(),
+        settledInstructionIds: new Set([...slot.settledInstructionIds, ...slot.unconsumedInstructionIds]),
       });
-      postMessageRef?.current?.(msg.sessionId, {
-        type: "chat-start",
-        messages: chatMessages,
-        sessionId: msg.sessionId,
-      });
+      if (flushed) void persistMessages(id, next);
+      if (waiting.length > 0) {
+        postMessageRef?.current?.(id, {
+          type: "chat-start",
+          messages: chatMessages,
+          sessionId: id,
+        });
+      }
       return;
     }
 
@@ -364,7 +455,9 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
     return () => {
       const slot = slotsRef.current.get(sessionId);
       if (!slot || slot.streamFinished) return;
-      const { next } = buildAssistant(slot.messages, slot.accumulated, slot.streamingThinking);
+      const { next } = buildAssistant(
+        slot.messages, slot.accumulated, slot.streamingThinking, slot.unconsumedInstructionIds,
+      );
       patchSlot(sessionId, {
         messages: next,
         accumulated: "",

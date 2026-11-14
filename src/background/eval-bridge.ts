@@ -102,6 +102,7 @@ function makeBridge() {
         stepIndex: 0,
         hasImageContent: false,
       };
+      // Deliberate whole-record overwrite (fresh eval session seed), not a RMW.
       await setSessionAgent(sessionId, agentState);
 
       // WebArena's scorer normalizes the answer and compares it for SET EQUALITY

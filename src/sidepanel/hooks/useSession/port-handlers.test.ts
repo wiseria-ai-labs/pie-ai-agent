@@ -98,6 +98,122 @@ describe("chat-done", () => {
   });
 });
 
+describe("queued instruction boundaries", () => {
+  it.each(["chat-done", "chat-error", "agent-done-task", "disconnect"] as const)(
+    "flushes partial output before an unacknowledged instruction on %s",
+    (terminal) => {
+      const deps = makeDeps();
+      const instruction = { role: "user" as const, content: "later", id: "queued" };
+      deps.slotsRef.current.set("s1", {
+        ...EMPTY_SLOT,
+        messages: [{ role: "user", content: "original" }, instruction],
+        accumulated: "partial",
+        streamingThinking: "thought",
+        streaming: true,
+        streamFinished: false,
+        unconsumedInstructionIds: new Set(["queued"]),
+      });
+      const handlers = createPortHandlers(deps);
+      if (terminal === "disconnect") {
+        handlers.makeDisconnectHandler("s1")();
+      } else if (terminal === "agent-done-task") {
+        handlers.handleMessage({
+          type: terminal, sessionId: "s1", success: false, summary: "stopped", stepCount: 1,
+        });
+      } else if (terminal === "chat-error") {
+        handlers.handleMessage({ type: terminal, sessionId: "s1", error: "failed" });
+      } else {
+        handlers.handleMessage({ type: terminal, sessionId: "s1" });
+      }
+      const expected = [
+        { role: "user", content: "original" },
+        { role: "assistant", content: "partial", thinking: "thought" },
+        ...(terminal === "agent-done-task"
+          ? [{ role: "agent-summary", success: false, summary: "stopped", stepCount: 1 }]
+          : []),
+        instruction,
+      ];
+      expect(deps.slotsRef.current.get("s1")!.messages).toEqual(expected);
+      expect(deps.persistMessages).toHaveBeenCalledWith("s1", expected);
+    },
+  );
+
+  it("updates a step before the user message queued between its events", () => {
+    const deps = makeDeps();
+    deps.slotsRef.current.set("s1", {
+      ...EMPTY_SLOT,
+      messages: [
+        { role: "user", content: "original" },
+        { role: "agent-step", stepIndex: 0, tool: "click", args: {}, status: "pending" },
+        { role: "user", content: "later", id: "queued" },
+      ],
+      unconsumedInstructionIds: new Set(["queued"]),
+    });
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({
+      type: "agent-step", sessionId: "s1", stepIndex: 0, tool: "click",
+      args: {}, status: "ok", observation: "clicked",
+    });
+    expect(deps.slotsRef.current.get("s1")!.messages).toEqual([
+      { role: "user", content: "original" },
+      { role: "agent-step", stepIndex: 0, tool: "click", args: {}, status: "ok", resolvedElement: undefined, observation: "clicked" },
+      { role: "user", content: "later", id: "queued" },
+    ]);
+  });
+
+  it("restores multiple late cancellations in queue order and keeps the remaining instruction pending", () => {
+    const deps = makeDeps();
+    const first = { role: "user" as const, content: "first", id: "a" };
+    const second = { role: "user" as const, content: "second", id: "b" };
+    const third = { role: "user" as const, content: "third", id: "c" };
+    deps.slotsRef.current.set("s1", {
+      ...EMPTY_SLOT,
+      messages: [{ role: "user", content: "original" }, third],
+      accumulated: "answer 1",
+      unconsumedInstructionIds: new Set(["a", "b", "c"]),
+      cancelledInstructionMessages: new Map([["b", second], ["a", first]]),
+      settledInstructionIds: new Set(["a", "b"]),
+    });
+    const { handleMessage } = createPortHandlers(deps);
+    handleMessage({ type: "chat-instructions-consumed", sessionId: "s1", chatMessageIds: ["a", "b"] });
+    expect(deps.slotsRef.current.get("s1")!.messages).toEqual([
+      { role: "user", content: "original" },
+      { role: "assistant", content: "answer 1" }, first, second, third,
+    ]);
+    expect(deps.slotsRef.current.get("s1")!.unconsumedInstructionIds).toEqual(new Set(["c"]));
+    handleMessage({ type: "chat-chunk", sessionId: "s1", text: "answer 2" });
+    handleMessage({ type: "chat-done", sessionId: "s1" });
+    expect(deps.slotsRef.current.get("s1")!.messages).toEqual([
+      { role: "user", content: "original" },
+      { role: "assistant", content: "answer 1" }, first, second,
+      { role: "assistant", content: "answer 2" }, third,
+    ]);
+  });
+
+  it("does not restart a task when the only rejected instruction was cancelled", () => {
+    const deps = makeDeps();
+    const post = vi.fn(() => true);
+    deps.slotsRef.current.set("s1", {
+      ...EMPTY_SLOT,
+      messages: [{ role: "user", content: "original" }],
+      accumulated: "answer",
+      streaming: true,
+      streamFinished: false,
+      unconsumedInstructionIds: new Set(["cancelled"]),
+    });
+    const { handleMessage } = createPortHandlers({ ...deps, postMessageRef: { current: post } });
+    handleMessage({
+      type: "chat-instruction-rejected", sessionId: "s1", chatMessageId: "cancelled", reason: "not-streaming",
+    });
+    expect(post).not.toHaveBeenCalled();
+    expect(deps.slotsRef.current.get("s1")).toMatchObject({
+      messages: [{ role: "user", content: "original" }, { role: "assistant", content: "answer" }],
+      streaming: false,
+      streamFinished: true,
+    });
+  });
+});
+
 describe("agent-step", () => {
   it("flushes pending accumulated text before appending the step", () => {
     const deps = makeDeps();

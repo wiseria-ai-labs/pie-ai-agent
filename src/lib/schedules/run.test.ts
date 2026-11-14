@@ -240,6 +240,38 @@ describe("runSchedule — success path", () => {
 });
 
 describe("runSchedule — onStepSnapshot uses canonical merge (tombstone carry-over)", () => {
+  it("preserves an instruction queued during a scheduled snapshot", async () => {
+    const { putSchedule } = await import("./store");
+    const { getSessionAgent } = await import("@/lib/sessions/storage");
+    const { addPending } = await import("@/lib/sessions/pending-instructions");
+    const sessionStore = await import("@/lib/idb/sessions-store");
+    const { runSchedule } = await import("./run");
+    await putSchedule(makeSched({ id: "sched_queue", prompt: "task" }));
+    let sessionId = "";
+    const instruction = { chatMessageId: "queued", content: "next", createdAt: 1 };
+    const fakeLoop = vi.fn(async (ctx: AgentLoopContext) => {
+      sessionId = ctx.sessionId;
+      const original = sessionStore.updateSessionRecord;
+      let enqueue: Promise<void> | undefined;
+      const spy = vi.spyOn(sessionStore, "updateSessionRecord").mockImplementation((id, transform) =>
+        original(id, (current) => {
+          const next = transform(current);
+          if (!enqueue) enqueue = addPending(sessionId, instruction);
+          return next;
+        }),
+      );
+      try {
+        await ctx.onStepSnapshot!({ agentMessages: [], pendingInstructions: [], stepIndex: 1, hasImageContent: false });
+        expect(enqueue).toBeDefined();
+        await enqueue;
+      } finally {
+        spy.mockRestore();
+      }
+    });
+    await runSchedule("sched_queue", okDeps({ runAgentLoop: fakeLoop }));
+    expect((await getSessionAgent(sessionId))?.pendingInstructions).toEqual([instruction]);
+  });
+
   // I1/I2 — onStepSnapshot must go through mergeSessionAgentSnapshot, not a
   // hand-rolled field pick. A real loop fires a live per-step snapshot then a
   // done tombstone (which carries lastTaskSynth + contextUsage). The persisted
