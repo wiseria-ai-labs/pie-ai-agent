@@ -1,7 +1,21 @@
 # 自动化真机验收（auto-acceptance）
 
-> 用 Playwright 驱动真实 Chromium + 扩展 + daemon 全链路，自动跑 `need-human-test` PR 的真机验收清单，把人工从「全量跑清单」降级为「看报告 + 抽查结构性盲区」。
-> 首个完整样本：PR #283（skill 多根目录），6/6 清单项全自动 PASS；参考脚本在 `eval/acceptance/pilot-283-*.mjs`。
+> 用 Playwright 驱动真实 Chromium + 扩展 + daemon 全链路，自动跑 PR 的真机验收清单。这是 Kumo **Pie dev loop** 里 Acceptance 节点的操作手册：验收结论由节点自己下，**没有「人工抽查后放行」这一档**；自动化覆盖不到的项列进「留发版冒烟」，由打 tag 前的 release smoke 和发版人兜底。
+>
+> 参考样本：PR #283（skill 多根目录）、`pilot-299-functional.mjs`（状态跟随类断言）、`eval/acceptance/` 下的其他 per-PR 脚本。
+
+## 在 dev loop 里的位置
+
+```
+implement → review ─approved──────────────→ merge
+                └─needs_acceptance→ Acceptance ─pass─→ merge
+                                        ├─fail──→ implement（最多 3 次）
+                                        └─blocked（环境修不好）→ escalate
+```
+
+- Review 判定「改了运行时行为、需要真机」才把 PR 交给本节点；纯文档 / 纯测试 / 纯内部重构由 Review 直接放行去 merge。
+- 本节点的出口只有三个：`pass` / `fail` / `blocked`（环境故障，**不是**代码问题）。
+- Merge 负责合入前的最后一步：落后 main 先 update-branch，冲突或 CI 红打回 implement。
 
 ## 适用范围与分工
 
@@ -10,11 +24,12 @@
 | 功能回归流（UI 操作 → 状态断言） | 自动化 | Playwright 直驱 sidepanel 页 |
 | daemon 桥全链路（native messaging / skill_fs / srt 沙箱） | 自动化 | scratch HOME 隔离，源码直跑 daemon |
 | LLM 驱动项（工具调用、HITL 授权卡） | 自动化 | eval bridge + 真实模型，断言落磁盘证据 |
-| 品牌 Chrome 特有差异（僵尸 frame 类） | **人工** | Playwright 跑的是 Chromium，结论不能外推（PR #264 前科） |
-| optional 权限原生弹框流 | **人工** | Playwright 点不了浏览器级弹框，harness 靠权限提必选绕过 = 未覆盖 |
-| 真实 OAuth / 支付、编译版二进制制品链路、视觉手感 | **人工** | |
+| 视觉 / UI / 动画 | 节点自判 | 节点自己截图，对照任务书判 PASS/FAIL，截图路径写进报告 |
+| 品牌 Chrome 特有差异（僵尸 frame 类） | 留发版冒烟 | Playwright 跑的是 Chromium，结论不能外推（PR #264 前科）；要求相关逻辑有单测覆盖 |
+| optional 权限原生弹框流 | 留发版冒烟 | Playwright 点不了浏览器级弹框，harness 靠权限提必选绕过 = 未覆盖 |
+| 真实 OAuth / 支付、编译版二进制制品链路 | 留发版冒烟 | 只能真机真账号验，放在 release smoke |
 
-**自动化全绿 ≠ 免人工**：报告必须显式列出本次未覆盖的盲区；人工只需抽查盲区项。PR #283 的教训——自动化 6/6 全绿后，人工用真实数据规模 30 秒撞出 8KB backpressure 发布阻断 bug（fixture 只有 3-4 个 skill，响应没过阈值）。
+**盲区不挡合并，但必须被记录**：报告要显式列出本次未覆盖的项，它们默认不阻断（main 不是线上，merge 不等于发布），由 `pnpm smoke:release` 和发版人兜底。但**盲区所在的逻辑如果连确定性单测都没有 → 判 FAIL**，先补测试再说。PR #283 的教训：自动化 6/6 全绿后，人工用真实数据规模 30 秒撞出发版阻断 bug（fixture 只有 3-4 个 skill，响应没过阈值）——所以 fixture 规模纪律比「多找几个人看」更管用。
 
 ## 前置条件
 
@@ -24,7 +39,7 @@
 
 ## 操作流程
 
-1. **checkout 目标 PR 分支**（主仓库主目录，遵循「测试直接在主目录切分支」约定）。
+1. **在 PR 分支的 worktree 里工作**：dev loop 的节点直接用 run 自己的 worktree（当前目录就是 PR 的 head 分支）；人工复跑才切主目录。先确认 `git rev-parse HEAD` 等于 PR 的 `headRefOid`。
 2. **构建**：`pnpm build:eval` → `dist-eval`（`__PIE_EVAL__` 只多挂 `globalThis.__pieEval` bridge，其余同生产；prod 构建有 assert-no-eval-bridge 兜底）。
 3. **准备隔离工作目录**（`export PIE_ACCEPT_BASE=<dir>`，建议放 job tmp）：
    - `dist-pilot/` = dist-eval 副本 + manifest 把 `nativeMessaging` 从 optional 提为**必选**（装载即授予 → SW 启动自动连桥，绕过 Playwright 点不了的原生权限弹框；副作用：桥开关流未覆盖，报告里必须声明）
@@ -57,7 +72,8 @@
 - 每条清单项一条断言记录，状态 `PASS / FAIL / ERROR / SKIP`，FAIL/ERROR 附现场值。
 - **断言落确定性证据**，优先级：磁盘（grants.json / audit.jsonl / workspace 目录 / 文件 hash）> DOM 状态（aria、文本存在性）> 对话文本。**LLM 驱动项禁止只断言对话文本**（非确定性）；LLM 行为异常（没按预期调工具）记 FAIL 并附 `getTrace` 的 steps。
 - fixture 含真实规模档（≥30 skill）且该档跑过 list/滚动路径，否则报告必须标注「未验证真实规模」。
-- 结构性盲区（本文件分工表的「人工」行）**不得标 PASS**，在报告「留人工」区显式列出。
+- 结构性盲区（分工表「留发版冒烟」行）**不得标 PASS**，在报告「留发版冒烟」区显式列出；盲区所在逻辑没有确定性单测覆盖的，判 FAIL。
+- **环境异常不是 FAIL**：build 失败但与本 PR 无关、daemon 起不来、Playwright/Chromium 缺失、端口占用——先自愈（`pnpm install`、`pnpm exec playwright install chromium`、杀残留 scratch daemon、换端口、重 build），最多重试 2 轮；仍不行 exit `blocked`，别让 implementer 去改没坏的代码。
 - 断言失败先甄别「设计 vs 回归」：对照 clean main 跑同断言（main 也如此 = 现状/设计，不是本 PR 回归）。
 - **状态跟随类清单项（UI 该跟着某个后台状态变）别只断言终态**：终态断言在「UI 本来就卡在那个值」时会假通过。改为双流采样——真值（SW RPC）与表现（DOM 文本）同时轮询，断言**跟随延迟**（表现滞后真值 ≤ 轮询周期），并全程不 reload / 不离开该页，排除「重挂载才更新」。同一脚本跑 clean main **必须 FAIL**，否则说明断言根本没测到东西。样本：`pilot-299-functional.mjs`（设置根页桥 badge）。
 
@@ -78,11 +94,17 @@
 | … | ❌ FAIL | <现场值 + 判断是回归还是设计> |
 
 **Fixture 规模**：<n> 个 skill（真实规模档已跑 / 未跑）
-**留人工（本次未覆盖）**：品牌 Chrome 差异、optional 权限弹框流、<其他本次特有盲区>
+**留发版冒烟（本次未覆盖）**：品牌 Chrome 差异、optional 权限弹框流、<其他本次特有盲区>
 **顺带发现**：<非本 PR 的问题，开 issue 链接>
 ```
 
-结论行只有两种：「自动验收通过，建议人工抽查上列盲区后打 human-approved」或「存在 FAIL，建议打 need-to-solve」。
+结论行只有三种，对应 dev loop 的出口：
+
+| 结论 | 出口 | 去向 |
+|---|---|---|
+| 自动化全过（含 SKIP / 留发版冒烟的项不算 FAIL） | `pass` | merge |
+| 有 FAIL，且对照 clean main 后仍属本 PR 回归 | `fail` | 回 implement（最多 3 轮） |
+| 环境故障、自愈 2 轮仍无法验收 | `blocked` | 转 escalate，交人处理 |
 
 ---
 
@@ -96,7 +118,7 @@
 - 不进 GitHub Actions，不挡日常 PR CI
 
 ```
-功能 PR：CI +（该打 need-human-test 的才跑）per-PR acceptance
+功能 PR：CI → Review →（改运行时行为才走）Acceptance（本文件）→ Merge —— 全部由 dev loop 自动完成
         ↓ merge main
 发版候选：本地 pnpm smoke:release → $PIE_ACCEPT_BASE/report/report.md
         ↓ 人抽查 H 区
