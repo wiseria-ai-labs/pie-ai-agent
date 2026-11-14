@@ -91,8 +91,6 @@ export class McpClient {
 
   sessionId?: string;
   protocolVersion?: string;
-  /** Server-provided usage notes. UNTRUSTED — only ever fed to the model inside an untrusted wrapper. */
-  instructions?: string;
 
   constructor(cfg: { url: string; headers?: Record<string, string> } & McpClientDeps) {
     this.url = cfg.url;
@@ -113,11 +111,10 @@ export class McpClient {
       },
       { timeoutMs: MCP_REQUEST_TIMEOUT_MS, noRetry: true },
     );
-    const result = (res.result ?? {}) as { protocolVersion?: unknown; instructions?: unknown };
+    const result = (res.result ?? {}) as { protocolVersion?: unknown };
     this.protocolVersion = typeof result.protocolVersion === "string"
       ? result.protocolVersion
       : MCP_PROTOCOL_VERSIONS[0];
-    if (typeof result.instructions === "string") this.instructions = result.instructions;
     await this.notify("notifications/initialized");
   }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildToolCatalogBlock, selectTools } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
 import { getToolClass, getToolGroup } from "./tool-names";
@@ -62,10 +62,18 @@ describe("load_tools with MCP groups", () => {
     expect(again.observation).toContain("Already active");
   });
 
-  it("offers no MCP groups when none are passed (headless shape)", () => {
-    const tool = buildLoadToolsTool({ getActiveGroups: () => new Set(["core"]), headless: true });
-    const enumIds = (tool.parameters as any).properties.groups.items.enum as string[];
-    expect(enumIds.some((id: string) => id.startsWith("mcp:"))).toBe(false);
+  it("trims requested extra ids (same rule as static groups)", async () => {
+    const active = new Set<string>(["core"]);
+    const load = vi.fn(async () => ({ ok: true, message: "loaded docs" }));
+    const tool = buildLoadToolsTool({
+      getActiveGroups: () => active,
+      headless: false,
+      extraGroups: [{ id: "mcp:docs", catalogLine: "Docs", load }],
+    });
+    const res = await tool.handler({ groups: [" mcp:docs "] }, {} as never);
+    expect(res.success).toBe(true);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(active.has("mcp:docs")).toBe(true);
   });
 });
 

@@ -107,7 +107,6 @@ export const zhCNDict = {
       headerValue: "请求头值",
       headerKeepPlaceholder: "已保存——留空保持不变",
       addHeader: "添加请求头",
-      deleteConfirm: "删除这个 MCP 服务器？",
       test: "测试连接",
       testing: "测试中…",
       toolsFound: "工具",

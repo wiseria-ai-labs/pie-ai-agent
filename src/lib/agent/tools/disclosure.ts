@@ -70,8 +70,10 @@ export function buildLoadToolsTool(deps: LoadToolsDeps): Tool {
       }
       const active = deps.getActiveGroups();
       const extraById = new Map(extras.map((e) => [e.id, e]));
-      const staticGroups = groups.filter((g) => !extraById.has(g));
-      const extraIds = groups.filter((g) => extraById.has(g));
+      // Trim before matching, like resolveLoadTools does for static groups.
+      const requested = groups.map((g) => g.trim());
+      const staticGroups = requested.filter((g) => !extraById.has(g));
+      const extraIds = requested.filter((g) => extraById.has(g));
       const r = resolveLoadTools(staticGroups, active, { headless: deps.headless });
       const lines: string[] = [];
       if (r.loaded.length) {

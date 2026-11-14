@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildMcpTools,
   makeSessionMcpConfirm,
+  planMcpTools,
   wrapMcpResult,
   type McpToolsDeps,
 } from "./agent-tools";
@@ -203,5 +204,79 @@ describe("makeSessionMcpConfirm", () => {
       confirm({ serverId: "s", serverName: "S", toolName: "t", originalToolName: "t", args: {} }),
     ).resolves.toBe(false);
     expect(record).not.toHaveBeenCalled();
+  });
+});
+
+describe("planMcpTools", () => {
+  it("keeps the same tool name on two servers distinct and deterministic", () => {
+    const a = planMcpTools({ name: "A", slug: "alpha", tools: [{ name: "search" }] });
+    const b = planMcpTools({ name: "B", slug: "beta", tools: [{ name: "search" }] });
+    expect(a.entries[0]!.exposed).toBe("mcp_alpha_search");
+    expect(b.entries[0]!.exposed).toBe("mcp_beta_search");
+  });
+
+  it("de-duplicates truncated names deterministically and keeps the original names", () => {
+    const long1 = `${"x".repeat(90)}1`;
+    const long2 = `${"x".repeat(90)}2`;
+    const first = planMcpTools({
+      name: "S",
+      slug: "s",
+      tools: [{ name: long1 }, { name: long2 }],
+    });
+    const second = planMcpTools({
+      name: "S",
+      slug: "s",
+      tools: [{ name: long1 }, { name: long2 }],
+    });
+    const names = first.entries.map((e) => e.exposed);
+    expect(names).toHaveLength(2);
+    expect(names[0]).not.toBe(names[1]);
+    for (const n of names) expect(n.length).toBeLessThanOrEqual(64);
+    expect(names).toEqual(second.entries.map((e) => e.exposed));
+    // Dispatch uses the closed-over original name, never the exposed one.
+    expect(first.entries.map((e) => e.def.name)).toEqual([long1, long2]);
+  });
+});
+
+describe("AC6 — same-named tools on two servers route independently", () => {
+  it("each handler hits its own server with its own original tool name", async () => {
+    const callsA: string[] = [];
+    const callsB: string[] = [];
+    const liveA: LiveMcpServer = {
+      serverId: "a",
+      name: "Alpha",
+      slug: "alpha",
+      client: {} as LiveMcpServer["client"],
+      tools: [{ name: "search" }],
+    };
+    const liveB: LiveMcpServer = {
+      serverId: "b",
+      name: "Beta",
+      slug: "beta",
+      client: {} as LiveMcpServer["client"],
+      tools: [{ name: "search" }],
+    };
+    const depsA = deps({
+      callTool: async (name) => {
+        callsA.push(name);
+        return { content: [{ type: "text", text: "from A" }] };
+      },
+    });
+    const depsB = deps({
+      callTool: async (name) => {
+        callsB.push(name);
+        return { content: [{ type: "text", text: "from B" }] };
+      },
+    });
+    const [toolA] = buildMcpTools(liveA, depsA).tools;
+    const [toolB] = buildMcpTools(liveB, depsB).tools;
+    expect(toolA!.name).not.toBe(toolB!.name);
+
+    const resA = await toolA!.handler({}, {} as never);
+    const resB = await toolB!.handler({}, {} as never);
+    expect(callsA).toEqual(["search"]);
+    expect(callsB).toEqual(["search"]);
+    expect(resA.observation).toContain("from A");
+    expect(resB.observation).toContain("from B");
   });
 });

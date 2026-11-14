@@ -108,7 +108,6 @@ export const jaDict = {
       headerValue: "ヘッダー値",
       headerKeepPlaceholder: "保存済み — 空欄なら維持",
       addHeader: "ヘッダーを追加",
-      deleteConfirm: "この MCP サーバーを削除しますか？",
       test: "接続をテスト",
       testing: "テスト中…",
       toolsFound: "ツール",

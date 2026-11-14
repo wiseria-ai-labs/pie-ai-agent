@@ -108,7 +108,6 @@ export const es419Dict = {
       headerValue: "Valor del encabezado",
       headerKeepPlaceholder: "Guardado — deja vacío para conservarlo",
       addHeader: "Agregar encabezado",
-      deleteConfirm: "¿Eliminar este servidor MCP?",
       test: "Probar conexión",
       testing: "Probando…",
       toolsFound: "Herramientas",

@@ -107,7 +107,6 @@ export const enDict = {
       headerValue: "Header value",
       headerKeepPlaceholder: "Saved — leave blank to keep",
       addHeader: "Add header",
-      deleteConfirm: "Delete this MCP server?",
       test: "Test connection",
       testing: "Testing…",
       toolsFound: "Tools",

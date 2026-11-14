@@ -1,14 +1,19 @@
 import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { onStoreChange } from "@/lib/store-bus";
-import { MCP_SERVERS_KEY } from "@/lib/mcp/store";
 import {
+  MCP_SERVERS_KEY,
   listMcpServerViews,
   saveMcpServer,
   deleteMcpServer,
   McpConfigError,
   type McpServerView,
 } from "@/lib/mcp/store";
+import {
+  MCP_TEST_MESSAGE,
+  type McpTestMessage,
+  type McpTestResult,
+} from "@/lib/mcp/test-connection";
 
 // #481 — Settings → MCP servers. User-configured remote Streamable HTTP servers
 // only (no bundled catalogue). Header values are write-only in this UI: saved
@@ -26,13 +31,6 @@ interface EditorState {
   headers: HeaderRow[];
   /** Keys that already exist server-side (their blank value means "keep"). */
   existingKeys: string[];
-}
-
-interface TestResult {
-  ok: boolean;
-  tools: string[];
-  skipped: Array<{ name: string; reason: string }>;
-  error?: string;
 }
 
 function emptyEditor(): EditorState {
@@ -58,7 +56,9 @@ export default function McpServersPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
+  // 行内两步确认（SkillsList / SchedulesPanel 同款），不用 window.confirm。
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, McpTestResult>>({});
 
   const refresh = () => {
     void listMcpServerViews().then(setServers);
@@ -101,7 +101,7 @@ export default function McpServersPage() {
   }
 
   async function onDelete(id: string) {
-    if (!window.confirm(t("settings.mcp.deleteConfirm"))) return;
+    setConfirmDeleteId(null);
     await deleteMcpServer(id);
     setTestResults((prev) => {
       const next = { ...prev };
@@ -115,7 +115,8 @@ export default function McpServersPage() {
     if (testingId) return;
     setTestingId(id);
     try {
-      const res = (await chrome.runtime.sendMessage({ type: "mcp:test", serverId: id })) as TestResult;
+      const msg: McpTestMessage = { type: MCP_TEST_MESSAGE, serverId: id };
+      const res = (await chrome.runtime.sendMessage(msg)) as McpTestResult;
       setTestResults((prev) => ({ ...prev, [id]: res }));
     } catch (e) {
       setTestResults((prev) => ({
@@ -180,14 +181,35 @@ export default function McpServersPage() {
                 >
                   {t("common.edit")}
                 </button>
-                <button
-                  type="button"
-                  data-testid={`mcp-delete-${view.slug}`}
-                  onClick={() => void onDelete(view.id)}
-                  className="rounded-control border border-line px-2 py-1 text-[12px] text-fg-2 hover:bg-field"
-                >
-                  {t("common.delete")}
-                </button>
+                {confirmDeleteId === view.id ? (
+                  <>
+                    <button
+                      type="button"
+                      data-testid={`mcp-delete-confirm-${view.slug}`}
+                      onClick={() => void onDelete(view.id)}
+                      className="rounded-control border border-warning-line px-2 py-1 text-[12px] text-warning hover:bg-warning-tint"
+                    >
+                      {t("common.confirm")}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`mcp-delete-cancel-${view.slug}`}
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="rounded-control border border-line px-2 py-1 text-[12px] text-fg-2 hover:bg-field"
+                    >
+                      {t("common.cancel")}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    data-testid={`mcp-delete-${view.slug}`}
+                    onClick={() => setConfirmDeleteId(view.id)}
+                    className="rounded-control border border-line px-2 py-1 text-[12px] text-fg-2 hover:bg-field"
+                  >
+                    {t("common.delete")}
+                  </button>
+                )}
               </div>
             </div>
             {result && (

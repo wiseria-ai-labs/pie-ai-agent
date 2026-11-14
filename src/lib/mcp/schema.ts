@@ -7,15 +7,22 @@
 //   - top level is always `type:"object"`
 //   - `$ref` / `$defs` inlined (cycle → the tool is skipped, with a reason)
 //   - `anyOf` / `oneOf` / `allOf` reduced to one conservative shape
-//   - `["string","null"]`-style type arrays reduced to one type
+//   - `["string","null"]`-type type arrays reduced to one type
 //   - `additionalProperties` / `$schema` / `const` / `format` stripped
 //   - descriptions truncated
 //   - oversized or broken schemas fail this ONE tool (server keeps working)
+//
+// Expansion is deliberately BUDGETED: inlining a chain of `$defs` where each
+// def fans out into many properties is exponential (fan^depth). The budget is
+// checked as nodes are produced, so a hostile/huge schema is rejected in
+// milliseconds instead of expanding to hundreds of MB inside the SW.
 
 export const MCP_SCHEMA_MAX_BYTES = 20_000;
 export const MCP_DESCRIPTION_MAX_CHARS = 1024;
 export const MCP_SCHEMA_MAX_DEPTH = 8;
 export const MCP_ENUM_MAX_VALUES = 100;
+/** Node budget for one conversion — ≈ what fits in MCP_SCHEMA_MAX_BYTES. */
+export const MCP_SCHEMA_MAX_NODES = Math.floor(MCP_SCHEMA_MAX_BYTES / 8);
 
 /** Keywords copied through verbatim once their subtree has been converted. */
 const COPY_KEYWORDS = [
@@ -37,6 +44,9 @@ export type SanitizeResult =
   | { ok: false; reason: string };
 
 type Json = Record<string, unknown>;
+interface Budget {
+  nodes: number;
+}
 
 function isObj(v: unknown): v is Json {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -49,6 +59,13 @@ function truncate(text: unknown): string | undefined {
   return t.length > MCP_DESCRIPTION_MAX_CHARS
     ? t.slice(0, MCP_DESCRIPTION_MAX_CHARS) + "…"
     : t;
+}
+
+function charge(budget: Budget): void {
+  budget.nodes += 1;
+  if (budget.nodes > MCP_SCHEMA_MAX_NODES) {
+    throw new SchemaError("input schema too large");
+  }
 }
 
 function resolvePointer(root: Json, ref: string): unknown {
@@ -65,16 +82,26 @@ function resolvePointer(root: Json, ref: string): unknown {
   return cur;
 }
 
-function convert(node: unknown, root: Json, depth: number, refStack: readonly string[]): Json {
-  if (depth > MCP_SCHEMA_MAX_DEPTH) return {}; // prune deeper structure — permissive, still valid
+function convert(
+  node: unknown,
+  root: Json,
+  depth: number,
+  refStack: readonly string[],
+  budget: Budget,
+): Json {
+  charge(budget);
+  // JSON-Schema boolean schema / null: "anything" — degrade to an unconstrained
+  // node instead of failing the whole tool.
+  if (node === true || node === false || node === undefined || node === null) return {};
   if (!isObj(node)) throw new SchemaError("schema node is not an object");
+  if (depth > MCP_SCHEMA_MAX_DEPTH) return {}; // prune deeper structure — permissive, still valid
 
   // 1. Inline $ref (with cycle detection).
   if (typeof node.$ref === "string") {
     const ref = node.$ref;
     if (refStack.includes(ref)) throw new SchemaError(`circular $ref "${ref}"`);
     const target = resolvePointer(root, ref);
-    return convert(target, root, depth + 1, [...refStack, ref]);
+    return convert(target, root, depth + 1, [...refStack, ref], budget);
   }
 
   // 2. Collapse unions.
@@ -85,7 +112,7 @@ function convert(node: unknown, root: Json, depth: number, refStack: readonly st
       const merged: Json = { type: "object", properties: {}, required: [] };
       let sawObject = false;
       for (const v of variants) {
-        const c = convert(v, root, depth + 1, refStack);
+        const c = convert(v, root, depth + 1, refStack, budget);
         if (c.type !== "object") continue;
         sawObject = true;
         Object.assign(merged.properties as Json, c.properties);
@@ -95,11 +122,11 @@ function convert(node: unknown, root: Json, depth: number, refStack: readonly st
         if (typeof c.description === "string" && !merged.description) merged.description = c.description;
       }
       if (sawObject) return merged;
-      return convert(variants[0], root, depth + 1, refStack);
+      return convert(variants[0], root, depth + 1, refStack, budget);
     }
     // anyOf / oneOf — keep the first non-null variant (conservative).
     const first = variants.find((v) => !(isObj(v) && v.type === "null")) ?? variants[0];
-    return convert(first, root, depth + 1, refStack);
+    return convert(first, root, depth + 1, refStack, budget);
   }
 
   // 3. Type arrays (`["string","null"]`) → one type. Multiple real types →
@@ -128,12 +155,7 @@ function convert(node: unknown, root: Json, depth: number, refStack: readonly st
     const props: Json = {};
     if (isObj(node.properties)) {
       for (const [k, v] of Object.entries(node.properties)) {
-        try {
-          props[k] = convert(v, root, depth + 1, refStack);
-        } catch (e) {
-          if (e instanceof SchemaError) throw e;
-          props[k] = {}; // one unreadable property must not kill the tool
-        }
+        props[k] = convert(v, root, depth + 1, refStack, budget);
       }
     }
     out.properties = props;
@@ -142,12 +164,7 @@ function convert(node: unknown, root: Json, depth: number, refStack: readonly st
       if (required.length) out.required = required;
     }
   } else if (type === "array") {
-    try {
-      out.items = convert(node.items ?? {}, root, depth + 1, refStack);
-    } catch (e) {
-      if (e instanceof SchemaError) throw e;
-      out.items = {};
-    }
+    out.items = convert(node.items ?? {}, root, depth + 1, refStack, budget);
   }
 
   for (const key of COPY_KEYWORDS) {
@@ -169,7 +186,18 @@ export function sanitizeInputSchema(input: unknown): SanitizeResult {
     }
     if (!isObj(input)) return { ok: false, reason: "input schema is not an object" };
 
-    const converted = convert(input, input, 0, []);
+    // Entry pre-check: a schema that is already over the cap is rejected before
+    // any expansion work happens.
+    const inputBytes = JSON.stringify(input).length;
+    if (inputBytes > MCP_SCHEMA_MAX_BYTES) {
+      return {
+        ok: false,
+        reason: `input schema too large (${inputBytes} bytes > ${MCP_SCHEMA_MAX_BYTES})`,
+      };
+    }
+
+    const budget: Budget = { nodes: 0 };
+    const converted = convert(input, input, 0, [], budget);
     if (converted.type === undefined && isObj(converted.properties)) converted.type = "object";
     if (converted.type !== "object") {
       return {

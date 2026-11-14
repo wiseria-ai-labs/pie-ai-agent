@@ -7,8 +7,14 @@
 //
 // The in-flight handshake is stored separately from the live entry so a second
 // concurrent caller joins the SAME promise instead of starting a second
-// initialize — and that promise carries no caller signal, so aborting one
-// session's tool call can never tear down a handshake another session awaits.
+// initialize. That promise carries no caller signal: aborting one session's
+// wait must never tear down a handshake another session awaits. Callers that
+// want to stop waiting pass a `signal`, which races the shared promise.
+//
+// Invalidation (config edit / deleted server / settings "test connection")
+// bumps nothing but clears the maps; a handshake that was already running must
+// not resurrect itself, so results are cached only when this exact promise is
+// still the registered in-flight one.
 
 import { McpClient } from "./client";
 import { onStoreChange } from "../store-bus";
@@ -26,34 +32,69 @@ export interface LiveMcpServer {
 const live = new Map<string, LiveMcpServer>();
 const inflight = new Map<string, Promise<LiveMcpServer>>();
 
-export async function connectMcpServer(cfg: McpServerConfig): Promise<LiveMcpServer> {
-  const existing = live.get(cfg.id);
-  if (existing) return existing;
-  const pending = inflight.get(cfg.id);
-  if (pending) return pending;
-
-  const p = (async (): Promise<LiveMcpServer> => {
-    const client = new McpClient({ url: cfg.url, headers: cfg.headers });
-    await client.initialize();
-    const tools = await client.listTools();
-    const entry: LiveMcpServer = {
-      serverId: cfg.id,
-      name: cfg.name,
-      slug: cfg.slug,
-      client,
-      tools,
-    };
-    live.set(cfg.id, entry);
-    return entry;
-  })().finally(() => {
-    inflight.delete(cfg.id);
-  });
-  inflight.set(cfg.id, p);
-  return p;
+async function handshake(cfg: McpServerConfig): Promise<LiveMcpServer> {
+  const client = new McpClient({ url: cfg.url, headers: cfg.headers });
+  await client.initialize();
+  const tools = await client.listTools();
+  return { serverId: cfg.id, name: cfg.name, slug: cfg.slug, client, tools };
 }
 
-export function getLiveMcpServer(serverId: string): LiveMcpServer | undefined {
-  return live.get(serverId);
+/**
+ * Race a shared promise against a caller signal. Aborting rejects THIS caller
+ * only — the shared handshake keeps running for everybody else.
+ */
+function raceWithSignal<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return p;
+  if (signal.aborted) return Promise.reject(new Error("aborted"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new Error("aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (e) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(e);
+      },
+    );
+  });
+}
+
+export async function connectMcpServer(
+  cfg: McpServerConfig,
+  opts: { signal?: AbortSignal } = {},
+): Promise<LiveMcpServer> {
+  // Already-aborted caller: reject without touching the cache or starting a
+  // handshake nobody asked for.
+  if (opts.signal?.aborted) throw new Error("aborted");
+
+  const existing = live.get(cfg.id);
+  if (existing) return existing;
+
+  let pending = inflight.get(cfg.id);
+  if (!pending) {
+    const p = handshake(cfg).then(
+      (entry) => {
+        // Promise identity: if the cache was invalidated while we were
+        // connecting, this result is stale — never cache it, never delete a
+        // newer in-flight handshake.
+        if (inflight.get(cfg.id) === p) {
+          live.set(cfg.id, entry);
+          inflight.delete(cfg.id);
+        }
+        return entry;
+      },
+      (e) => {
+        if (inflight.get(cfg.id) === p) inflight.delete(cfg.id);
+        throw e;
+      },
+    );
+    pending = p;
+    inflight.set(cfg.id, p);
+  }
+  return raceWithSignal(pending, opts.signal);
 }
 
 export function invalidateMcpServer(serverId: string): void {
@@ -64,11 +105,6 @@ export function invalidateMcpServer(serverId: string): void {
 export function invalidateAllMcpServers(): void {
   live.clear();
   inflight.clear();
-}
-
-/** Test-only. */
-export function __resetMcpConnectionsForTests(): void {
-  invalidateAllMcpServers();
 }
 
 // Config changed / server deleted → the cached handshake (and its tool list) is

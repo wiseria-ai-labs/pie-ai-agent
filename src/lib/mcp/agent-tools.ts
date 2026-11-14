@@ -5,6 +5,13 @@
 // is active. Every call is confirmed once per session × server (D1=A), and the
 // result is fed back to the model inside `<untrusted_mcp_result>` — server text
 // is third-party input, exactly like page content.
+//
+// Dispatch never parses an exposed name back into {server, tool}: each handler
+// closure captures the live server + the tool's ORIGINAL name, so a lossy
+// sanitized/truncated name cannot misroute a call.
+//
+// `planMcpTools` is the pure half (sanitize + name); `buildMcpTools` wraps the
+// plan in handlers. The settings-page "test connection" uses the plan only.
 
 import type { Tool } from "../agent/types";
 import type { ActionResult } from "../dom-actions/types";
@@ -17,7 +24,6 @@ import type { McpServerConfig, McpToolCallResult, McpToolDef } from "./types";
 
 export const MCP_RESULT_MAX_CHARS = 16_000;
 export const MCP_ERROR_MAX_CHARS = 800;
-export const MCP_TOOL_DESCRIPTION_MAX_CHARS = MCP_DESCRIPTION_MAX_CHARS;
 
 /** Confirm-card payload. Args are shown verbatim — the approval signal comes
  *  from the panel, never from tool args (the LLM cannot self-approve). */
@@ -37,10 +43,23 @@ export interface McpToolsDeps {
   signal: AbortSignal;
 }
 
-export interface McpToolBuildResult {
-  tools: Tool[];
+export interface McpSkippedTool {
+  name: string;
+  reason: string;
+}
+
+/** One tool, sanitized and named, with no behavior attached. */
+export interface McpPlannedTool {
+  exposed: string;
+  def: McpToolDef;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface McpToolPlan {
+  entries: McpPlannedTool[];
   /** Tools the sanitizer refused (readable reason; the server stays usable). */
-  skipped: Array<{ name: string; reason: string }>;
+  skipped: McpSkippedTool[];
 }
 
 /** Wrap server-provided text as untrusted input (escape + truncate). */
@@ -75,14 +94,12 @@ function renderContent(res: McpToolCallResult): string {
 }
 
 /**
- * Turn one server's advertised tools into agent tools. Deterministic order
- * (server order in, list order out) — the loop sorts the final array so the
- * serialized tools prefix is byte-stable across turns (#175).
+ * Sanitize + name every tool the server advertises. Deterministic: server
+ * order in, `tools/list` order out. Pure (no I/O, no handlers).
  */
-export function buildMcpTools(live: LiveMcpServer, deps: McpToolsDeps): McpToolBuildResult {
-  const tools: Tool[] = [];
-  const skipped: McpToolBuildResult["skipped"] = [];
-  const group = mcpGroupId(live.slug);
+export function planMcpTools(live: Pick<LiveMcpServer, "name" | "slug" | "tools">): McpToolPlan {
+  const entries: McpPlannedTool[] = [];
+  const skipped: McpSkippedTool[] = [];
   const taken = new Set<string>();
 
   for (const def of live.tools as McpToolDef[]) {
@@ -96,61 +113,66 @@ export function buildMcpTools(live: LiveMcpServer, deps: McpToolsDeps): McpToolB
     const rawDesc = typeof def.description === "string" ? def.description.trim() : "";
     const description =
       `[MCP server "${live.name}"] ` +
-      (rawDesc.length > MCP_TOOL_DESCRIPTION_MAX_CHARS
-        ? rawDesc.slice(0, MCP_TOOL_DESCRIPTION_MAX_CHARS) + "…"
+      (rawDesc.length > MCP_DESCRIPTION_MAX_CHARS
+        ? rawDesc.slice(0, MCP_DESCRIPTION_MAX_CHARS) + "…"
         : rawDesc || `Tool "${def.name}" on the user's MCP server.`);
-
-    tools.push({
-      name: exposed,
-      description,
-      parameters: sanitized.schema,
-      // Explicit group: `getToolGroup` falls back to "core" for unknown names,
-      // which would keep un-activated MCP tools visible on every turn.
-      group,
-      handler: async (args: unknown): Promise<ActionResult> => {
-        const approved = await deps.confirm({
-          serverId: live.serverId,
-          serverName: live.name,
-          toolName: exposed,
-          originalToolName: def.name,
-          args,
-        });
-        if (!approved) {
-          return {
-            success: false,
-            observation: `MCP tool "${exposed}" was denied by the user.`,
-            error: "denied",
-          };
-        }
-        try {
-          const res = await deps.callTool(
-            def.name,
-            (args ?? {}) as Record<string, unknown>,
-            deps.signal,
-          );
-          const body = renderContent(res);
-          const wrapped = wrapMcpResult(live.name, def.name, body);
-          return res.isError
-            ? { success: false, observation: wrapped, error: "toolError" }
-            : { success: true, observation: wrapped };
-        } catch (e) {
-          const msg = describeMcpError(e).slice(0, MCP_ERROR_MAX_CHARS);
-          return {
-            success: false,
-            observation: wrapMcpResult(live.name, def.name, `MCP tool call failed: ${msg}`),
-            error: "mcpError",
-          };
-        }
-      },
-    });
+    entries.push({ exposed, def, description, parameters: sanitized.schema });
   }
-  return { tools, skipped };
+  return { entries, skipped };
+}
+
+/**
+ * Turn one server's advertised tools into agent tools (plan + handlers). The
+ * group is set explicitly: `getToolGroup` falls back to "core" for unknown
+ * names, which would keep un-activated MCP tools visible on every turn.
+ */
+export function buildMcpTools(live: LiveMcpServer, deps: McpToolsDeps): { tools: Tool[]; skipped: McpSkippedTool[] } {
+  const plan = planMcpTools(live);
+  const group = mcpGroupId(live.slug);
+  const tools = plan.entries.map(({ exposed, def, description, parameters }): Tool => ({
+    name: exposed,
+    description,
+    parameters,
+    group,
+    handler: async (args: unknown): Promise<ActionResult> => {
+      const approved = await deps.confirm({
+        serverId: live.serverId,
+        serverName: live.name,
+        toolName: exposed,
+        originalToolName: def.name,
+        args,
+      });
+      if (!approved) {
+        return {
+          success: false,
+          observation: `MCP tool "${exposed}" was denied by the user.`,
+          error: "denied",
+        };
+      }
+      try {
+        // Closed-over ORIGINAL name — never parsed back out of `exposed`.
+        const res = await deps.callTool(def.name, (args ?? {}) as Record<string, unknown>, deps.signal);
+        const wrapped = wrapMcpResult(live.name, def.name, renderContent(res));
+        return res.isError
+          ? { success: false, observation: wrapped, error: "toolError" }
+          : { success: true, observation: wrapped };
+      } catch (e) {
+        const msg = describeMcpError(e).slice(0, MCP_ERROR_MAX_CHARS);
+        return {
+          success: false,
+          observation: wrapMcpResult(live.name, def.name, `MCP tool call failed: ${msg}`),
+          error: "mcpError",
+        };
+      }
+    },
+  }));
+  return { tools, skipped: plan.skipped };
 }
 
 export interface McpActivateResult {
   ok: boolean;
   tools: Tool[];
-  skipped: McpToolBuildResult["skipped"];
+  skipped: McpSkippedTool[];
   /** Readable message for load_tools / settings (may contain untrusted server text). */
   message: string;
 }
@@ -158,14 +180,15 @@ export interface McpActivateResult {
 /**
  * Connect (or reuse the cached connection) and build this server's tools.
  * Never throws — a broken server yields `{ok:false, message}` so the caller can
- * report it without activating the group.
+ * report it without activating the group. `deps.signal` only aborts THIS
+ * caller's wait for the shared handshake.
  */
 export async function activateMcpServer(
   cfg: McpServerConfig,
   deps: McpToolsDeps,
 ): Promise<McpActivateResult> {
   try {
-    const live = await connectMcpServer(cfg);
+    const live = await connectMcpServer(cfg, { signal: deps.signal });
     const built = buildMcpTools(live, deps);
     const names = built.tools.map((t) => t.name);
     const lines = [
@@ -208,18 +231,19 @@ export function makeSessionMcpConfirm(deps: {
 
 /**
  * Resume helper (pure over the active set): reconnect every `mcp:*` group the
- * prior run had activated. Groups whose server is gone / unreachable are
- * dropped from `active` and returned so the caller can tell the model.
+ * prior run had activated — in parallel, so N servers don't serialize their
+ * handshakes. Groups whose server is gone / unreachable are dropped from
+ * `active` and returned so the caller can tell the model.
  */
 export async function restoreMcpGroups(
   active: Set<string>,
   activate: (group: string) => Promise<{ ok: boolean }>,
 ): Promise<string[]> {
+  const groups = [...active].filter(isMcpGroupId);
+  const results = await Promise.all(groups.map(async (group) => ({ group, ok: (await activate(group)).ok })));
   const dropped: string[] = [];
-  for (const group of [...active]) {
-    if (!isMcpGroupId(group)) continue;
-    const res = await activate(group);
-    if (!res.ok) {
+  for (const { group, ok } of results) {
+    if (!ok) {
       active.delete(group);
       dropped.push(group);
     }

@@ -108,7 +108,6 @@ export const ptBRDict = {
       headerValue: "Valor do cabeçalho",
       headerKeepPlaceholder: "Salvo — deixe em branco para manter",
       addHeader: "Adicionar cabeçalho",
-      deleteConfirm: "Excluir este servidor MCP?",
       test: "Testar conexão",
       testing: "Testando…",
       toolsFound: "Ferramentas",

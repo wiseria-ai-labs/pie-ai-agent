@@ -89,31 +89,6 @@ export function exposedMcpToolName(
   }
 }
 
-/** `exposed name → whose tool is it` — the only dispatch mechanism. */
-export interface McpToolRef {
-  serverId: string;
-  toolName: string;
-}
-
-/**
- * Build the reverse-lookup table for a set of servers. Deterministic: servers in
- * the given order, tools in each server's advertised order.
- */
-export function buildMcpDispatch(
-  servers: ReadonlyArray<{ id: string; slug: string; tools: ReadonlyArray<{ name: string }> }>,
-): Map<string, McpToolRef> {
-  const table = new Map<string, McpToolRef>();
-  for (const server of servers) {
-    const taken = new Set<string>();
-    for (const tool of server.tools) {
-      const exposed = exposedMcpToolName(server.slug, tool.name, taken);
-      taken.add(exposed);
-      table.set(exposed, { serverId: server.id, toolName: tool.name });
-    }
-  }
-  return table;
-}
-
 /**
  * One line in `<available_tools_catalog>` for a server group. Only the
  * user-provided name is included (no URL, no server-provided text).

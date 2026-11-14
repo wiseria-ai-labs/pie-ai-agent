@@ -102,6 +102,43 @@ describe("sanitizeInputSchema", () => {
     expect(JSON.stringify(big).length).toBeGreaterThan(MCP_SCHEMA_MAX_BYTES);
   });
 
+  it("rejects a fan-out $ref schema quickly instead of expanding it", () => {
+    const defs: Record<string, unknown> = {};
+    const DEFS = 4;
+    const PROPS = 60;
+    for (let d = 0; d < DEFS; d++) {
+      const properties: Record<string, unknown> = {};
+      for (let i = 0; i < PROPS; i++) {
+        properties[`p${i}`] =
+          d === DEFS - 1 ? { type: "string" } : { $ref: `#/$defs/D${d + 1}` };
+      }
+      defs[`D${d}`] = { type: "object", properties };
+    }
+    const input = {
+      type: "object",
+      $defs: defs,
+      properties: { root: { $ref: "#/$defs/D0" } },
+    };
+    expect(JSON.stringify(input).length).toBeLessThan(MCP_SCHEMA_MAX_BYTES);
+
+    const started = performance.now();
+    const r = sanitizeInputSchema(input);
+    const elapsed = performance.now() - started;
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toMatch(/too large/);
+    expect(elapsed).toBeLessThan(50);
+  });
+
+  it("degrades boolean property schemas to unconstrained nodes", () => {
+    const r = sanitizeInputSchema({ type: "object", properties: { a: true, b: false } });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const props = r.schema.properties as Record<string, unknown>;
+    expect(props.a).toEqual({});
+    expect(props.b).toEqual({});
+  });
+
   it("accepts a missing schema as an empty object", () => {
     expect(sanitizeInputSchema(undefined)).toEqual({
       ok: true,

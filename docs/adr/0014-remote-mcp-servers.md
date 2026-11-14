@@ -14,7 +14,8 @@ SW 直连,把 server 的工具交给 agent;与 daemon 侧还没实现的 stdio M
    不用 chrome.storage。
 2. **命名**:对外名 `mcp_<slug>_<tool>`,`[a-zA-Z0-9_-]` / ≤64 / 字母开头;slug 由用户
    填的名称派生(非 ASCII 回落到短 hash),保存时校验唯一,截断撞名加 hash 后缀。
-   分发靠「对外名 → {serverId, 原始工具名}」反查表,**不解析字符串**。
+   分发不靠名字:每个工具的 handler 闭包持有 {server, 原始工具名},名字永不反解析
+   (对外名是有损的——净化与截断都不可逆)。
 3. **披露粒度**:一个 server = 一个懒加载组 `mcp:<slug>`(progressive-tool-disclosure
    spec §9)。任务开始时按已配置 server 快照进 `<available_tools_catalog>` 与
    `load_tools` 的 enum(中途新增的 server 下个任务才可见,保持前缀字节稳定 #175)。

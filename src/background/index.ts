@@ -77,10 +77,7 @@ import { setScheduleRunDep } from "@/lib/agent/tools/schedule-meta";
 import { handleScheduleAction } from "@/lib/schedules/action-handler";
 import { SCHEDULE_ACTION_MESSAGE, type ScheduleActionMessage } from "@/lib/schedules/panel-actions";
 import { handleSkillsAction } from "./skills-action-handler";
-import { listMcpServers } from "@/lib/mcp/store";
-import { connectMcpServer, invalidateMcpServer } from "@/lib/mcp/connection";
-import { buildMcpTools } from "@/lib/mcp/agent-tools";
-import { describeMcpError } from "@/lib/mcp/client";
+import { MCP_TEST_MESSAGE, testMcpServer, type McpTestMessage } from "@/lib/mcp/test-connection";
 import { SKILLS_ACTION_MESSAGE, type SkillsActionMessage } from "@/lib/skills/panel-actions";
 import { DELETE_SESSION_WORKSPACE_MESSAGE, type DeleteSessionWorkspaceMessage } from "@/lib/sessions/workspace-cleanup";
 import {
@@ -772,35 +769,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // async response
   }
 
-  // Settings「本地打通」section — panel queries live bridge status.
-  // #481 — Settings「MCP servers」测试连接。跑在 SW 里（连接缓存只在这里），
-  // 强制重连一次再报结果：缓存里的旧握手不能当作「测试通过」。
-  if (message?.type === "mcp:test") {
-    const serverId = (message as { serverId?: unknown }).serverId;
-    (async () => {
-      if (typeof serverId !== "string") {
-        return { ok: false, tools: [], skipped: [], error: "missing serverId" };
-      }
-      const cfg = (await listMcpServers()).find((s) => s.id === serverId);
-      if (!cfg) return { ok: false, tools: [], skipped: [], error: "server not found" };
-      invalidateMcpServer(serverId);
-      try {
-        const live = await connectMcpServer(cfg);
-        const built = buildMcpTools(live, {
-          callTool: () => Promise.reject(new Error("test probe")),
-          confirm: async () => false,
-          signal: new AbortController().signal,
-        });
-        return { ok: true, tools: built.tools.map((t) => t.name), skipped: built.skipped, error: undefined };
-      } catch (e) {
-        return { ok: false, tools: [], skipped: [], error: describeMcpError(e) };
-      }
-    })()
+  // #481 — Settings「MCP servers」测试连接。跑在 SW 里（连接缓存只在这里）；
+  // testMcpServer 自己负责强制重连 + 工具清单，面板共用同一个类型契约。
+  if (message?.type === MCP_TEST_MESSAGE) {
+    const { serverId } = message as McpTestMessage;
+    testMcpServer(typeof serverId === "string" ? serverId : "")
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, tools: [], skipped: [], error: String(e) }));
     return true; // async response
   }
 
+  // Settings「本地打通」section — panel queries live bridge status.
   if (message?.type === "local-bridge:status") {
     chrome.permissions
       .contains({ permissions: ["nativeMessaging"] })

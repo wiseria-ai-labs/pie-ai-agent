@@ -5,7 +5,7 @@ import {
   MCP_TOOL_CALL_TIMEOUT_MS,
   describeMcpError,
 } from "./client";
-import { connectMcpServer, __resetMcpConnectionsForTests } from "./connection";
+import { connectMcpServer, invalidateAllMcpServers } from "./connection";
 import type { McpServerConfig } from "./types";
 
 function json(body: unknown, headers: Record<string, string> = {}, status = 200): Response {
@@ -58,7 +58,7 @@ const cfg: McpServerConfig = {
 };
 
 beforeEach(() => {
-  __resetMcpConnectionsForTests();
+  invalidateAllMcpServers();
 });
 
 afterEach(() => {
@@ -71,7 +71,7 @@ describe("McpClient handshake + tools", () => {
     const { calls, fetchMock } = mockFetch((req) => {
       if (req.method === "initialize") {
         return json(
-          { jsonrpc: "2.0", id: req.id, result: { protocolVersion: "2025-06-18", instructions: "be nice" } },
+          { jsonrpc: "2.0", id: req.id, result: { protocolVersion: "2025-06-18" } },
           { "mcp-session-id": "sess-1" },
         );
       }
@@ -86,7 +86,6 @@ describe("McpClient handshake + tools", () => {
     await client.initialize();
     expect(client.sessionId).toBe("sess-1");
     expect(client.protocolVersion).toBe("2025-06-18");
-    expect(client.instructions).toBe("be nice");
 
     const tools = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual(["read_document"]);

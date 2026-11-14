@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildMcpDispatch,
   deriveSlug,
   exposedMcpToolName,
   isMcpGroupId,
@@ -68,16 +67,5 @@ describe("group ids", () => {
     expect(isMcpGroupId("mcp:")).toBe(false);
     expect(mcpSlugFromGroup("mcp:docs")).toBe("docs");
     expect(mcpSlugFromGroup("pdf")).toBeNull();
-  });
-});
-
-describe("buildMcpDispatch", () => {
-  it("maps exposed names back to their server + original tool name", () => {
-    const table = buildMcpDispatch([
-      { id: "a", slug: "alpha", tools: [{ name: "search" }] },
-      { id: "b", slug: "beta", tools: [{ name: "search" }] },
-    ]);
-    expect(table.get("mcp_alpha_search")).toEqual({ serverId: "a", toolName: "search" });
-    expect(table.get("mcp_beta_search")).toEqual({ serverId: "b", toolName: "search" });
   });
 });

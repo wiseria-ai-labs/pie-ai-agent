@@ -107,7 +107,6 @@ export const zhTWDict = {
       headerValue: "標頭值",
       headerKeepPlaceholder: "已儲存——留空維持不變",
       addHeader: "新增標頭",
-      deleteConfirm: "刪除這個 MCP 伺服器？",
       test: "測試連線",
       testing: "測試中…",
       toolsFound: "工具",
