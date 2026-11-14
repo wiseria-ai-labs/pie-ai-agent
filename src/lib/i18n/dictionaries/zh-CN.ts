@@ -499,7 +499,7 @@ export const zhCNDict = {
     forgetConfig: "删除配置",
   },
   agentStep: {
-    callingToolPrefix: "正在调用",
+    tool: "工具",
     collapse: "收起",
     expand: "详情",
     element: "元素 ",

@@ -504,7 +504,7 @@ export const ptBRDict = {
     forgetConfig: "Esquecer configuração",
   },
   agentStep: {
-    callingToolPrefix: "Chamando",
+    tool: "ferramenta",
     collapse: "Recolher",
     expand: "Detalhes",
     element: "elemento ",

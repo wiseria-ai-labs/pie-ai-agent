@@ -504,7 +504,7 @@ export const es419Dict = {
     forgetConfig: "Olvidar configuración",
   },
   agentStep: {
-    callingToolPrefix: "Llamando",
+    tool: "herramienta",
     collapse: "Contraer",
     expand: "Detalles",
     element: "elemento ",

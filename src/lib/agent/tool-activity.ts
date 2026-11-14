@@ -9,6 +9,7 @@
 // Every registered tool MUST have an entry; the module throws at load when a
 // new tool is added without one, and a test enumerates the registry too.
 
+import type { DictKey } from "@/lib/i18n";
 import {
   KNOWN_BUILT_IN_TOOL_NAMES,
   KNOWN_EDITOR_TOOL_NAMES,
@@ -121,6 +122,27 @@ export const TOOL_ACTIVITY: Readonly<Record<string, ToolActivityKey>> = {
 /** Capsule line for a tool name; unknown tools fall back to "working…". */
 export function toolActivityKey(tool: string): ToolActivityKey {
   return TOOL_ACTIVITY[tool] ?? "other";
+}
+
+/** The ONE dictionary key per activity. The side panel reads it with `useT()`,
+ *  the SW ships it into OverlayUiStrings for the capsule — same keys, so the
+ *  two surfaces can never drift into different copy. */
+export const TOOL_ACTIVITY_DICT_KEY: Readonly<Record<ToolActivityKey, DictKey>> = {
+  readPage: "overlay.capsule.activity.readPage",
+  actPage: "overlay.capsule.activity.actPage",
+  openPage: "overlay.capsule.activity.openPage",
+  readPdf: "overlay.capsule.activity.readPdf",
+  searchBookmarks: "overlay.capsule.activity.searchBookmarks",
+  searchHistory: "overlay.capsule.activity.searchHistory",
+  bookmarks: "overlay.capsule.activity.bookmarks",
+  memory: "overlay.capsule.activity.memory",
+  monitor: "overlay.capsule.activity.monitor",
+  other: "overlay.capsule.activity.other",
+};
+
+/** Localized activity line for a tool (side panel / any `t`-driven surface). */
+export function activityTextFor(tool: string, t: (key: DictKey) => string): string {
+  return t(TOOL_ACTIVITY_DICT_KEY[toolActivityKey(tool)]);
 }
 
 // Build-time exhaustive check — a new registered tool without an activity

@@ -93,7 +93,9 @@ const ACTIVITY_STRING: Record<ToolActivityKey, keyof OverlayUiStrings> = {
   other: "activityOther",
 };
 
-function activityText(tool: string, strings: OverlayUiStrings): string {
+/** The capsule's copy for a tool. Exported so tests can assert it matches the
+ *  side panel's `activityTextFor` for the same tool. */
+export function capsuleActivityText(tool: string, strings: OverlayUiStrings): string {
   return strings[ACTIVITY_STRING[toolActivityKey(tool)]] ?? strings.activityOther;
 }
 
@@ -101,7 +103,7 @@ function statusText(state: OverlayCapsuleState, strings: OverlayUiStrings): stri
   switch (state.status) {
     case "run": {
       const last = state.steps[state.steps.length - 1];
-      return last ? activityText(last.tool, strings) : strings.activityOther;
+      return last ? capsuleActivityText(last.tool, strings) : strings.activityOther;
     }
     case "done":
       return strings.capsuleDone;
@@ -140,7 +142,7 @@ export function showCapsule(
           const last = i === state.steps.length - 1;
           const cls =
             s.status === "error" ? "error" : s.status === "pending" && last && state.status === "run" ? "pending" : "";
-          return `<div class="row ${cls}"><span class="i">${cls === "error" ? "!" : cls === "pending" ? "•" : "✓"}</span><span class="t">${escapeHtml(activityText(s.tool, strings))}</span></div>`;
+          return `<div class="row ${cls}"><span class="i">${cls === "error" ? "!" : cls === "pending" ? "•" : "✓"}</span><span class="t">${escapeHtml(capsuleActivityText(s.tool, strings))}</span></div>`;
         })
         .join("")}</div>`
     : "";

@@ -499,7 +499,7 @@ export const zhTWDict = {
     forgetConfig: "刪除設定檔",
   },
   agentStep: {
-    callingToolPrefix: "正在呼叫",
+    tool: "工具",
     collapse: "收合",
     expand: "詳情",
     element: "元素 ",

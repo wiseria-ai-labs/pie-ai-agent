@@ -503,7 +503,7 @@ export const jaDict = {
     forgetConfig: "設定を削除",
   },
   agentStep: {
-    callingToolPrefix: "呼び出し中",
+    tool: "ツール",
     collapse: "折りたたむ",
     expand: "詳細",
     element: "要素 ",

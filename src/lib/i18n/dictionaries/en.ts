@@ -512,7 +512,7 @@ export const enDict = {
     forgetConfig: "Forget config",
   },
   agentStep: {
-    callingToolPrefix: "Calling",
+    tool: "tool",
     collapse: "Collapse",
     expand: "Details",
     element: "element ",

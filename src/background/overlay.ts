@@ -38,6 +38,7 @@ import {
   type OverlaySelection,
 } from "@/lib/overlay/protocol";
 import { resolveInitialTranslateTarget } from "@/lib/overlay/translate-target";
+import { TOOL_ACTIVITY_DICT_KEY } from "@/lib/agent/tool-activity";
 import {
   applyOverlayEmit,
   capsuleSteps,
@@ -804,16 +805,18 @@ export async function overlayConfigReply(browserLanguage?: string): Promise<Over
       capsuleDone: t("overlay.capsule.done"),
       capsuleStopped: t("overlay.capsule.stopped"),
       capsuleFailed: t("overlay.capsule.failed"),
-      activityReadPage: t("overlay.capsule.activity.readPage"),
-      activityActPage: t("overlay.capsule.activity.actPage"),
-      activityOpenPage: t("overlay.capsule.activity.openPage"),
-      activityReadPdf: t("overlay.capsule.activity.readPdf"),
-      activitySearchBookmarks: t("overlay.capsule.activity.searchBookmarks"),
-      activitySearchHistory: t("overlay.capsule.activity.searchHistory"),
-      activityBookmarks: t("overlay.capsule.activity.bookmarks"),
-      activityMemory: t("overlay.capsule.activity.memory"),
-      activityMonitor: t("overlay.capsule.activity.monitor"),
-      activityOther: t("overlay.capsule.activity.other"),
+      // Same dictionary keys the side panel renders (tool-activity.ts) —
+      // single source for both surfaces.
+      activityReadPage: t(TOOL_ACTIVITY_DICT_KEY.readPage),
+      activityActPage: t(TOOL_ACTIVITY_DICT_KEY.actPage),
+      activityOpenPage: t(TOOL_ACTIVITY_DICT_KEY.openPage),
+      activityReadPdf: t(TOOL_ACTIVITY_DICT_KEY.readPdf),
+      activitySearchBookmarks: t(TOOL_ACTIVITY_DICT_KEY.searchBookmarks),
+      activitySearchHistory: t(TOOL_ACTIVITY_DICT_KEY.searchHistory),
+      activityBookmarks: t(TOOL_ACTIVITY_DICT_KEY.bookmarks),
+      activityMemory: t(TOOL_ACTIVITY_DICT_KEY.memory),
+      activityMonitor: t(TOOL_ACTIVITY_DICT_KEY.monitor),
+      activityOther: t(TOOL_ACTIVITY_DICT_KEY.other),
     },
   };
 }
