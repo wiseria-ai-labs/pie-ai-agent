@@ -30,7 +30,7 @@ import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import ManagedErrorCta from "./ManagedErrorCta";
 import type { DisplayMessage } from "@/types";
 import { QuoteChip } from "./QuoteChip";
-import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
+import { escapeUntrustedWrappers, escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
 import type { Quote, TextQuote, ElementQuote } from "@/types";
 import ModelPicker from "./ModelPicker";
 import PieFace from "./PieFace";
@@ -991,11 +991,11 @@ After the skill completes, briefly summarize what was created (the user will see
       for (const q of quotes) {
         if (q.kind === "text") {
           quoteParts.push(
-            `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${q.text}\n</untrusted_page_quote>`,
+            `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${escapeUntrustedWrappers(q.text)}\n</untrusted_page_quote>`,
           );
         } else {
           quoteParts.push(
-            `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${JSON.stringify(q.textContent)}\nouter_html: ${JSON.stringify(q.outerHTMLTruncated)}\n</untrusted_page_element>`,
+            `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${escapeUntrustedWrappers(JSON.stringify(q.textContent))}\nouter_html: ${escapeUntrustedWrappers(JSON.stringify(q.outerHTMLTruncated))}\n</untrusted_page_element>`,
           );
           if (q.imageDataUrl) {
             const [meta, b64] = q.imageDataUrl.split(",");
@@ -1078,11 +1078,11 @@ After the skill completes, briefly summarize what was created (the user will see
         for (const q of quotes) {
           if (q.kind === "text") {
             quoteParts.push(
-              `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${q.text}\n</untrusted_page_quote>`,
+              `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${escapeUntrustedWrappers(q.text)}\n</untrusted_page_quote>`,
             );
           } else {
             quoteParts.push(
-              `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${JSON.stringify(q.textContent)}\nouter_html: ${JSON.stringify(q.outerHTMLTruncated)}\n</untrusted_page_element>`,
+              `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${escapeUntrustedWrappers(JSON.stringify(q.textContent))}\nouter_html: ${escapeUntrustedWrappers(JSON.stringify(q.outerHTMLTruncated))}\n</untrusted_page_element>`,
             );
             if (q.imageDataUrl) {
               const [meta, b64] = q.imageDataUrl.split(",");
