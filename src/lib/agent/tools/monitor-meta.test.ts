@@ -7,6 +7,10 @@ import { _resetForTests } from "../../idb/db";
 import type { ToolHandlerContext } from "../types";
 import type { MonitorRecord } from "../../monitors/types";
 import type { MonitorDraftPayload, MonitorDraftResponse } from "./monitor-meta";
+import {
+  clearMonitorHighlightInPage,
+  paintMonitorHighlightInPage,
+} from "../../monitors/highlight";
 
 // Trial extraction is network-bound — mock the ops layer's network entry points.
 vi.mock("../../monitors/extract", async () => {
@@ -205,5 +209,76 @@ describe("update_monitor / delete_monitor", () => {
     await putMonitor(makeMonitor());
     expect((await del.handler({ id: "mon_x" }, ctx())).success).toBe(true);
     expect(await getMonitor("mon_x")).toBeNull();
+  });
+});
+
+// ── F9 — the dashed box outlines the target while the card is up ─────────────
+
+describe("propose_monitor — F9 highlight", () => {
+  const args = {
+    title: "Sony 降价",
+    url: "https://shop.example.com/item/1",
+    selector: ".price",
+    condition: { kind: "changed" },
+  };
+
+  let executeScript: ReturnType<typeof vi.fn>;
+  let tabsGet: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    executeScript = vi.fn(async () => [{ result: { found: true } }]);
+    tabsGet = vi.fn(async (id: number) => ({
+      id,
+      url: "https://shop.example.com/item/1",
+    }));
+    (globalThis as unknown as { chrome: unknown }).chrome = {
+      tabs: { get: tabsGet },
+      scripting: { executeScript },
+    };
+  });
+
+  it("paints on card show and clears on confirm", async () => {
+    const draft = draftRequester({ action: "start", intervalMinutes: 60 });
+    const res = await propose.handler(args, ctx({ tabId: 7, requestMonitorDraft: draft.fn }));
+    expect(res.success).toBe(true);
+
+    expect(executeScript).toHaveBeenCalledTimes(2);
+    const [paint, clear] = executeScript.mock.calls;
+    expect(paint![0].target).toEqual({ tabId: 7 });
+    expect(paint![0].func).toBe(paintMonitorHighlightInPage);
+    expect(paint![0].args[0]).toMatchObject({ selector: ".price" });
+    expect(clear![0].func).toBe(clearMonitorHighlightInPage);
+  });
+
+  it("clears even when the card is cancelled", async () => {
+    const draft = draftRequester({ action: "cancel" });
+    const res = await propose.handler(args, ctx({ tabId: 7, requestMonitorDraft: draft.fn }));
+    expect(res.success).toBe(true);
+    expect(executeScript).toHaveBeenCalledTimes(2);
+    expect(executeScript.mock.calls[1]![0].func).toBe(clearMonitorHighlightInPage);
+  });
+
+  it("clears in a finally — an unanswered card still removes the box", async () => {
+    const draft = vi.fn(async () => {
+      throw new Error("port closed");
+    });
+    const res = await propose.handler(args, ctx({ tabId: 7, requestMonitorDraft: draft }));
+    expect(res.success).toBe(false);
+    expect(executeScript).toHaveBeenCalledTimes(2);
+    expect(executeScript.mock.calls[1]![0].func).toBe(clearMonitorHighlightInPage);
+  });
+
+  it("does not paint when the pinned tab is on another origin", async () => {
+    tabsGet.mockResolvedValue({ id: 7, url: "https://elsewhere.example.org/" });
+    const draft = draftRequester({ action: "start", intervalMinutes: 60 });
+    await propose.handler(args, ctx({ tabId: 7, requestMonitorDraft: draft.fn }));
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("does not paint when the task has no pinned tab", async () => {
+    const draft = draftRequester({ action: "start", intervalMinutes: 60 });
+    await propose.handler(args, ctx({ tabId: -1, requestMonitorDraft: draft.fn }));
+    expect(executeScript).not.toHaveBeenCalled();
+    expect(tabsGet).not.toHaveBeenCalled();
   });
 });

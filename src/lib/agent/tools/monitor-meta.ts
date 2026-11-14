@@ -34,6 +34,12 @@ import type {
   MonitorIntervalMinutes,
   MonitorTarget,
 } from "../../monitors/types";
+import {
+  clearMonitorHighlight,
+  paintMonitorHighlight,
+  tabShowsMonitorUrl,
+} from "../../monitors/highlight";
+import { monitorHighlightLabel } from "../../monitors/notify";
 import { escapeUntrustedWrappers } from "../../agent/untrusted-wrappers";
 
 // ── 挂起式监控卡（F9）— 公共类型 ──────────────────────────────────────────────
@@ -182,6 +188,16 @@ const proposeMonitorTool: Tool = {
     }
 
     let decision: MonitorDraftResponse;
+    // F9 — outline the target on the page while the card is up, so the user can
+    // see WHICH element is being watched. Only when the task's pinned tab is
+    // actually showing the monitored page (origin match); the box is cleared on
+    // every exit path below (answered, cancelled, panel closed → request
+    // rejects, session switched → port dropped).
+    const tabId = typeof ctx.tabId === "number" && ctx.tabId >= 0 ? ctx.tabId : null;
+    const painted = tabId != null && (await tabShowsMonitorUrl(tabId, url));
+    if (painted && tabId != null) {
+      await paintMonitorHighlight(tabId, target, await monitorHighlightLabel());
+    }
     try {
       decision = await ctx.requestMonitorDraft({
         title: isNonEmptyString(a.title) ? a.title.trim() : new URL(url).hostname,
@@ -193,6 +209,8 @@ const proposeMonitorTool: Tool = {
       });
     } catch (e) {
       return err(e instanceof Error ? e.message : "monitor card was not answered");
+    } finally {
+      if (painted && tabId != null) await clearMonitorHighlight(tabId);
     }
 
     if (decision.action === "cancel") {
