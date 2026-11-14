@@ -56,10 +56,10 @@ export default function App() {
   // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
   // Settings → NewConfigWizard to open the managed-subscribe screen.
   const [subscribeNonce, setSubscribeNonce] = useState(0);
-  // M1: theme mode owned at App level so the button reflects state and we
-  // can persist to localStorage. M2 will wire data-theme to actually switch.
   // Pie 2.0 §1 / F3 — unread automation entries drive the top-bar dot.
   const [unreadAutomation, setUnreadAutomation] = useState(0);
+  // M1: theme mode owned at App level so the button reflects state and we
+  // can persist to localStorage. M2 will wire data-theme to actually switch.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     const stored = localStorage.getItem("theme-mode");
     return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
