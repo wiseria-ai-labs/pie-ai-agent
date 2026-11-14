@@ -13,10 +13,11 @@
 
 import { describe, expect, it, beforeEach } from "vitest";
 import { chromeMock } from "@/test/setup";
-import { captureActivePinnedTab } from "./capture-active-pinned";
+import { captureActivePinnedTab, capturePinnedTabById } from "./capture-active-pinned";
 
 beforeEach(() => {
   chromeMock.tabs.__activeTab = null;
+  chromeMock.tabs.__tabsById.clear();
 });
 
 describe("captureActivePinnedTab", () => {
@@ -60,5 +61,27 @@ describe("captureActivePinnedTab", () => {
   it("returns null for a non-addressable tab id (-1)", async () => {
     chromeMock.tabs.__activeTab = { id: -1, url: "https://example.com" };
     expect(await captureActivePinnedTab()).toBeNull();
+  });
+});
+
+describe("capturePinnedTabById (#473 — panel send-time anchor)", () => {
+  it("resolves the EXACT tab id, never the active tab", async () => {
+    // The active tab is a different tab in a different window — the whole
+    // point of the anchor is that it must win.
+    chromeMock.tabs.__activeTab = { id: 1, url: "https://other-window.example" };
+    chromeMock.tabs.__tabsById.set(9, { id: 9, url: "https://anchor.example/a" });
+    expect(await capturePinnedTabById(9)).toEqual({
+      tabId: 9,
+      origin: "https://anchor.example",
+    });
+    expect(chromeMock.tabs.query).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the anchor tab is gone (closed between send and handler)", async () => {
+    expect(await capturePinnedTabById(404)).toBeNull();
+  });
+
+  it("returns null for a non-addressable tab id", async () => {
+    expect(await capturePinnedTabById(-1)).toBeNull();
   });
 });

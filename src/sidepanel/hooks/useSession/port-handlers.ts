@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { DisplayMessage, PortMessageToPanel, PortMessageToWorker, QuoteAddedMessage } from "@/types";
 import { EMPTY_SLOT, withSlot, type SessionRuntimeSlot } from "./runtime-map";
 import { resolveDownload } from "./download-pending";
+import { captureActivePinnedTab } from "@/lib/sessions/capture-active-pinned";
 
 export interface CreatePortHandlersDeps {
   slotsRef: MutableRefObject<Map<string, SessionRuntimeSlot>>;
@@ -416,10 +417,17 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       });
       if (flushed) void persistMessages(id, next);
       if (waiting.length > 0) {
-        postMessageRef?.current?.(id, {
-          type: "chat-start",
-          messages: chatMessages,
-          sessionId: id,
+        // Issue #473 — this fallback re-sends the whole turn as a fresh
+        // chat-start, so it carries the same send-time anchor as the normal
+        // path: the SW must not re-query "the active tab" from its own
+        // (window-less) context.
+        void captureActivePinnedTab().then((anchorPin) => {
+          postMessageRef?.current?.(id, {
+            type: "chat-start",
+            messages: chatMessages,
+            sessionId: id,
+            ...(anchorPin ? { anchorTabId: anchorPin.tabId } : {}),
+          });
         });
       }
       return;

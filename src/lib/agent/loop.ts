@@ -229,6 +229,18 @@ export interface AgentLoopContext {
    */
   initialFocusTabId?: number;
   /**
+   * Issue #473 — the panel's send-time anchor tab id. Used ONLY by the
+   * startup fallback below: when `pinnedTabs[]` is empty, the loop resolves
+   * this id directly (`chrome.tabs.get`) instead of asking for "the active
+   * tab". The SW has no window of its own, so that query resolves against
+   * the last-focused window and binds the task to a tab in a window the user
+   * already switched away from.
+   *
+   * A stale / closed anchor resolves to NO_PAGE_SENTINEL — never to some
+   * other tab.
+   */
+  anchorTabId?: number;
+  /**
    * M5 — current session's pin mode at chat-start. SW dispatcher computes
    * this via getEffectivePinMode(meta, agent) and threads it through to
    * the tool handler context (close_tabs K-9 reads it). Frozen for the
@@ -1466,12 +1478,27 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     // nudges the LLM to open_url); a missing tab (or a tabs.query failure)
     // becomes the page-less NO_PAGE_SENTINEL. The agent starts regardless and
     // recovers through the existing advisory channel.
-    try {
-      const tab = await queryActiveHostTab();
-      ({ pinnedTabId, pinnedOrigin } = resolveStartupPin(tab));
-    } catch {
-      pinnedTabId = NO_PAGE_SENTINEL;
-      pinnedOrigin = "";
+    //
+    // Issue #473 — an anchor from the panel wins over the active-tab query:
+    // resolve it by id, and if it is gone pin NO_PAGE_SENTINEL. Falling back
+    // to `queryActiveHostTab` here would bind the task to whatever window was
+    // last focused (the SW has no window), i.e. the exact bug.
+    if (typeof ctx.anchorTabId === "number") {
+      try {
+        const tab = await chrome.tabs.get(ctx.anchorTabId);
+        ({ pinnedTabId, pinnedOrigin } = resolveStartupPin(tab));
+      } catch {
+        pinnedTabId = NO_PAGE_SENTINEL;
+        pinnedOrigin = "";
+      }
+    } else {
+      try {
+        const tab = await queryActiveHostTab();
+        ({ pinnedTabId, pinnedOrigin } = resolveStartupPin(tab));
+      } catch {
+        pinnedTabId = NO_PAGE_SENTINEL;
+        pinnedOrigin = "";
+      }
     }
   }
 
@@ -1890,7 +1917,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       }
 
       // Build observation text
-      let observationText = buildObservationMessage(pageTitle, currentUrl);
+      let observationText = buildObservationMessage(
+        pageTitle,
+        currentUrl,
+        pinnedTabId === NO_PAGE_SENTINEL ? undefined : pinnedTabId,
+      );
       // Advisory runtime notices (trusted block, NOT untrusted page data).
       // Navigation divergence is surfaced once per distinct change; the periodic
       // self-check checkpoint re-appears every BUDGET_NUDGE_INTERVAL steps past

@@ -99,7 +99,7 @@ import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
 import { runStartupMigrations } from "@/lib/startup-migrations";
 import { getCrossSessionPinnedTabIds } from "@/lib/sessions/pinned-tab-registry";
 import { getEffectivePinMode, getPrimaryPin } from "@/lib/sessions/pin-state";
-import { captureActivePinnedTab } from "@/lib/sessions/capture-active-pinned";
+import { captureActivePinnedTab, capturePinnedTabById } from "@/lib/sessions/capture-active-pinned";
 import { chat } from "@/lib/model-router";
 import { generateTitle, maybeUpgradeFallbackTitle, resolveTitleSentinel } from "@/lib/sessions/title-generator";
 import {
@@ -1408,6 +1408,7 @@ async function handleChatStream(
   keepAlive: KeepAlive,
   gen: number,
   fallbackTitle?: string,
+  anchorTabId?: number,
 ) {
   const signal = abortController.signal;
   try {
@@ -1563,7 +1564,18 @@ async function handleChatStream(
     // Panel-side fire-and-forget capture (useSession.ts:783) may race with
     // this; both paths set pinMode='task', so the second write is a no-op
     // (idempotent invariant). SW-side path is the authoritative backstop.
-    await upgradeAutoToTaskAtChatStart(sessionId, captureActivePinnedTab).catch(
+    //
+    // Issue #473 — when the panel shipped a send-time anchor, capture THAT
+    // tab id instead of querying "the active tab" from the SW (which has no
+    // window and resolves against whatever window was last focused — the
+    // exact bug where switching windows right after sending hijacked the
+    // task). No anchor → legacy active-tab capture.
+    await upgradeAutoToTaskAtChatStart(
+      sessionId,
+      typeof anchorTabId === "number"
+        ? () => capturePinnedTabById(anchorTabId)
+        : captureActivePinnedTab,
+    ).catch(
       (e) => {
         console.warn(
           `[sw] upgradeAutoToTaskAtChatStart failed for session=${sessionId}:`,
@@ -1663,6 +1675,10 @@ async function handleChatStream(
       // upgrade at line 1035), so pinnedTabs[] reflects the upgraded state.
       pinnedTabs: sessionMeta?.pinnedTabs ?? [],
       initialFocusTabId: sessionMeta?.pinnedTabs?.[0]?.tabId,
+      // Issue #473 — the panel-captured send-time anchor. The loop's startup
+      // fallback (only reachable when pinnedTabs[] is empty) resolves this id
+      // instead of querying the active tab.
+      anchorTabId,
       // M3-U4 (TOCTOU fix) — refresh the cross-session pinned-tab
       // registry per tool dispatch. The frozen snapshot here would miss
       // sessions created mid-loop.
@@ -1815,6 +1831,7 @@ chrome.runtime.onConnect.addListener((port) => {
         keepAlive,
         beginTask(message.sessionId),
         message.fallbackTitle,
+        message.anchorTabId,
       );
     } else if (message.type === "chat-abort") {
       abortRotation.current.abort();

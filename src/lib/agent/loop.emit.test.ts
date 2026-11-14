@@ -16,7 +16,14 @@ import type { AgentEmit } from "./loop";
 // Minimal chrome stubs (MV3 service-worker environment)
 // ---------------------------------------------------------------------------
 const chromeMock = {
-  tabs: { get: vi.fn().mockResolvedValue({ id: 1, url: "https://example.com", title: "Test" }) },
+  tabs: {
+    // Echo the requested id like the real API does (Issue #473 asserts the
+    // observation carries the anchor tab's id).
+    get: vi.fn((id: number) =>
+      Promise.resolve({ id, url: "https://example.com", title: "Test" }),
+    ),
+    query: vi.fn().mockResolvedValue([]),
+  },
   scripting: { executeScript: vi.fn().mockResolvedValue([{ result: "<body>hi</body>" }]) },
   storage: { local: { get: vi.fn().mockResolvedValue({}), set: vi.fn() } },
   runtime: { id: "test-ext-id", getURL: vi.fn((p: string) => `chrome-extension://test/${p}`) },
@@ -606,5 +613,58 @@ describe("Issue #470 — queued instruction during the final turn", () => {
     vi.mocked(pending.drainPending).mockImplementation(async () => []);
     await runAgentLoop(baseCtx(vi.fn()) as never);
     expect(streamChat).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #473 — panel send-time anchor
+// ---------------------------------------------------------------------------
+describe("#473 — anchor tab (panel-captured send-time tab id)", () => {
+  const anchorCtx = (anchorTabId: number) => ({
+    emit: vi.fn() as AgentEmit,
+    task: "t",
+    modelConfig: { provider: "openai", model: "gpt-4o", apiKey: "sk", vision: false },
+    signal: new AbortController().signal,
+    sessionId: "s-473",
+    // Deliberately NO pinnedTabs — this is the first-send race the anchor
+    // exists for (session meta not yet patched).
+    anchorTabId,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("pins the anchor tab and never queries the active tab", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const { buildObservationMessage } = await import("./prompt");
+
+    await runAgentLoop(anchorCtx(7) as never);
+
+    // The SW has no window; `query({active:true})` would resolve against the
+    // last-focused window — that is the bug this test pins down.
+    expect(chromeMock.tabs.query).not.toHaveBeenCalled();
+    expect(chromeMock.tabs.get).toHaveBeenCalledWith(7);
+    // Observation advertises the operating tab.
+    expect(buildObservationMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      7,
+    );
+  });
+
+  it("a closed anchor degrades to the page-less sentinel, not another tab", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const { buildObservationMessage } = await import("./prompt");
+    chromeMock.tabs.get.mockRejectedValueOnce(new Error("No tab with id 7"));
+
+    await runAgentLoop(anchorCtx(7) as never);
+
+    expect(chromeMock.tabs.query).not.toHaveBeenCalled();
+    expect(buildObservationMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      undefined,
+    );
   });
 });

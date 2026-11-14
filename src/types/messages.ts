@@ -56,6 +56,18 @@ export interface ChatStartMessage {
    * user message (the only case the SW triggers title generation).
    */
   fallbackTitle?: string;
+  /**
+   * Issue #473 — the panel's OWN window's active tab, captured when the user
+   * pressed send. The service worker has no window of its own, so any
+   * `chrome.tabs.query({active:true})` it issues resolves against whatever
+   * window was last focused — a user who switches windows right after sending
+   * would have the task bound to the wrong tab. When present, the SW pins this
+   * tab id and never falls back to an active-tab query.
+   *
+   * Optional / additive: older panels omit it and the SW keeps the legacy
+   * active-tab capture.
+   */
+  anchorTabId?: number;
 }
 
 export interface ChatAbortMessage {

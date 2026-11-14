@@ -448,6 +448,12 @@ describe("buildObservationMessage Phase 3 simplification", () => {
     expect(msg).not.toContain("Elements:");
     expect(msg).not.toContain("<untrusted_page_content");
   });
+
+  it("#473 — carries the operating tab id when known", () => {
+    expect(buildObservationMessage("Hello", "https://x.com/", 42)).toContain("Tab: 42");
+    // Page-less sentinel / unknown tab → no line at all.
+    expect(buildObservationMessage("Hello", "https://x.com/")).not.toContain("Tab:");
+  });
 });
 
 describe("buildAgentSystemPrompt Phase 3", () => {

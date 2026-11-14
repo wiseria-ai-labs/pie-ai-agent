@@ -35,26 +35,56 @@ export async function captureActivePinnedTab(): Promise<{
     // BOTH the panel and the SW, and on a fallback panel (Arc) `currentWindow`
     // is the panel's own popup — capturing it would pin Pie to itself.
     const tab = await queryActiveHostTab();
-    if (!tab?.id || !tab.url) return null;
-    // Chrome can return tab.id === -1 for session-restore / detached tabs;
-    // chrome.tabs.get(-1) throws synchronously downstream. Only pin real,
-    // addressable tabs.
-    if (!Number.isInteger(tab.id) || tab.id < 0) return null;
-    if (isFilePdfUrl(tab.url)) {
-      return { tabId: tab.id, origin: tab.url };
-    }
-    if (isRestrictedUrl(tab.url)) {
-      return { tabId: tab.id, origin: "" };
-    }
-    let origin: string;
-    try {
-      origin = new URL(tab.url).origin;
-    } catch {
-      return { tabId: tab.id, origin: "" };
-    }
-    if (!origin || origin === "null") return { tabId: tab.id, origin: "" };
-    return { tabId: tab.id, origin };
+    return pinnedFromTab(tab);
   } catch {
     return null;
   }
+}
+
+/**
+ * Issue #473 — pin capture for an EXPLICIT tab id (the panel's send-time
+ * anchor). Unlike `captureActivePinnedTab` this never consults "the active
+ * tab": the SW has no window of its own, so that query resolves against the
+ * last-focused window and silently binds the task to the wrong tab when the
+ * user switches windows right after sending.
+ *
+ * Same tab→pin contract as `captureActivePinnedTab`; returns null when the
+ * tab is gone (closed between send and handler) — the caller then pins the
+ * NO_PAGE_SENTINEL rather than guessing.
+ */
+export async function capturePinnedTabById(tabId: number): Promise<{
+  tabId: number;
+  origin: string;
+} | null> {
+  if (!Number.isInteger(tabId) || tabId < 0) return null;
+  try {
+    return pinnedFromTab(await chrome.tabs.get(tabId));
+  } catch {
+    return null;
+  }
+}
+
+/** Shared tab→pin mapping (single source for both capture entry points). */
+export function pinnedFromTab(
+  tab: { id?: number; url?: string } | undefined,
+): { tabId: number; origin: string } | null {
+  if (typeof tab?.id !== "number" || !tab.url) return null;
+  // Chrome can return tab.id === -1 for session-restore / detached tabs;
+  // chrome.tabs.get(-1) throws synchronously downstream. Only pin real,
+  // addressable tabs.
+  if (!Number.isInteger(tab.id) || tab.id < 0) return null;
+  if (isFilePdfUrl(tab.url)) {
+    return { tabId: tab.id, origin: tab.url };
+  }
+  if (isRestrictedUrl(tab.url)) {
+    return { tabId: tab.id, origin: "" };
+  }
+  let origin: string;
+  try {
+    origin = new URL(tab.url).origin;
+  } catch {
+    return { tabId: tab.id, origin: "" };
+  }
+  if (!origin || origin === "null") return { tabId: tab.id, origin: "" };
+  return { tabId: tab.id, origin };
 }

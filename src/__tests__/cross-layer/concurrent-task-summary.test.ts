@@ -17,8 +17,10 @@ describe("cross-layer: concurrent agent-done-task transit (#30)", () => {
     const idA = result.current.sessionId!;
     const portA = chromeMock.runtime.__ports.at(-1)!;
 
-    // User starts a task on A (simulate sendMessage flow)
-    act(() => {
+    // User starts a task on A (simulate sendMessage flow). Issue #473 — the
+    // panel posts chat-start after the async send-time anchor capture, so the
+    // act() must be async to flush it.
+    await act(async () => {
       result.current.sendMessage({ content: "do thing" });
     });
     // chat-start was posted with sessionId: idA

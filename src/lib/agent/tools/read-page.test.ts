@@ -110,6 +110,8 @@ describe("read_page tool", () => {
     const result = await readPageTool.handler({ tabId: 7, mode: "content" }, {} as any);
     expect(result.success).toBe(true);
     expect(result.observation).toContain('Current URL: https://example.com/');
+    // #473 — the operating tab id is part of the header.
+    expect(result.observation).toContain("Tab: 7");
     expect(result.observation).toContain('<frame_map>');
     expect(result.observation).toContain('frame_id="0"');
     expect(result.observation).toContain('<untrusted_page_content frame_id="0">');

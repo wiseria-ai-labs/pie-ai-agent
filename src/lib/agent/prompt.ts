@@ -445,6 +445,11 @@ export function buildAgentSystemPrompt(
 export function buildObservationMessage(
   title: string,
   currentUrl: string,
+  tabId?: number,
 ): string {
-  return `Current URL: ${currentUrl}\nPage title: ${title}`;
+  // Issue #473 — state which tab the loop is operating on. The user may have
+  // several windows open; without this the model cannot tell "the page
+  // changed" from "I'm looking at a different tab".
+  const tabLine = typeof tabId === "number" ? `\nTab: ${tabId}` : "";
+  return `Current URL: ${currentUrl}\nPage title: ${title}${tabLine}`;
 }
