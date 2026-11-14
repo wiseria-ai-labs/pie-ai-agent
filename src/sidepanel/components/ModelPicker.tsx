@@ -161,11 +161,14 @@ export default function ModelPicker(props: Props) {
       const meta = inst.provider.startsWith(CUSTOM_PREFIX)
         ? undefined
         : getProviderMeta(inst.provider as BuiltinProvider);
-      // 前提：唯一 lazy provider（openrouter）没有 endpointVariants，而所有带
-      // variant 的 provider 默认 models 非空，所以这里暂不感知 variant。若未来
-      // 某个 lazy provider 挂上带 models override 的 variant，需改为按 modelsFor 判断。
-      // managed 的 SWR 刷新由上方 useEffect 统一管（覆盖初始展开），不走这里。
-      const lazyEmpty = (meta?.models.length ?? 0) === 0 && (inst.fetchedModels?.length ?? 0) === 0;
+      // 仅内置「懒加载」provider（清单为空 + 声明了 modelsEndpoint）在展开时自动拉
+      // 一次；custom provider 的模型来自实体清单，刷新入口在向导/设置页，不在 picker
+      // 里自动发请求（失败会静默重试，形成无意义流量）。managed 的 SWR 刷新由上方
+      // useEffect 统一管（覆盖初始展开），不走这里。
+      const lazyEmpty =
+        !!meta?.modelsEndpoint &&
+        (meta.models.length ?? 0) === 0 &&
+        (inst.fetchedModels?.length ?? 0) === 0;
       if (lazyEmpty) props.onRefreshModels?.(inst.id);
     }
   }

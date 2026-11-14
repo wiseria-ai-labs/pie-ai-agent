@@ -16,8 +16,8 @@ import {
   removeProviderCustomModelMeta,
   type StoredCustomModelMeta,
 } from "@/lib/provider-custom-model-meta";
-import { getProviderMeta, resolveProviderMeta, resolveEndpointVariant } from "@/lib/model-router/providers/registry";
-import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
+import { resolveProviderMeta, resolveEndpointVariant } from "@/lib/model-router/providers/registry";
+import { fetchProviderModels } from "@/lib/provider-models-fetch";
 import {
   addCustomProviderModel, updateCustomProviderModel, removeCustomProviderModel,
   updateCustomProvider, CUSTOM_PREFIX, providerRefToId, listCustomProviders, getCustomProvider,
@@ -381,15 +381,17 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
                     await reload();
                   }}
                   onRefreshModels={async (apiKey) => {
-                    // /v1/models is public — apiKey is optional (forwarded for parity).
-                    if (inst.provider !== "openrouter") return;
-                    const meta = getProviderMeta("openrouter")!;
                     try {
-                      const fetched = await fetchOpenRouterModels(meta.defaultBaseUrl, apiKey || undefined);
+                      const fetched = await fetchProviderModels(inst.provider, apiKey || undefined, {
+                        endpointVariant: inst.endpointVariant,
+                        // 未保存的实体草稿（改 baseUrl 后立即刷新）优先。
+                        ...(isCustom && cpDraft ? { baseUrl: cpDraft.baseUrl.trim() } : {}),
+                      });
+                      if (!fetched) return;
                       await updateInstance(id, { fetchedModels: fetched, fetchedAt: Date.now() });
                       await reload();
                     } catch {
-                      // silent for v1; user can retry
+                      // silent — user can retry
                     }
                   }}
                 />

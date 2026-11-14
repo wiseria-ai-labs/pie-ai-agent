@@ -28,8 +28,8 @@ import {
 import { DEFAULT_CUSTOM_MODEL_MAX_CONTEXT } from "@/lib/provider-custom-model-meta";
 import { useT, providerDisplayName } from "@/lib/i18n";
 import { SmoothHeight } from "./ui/SmoothHeight";
-import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
 import { fetchOpenAICompatModels } from "@/lib/openai-compat-models-fetch";
+import { fetchProviderModels, supportsModelFetch } from "@/lib/provider-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import ProviderDropdown from "./ProviderDropdown";
 import CustomProviderFields from "./CustomProviderFields";
@@ -125,13 +125,14 @@ export default function NewConfigWizard(props: Props) {
     // Reset fetched cache when provider changes — different provider, different model list.
     setFetchedModels(undefined);
     setFetchedAt(undefined);
-    // OpenRouter /v1/models is public — pre-fetch immediately on provider select
-    // so the dropdown is populated before the user even opens it.
-    if (provider === "openrouter") {
-      const meta = getProviderMeta("openrouter")!;
+    // 懒加载 provider（清单为空 + 声明 modelsEndpoint，当前 = OpenRouter，endpoint
+    // 公开无需 key）在选择时预拉一次，下拉打开前就已就绪。
+    const meta = provider.startsWith(CUSTOM_PREFIX) ? undefined : getProviderMeta(provider as BuiltinProvider);
+    if (meta?.modelsEndpoint && meta.models.length === 0) {
       setIsFetching(true);
-      fetchOpenRouterModels(meta.defaultBaseUrl)
+      fetchProviderModels(provider)
         .then((list) => {
+          if (!list) return;
           setFetchedModels(list);
           setFetchedAt(Date.now());
         })
@@ -523,16 +524,19 @@ export default function NewConfigWizard(props: Props) {
             }
           }}
           onRefreshModels={async (apiKey) => {
-            // Only OpenRouter has /v1/models lazy fetch; other providers stay hardcoded.
-            // /v1/models is public, so apiKey is optional (passed for parity with edit flow).
-            if (provider !== "openrouter") return;
+            if (!provider || !supportsModelFetch(provider)) return;
+            // Draft/edited custom provider: the baseUrl lives in the form, not storage.
+            const target =
+              isDraft || customMode === "edit" ? { baseUrl: draftBaseUrl.trim() } : undefined;
             setIsFetching(true);
             try {
-              const fetched = await fetchOpenRouterModels(getProviderMeta("openrouter")!.defaultBaseUrl, apiKey || undefined);
-              setFetchedModels(fetched);
+              const fetched = await fetchProviderModels(provider, apiKey || undefined, target);
+              if (!fetched) return;
+              if (isDraft || customMode === "edit") setCustomFetched(fetched);
+              else setFetchedModels(fetched);
               setFetchedAt(Date.now());
             } catch {
-              // silent for v1; user can retry via ↻ refresh button
+              // silent — user can retry via ↻ refresh button
             } finally {
               setIsFetching(false);
             }

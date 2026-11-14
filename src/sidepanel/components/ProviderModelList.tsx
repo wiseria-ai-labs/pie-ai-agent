@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ProviderRef, ModelMeta, BuiltinProvider } from "@/lib/model-router";
 import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
+import { supportsModelFetch } from "@/lib/provider-models-fetch";
 import { useI18n } from "@/lib/i18n";
 import { type StoredCustomModelMeta, DEFAULT_CUSTOM_MODEL_MAX_CONTEXT } from "@/lib/provider-custom-model-meta";
 import ModelMetaEditor, { type ModelMetaDraft } from "./ModelMetaEditor";
@@ -49,14 +50,14 @@ export default function ProviderModelList(props: Props) {
   );
   // Custom (editable): customModels not already shown as built-in.
   const custom = props.customModels.filter((id) => !seen.has(id));
-  // Lazy fetch (未拉取/刷新 row) is a builtin-only affordance (openrouter):
-  // custom providers have no /v1/models refresh path wired, so rendering the
-  // row would show a dead button (#3).
-  const isLazy = !isCustomProvider && registry.length === 0;
+  // 刷新入口 = provider 是否支持 GET /v1/models（能力标记，不认 provider id）。
+  // 带 models override 的 endpoint variant 用固定池，拉回来的清单不会显示 → 不渲染。
+  // ponytail: custom provider 一律尝试（OpenAI-compat 约定），拉不到静默保留原清单。
+  const canFetch = supportsModelFetch(props.provider) && !variant?.models;
 
   return (
     <div className="flex flex-col gap-1.5">
-      {isLazy && props.onRefresh && (
+      {canFetch && props.onRefresh && (
         <div className="flex items-center justify-between px-1 text-[10px] text-fg-3">
           <span className="font-mono">
             {props.fetchedAt ? new Date(props.fetchedAt).toLocaleString(locale) : t("modelDropdown.notFetched")}

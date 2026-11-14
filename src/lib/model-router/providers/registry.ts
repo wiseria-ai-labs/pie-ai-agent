@@ -46,14 +46,16 @@ export interface ProviderMeta {
   placeholder: string;
   /**
    * Hardcoded curated model list, synced with each release. Empty array
-   * means the provider's models are fetched lazily from `modelsEndpoint`
-   * (currently only OpenRouter).
+   * means the provider's models come solely from `modelsEndpoint`.
    */
   models: ModelMeta[];
   /**
-   * Relative endpoint for lazy GET of available models. When set + models[]
-   * is empty, the Settings UI fetches on first instance dropdown open and
-   * caches per instance.
+   * Capability flag: the provider serves `GET /v1/models` (OpenAI wire). All
+   * refresh affordances (wizard / Settings / picker) gate on this flag, never
+   * on a hardcoded provider id. The actual URL is derived from the effective
+   * baseUrl by `fetchProviderModels` (it tolerates a baseUrl already ending in
+   * /vN). Custom providers implicitly support it even though they have no
+   * registry entry — see `resolveProviderMeta`.
    */
   modelsEndpoint?: string;
   /** 图标资源路径（相对扩展根；public/ 在 build 期拷到 dist/）。缺省时 UI 走
@@ -145,6 +147,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     iconAsset: "provider-icons/openai.svg",
     defaultBaseUrl: "https://api.openai.com",
     placeholder: "sk-...",
+    modelsEndpoint: "/v1/models",
     // Curated from the OpenAI models reference (issue #109). The agent loop
     // runs over the chat-completions streaming path and requires tool calling,
     // so only text/vision chat models are listed — image-gen (gpt-image-2),
@@ -199,6 +202,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // 钉到 "payg"，升级后仍打按量端点、key 不失效。
     defaultBaseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
     placeholder: "API key",
+    modelsEndpoint: "/v1/models",
     // Curated from the BigModel model-overview (issue #106). Only chat /
     // vision models are listed — the agent loop requires tool calling, so
     // image-gen / video / TTS-ASR / embedding / rerank models are out of
@@ -242,6 +246,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     iconAsset: "provider-icons/bailian.svg",
     defaultBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
     placeholder: "sk-...",
+    modelsEndpoint: "/v1/models",
     // Qwen3.8 / 3.7 全系 1M 上下文，均支持 Function Calling（百炼模型卡）。
     // qwen3.7-max 稳定别名等同纯文本快照 2026-05-20，vision false；其余输入模态含图片。
     models: [
@@ -309,6 +314,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // 按量计费是 "payg" variant（api.moonshot.ai）。存量按量实例由迁移钉到 "payg"。
     defaultBaseUrl: "https://api.kimi.com/coding",
     placeholder: "sk-kimi-...",
+    modelsEndpoint: "/v1/models",
     models: KIMI_CODE_MODELS,
     defaultEndpointLabel: "Kimi Code Plan",
     endpointVariants: [MOONSHOT_PAYG_INTL],
@@ -320,6 +326,7 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // 同 moonshot：默认走全局 Kimi Code Plan 端点，仅按量 variant 用 .cn 地区。
     defaultBaseUrl: "https://api.kimi.com/coding",
     placeholder: "sk-kimi-...",
+    modelsEndpoint: "/v1/models",
     models: KIMI_CODE_MODELS,
     defaultEndpointLabel: "Kimi Code Plan",
     endpointVariants: [MOONSHOT_PAYG_CN],
@@ -362,10 +369,11 @@ export const PROVIDER_REGISTRY: ProviderMeta[] = [
     // OpenAI-compat 网关（Bearer、POST /v1/chat/completions SSE、GET /v1/models），面向海外
     // 用户一把 key 聚合 DeepSeek / Qwen / GLM / Kimi / MiniMax（#446）。零 hook 薄 wrapper。
     // 模型清单来自 2026-09-16 `GET /v1/models`；元数据复用各上游条目的值，上游没有的
-    // 按 vision fail-closed。走硬编码清单而非 `modelsEndpoint` 懒拉取——拉取路径在 UI
-    // 三处硬钉 openrouter；网关新增 id 用户可经自定义模型池（pcm_a2agent）补。
+    // 按 vision fail-closed。同时挂了 `modelsEndpoint`——用户可点刷新把网关新 id 拉进
+    // 实例的 fetchedModels（清单外的新 id 也可经自定义模型池 pcm_a2agent 补）。
     defaultBaseUrl: "https://api.a2agent.me",
     placeholder: "sk-...",
+    modelsEndpoint: "/v1/models",
     models: [
       { id: "deepseek-v4-pro", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 384_000 },
       { id: "deepseek-v4-flash", vision: false, tools: true, maxContextTokens: 1_000_000, maxOutputTokens: 384_000 },
@@ -445,7 +453,9 @@ export async function resolveProviderMeta(ref: ProviderRef): Promise<ProviderMet
       defaultBaseUrl: cp.baseUrl,
       placeholder: "Custom",
       models: cp.models,
-      modelsEndpoint: undefined,
+      // 自定义 provider 一律尝试 /v1/models（OpenAI-compat 约定）；拉不到就静默回退
+      // 到实体自带的 models[]。baseUrl 在 ProviderMeta 不变式里由它自己提供。
+      modelsEndpoint: "/v1/models",
     };
   }
 

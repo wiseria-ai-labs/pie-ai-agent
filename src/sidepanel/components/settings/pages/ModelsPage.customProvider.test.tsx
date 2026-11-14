@@ -6,14 +6,14 @@
  * 保存后列表行的 provider 名称即时同步；builtin 卡保持锁死现状。
  */
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { saveCustomProvider, getCustomProvider, CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { createInstance, listInstances } from "@/lib/instances";
 import { _resetForTests } from "@/lib/idb/db";
 import { _resetKeyForTests } from "@/lib/crypto";
 import ModelsPage from "./ModelsPage";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 beforeEach(async () => {
   await _resetForTests();
@@ -84,5 +84,41 @@ describe("ModelsPage custom provider entity editing", () => {
     await screen.findByText(/LOCKED/);
     expect(screen.queryByPlaceholderText(/api\.example\.com/i)).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  it("custom provider 刷新模型：GET /v1/models 写进实例 fetchedModels（#468）", async () => {
+    await seedCustom();
+    const fetchMock = vi.fn(async (_url: string) => ({
+      ok: true, status: 200,
+      json: async () => ({ data: [{ id: "m-2" }] }),
+      text: async () => "",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ModelsPage />);
+    fireEvent.click(await screen.findByText("Proxy"));
+    fireEvent.click(await screen.findByText(/↻ refresh/i));
+
+    expect(await screen.findByText("m-2")).toBeTruthy();
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://proxy.example/v1/models");
+    expect((await listInstances())[0].fetchedModels?.map((m) => m.id)).toEqual(["m-2"]);
+  });
+
+  it("custom provider 刷新失败静默：不弹错，保留原清单", async () => {
+    await seedCustom();
+    const fetchMock = vi.fn(async (_url: string) => ({
+      ok: false, status: 404,
+      json: async () => ({}),
+      text: async () => "not found",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ModelsPage />);
+    fireEvent.click(await screen.findByText("Proxy"));
+    fireEvent.click(await screen.findByText(/↻ refresh/i));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    expect(screen.queryByText(/not found/i)).toBeNull();
+    expect((await listInstances())[0].fetchedModels).toBeUndefined();
   });
 });

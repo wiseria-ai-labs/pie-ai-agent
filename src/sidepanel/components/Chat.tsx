@@ -8,14 +8,14 @@ import {
   expandSlashCommand,
   normalizeSkillSlashKey,
 } from "@/lib/skills";
-import { resolveModelMeta, getProviderMeta } from "@/lib/model-router/providers/registry";
+import { resolveModelMeta } from "@/lib/model-router/providers/registry";
 import { resolveSupportsVision } from "./chat-vision";
 import ContextRing from "./ContextRing";
 import { listInstances, getInstance, updateInstance, type DecryptedInstance } from "@/lib/instances";
 import { cachedManagedModel, getEntitlement } from "@/lib/managed-account";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 import { setLastModelSelection } from "@/lib/last-model-selection";
-import { fetchOpenRouterModels } from "@/lib/openrouter-models-fetch";
+import { fetchProviderModels } from "@/lib/provider-models-fetch";
 import type { ImageAttachment } from "@/lib/images";
 import type { FileAttachment } from "@/lib/files/types";
 import { processPickedFile } from "@/lib/files/process-picked-file";
@@ -1516,10 +1516,12 @@ After the skill completes, briefly summarize what was created (the user will see
             await getEntitlement(inst.apiKey).catch(() => {});
             return;
           }
-          if (inst?.provider !== "openrouter") return;
-          const orMeta = getProviderMeta("openrouter")!;
+          if (!inst) return;
           try {
-            const fetched = await fetchOpenRouterModels(orMeta.defaultBaseUrl, inst.apiKey || undefined);
+            const fetched = await fetchProviderModels(inst.provider, inst.apiKey || undefined, {
+              endpointVariant: inst.endpointVariant,
+            });
+            if (!fetched) return;
             await updateInstance(id, { fetchedModels: fetched, fetchedAt: Date.now() });
             await listInstances().then(setInstances);
           } catch { /* silent; user can retry from Settings */ }
