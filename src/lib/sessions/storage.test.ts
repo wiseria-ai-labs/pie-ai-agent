@@ -14,6 +14,7 @@ import {
   markFailed,
   markFailedAndScrub,
   markPaused,
+  persistSessionMessages,
   removeSession,
   scrubPendingConfirm,
   setPendingConfirm,
@@ -110,7 +111,7 @@ describe("createSession", () => {
   });
 
   it("I-1: strips ImageAttachment.data from messages passed to createSession (R10 scrub)", async () => {
-    // Verify createSession applies scrubAttachmentBytes before persisting,
+    // Verify createSession applies scrubMessageBytes before persisting,
     // closing the gap where it previously wrote via writeAtomic directly.
     const messagesWithAttachment = [
       {
@@ -292,6 +293,37 @@ describe("setSessionMeta / setSessionAgent — D2 dual-key independence", () => 
     });
     const stored = await getSessionMeta(meta.id);
     expect(stored!.messages).toEqual([{ role: "user", content: "no images here" }]);
+  });
+
+  it("#438 — persistSessionMessages strips agent-step screenshot bytes before persisting", async () => {
+    const meta = await createSession();
+    const step = {
+      role: "agent-step" as const,
+      stepIndex: 0,
+      tool: "capture_visible_tab",
+      args: {},
+      status: "ok" as const,
+      observation: "captured",
+      image: {
+        mediaType: "image/jpeg",
+        data: "SCREENSHOTBASE64BYTES",
+        width: 1280,
+        height: 800,
+      },
+    };
+    await persistSessionMessages(meta.id, [step]);
+
+    const stored = await getSessionMeta(meta.id);
+    const storedStep = stored!.messages[0] as Record<string, unknown>;
+    const image = storedStep["image"] as Record<string, unknown>;
+    // Bytes gone; the dimensions that drive the "released" badge survive.
+    expect("data" in image).toBe(false);
+    expect(image["mediaType"]).toBe("image/jpeg");
+    expect(image["width"]).toBe(1280);
+    expect(image["height"]).toBe(800);
+    // Nothing else about the step changed.
+    expect(storedStep["tool"]).toBe("capture_visible_tab");
+    expect(storedStep["observation"]).toBe("captured");
   });
 });
 
@@ -729,6 +761,19 @@ describe("getPendingConfirmCount", () => {
     await scrubPendingConfirm(s1.id);
     expect(await getPendingConfirmCount()).toBe(1);
   });
+
+  it("#438 — counts only active sessions (no full-store scan); paused stale confirms are ignored", async () => {
+    // The count walks the session index and reads just the active sessions'
+    // agent records. A paused session's leftover agent-tool record has no live
+    // resolver (its port is gone) — the badge must not count it.
+    const live = await createSession();
+    const stale = await createSession();
+    await setPendingConfirm(live.id, { ...MOCK_PENDING, confirmationId: "live" });
+    await setPendingConfirm(stale.id, { ...MOCK_PENDING, confirmationId: "stale" });
+    expect(await getPendingConfirmCount()).toBe(2);
+    await markPaused(stale.id);
+    expect(await getPendingConfirmCount()).toBe(1);
+  });
 });
 
 describe("isPendingConfirmFloodLimited (boundary = 5)", () => {
@@ -751,10 +796,13 @@ describe("isPendingConfirmFloodLimited (boundary = 5)", () => {
   });
 
   it("returns true when 6 sessions have pendingConfirm", async () => {
-    const sessions = await Promise.all([
-      createSession(), createSession(), createSession(),
-      createSession(), createSession(), createSession(),
-    ]);
+    // #438 — the count walks the session index, and createSession's
+    // read-index→write-batch is not safe under concurrent calls (a racing
+    // create can drop the other's index entry). Create sequentially.
+    const sessions = [
+      await createSession(), await createSession(), await createSession(),
+      await createSession(), await createSession(), await createSession(),
+    ];
     await Promise.all(
       sessions.map((s, i) =>
         setPendingConfirm(s.id, { ...MOCK_PENDING, confirmationId: `c${i}` }),
@@ -764,10 +812,11 @@ describe("isPendingConfirmFloodLimited (boundary = 5)", () => {
   });
 
   it("returns false again after scrubbing one confirm back to 5", async () => {
-    const sessions = await Promise.all([
-      createSession(), createSession(), createSession(),
-      createSession(), createSession(), createSession(),
-    ]);
+    // Sequential — see the createSession index-race note above.
+    const sessions = [
+      await createSession(), await createSession(), await createSession(),
+      await createSession(), await createSession(), await createSession(),
+    ];
     await Promise.all(
       sessions.map((s, i) =>
         setPendingConfirm(s.id, { ...MOCK_PENDING, confirmationId: `c${i}` }),

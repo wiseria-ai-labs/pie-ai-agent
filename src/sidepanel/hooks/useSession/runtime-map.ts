@@ -87,6 +87,25 @@ export function withSlot(
 }
 
 /**
+ * #438 — drop screenshot base64 from a slot's messages. Only the active
+ * session is rendered, so holding every visited session's screenshots in
+ * `slots` is pure retention (a screenshot-heavy task can hold tens of MB).
+ * Returns the SAME array when there was nothing to release, so callers can
+ * skip the state update / React re-render.
+ */
+export function releaseImageBytes(messages: DisplayMessage[]): DisplayMessage[] {
+  let changed = false;
+  const next = messages.map((m) => {
+    if (m.role !== "agent-step" || m.image?.data === undefined) return m;
+    const { data: _drop, ...rest } = m.image;
+    void _drop;
+    changed = true;
+    return { ...m, image: rest };
+  });
+  return changed ? next : messages;
+}
+
+/**
  * Derive the active session's view. Returns EMPTY_SLOT when activeId is
  * null (bootstrap) or unknown (slot not yet initialized). The returned
  * object is the slot itself (referential identity preserved) when known,

@@ -10,6 +10,7 @@ import {
 import { setIndex } from "@/lib/idb/sessions-store";
 import { _resetForTests } from "@/lib/idb/db";
 import { useSession } from ".";
+import type { DisplayMessage } from "@/types";
 
 // Session persistence now lives in IndexedDB (the `pie` db). The shared
 // test/setup.ts beforeEach only clears the chrome.storage mock, so without an
@@ -1252,6 +1253,59 @@ describe("setActive — multi-session port lifecycle (#30)", () => {
       expect(result.current.sessionId).toBe(id);
     });
     expect(result.current.usage).toBeUndefined();
+  });
+});
+
+describe("#438 — screenshot bytes released on session switch", () => {
+  it("strips agent-step image bytes from the outgoing slot (keeps the active one)", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const idA = result.current.sessionId!;
+    const port = chromeMock.runtime.__ports[0]!;
+
+    // A task runs in A and produces one screenshot step.
+    act(() => result.current.sendMessage({ content: "capture the page" }));
+    await waitFor(() => expect(result.current.streaming).toBe(true));
+    act(() =>
+      emitWithSession(
+        port,
+        {
+          type: "agent-step",
+          stepIndex: 0,
+          tool: "capture_visible_tab",
+          args: {},
+          status: "ok",
+          observation: "captured",
+          image: { mediaType: "image/jpeg", data: "BASE64BYTES", width: 10, height: 10 },
+        },
+        idA,
+      ),
+    );
+    const liveStep = result.current.messages.find((m) => m.role === "agent-step");
+    expect(
+      (liveStep as Extract<DisplayMessage, { role: "agent-step" }>).image?.data,
+    ).toBe("BASE64BYTES");
+
+    // Switch away — A keeps streaming in the background, so its live slot is
+    // NOT re-hydrated from storage when we come back; that makes the release
+    // observable.
+    let idB: string | null = null;
+    await act(async () => {
+      idB = await result.current.createAndActivate();
+    });
+    expect(idB).not.toBe(idA);
+
+    await act(async () => {
+      await result.current.setActive(idA);
+    });
+    const back = result.current.messages.find((m) => m.role === "agent-step") as Extract<
+      DisplayMessage,
+      { role: "agent-step" }
+    >;
+    // Step survives, bytes gone (dimensions drive the "released" badge).
+    expect(back.tool).toBe("capture_visible_tab");
+    expect(back.image?.data).toBeUndefined();
+    expect(back.image?.width).toBe(10);
   });
 });
 

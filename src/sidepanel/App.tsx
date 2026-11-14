@@ -125,8 +125,9 @@ export default function App() {
 
   // ── Compute pendingCount ──────────────────────────────────────────────────
   // Count sessions whose :agent record has a live agent-tool pendingConfirm.
-  // Scans the IDB `sessions` store; refreshed via the store-bus "sessions"
-  // event rather than polling.
+  // #438 — cheap now: walks the session index and reads only the active
+  // sessions' agent records (no more full `sessions` store scan). Refreshed
+  // via the store-bus "sessions" event rather than polling.
   const refreshPendingCount = useCallback(async () => {
     setPendingCount(await getPendingConfirmCount());
   }, []);
@@ -214,9 +215,19 @@ export default function App() {
   // batch as session records but only emits a coarse "sessions" event
   // (writeSessionBatch never publishes to the "session_index" store), so one
   // subscription covers both the index refresh and the pending-count rescan.
-  useStoreChange("sessions", () => {
-    void refreshSessionIndex();
-    void refreshPendingCount();
+  //
+  // #438 — single-record writes carry the record id, and the two refreshes
+  // depend on different records: the drawer entry lives on the meta record,
+  // the pending badge on the agent record. Per-step SW writes are `:agent`
+  // only, so this keeps the index read off the step path (coarse/id-less
+  // batch events still refresh both).
+  useStoreChange("sessions", (c) => {
+    if (c.id === undefined || !c.id.endsWith(":agent")) {
+      void refreshSessionIndex();
+    }
+    if (c.id === undefined || c.id.endsWith(":agent")) {
+      void refreshPendingCount();
+    }
   });
 
   // Provider label depends on the active selection (config: last_model_selection
