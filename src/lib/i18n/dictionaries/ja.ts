@@ -126,7 +126,7 @@ export const jaDict = {
       positionAnchor: "選択範囲の近く",
       positionBottom: "下部中央",
       retentionLabel: "閉じた後も会話を保持",
-      retentionHint: "同じタブで再度開くと続きから",
+      retentionHint: "同じタブ・同じサイトでショートカットから開くと続きから。最後のやり取りから計算。テキスト選択からは常に新しい会話",
       retention10: "10 分",
       retention30: "30 分",
       retention60: "1 時間",

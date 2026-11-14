@@ -4,7 +4,7 @@ import {
   normalizeOverlaySettings,
   shouldShowSelectionBar,
 } from "./settings";
-import { isWithinRetention } from "./tab-session";
+import { decideOverlaySession, hostOf, isWithinRetention } from "./tab-session";
 import { buildOverlayWireContent } from "./wire";
 import { overlayPanelDeeplink, parseOverlayPanelDeeplink, overlayPrefillDeeplink, parseOverlayPrefillDeeplink } from "@/lib/deeplink";
 
@@ -147,3 +147,31 @@ describe("overlay deeplinks", () => {
     expect(parseOverlayPrefillDeeplink(undefined)).toBeNull();
   });
 });
+
+describe("overlay conversation per tab", () => {
+  const now = 1_800_000_000_000;
+  const rec = (minsAgo: number, host = "a.com") => ({ sessionId: "s1", at: now - minsAgo * 60_000, host });
+  const base = { live: false, fromSelectionBar: false, host: "a.com", retentionMinutes: 30 as const, now };
+
+  it("continues on the same site within the window", () => {
+    expect(decideOverlaySession({ ...base, remembered: rec(5) })).toBe("resume");
+    expect(decideOverlaySession({ ...base, remembered: rec(31) })).toBe("new");
+    expect(decideOverlaySession({ ...base, remembered: rec(5, "b.com") })).toBe("new");
+    expect(decideOverlaySession({ ...base, remembered: null })).toBe("new");
+    // Records written before the host field existed start fresh.
+    expect(decideOverlaySession({ ...base, remembered: { sessionId: "s1", at: now } })).toBe("new");
+  });
+
+  it("selection-bar opens start fresh unless a task is still running", () => {
+    expect(decideOverlaySession({ ...base, remembered: rec(1), fromSelectionBar: true })).toBe("new");
+    expect(decideOverlaySession({ ...base, remembered: rec(90, "b.com"), fromSelectionBar: true, live: true })).toBe(
+      "resume",
+    );
+  });
+
+  it("keys sites by host", () => {
+    expect(hostOf("https://docs.a.com/x?y")).toBe("docs.a.com");
+    expect(hostOf("not a url")).toBe("");
+  });
+});
+

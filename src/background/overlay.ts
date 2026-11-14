@@ -64,10 +64,13 @@ import {
 import { makeT, normalizeBrowserLocale } from "@/lib/i18n";
 import { readLocaleSetting } from "@/lib/i18n/locale-resolver";
 import {
+  decideOverlaySession,
   forgetOverlaySession,
+  hostOf,
   isWithinRetention,
   recallOverlaySession,
   rememberOverlaySession,
+  touchOverlaySession,
 } from "@/lib/overlay/tab-session";
 import { createKeepAlive } from "./keep-alive";
 import { openPanel } from "./panel-open";
@@ -145,6 +148,7 @@ export function startOverlayRun(
     finishedAt: null,
   };
   runs.set(sessionId, runtime);
+  void touchOverlaySession(tabId, sessionId);
   overlayInFlight.add(sessionId);
   overlayKeepAlive.ensure();
   // The side panel may already be showing this session; it becomes a live
@@ -278,6 +282,7 @@ export function wrapOverlayEmit(
 
     if (isTerminalEmit(m)) {
       runtime.finishedAt = Date.now();
+      void touchOverlaySession(runtime.run.tabId, runtime.run.sessionId);
       overlayInFlight.delete(runtime.run.sessionId);
       overlayKeepAlive.maybeStop();
       void finishRun(runtime);
@@ -379,7 +384,13 @@ export async function handleCapsuleAction(
   }
   // view / retry — back to the conversation in place.
   if (typeof tabId === "number") {
-    await openOverlayOnTabId(tabId, { intent: "hotkey", selection: null, prompt: null, autoSend: false });
+    await openOverlayOnTabId(tabId, {
+      intent: "hotkey",
+      selection: null,
+      prompt: null,
+      autoSend: false,
+      resume: true,
+    });
   }
 }
 
@@ -417,28 +428,55 @@ export interface OpenOverlayOptions {
   selection: OverlaySelection | null;
   prompt: string | null;
   autoSend: boolean;
+  /** Capsule "view" / "retry": back to that conversation whatever the rules say. */
+  resume?: boolean;
 }
+
+/** Selection-bar entries — each starts its own conversation. */
+const OVERLAY_SELECTION_BAR_INTENTS: ReadonlySet<OverlayIntent> = new Set<OverlayIntent>([
+  "ask",
+  "explain",
+  "translate",
+  "rewrite",
+]);
 
 function isPageOverlayable(tab: chrome.tabs.Tab): boolean {
   if (typeof tab.id !== "number") return false;
   return canHostOverlay(tab.url, isPdfTab(tab));
 }
 
-/** Resolve which conversation this tab's overlay should show. */
+/** Resolve which conversation this tab's overlay should show (rules in
+ *  `decideOverlaySession`). Resuming does not restart the retention clock —
+ *  only activity does. */
 async function resolveOverlaySession(
   tabId: number,
   settings: OverlaySettings,
+  host: string,
+  fromSelectionBar: boolean,
+  forceResume = false,
 ): Promise<{ sessionId: string; resumed: boolean }> {
   const remembered = await recallOverlaySession(tabId);
-  if (remembered && isWithinRetention(remembered.at, settings.retentionMinutes)) {
-    const meta = await getSessionMeta(remembered.sessionId).catch(() => null);
-    if (meta && meta.status !== "archived") {
-      await rememberOverlaySession(tabId, meta.id);
-      return { sessionId: meta.id, resumed: true };
-    }
+  const decision = forceResume && remembered
+    ? "resume"
+    : decideOverlaySession({
+        remembered,
+        live: remembered ? isOverlayRunLive(remembered.sessionId) : false,
+        fromSelectionBar,
+        host,
+        retentionMinutes: settings.retentionMinutes,
+      });
+  const prev = remembered ? await getSessionMeta(remembered.sessionId).catch(() => null) : null;
+  if (decision === "resume" && prev && prev.status !== "archived") {
+    return { sessionId: prev.id, resumed: true };
+  }
+  // A fresh conversation is wanted, and the last one never got a message:
+  // reuse it instead of leaving an empty "untitled" row per open.
+  if (prev && prev.status !== "archived" && (prev.messages?.length ?? 0) === 0 && !isOverlayRunLive(prev.id)) {
+    await rememberOverlaySession(tabId, prev.id, host);
+    return { sessionId: prev.id, resumed: false };
   }
   const meta = await createSession();
-  await rememberOverlaySession(tabId, meta.id);
+  await rememberOverlaySession(tabId, meta.id, host);
   return { sessionId: meta.id, resumed: false };
 }
 
@@ -464,7 +502,13 @@ export async function openOverlayOnTabId(tabId: number, opts: OpenOverlayOptions
   }
 
   const settings = await getOverlaySettings();
-  const { sessionId, resumed } = await resolveOverlaySession(tabId, settings);
+  const { sessionId, resumed } = await resolveOverlaySession(
+    tabId,
+    settings,
+    hostOf(tab.url),
+    OVERLAY_SELECTION_BAR_INTENTS.has(opts.intent),
+    opts.resume === true,
+  );
   const selection = opts.selection ?? (await askTabSelection(tabId));
   const prompt = opts.prompt;
   const autoSend = opts.autoSend;
@@ -623,7 +667,7 @@ export async function startNewOverlayChat(tabId: number): Promise<void> {
   if (!tab || !isPageOverlayable(tab)) return;
   const settings = await getOverlaySettings();
   const meta = await createSession();
-  await rememberOverlaySession(tabId, meta.id);
+  await rememberOverlaySession(tabId, meta.id, hostOf(tab.url));
   const position = settings.position;
   const pageTitle = tab.title ?? "";
   const pageUrl = tab.url ?? "";

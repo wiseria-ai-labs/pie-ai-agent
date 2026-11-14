@@ -127,7 +127,7 @@ export const es419Dict = {
       positionAnchor: "Junto a la selección",
       positionBottom: "Abajo al centro",
       retentionLabel: "Conservar la conversación al cerrar",
-      retentionHint: "Vuelve a abrirla en la misma pestaña para continuar",
+      retentionHint: "Misma pestaña y sitio, contando desde tu último mensaje; al seleccionar texto empieza una nueva",
       retention10: "10 min",
       retention30: "30 min",
       retention60: "1 hora",

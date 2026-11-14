@@ -1709,25 +1709,25 @@ async function handleChatStream(
   overlayTask?: OverlayTask,
 ) {
   const signal = abortController.signal;
+  // Errors before the loop starts. For an overlay task they must go through
+  // the run mirror, or the run never reaches a terminal state and keeps
+  // counting as "still running" (capsule, tab-session resume rule).
+  const postError = (error: string): void => {
+    const m = { type: "chat-error" as const, error, sessionId };
+    if (overlayRun) wrapOverlayEmit(overlayRun, (x) => makeOverlayPortShim(overlayRun).postMessage(x))(m);
+    else port.postMessage(m);
+  };
   try {
     // Resolve instance config for this session (per-session pin → global fallback).
     const chatSessionMeta = await getSessionMeta(sessionId);
     const chatSel = await resolveSelection({ instanceId: chatSessionMeta?.instanceId, model: chatSessionMeta?.model });
     if (!chatSel) {
-      port.postMessage({
-        type: "chat-error",
-        error: "No config selected. Open Settings to create one.",
-        sessionId,
-      });
+      postError("No config selected. Open Settings to create one.");
       return;
     }
     const chatModelConfig = await resolveModelConfig(chatSel.instanceId, chatSel.model);
     if (!chatModelConfig) {
-      port.postMessage({
-        type: "chat-error",
-        error: "Selected config was deleted. Pick another in the chat header.",
-        sessionId,
-      });
+      postError("Selected config was deleted. Pick another in the chat header.");
       return;
     }
     // M2-U1 trigger (b) — bump lastAccessedAt when the SW receives a new
@@ -1795,13 +1795,9 @@ async function handleChatStream(
     // U2 — validate messages array is non-empty (panel always sends at
     // least the current user message; empty array is a wire bug).
     if (messages.length === 0) {
-      port.postMessage({
-        type: "chat-error",
-        // TODO(#354): SW-side chat-error, English fallback (wire-bug guard,
-        // effectively never shown in normal use).
-        error: "Conversation history is empty — please send again.",
-        sessionId,
-      });
+      // TODO(#354): SW-side chat-error, English fallback (wire-bug guard,
+      // effectively never shown in normal use).
+      postError("Conversation history is empty — please send again.");
       return;
     }
 
@@ -2088,11 +2084,7 @@ async function handleChatStream(
     });
   } catch (e) {
     if (signal.aborted) return;
-    port.postMessage({
-      type: "chat-error",
-      error: e instanceof Error ? e.message : "An unexpected error occurred",
-      sessionId,
-    });
+    postError(e instanceof Error ? e.message : "An unexpected error occurred");
   } finally {
     // Issue #470 — a superseded task's teardown must not close the newer
     // task's in-flight state (instruction-adds would be rejected).

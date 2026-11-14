@@ -127,7 +127,7 @@ export const ptBRDict = {
       positionAnchor: "Perto da seleção",
       positionBottom: "Embaixo, centralizado",
       retentionLabel: "Manter a conversa após fechar",
-      retentionHint: "Abra de novo na mesma aba para continuar",
+      retentionHint: "Mesma aba e site, contando a partir da última mensagem; ao selecionar texto começa uma nova",
       retention10: "10 min",
       retention30: "30 min",
       retention60: "1 hora",

@@ -125,7 +125,7 @@ export const enDict = {
       positionAnchor: "Near selection",
       positionBottom: "Bottom center",
       retentionLabel: "Keep the conversation after closing",
-      retentionHint: "Reopen on the same tab to continue",
+      retentionHint: "Same tab and site, counted from your last message; selecting text starts a new one",
       retention10: "10 min",
       retention30: "30 min",
       retention60: "1 hour",

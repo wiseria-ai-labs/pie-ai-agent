@@ -125,7 +125,7 @@ export const zhCNDict = {
       positionAnchor: "贴近选区",
       positionBottom: "底部居中",
       retentionLabel: "关闭后保留对话",
-      retentionHint: "在同一标签页再次唤起可继续",
+      retentionHint: "同一标签页、同一网站内用快捷键唤起可继续，从最后一次对话算起；划词操作总是新对话",
       retention10: "10 分钟",
       retention30: "30 分钟",
       retention60: "1 小时",

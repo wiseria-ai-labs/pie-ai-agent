@@ -125,7 +125,7 @@ export const zhTWDict = {
       positionAnchor: "貼近選取範圍",
       positionBottom: "底部置中",
       retentionLabel: "關閉後保留對話",
-      retentionHint: "在同一分頁再次喚起即可繼續",
+      retentionHint: "同一分頁、同一網站內用快捷鍵喚起可繼續，從最後一次對話算起；劃詞操作一律開新對話",
       retention10: "10 分鐘",
       retention30: "30 分鐘",
       retention60: "1 小時",
