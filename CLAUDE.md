@@ -103,7 +103,7 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 ## Docs Map
 
 - `docs/ROADMAP.md` — 已交付 phases + backlog（single source of truth）
-- `docs/agents/auto-acceptance.md` — 自动化真机验收操作文档（Playwright + scratch daemon 全链路跑 `need-human-test` 清单；流程/配方坑/验收标准/报告格式；参考脚本 `eval/acceptance/`）
+- `docs/agents/auto-acceptance.md` — 自动化真机验收操作文档（Playwright + scratch daemon 全链路；dev loop Acceptance 节点的唯一操作手册，流程/配方坑/验收标准/报告格式；参考脚本 `eval/acceptance/`）
 - `docs/solutions/` — 落地后的 invariant trace docs（per phase / per milestone）
 - `docs/specs/` — 设计 / 需求 / spec 文档，含 Phase 1–3 历史 brainstorm 合并归档
 - `docs/plans/` — 实施 plan，含 Phase 1–3 历史 plan 合并归档
@@ -125,14 +125,14 @@ Workflow 内置 invariant（任一失败则 CI fail，不会上传）：
 
 Issues live as GitHub issues in `wiseria-ai-labs/pie-ai-agent`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
-### Triage labels（issue 状态机 = 任务的事实源）
+### Triage labels（分类/分级标签；阶段在 Kumo）
 
-分诊 automation 与实现链共用一套标签状态机；它就是「某个任务现在走到哪了」的唯一事实源，权威清单见 `docs/agents/triage-labels.md`。
-- **阶段（分诊产出 + 流转）**：`need-design`（待人牵头产品化设计）/ `need-confirm`（方案已出，待人拍板选项）/ `ready-for-implement`（已充分指定，可交 Loop 实现）。
-- **人工信号**：`confirmed` —— 人对 `need-confirm` 拍板后打上，routine 据此补最终方案并推进到 `ready-for-implement`。这是唯一的「人→机」放行闸，不靠机器猜评论。
-- **下游状态（实现链产出，分诊只识别、跳过、绝不回退）**：`agent-handling`（Loop 处理中）/ `PR`（已提 PR 等合入）。
-- **PR 复审（Step3 / Step4 产出 + 人工信号）**：`need-to-solve`（Reviewer 要求改）/ `solved`（implementer 改完待复审）/ `need-human-test`（过 review 待真机）/ `human-approved`（可合：人打，或验收 automation / `skip-human-test` 放行）/ `skip-human-test`（人显式跳过真机）。Reviewer 必须执行 `/code-review` skill（`~/.grok/bundled/skills/code-review/SKILL.md`），Approval Bar 未过不得放行。Reviewer 与 implementer 同一身份故 review 走普通评论、状态靠标签；无需真机的 PR 由 Reviewer 直合 main（main 保护已放宽 0 approve），`need-to-solve` 由 implementer loop 优先接走（不单设 PR Solver）。**4 条 loop 自 2026-08-14 起跑在本机 Orca automation（默认 agent = grok，每次 run 新建 worktree，`gh` 可直接用）；旧的 claude.ai 云端 routine 已停用但保留可回滚。详见 `docs/agents/triage-labels.md`「本地执行环境」。**
-- **分类 / 分级**：`bug` | `feature` ＋ `P0` | `P1` | `P2`。
+**任务走到哪了以 Kumo Task 的 stage 为唯一事实源**（`new` / `planning` / `confirming` / `ready` / `in_progress` / `in_review` / `done`），GitHub 上的阶段标签已废弃不用。Kumo 里 `pie-triage` flow 在新 issue 入册时自动分诊、写任务书、定阶段；`workflow`（Pie dev loop）取 `ready` 推进实现。
+
+- **分类 / 分级**：`bug` | `feature` ＋ `P0` | `P1` | `P2`，只给人看，不驱动流转。
+- **历史标签**：`need-design` / `need-confirm` / `ready-for-implement` / `confirmed` / `agent-handling` / `PR` / `need-to-solve` / `solved` / `need-human-test` / `human-approved` / `skip-human-test` 均为旧状态机的残留，新 issue 不再打；老 issue 上看到可以直接忽略。语义对照见 `docs/agents/triage-labels.md`。
+- **PR 复审在 dev loop 内完成**：Review 必须执行 `/code-review` skill（`~/.grok/bundled/skills/code-review/SKILL.md`），Approval Bar 未过不得放行；Reviewer 与 implementer 同一 GitHub 身份，意见走普通 PR 评论。纯文档/测试/内部重构由 Review 直接批 `approved` 给 Merge，改运行时行为的走 Acceptance（见 `docs/agents/auto-acceptance.md`），全程无人工标签闸。
+- 旧的 4 条 Orca automation 与 claude.ai 云端 routine 已停用，保底可回滚；现行执行环境是 Kumo agentflow。
 
 ### Domain docs
 
@@ -143,25 +143,28 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 **superpowers 整套暂时停用**（`.claude/settings.json` 里 plugin 已置 false）。TDD / 调试 / brainstorm / 写 skill 一律按常规做法直接做，不套流程仪式，也不要主动去调同名 skill。
 
 - 重点项目要产出 spec 时**我会明确说「用 grilling」**，没说就别开。
-- 分诊已固化进本地 Orca automation（见上方 Triage labels）；建 issue 按 Issue 规范手工走，不走 `triage` / `to-issues`。
+- 分诊已固化进 Kumo `pie-triage` flow（见上方 Triage labels）；建 issue 按 Issue 规范手工走，不走 `triage` / `to-issues`。
 - 其余 skill（`prototype` 等）按需人工点名调用。
 
 ### 开发范式（2026-06 起：自动 Loop 为主，实验期）
 
 > 这份 `CLAUDE.md` 是人和 automation 共读的唯一工作方式说明，**没有单独的 cloud.md**。下面就是两端共同遵守的工作方式 —— 默认**不再跑**旧的 spec-driven 全流程仪式。
 
-**任务源 = GitHub issue + 标签状态机**（见上方 Triage labels）。多数轻量 / 无须人为决策的工作由本地 Orca automation 经标签流转推进，Loop 之间靠 issue/PR 上的标签与评论交接：
+**任务源 = GitHub issue + Kumo Task 阶段**（阶段是权威状态机；GitHub 标签只留分类 `bug`/`feature` 与分级 `P0`/`P1`/`P2` 给人看）。**Pie dev loop**（Kumo agentflow，`kumo flow get workflow` 可读，提示词是各节点行为的权威源）全自动推进，2026-11-14 起无人值守：
 
 ```
-新需求 → issue（Step1 分诊自动归类/分级/定阶段）
-       → ready-for-implement → Step2 implementer 实现 → agent-handling → PR
-            → Step3 Reviewer 复审：需改→need-to-solve（implementer 接回修→solved→复审↺）
-                                  过·无需真机→admin 直合 main
-                                  过·需真机→need-human-test→Step4 验收（或人打 skip-human-test / human-approved）→Reviewer 合
-       └ need-confirm → 人打 confirmed 拍板 → Step1 补方案 → ready-for-implement
+新 issue → Kumo Task.created → pie-triage 分诊（写「## 分诊」任务书 + 定阶段）
+       → ready → implement（实现/返工，开 PR，阶段 in_review）
+                → review ─approved──→ merge ─→ 合入、issue 关闭、Task done
+                         ├─needs_acceptance→ acceptance（per-PR 真机验收，见 auto-acceptance.md）─pass→ merge
+                         │                     ├─fail×3→ implement
+                         │                     └─blocked（环境故障）→ escalate
+                         └─changes_requested×3→ implement
+         blocked / exhausted / 节点 failed ─→ escalate（贴交接 + 阶段拨 confirming，等人）
+       → confirming / planning（分诊判定要人拍板）→ 人在 Tasks 页拨 ready → 进 loop
 ```
 
-人在这条链上的人工闸有两处：`need-confirm` 处拍板（打 `confirmed`）、与 PR 真机验收里验收 automation 标出的盲区（看报告后打 `human-approved`，或整单跳过打 `skip-human-test`）；其余交给 automation。验收细节见 `docs/agents/auto-acceptance.md`。
+链上只剩一个人工闸：分诊判定 `confirming` / `planning` 时人拍板，以及 escalate 交回来的现场。PR 不再有人工验收标签——Acceptance 自己下结论，自动化盲区进「留发版冒烟」，由 tag 前的 `pnpm smoke:release` 兜。
 
 **默认路径**：不开 brainstorm/grill/plan 仪式。把需求写成 issue（或让分诊 automation 接住），让 implementer automation 实现。本地 session 多做的是「把工作落成清晰的 issue」与「review/merge PR」，**不是亲自实现**。
 
@@ -169,8 +172,8 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 文档三层 **spec**(`docs/specs/`) → **issue**(GitHub) → **plan**(`docs/plans/`)；不单出 PRD（spec 即「设计＋需求」权威源）。
 1. `grilling` — 质询收敛需求与方案，产出 spec → `docs/specs/<date>-<slug>.md`；锐化出的术语/决策写进 `CONTEXT.md` 与 `docs/adr/`
 2. `prototype`（**可选**）— 仅当含状态机/数据模型/UI 方向这类不确定性时才造抛弃式原型，发现回流改 spec
-3. **落 issue（按 Issue 规范，不走 skill）** — 把定稿 spec 拆成 tracer-bullet 垂直切片，用 `gh` 手工建 issue（只写 what + 验收标准），照 Triage labels 打分类/分级。**设计已定，issue 直接打 `ready-for-implement`**：跳过 `need-design` / `need-confirm`（那两阶段是给未经设计的新需求分诊用的，不再过分诊 automation）。实现 plan（→ `docs/plans/`）按需写，作为 issue 的实现参考。
-4. **交棒 implementer automation 实现** —— 链路到此为止，本地不接着一把梭：Loop 取 `ready-for-implement` → `agent-handling` → PR → 人 review/merge。
+3. **落 issue（按 Issue 规范，不走 skill）** — 把定稿 spec 拆成 tracer-bullet 垂直切片，用 `gh` 手工建 issue（只写 what + 验收标准），打分类/分级标签。**设计已定的 issue 直接把 Kumo Task 阶段拨到 `ready`**（跳过分诊的 `confirming` / `planning`，dev loop 立刻接手）；不确定就去 Tasks 页把阶段留给分诊判。实现 plan（→ `docs/plans/`）按需写，作为 issue 的实现参考。
+4. **交棒 dev loop 实现** —— 链路到此为止，本地不接着一把梭：`ready` → implement → review → acceptance → merge，全程无人值守（见上方 Triage labels）。
    - 确需本地亲自实现时：逐 task TDD 实现 → 跑 `pnpm test` / `pnpm typecheck` / `pnpm build` 拿到证据再宣称完成 → `gh issue close`；收尾走 PR（main 受保护，`gh`）。⚠️ subagent cwd 不随 worktree 切换，派活 prompt 须强制 `cd <worktree 绝对路径>`。
 
 **判据**：拿不准是不是「重点项目」→ 默认当轻量任务，落 issue 交 automation。仪式是例外，不是 happy path。
