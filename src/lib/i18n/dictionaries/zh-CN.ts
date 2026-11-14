@@ -1069,17 +1069,6 @@ export const zhCNDict = {
       updated: "更新书签 · {title}",
       gone: "这条改动记录已过期。",
     },
-    results: {
-      historyTitle: "浏览记录",
-      bookmarksTitle: "书签",
-      total: "{count} 条结果",
-      addBookmark: "加到书签",
-      added: "已加入",
-      open: "打开",
-      visits: "{count} 次访问",
-      needBookmarksPermission: "Pie 还没有书签权限，去「设置 → 书签与历史」开启。",
-      more: "还有 {count} 条未显示",
-    },
     deletion: {
       title: "删除 {count} 条浏览记录",
       sitesLabel: "网站",

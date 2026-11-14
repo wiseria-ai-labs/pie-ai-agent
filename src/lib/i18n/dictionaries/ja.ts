@@ -1069,17 +1069,6 @@ export const jaDict = {
       updated: "ブックマークを更新 · {title}",
       gone: "この変更記録は期限切れです。",
     },
-    results: {
-      historyTitle: "閲覧履歴",
-      bookmarksTitle: "ブックマーク",
-      total: "{count} 件の結果",
-      addBookmark: "ブックマークに追加",
-      added: "追加済み",
-      open: "開く",
-      visits: "{count} 回",
-      needBookmarksPermission: "ブックマークの権限がありません。「設定 → ブックマークと履歴」で有効にしてください。",
-      more: "残り {count} 件は非表示",
-    },
     deletion: {
       title: "閲覧履歴 {count} 件を削除",
       sitesLabel: "サイト",

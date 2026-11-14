@@ -97,7 +97,6 @@ import { copyRichText } from "./copy-rich-text";
 import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { HitlInlineCards } from "./hitl/HitlInlineCards";
-import { BrowserResultsCard } from "./browser-data/BrowserResultsCard";
 import { BrowserChangeRow } from "./browser-data/BrowserChangeRow";
 import { usePanelRequest } from "../hooks/usePanelRequest";
 import { ReportProblemDrawer } from "./ReportProblemDrawer";
@@ -828,18 +827,6 @@ export default function Chat({
                   payload={msg.payload}
                   resolved={msg.resolved}
                   onDiscard={() => discardTask(msg.confirmationId)}
-                />
-              </div>
-            );
-          }
-          if (msg.role === "browser-results") {
-            return (
-              <div key={`bresults-${firstIndex}`} className="bubble-in">
-                <BrowserResultsCard
-                  kind={msg.kind}
-                  query={msg.query}
-                  total={msg.total}
-                  entries={msg.entries}
                 />
               </div>
             );

@@ -3230,23 +3230,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           );
         }
 
-        // Pie 2.0 — bookmarks/history: hand the panel the clickable result
-        // list (F6) and the inline undo row (F7). The text observation above
-        // is still what the model reads; these only drive the UI.
-        if (result.browserResults) {
-          emit(
-            withSession(
-              {
-                type: "browser-results",
-                kind: result.browserResults.kind,
-                query: result.browserResults.query,
-                total: result.browserResults.total,
-                entries: result.browserResults.entries,
-              },
-              sessionId,
-            ),
-          );
-        }
+        // Pie 2.0 — bookmarks: hand the panel an inline undo row (F7) for an
+        // applied change. The text observation above is still what the model
+        // reads; this only drives the UI.
         if (result.browserChange) {
           emit(
             withSession(

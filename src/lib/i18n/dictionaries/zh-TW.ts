@@ -1069,17 +1069,6 @@ export const zhTWDict = {
       updated: "更新書籤 · {title}",
       gone: "這筆改動紀錄已過期。",
     },
-    results: {
-      historyTitle: "瀏覽紀錄",
-      bookmarksTitle: "書籤",
-      total: "{count} 筆結果",
-      addBookmark: "加到書籤",
-      added: "已加入",
-      open: "開啟",
-      visits: "{count} 次瀏覽",
-      needBookmarksPermission: "Pie 還沒有書籤權限，請到「設定 → 書籤與歷史」開啟。",
-      more: "還有 {count} 筆未顯示",
-    },
     deletion: {
       title: "刪除 {count} 筆瀏覽紀錄",
       sitesLabel: "網站",

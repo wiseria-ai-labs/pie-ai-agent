@@ -11,27 +11,6 @@
 /** The two optional permissions, granted independently (spec §3.1). */
 export type BrowserDataDomain = "bookmarks" | "history";
 
-// ── Search results (F6 card) ────────────────────────────────────────────────
-
-export interface BrowserResultEntry {
-  title: string;
-  url: string;
-  /** Bookmarks only. */
-  id?: string;
-  folder?: string;
-  /** History only. */
-  lastVisit?: number;
-  visits?: number;
-}
-
-/** Payload handed to the panel for the clickable result list (F6). */
-export interface BrowserSearchResults {
-  kind: "history" | "bookmarks";
-  query?: string;
-  total: number;
-  entries: BrowserResultEntry[];
-}
-
 // ── Bookmark plan (propose_bookmark_plan) ────────────────────────────────────
 
 /**

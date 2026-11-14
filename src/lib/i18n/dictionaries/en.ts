@@ -1080,17 +1080,6 @@ export const enDict = {
       updated: "Bookmark updated · {title}",
       gone: "This change record has expired.",
     },
-    results: {
-      historyTitle: "Browsing history",
-      bookmarksTitle: "Bookmarks",
-      total: "{count} results",
-      addBookmark: "Add to bookmarks",
-      added: "Added",
-      open: "Open",
-      visits: "{count} visits",
-      needBookmarksPermission: "Bookmarks permission is off — enable it in Settings → Bookmarks & history.",
-      more: "{count} more not shown",
-    },
     deletion: {
       title: "Delete {count} browsing history entries",
       sitesLabel: "Sites",

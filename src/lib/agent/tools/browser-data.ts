@@ -175,23 +175,10 @@ const searchBookmarksTool: Tool = {
       );
     }
     const lines = res.entries.map((b, i) => `[${i + 1}] ${bookmarkTag(b)}`);
-    return {
-      success: true,
-      observation:
-        `${res.total} bookmark(s) matched${res.truncated ? ` (showing first ${res.entries.length})` : ""}. ` +
+    return ok(
+      `${res.total} bookmark(s) matched${res.truncated ? ` (showing first ${res.entries.length})` : ""}. ` +
         `Ids are stable — use them with update_bookmark or propose_bookmark_plan.\n${lines.join("\n")}`,
-      browserResults: {
-        kind: "bookmarks",
-        ...(a.query ? { query: a.query } : {}),
-        total: res.total,
-        entries: res.entries.map((b) => ({
-          id: b.id,
-          title: b.title,
-          url: b.url,
-          ...(b.path ? { folder: b.path } : {}),
-        })),
-      },
-    };
+    );
   },
 };
 
@@ -452,24 +439,11 @@ const searchHistoryTool: Tool = {
       ].join(" ");
       return `[${i + 1}] <untrusted_history_entry ${attrs}>${escapeUntrustedWrappers(e.title)}</untrusted_history_entry>`;
     });
-    return {
-      success: true,
-      observation:
-        `${res.total} history entry(ies) matched${res.truncated ? ` (showing first ${res.entries.length})` : ""}. ` +
+    return ok(
+      `${res.total} history entry(ies) matched${res.truncated ? ` (showing first ${res.entries.length})` : ""}. ` +
         `Chrome records titles, URLs, last-visit times and visit counts only — there is no dwell time, ` +
         `so do not describe how long the user spent on a page.\n${lines.join("\n")}`,
-      browserResults: {
-        kind: "history",
-        ...(a.query ? { query: a.query } : {}),
-        total: res.total,
-        entries: res.entries.map((e) => ({
-          title: e.title,
-          url: e.url,
-          lastVisit: e.lastVisitTime,
-          visits: e.visitCount,
-        })),
-      },
-    };
+    );
   },
 };
 

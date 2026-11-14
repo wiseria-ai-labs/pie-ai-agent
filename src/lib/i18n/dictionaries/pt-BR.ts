@@ -1071,17 +1071,6 @@ export const ptBRDict = {
       updated: "Favorito atualizado · {title}",
       gone: "Este registro de mudança expirou.",
     },
-    results: {
-      historyTitle: "Histórico de navegação",
-      bookmarksTitle: "Favoritos",
-      total: "{count} resultados",
-      addBookmark: "Adicionar aos favoritos",
-      added: "Adicionado",
-      open: "Abrir",
-      visits: "{count} visitas",
-      needBookmarksPermission: "A permissão de favoritos está desativada — ative em Configurações → Favoritos e histórico.",
-      more: "{count} mais não exibidos",
-    },
     deletion: {
       title: "Excluir {count} registros de histórico",
       sitesLabel: "Sites",

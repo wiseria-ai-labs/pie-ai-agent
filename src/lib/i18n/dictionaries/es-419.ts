@@ -1071,17 +1071,6 @@ export const es419Dict = {
       updated: "Marcador actualizado · {title}",
       gone: "Este registro de cambio expiró.",
     },
-    results: {
-      historyTitle: "Historial de navegación",
-      bookmarksTitle: "Marcadores",
-      total: "{count} resultados",
-      addBookmark: "Añadir a marcadores",
-      added: "Añadido",
-      open: "Abrir",
-      visits: "{count} visitas",
-      needBookmarksPermission: "El permiso de marcadores está desactivado; actívalo en Ajustes → Marcadores e historial.",
-      more: "{count} más sin mostrar",
-    },
     deletion: {
       title: "Borrar {count} registros de historial",
       sitesLabel: "Sitios",

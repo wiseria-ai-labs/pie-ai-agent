@@ -205,28 +205,6 @@ describe("tool registry invariants", () => {
 // ── Pie 2.0 round 2 — panel payloads + dead-link check ──────────────────────
 
 describe("panel payloads", () => {
-  it("search_history hands the panel structured results (no prose)", async () => {
-    perms.granted.add("history");
-    const res = await tool("search_history").handler({ query: "cart" }, ctx());
-    expect(res.success).toBe(true);
-    expect(res.browserResults).toMatchObject({
-      kind: "history",
-      query: "cart",
-      total: 1,
-    });
-    expect(res.browserResults?.entries[0]).toMatchObject({
-      url: "https://shop.example.com/a",
-      visits: 2,
-    });
-  });
-
-  it("search_bookmarks hands the panel structured results with ids", async () => {
-    perms.granted.add("bookmarks");
-    const res = await tool("search_bookmarks").handler({ query: "vec" }, ctx());
-    expect(res.browserResults).toMatchObject({ kind: "bookmarks", total: 1 });
-    expect(res.browserResults?.entries[0].id).toBeTruthy();
-  });
-
   it("create_bookmark and propose_bookmark_plan emit an inline undo row", async () => {
     perms.granted.add("bookmarks");
     const created = await tool("create_bookmark").handler(
