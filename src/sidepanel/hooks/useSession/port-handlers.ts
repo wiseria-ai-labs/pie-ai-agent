@@ -108,6 +108,23 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    // 2.0 overlay — this port was attached to a task that is already running
+    // (handoff mid-stream). Enter streaming BEFORE the replay that follows:
+    // the slot keeps the persisted history, the replay appends the live turn.
+    if (msg.type === "chat-attach") {
+      patchSlot(id, {
+        streaming: true,
+        streamFinished: false,
+        attachedRun: true,
+        accumulated: "",
+        streamingText: "",
+        streamingThinking: "",
+        error: null,
+        errorKind: null,
+      });
+      return;
+    }
+
     if (msg.type === "chat-chunk") {
       patchSlot(id, (prev) => {
         const accumulated = prev.accumulated + msg.text;
@@ -138,6 +155,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streaming: false,
         streamFinished: true,
         ratelimitResumeAt: null,
+        attachedRun: false,
       });
       void persistMessages(id, next);
       return;
@@ -161,6 +179,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streaming: false,
         streamFinished: true,
         ratelimitResumeAt: null,
+        attachedRun: false,
       });
       void persistMessages(id, next);
       return;
@@ -257,6 +276,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streaming: false,
         streamFinished: true,
         ratelimitResumeAt: null,
+        attachedRun: false,
       });
       void persistMessages(id, next);
       return;
@@ -550,6 +570,20 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
     return () => {
       const slot = slotsRef.current.get(sessionId);
       if (!slot || slot.streamFinished) return;
+      if (slot.attachedRun) {
+        // 2.0 overlay — attached to a run the SW owns: it persists the
+        // terminal turn. Flushing here would write a partial copy that the
+        // replay on the next attach duplicates.
+        patchSlot(sessionId, {
+          accumulated: "",
+          streamingThinking: "",
+          streamingText: "",
+          streaming: false,
+          streamFinished: true,
+          attachedRun: false,
+        });
+        return;
+      }
       const { next } = buildAssistant(
         slot.messages, slot.accumulated, slot.streamingThinking, slot.unconsumedInstructionIds,
       );

@@ -1,0 +1,51 @@
+/* Overlay document styles.
+ *
+ * The host iframe is transparent and sized by the content script (it follows
+ * the height this document reports), so the page background must not leak:
+ * everything visible comes from the rounded card in OverlayApp. */
+
+@import "@/sidepanel/index.css";
+
+html,
+body {
+  height: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  overflow: hidden;
+}
+
+#root {
+  height: auto;
+  padding: 0;
+}
+
+/* The card sits flush in the iframe; the host decides where that is. */
+#overlay-root {
+  margin: 0;
+  animation: overlay-in 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Thin scrollbar inside the thread — the page's own scrollbar styles must not
+ * leak into the card. */
+#overlay-root ::-webkit-scrollbar {
+  width: 8px;
+}
+#overlay-root ::-webkit-scrollbar-thumb {
+  background: var(--c-line);
+  border-radius: 4px;
+}
+#overlay-root ::-webkit-scrollbar-track {
+  background: transparent;
+}

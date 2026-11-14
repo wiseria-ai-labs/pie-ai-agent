@@ -70,6 +70,11 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           "offscreen-pdf-parser": path.resolve(__dirname, "src/offscreen/pdf-parser.html"),
+          // The overlay document is framed by the content script from
+          // web_accessible_resources. crxjs only turns manifest-referenced HTML
+          // (the side panel) into a build entry, so a WAR html would otherwise
+          // be copied verbatim with its raw <script src="./main.tsx">.
+          "overlay": path.resolve(__dirname, "src/overlay/index.html"),
         },
       },
     },

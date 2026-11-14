@@ -183,6 +183,9 @@ export const BROWSER_DATA_TOOL_NAMES = [
 //   remember / forget — write（只改记忆库，不碰 tab；立即生效 + 可撤销记录）
 //   recall_memory    — read（复用挑选流程查一次，纯文本产出）
 export const MEMORY_TOOL_NAMES = ["remember", "forget", "recall_memory"] as const;
+// 2.0 overlay — rewrite proposal (read class: it only produces the card; the
+// user's Replace click is what writes the page).
+export const REWRITE_TOOL_NAMES = ["propose_rewrite"] as const;
 
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
@@ -200,6 +203,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...SCRATCHPAD_TOOL_NAMES,
   ...BROWSER_DATA_TOOL_NAMES,
   ...MEMORY_TOOL_NAMES,
+  ...REWRITE_TOOL_NAMES,
   ...DISCLOSURE_TOOL_NAMES,
 ] as const;
 
@@ -365,6 +369,9 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   remember: "write",
   forget: "write",
   recall_memory: "read",
+  // 2.0 overlay — propose_rewrite only renders a card; the write is the user's
+  // "替换原文" click, handled by the content script, not by a tool.
+  propose_rewrite: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class
@@ -466,6 +473,9 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   handoff_to_agent: "core",
   // 记忆层 — core（存在性由 loop 按「自动记忆」开关装配，不靠 disclosure）。
   remember: "core", forget: "core", recall_memory: "core",
+  // 2.0 overlay — present only on runs that carry an editable selection
+  // (existence gated by the chat-start payload, not by disclosure).
+  propose_rewrite: "core",
 };
 
 // Build-time exhaustive check — every known tool MUST declare a group.

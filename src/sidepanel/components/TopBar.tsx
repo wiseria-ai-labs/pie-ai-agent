@@ -18,6 +18,7 @@ export type SettingsPage =
   | "assistantLanguage"
   | "customRules"
   | "browserData"
+  | "overlay"
   | "feedback"
   | "about";
 
@@ -32,6 +33,7 @@ const SETTINGS_PAGE_TITLE_KEY = {
   assistantLanguage: "settings.language.assistantLabel",
   customRules: "settings.nav.customRules",
   browserData: "settings.nav.browserData",
+  overlay: "settings.overlay.title",
   feedback: "settings.nav.feedback",
   about: "settings.nav.about",
 } as const;

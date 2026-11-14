@@ -69,6 +69,20 @@ export interface ChatStartMessage {
    * active-tab capture.
    */
   anchorTabId?: number;
+  /**
+   * 2.0 overlay — the tab whose overlay document owns this task's port.
+   * The port dies when that page navigates, so the SW must NOT treat the
+   * disconnect as "user closed the panel" for these runs: it keeps the loop
+   * alive, drives the in-page capsule, and persists the messages the dead
+   * document would have persisted.
+   */
+  overlayTabId?: number;
+  /**
+   * 2.0 overlay — this turn carries an EDITABLE selection, so the run may
+   * offer `propose_rewrite` (write-back is only possible there). Absent for
+   * read-only selections and for the side panel.
+   */
+  editableSelection?: boolean;
 }
 
 export interface ChatAbortMessage {
@@ -202,6 +216,18 @@ export interface ChatRatelimitWaitMessage {
   type: "chat-ratelimit-wait";
   /** 预计恢复时刻（epoch ms）。waiter 竞争下实际可能更晚，panel 钳 ≥0 显示。 */
   resumeAt: number;
+  sessionId: string;
+}
+
+/**
+ * 2.0 overlay — SW → Panel: this port was just attached to a task that is
+ * already running (started by the overlay document, or by the panel before a
+ * reconnect). Sent BEFORE the replay of the run's emits, so the slot enters
+ * streaming mode before chunks arrive. The panel does not own this task's
+ * persistence while attached; the SW does when the port goes away.
+ */
+export interface ChatAttachMessage {
+  type: "chat-attach";
   sessionId: string;
 }
 
@@ -446,6 +472,9 @@ export interface AgentStepMessage {
   image?: AgentStepImageExtras;
   /** Long-running skill script poll snapshot. Wire-only; same as DisplayMessage.progress. */
   progress?: AgentStepProgress;
+  /** 2.0 overlay — the tab the loop is currently focused on (pinnedTabId at
+   *  emit time). The in-page capsule follows it across tab switches. */
+  focusTabId?: number;
   /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
   sessionId: string;
 }
@@ -770,4 +799,5 @@ export type PortMessageToPanel =
   | FileOutputResultMessage           // output_file download result
   | MemoryUsedMessage                 // Pie 2.0 — 用到 N 条记忆 chip
   | MemoryEventMessage                // Pie 2.0 — 记忆事件行（可撤销）
-  | ChatRatelimitWaitMessage;         // Provider RPM 限流排队等待
+  | ChatRatelimitWaitMessage         // Provider RPM 限流排队等待
+  | ChatAttachMessage;               // 2.0 overlay — live-run handoff attach

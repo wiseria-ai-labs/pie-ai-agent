@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Bookmark,
   Brain,
+  PanelsTopLeft,
 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
@@ -447,6 +448,12 @@ export default function SettingsRoot({
             icon={<Bookmark {...ROW_ICON} />}
             label={t("settings.nav.browserData")}
             onClick={() => onOpenPage("browserData")}
+          />
+          <NavRow
+            id="overlay"
+            icon={<PanelsTopLeft {...ROW_ICON} />}
+            label={t("settings.nav.overlay")}
+            onClick={() => onOpenPage("overlay")}
           />
         </Group>
       </div>
