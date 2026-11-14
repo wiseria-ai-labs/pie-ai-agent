@@ -439,6 +439,9 @@ describe("7.4 — headless run tool exclusion", () => {
     expect(HEADLESS_EXCLUDE_TOOL_NAMES).toContain("update_schedule");
     expect(HEADLESS_EXCLUDE_TOOL_NAMES).toContain("delete_schedule");
     expect(HEADLESS_EXCLUDE_TOOL_NAMES).not.toContain("list_schedules");
+    // headless runs see only page text — they must not write long-term memory
+    expect(HEADLESS_EXCLUDE_TOOL_NAMES).toContain("remember");
+    expect(HEADLESS_EXCLUDE_TOOL_NAMES).toContain("forget");
   });
 });
 

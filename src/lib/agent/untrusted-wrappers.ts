@@ -64,6 +64,10 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   "untrusted_history_entry",
   // Pie 2.0 记忆层 — 画像 + 被选中的记忆条目（user role，不是指令）。
   "user_memory",
+  // Pie 2.0 page monitors — extracted page values / monitor listings are
+  // third-party page text and must never reach the LLM unwrapped.
+  "untrusted_monitor_value",
+  "untrusted_monitor_list",
 ] as const;
 
 // Zero-width / invisible chars that an attacker might hide inside a tag literal.

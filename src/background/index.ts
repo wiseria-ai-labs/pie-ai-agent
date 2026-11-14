@@ -70,6 +70,21 @@ import {
   type SchedulerDeps,
 } from "@/lib/schedules/scheduler";
 import { handleScheduleNotificationClick } from "@/lib/schedules/notify";
+import { checkMonitor } from "@/lib/monitors/check";
+import {
+  handleMonitorAlarm,
+  reconcileMonitors,
+  type MonitorSchedulerDeps,
+} from "@/lib/monitors/scheduler";
+import { setMonitorCheckDep } from "@/lib/monitors/ops";
+import { handleMonitorAction } from "@/lib/monitors/action-handler";
+import { MONITOR_ACTION_MESSAGE, type MonitorActionMessage } from "@/lib/monitors/panel-actions";
+import {
+  handleMonitorNotificationClick,
+  handleMonitorNotificationButton,
+  parseMonitorNotificationId,
+} from "@/lib/monitors/notify";
+import { migrateScheduleUnreadToInbox } from "@/lib/inbox/migrate";
 import { handleResearchPollAlarm } from "@/lib/research-poll";
 import { ensureMemoryAlarm, handleMemoryAlarm } from "@/lib/memory/tick";
 import { handleResearchNotificationClick } from "@/background/research-onclick";
@@ -254,6 +269,44 @@ const schedulerDeps: SchedulerDeps = {
   runningCount: () => runningScheduleIds.size,
 };
 
+// --- Pie 2.0 §6 — page-monitor checks share this keep-alive pattern ---
+//
+// A monitor check is not an agent run (no model), but it can hold a background
+// tab for ~20s. The alarm handler dispatches fire-and-forget, so without a
+// keep-alive the SW could die mid-check. `runningMonitorIds` also feeds the
+// 6-concurrent-check cap (MAX_CONCURRENT_MONITOR_CHECKS).
+const runningMonitorIds = new Set<string>();
+const monitorKeepAlive: KeepAlive = createKeepAlive({
+  tick: () => chrome.runtime.getPlatformInfo(),
+  inFlight: runningMonitorIds,
+});
+
+async function checkMonitorWithDeps(monitorId: string): Promise<void> {
+  // Skip-if-running — same guard schedules get from listRunningRuns. Without it
+  // a startup reconcile racing the alarm that woke the SW (single-shot alarms
+  // are removed by Chrome when they fire, so reconcile sees "no alarm" and
+  // dispatches too) would run two checks for one edge and could notify twice.
+  if (runningMonitorIds.has(monitorId)) return;
+  runningMonitorIds.add(monitorId);
+  monitorKeepAlive.ensure();
+  try {
+    await checkMonitor(monitorId);
+  } finally {
+    runningMonitorIds.delete(monitorId);
+    monitorKeepAlive.maybeStop();
+  }
+}
+
+const monitorSchedulerDeps: MonitorSchedulerDeps = {
+  checkMonitor: checkMonitorWithDeps,
+  now: () => Date.now(),
+  runningCount: () => runningMonitorIds.size,
+};
+
+// "立即检查" / resume from the panel route through the ops core, which needs
+// the real deps-bound check (same injection pattern as setScheduleRunDep).
+setMonitorCheckDep(checkMonitorWithDeps);
+
 // C1 — inject the deps-bound runSchedule into the schedule-meta tool layer so
 // create_schedule / update_schedule can dispatch an IMMEDIATE first run (no
 // startAt) through the real agent loop. Without this, schedule-meta would arm
@@ -313,6 +366,12 @@ if (chrome.alarms) {
         void handleMemoryAlarm(alarm.name, {
           isBusy: () => runningSessionIds.size > 0 || runningScheduleIds.size > 0,
         });
+        // Prefix-routed: each handler returns immediately for names it doesn't
+        // own, so "schedule:…" / "monitor:…" / a future "memory:tick" coexist
+        // on this single listener.
+        void handleMonitorAlarm(alarm.name, monitorSchedulerDeps).catch((e) => {
+          console.warn(`[sw] handleMonitorAlarm(${alarm.name}) failed:`, e);
+        });
         return handleAlarm(alarm.name, schedulerDeps);
       })
       .catch((e) => {
@@ -333,6 +392,12 @@ void ensureMemoryAlarm().catch((e) => {
 // may not provide chrome.notifications).
 if (chrome.notifications) {
   chrome.notifications.onClicked.addListener((notificationId) => {
+    if (parseMonitorNotificationId(notificationId)) {
+      handleMonitorNotificationClick(notificationId).catch((e) => {
+        console.warn(`[sw] handleMonitorNotificationClick(${notificationId}) failed:`, e);
+      });
+      return;
+    }
     if (notificationId.startsWith(RESEARCH_NOTIF_PREFIX)) {
       handleResearchNotificationClick(notificationId).catch((e) => {
         console.warn(`[sw] handleResearchNotificationClick(${notificationId}) failed:`, e);
@@ -341,6 +406,13 @@ if (chrome.notifications) {
     }
     handleScheduleNotificationClick(notificationId).catch((e) => {
       console.warn(`[sw] handleScheduleNotificationClick(${notificationId}) failed:`, e);
+    });
+  });
+  // §4.5 — monitor notifications carry [打开页面, 停止监控].
+  chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+    if (!parseMonitorNotificationId(notificationId)) return;
+    handleMonitorNotificationButton(notificationId, buttonIndex).catch((e) => {
+      console.warn(`[sw] handleMonitorNotificationButton(${notificationId}) failed:`, e);
     });
   });
 }
@@ -449,6 +521,10 @@ const scheduleStartupReady: Promise<void> = recoveryReady
   .then(async () => {
     await markOrphanRunsInterrupted();
     await reconcileAlarms(Date.now(), schedulerDeps);
+    // Pie 2.0 §6 — same reconcile contract for monitors (orphan hidden tabs,
+    // expired records, lost alarms) plus the one-shot unread→inbox migration.
+    await reconcileMonitors(Date.now(), monitorSchedulerDeps);
+    await migrateScheduleUnreadToInbox();
   })
   .catch((e) => {
     console.warn("[sw] schedule startup (orphan-cleanup + reconcile) failed:", e);
@@ -861,6 +937,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === SCHEDULE_ACTION_MESSAGE) {
     const m = message as ScheduleActionMessage;
     handleScheduleAction({ action: m.action, payload: m.payload })
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true; // async response
+  }
+
+  // Pie 2.0 — panel write channel for monitor mutations (same contract as
+  // schedule-action: read straight from IDB, mutate through the SW).
+  if (message?.type === MONITOR_ACTION_MESSAGE) {
+    const m = message as MonitorActionMessage;
+    handleMonitorAction({ action: m.action, payload: m.payload })
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true; // async response

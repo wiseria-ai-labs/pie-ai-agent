@@ -24,6 +24,10 @@ export const STORES = {
   //   - settings / state / profile / snapshot（单例，id 即字面量）
   //   - MemoryUndoRecord   id = "undo_<uuid>"
   memory: "memory",
+  // Pie 2.0 (v4) — background substrate: the automation activity feed entries
+  // and the page-monitor records. One store each, both keyPath:"id".
+  inbox: "inbox",
+  monitors: "monitors",
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -65,6 +69,11 @@ export function openDb(): Promise<IDBDatabase> {
       // (see STORES.memory comment above).
       if (oldVersion < 4 && !db.objectStoreNames.contains(STORES.memory))
         db.createObjectStore(STORES.memory, { keyPath: "id" });
+      // Pie 2.0 (v4) — this feature line's stores only.
+      if (!db.objectStoreNames.contains(STORES.inbox))
+        db.createObjectStore(STORES.inbox, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(STORES.monitors))
+        db.createObjectStore(STORES.monitors, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => { dbPromise = null; reject(req.error); };
@@ -126,7 +135,7 @@ export function txMulti(
  *  Production use (e.g. eval harness reset between runs). */
 export async function clearAllStores(): Promise<void> {
   await txMulti(
-    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads, STORES.schedules, STORES.bookmarkSnapshots, STORES.memory],
+    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads, STORES.schedules, STORES.bookmarkSnapshots, STORES.memory, STORES.inbox, STORES.monitors],
     "readwrite",
     (m) => {
       m[STORES.sessions].clear();
@@ -137,6 +146,8 @@ export async function clearAllStores(): Promise<void> {
       m[STORES.schedules].clear();
       m[STORES.bookmarkSnapshots].clear();
       m[STORES.memory].clear();
+      m[STORES.inbox].clear();
+      m[STORES.monitors].clear();
     },
   );
 }

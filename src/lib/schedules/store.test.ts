@@ -46,12 +46,14 @@ beforeEach(async () => {
 // ── Step 2: DB version + store existence ─────────────────────────────────────
 
 describe("DB_VERSION 4 + schedules store", () => {
-  it("DB_VERSION 升到 4 且 schedules / memory store 存在", async () => {
+  it("DB_VERSION 升到 4 且 v4 新 store 都存在", async () => {
     const { openDb, STORES } = await import("@/lib/idb/db");
     const db = await openDb();
     expect(db.version).toBe(4);
     expect(db.objectStoreNames.contains(STORES.schedules)).toBe(true);
-    expect(db.objectStoreNames.contains(STORES.memory)).toBe(true);
+    for (const s of [STORES.memory, STORES.bookmarkSnapshots, STORES.inbox, STORES.monitors]) {
+      expect(db.objectStoreNames.contains(s)).toBe(true);
+    }
   });
 });
 

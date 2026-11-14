@@ -105,6 +105,8 @@ export const WRAPPER_TAGS_LIST: readonly string[] = [
   "untrusted_bookmark",
   "untrusted_history_entry",
   "user_memory",
+  "untrusted_monitor_value",
+  "untrusted_monitor_list",
 ];
 
 /**

@@ -46,6 +46,13 @@ const SCHEDULE_GUIDANCE =
   "the <current_time> block. Propose a schedule only when the user wants " +
   "something run repeatedly or at a future time.";
 
+const MONITOR_GUIDANCE =
+  "Page monitors: propose_monitor shows a card the USER must approve — never " +
+  "claim a monitor is running before they confirm. Parse the condition from what " +
+  "they said (below/above a number, any change, text appears, new list items); if " +
+  "you cannot tell, ask instead of guessing. list_monitors shows what is already " +
+  "watched. Checks run server-side (no model) — say so when the user asks about cost.";
+
 const SKILL_AUTHORING_GUIDANCE =
   "Skill authoring: list_skills / create_skill / update_skill / delete_skill " +
   "grow the user's skill library (a name + when-to-use description + SKILL.md). " +
@@ -97,6 +104,11 @@ export const GROUP_META: Record<DisclosureGroup, GroupMeta> = {
     kind: "lazy", loadable: true,
     catalogLine: "schedule — 创建 / 管理定时执行的 Agent 任务",
     guidance: SCHEDULE_GUIDANCE,
+  },
+  monitor: {
+    kind: "lazy", loadable: true,
+    catalogLine: "monitor — 盯住页面某个元素的变化（propose_monitor / list_monitors ...）",
+    guidance: MONITOR_GUIDANCE,
   },
   "skill-authoring": {
     kind: "lazy", loadable: true,

@@ -50,6 +50,8 @@ export interface TopBarProps {
   streaming: boolean;
   onTogglePinTab: (tabId: number, origin: string) => void;
   onClearUserPin: () => void;
+  /** Pie 2.0 §1 / F3 — automation (inbox) has unread entries → brass dot. */
+  unreadAutomation?: number;
 }
 
 const ICON = { size: 17, strokeWidth: 1.75 } as const;
@@ -67,6 +69,7 @@ export default function TopBar({
   streaming,
   onTogglePinTab,
   onClearUserPin,
+  unreadAutomation = 0,
 }: TopBarProps) {
   const t = useT();
   const isChat = view === "agent";
@@ -83,7 +86,7 @@ export default function TopBar({
   const title = isChat
     ? sessionTitle
     : view === "schedules"
-      ? t("schedules.title")
+      ? t("automation.title")
       : view === "research"
         ? t("research.title")
         : view === "skills"
@@ -133,15 +136,29 @@ export default function TopBar({
         </span>
         {showFnButtons && (
           <>
-            <IconButton
-              data-testid="topbar-schedules"
-              size="sm"
-              aria-label={t("schedules.title")}
-              aria-pressed={view === "schedules"}
-              active={view === "schedules"}
-              icon={<AlarmClock {...ICON} />}
-              onClick={() => onNavigate("schedules")}
-            />
+            <span className="relative inline-flex">
+              <IconButton
+                data-testid="topbar-schedules"
+                size="sm"
+                aria-label={
+                  unreadAutomation > 0
+                    ? t("automation.unreadAria", { n: unreadAutomation })
+                    : t("automation.title")
+                }
+                aria-pressed={view === "schedules"}
+                active={view === "schedules"}
+                icon={<AlarmClock {...ICON} />}
+                onClick={() => onNavigate("schedules")}
+              />
+              {/* F3 — brass dot, same colour/size as the drawer's "queued" dot.
+                  No toast, no number: open it to see. */}
+              {unreadAutomation > 0 && (
+                <span
+                  data-testid="topbar-schedules-unread"
+                  className="pointer-events-none absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-pending"
+                />
+              )}
+            </span>
             <IconButton
               data-testid="topbar-research"
               size="sm"

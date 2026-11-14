@@ -50,6 +50,21 @@ const SKILL_MEDIATION_TOOL_NAMES = [
   "read_skill_output",
 ] as const;
 
+// Pie 2.0 §4.2 — page-monitor meta tools.
+//   propose_monitor — read: it only produces the approval card; the record is
+//       created by the SW when the user taps 「开始监控」 (same reasoning as the
+//       other propose_* tools: 提议再由用户应用，不是工具自己写).
+//   list_monitors — read.
+//   update_monitor / delete_monitor — write (mutate persistent monitor state).
+//       propose/update/delete are excluded from headless runs (run.ts) so a
+//       monitor can never spawn or rewire monitors on its own.
+const MONITOR_META_TOOL_NAMES_FOR_REGISTRY = [
+  "propose_monitor",
+  "list_monitors",
+  "update_monitor",
+  "delete_monitor",
+] as const;
+
 // The progressive-disclosure mediator tool. Always core.
 export const DISCLOSURE_TOOL_NAMES = ["load_tools"] as const;
 
@@ -173,6 +188,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
   ...SCHEDULE_META_TOOL_NAMES_FOR_REGISTRY,
+  ...MONITOR_META_TOOL_NAMES_FOR_REGISTRY,
   ...SKILL_MEDIATION_TOOL_NAMES,
   ...TAB_TOOL_NAMES,
   ...SCREENSHOT_TOOL_NAMES,
@@ -261,6 +277,12 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   update_schedule: "write",
   delete_schedule: "write",
   list_schedules: "read",
+  // Pie 2.0 page monitors — propose/list are read (the card is the write gate);
+  // update/delete mutate persistent monitor state.
+  propose_monitor: "read",
+  list_monitors: "read",
+  update_monitor: "write",
+  delete_monitor: "write",
   // Standard skill mediation tools — pure text producers, no tab/page side effects
   use_skill: "read",
   read_skill_file: "read",
@@ -397,6 +419,7 @@ export type DisclosureGroup =
   | "local-file"
   | "scratchpad"
   | "schedule"
+  | "monitor"
   | "skill-authoring"
   | "browser-data";
 
@@ -427,6 +450,8 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   clear_scratchpad: "scratchpad", query_scratchpad: "scratchpad",
   create_schedule: "schedule", update_schedule: "schedule",
   delete_schedule: "schedule", list_schedules: "schedule",
+  propose_monitor: "monitor", list_monitors: "monitor",
+  update_monitor: "monitor", delete_monitor: "monitor",
   create_skill: "skill-authoring", update_skill: "skill-authoring",
   delete_skill: "skill-authoring", list_skills: "skill-authoring",
   // Pie 2.0 — bookmarks / history (optional permissions; lazy, catalog-advertised)

@@ -10,6 +10,7 @@ import { CdpOnboardingCard } from "../CdpOnboardingCard";
 import { BrowserPermissionCard } from "./BrowserPermissionCard";
 import { BookmarkPlanCard } from "./BookmarkPlanCard";
 import { HistoryDeletionCard } from "./HistoryDeletionCard";
+import { MonitorDraftCard } from "../MonitorDraftCard";
 
 export interface HitlInlineCardsProps {
   request: ActivePanelRequest | null;
@@ -36,6 +37,13 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
             respond(request.requestId, { ok: true, data: { instanceId, model } })
           }
           onCancel={() => respond(request.requestId, { ok: false, reason: "cancelled by user" })}
+        />
+      )}
+      {request?.kind === "monitor-draft" && (
+        <MonitorDraftCard
+          key={request.requestId}
+          payload={request.payload as import("@/lib/agent/tools/monitor-meta").MonitorDraftPayload}
+          onSubmit={(res) => respond(request.requestId, { ok: true, data: res })}
         />
       )}
       {request?.kind === "skill-run-confirm" && (
