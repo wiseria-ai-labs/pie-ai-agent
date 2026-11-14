@@ -273,7 +273,7 @@ export async function runSchedule(
     await countOutcome(scheduleId, "failed");
     // Task 8 — early-fail is still a `failed` run; notify for consistency
     // (every success/failed run notifies). No sessionId on this path.
-    notifyRunDone({
+    await notifyRunDone({
       recordId,
       sessionId: "",
       status: "failed",
@@ -327,7 +327,7 @@ export async function runSchedule(
     await persistTranscript(sessionId, transcript);
     // Task 8 — restricted-startUrl is still a `failed` run; notify for
     // consistency (this path has a sessionId from the minted session above).
-    notifyRunDone({
+    await notifyRunDone({
       recordId,
       sessionId,
       status: "failed",
@@ -481,10 +481,13 @@ export async function runSchedule(
     // Task 5.2 — apply outcome counters to the schedule (atomic patchSchedule).
     await countOutcome(scheduleId, runOutcome);
 
-    // Task 8 — notify the user that the run completed. Fire-and-forget;
-    // notifyRunDone wraps chrome.notifications in try/catch so a broken
-    // notifications API never affects the run record's outcome counters.
-    notifyRunDone({
+    // Task 8 / Pie 2.0 — notify the user that the run completed and leave the
+    // 动态 entry. Awaited (not fire-and-forget): notifyRunDone resolves the UI
+    // locale and writes an IDB row before the toast, so returning early could
+    // drop the feed entry if the SW dies. It still never throws (internal
+    // try/catch + this .catch), so a broken notifications API cannot affect the
+    // run counters.
+    await notifyRunDone({
       recordId,
       sessionId,
       status: runOutcome,
@@ -507,7 +510,7 @@ export async function runSchedule(
     await countOutcome(scheduleId, "failed");
 
     // Task 8 — notify on backstop failure too.
-    notifyRunDone({
+    await notifyRunDone({
       recordId,
       sessionId,
       status: "failed",

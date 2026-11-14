@@ -25,6 +25,7 @@
 
 import { getRun, updateRun } from "./store";
 import { addInboxEntry } from "@/lib/inbox/store";
+import { notifT } from "@/lib/notifications/copy";
 import { tryOpenSidePanel } from "@/background/panel/sidepanel-probe";
 import { openFallbackPanelWindow } from "@/background/panel/fallback-window";
 
@@ -92,13 +93,16 @@ export async function notifyRunDone(opts: NotifyRunDoneOpts): Promise<void> {
   const { recordId, status, summary, scheduleTitle } = opts;
   const succeeded = status === "success";
 
-  const title = succeeded
-    ? `✓ ${scheduleTitle}`
-    : `✗ ${scheduleTitle} — Failed`;
+  const title = await notifT(
+    succeeded ? "schedule.run.successTitle" : "schedule.run.failTitle",
+    { title: scheduleTitle },
+  );
 
   // Truncate summary so it fits in the notification message area (Chrome
   // clips long notification messages; 100 chars is a comfortable visible limit).
-  const message = summary.slice(0, 100) || (succeeded ? "Run completed." : "Run failed.");
+  const message =
+    summary.slice(0, 100) ||
+    (await notifT(succeeded ? "schedule.run.doneFallback" : "schedule.run.failFallback"));
 
   // Show the toast first, then land the feed row: the notification is the
   // ephemeral signal and must not be delayed behind an IDB round-trip.
@@ -134,8 +138,10 @@ export interface NotifySchedulePausedOpts {
  */
 export async function notifySchedulePaused(opts: NotifySchedulePausedOpts): Promise<void> {
   const { scheduleId, scheduleTitle } = opts;
-  const title = `Schedule Paused: ${scheduleTitle}`;
-  const message = "The bound AI provider was removed. Re-enable it in Schedules.";
+  const [title, message] = await Promise.all([
+    notifT("schedule.instanceDeleted.title", { title: scheduleTitle }),
+    notifT("schedule.instanceDeleted.body"),
+  ]);
   await createNotification(`${PAUSED_NOTIF_PREFIX}${scheduleId}`, title, message);
 }
 
@@ -178,12 +184,16 @@ export async function notifyScheduleStatusChange(
   // discriminant. `reason` stays on the opts type for call-site documentation +
   // future divergence, but isn't needed to choose the message here.
   if (status === "paused") {
-    title = `Schedule Paused: ${scheduleTitle}`;
-    message = `Auto-paused after ${count} consecutive failures. Re-enable it in Schedules.`;
+    [title, message] = await Promise.all([
+      notifT("schedule.paused.title", { title: scheduleTitle }),
+      notifT("schedule.paused.body", { count }),
+    ]);
     notificationId = `${PAUSED_NOTIF_PREFIX}${scheduleId}`;
   } else {
-    title = `Schedule Completed: ${scheduleTitle}`;
-    message = `Finished all ${count} scheduled runs.`;
+    [title, message] = await Promise.all([
+      notifT("schedule.completed.title", { title: scheduleTitle }),
+      notifT("schedule.completed.body", { count }),
+    ]);
     notificationId = `${COMPLETED_NOTIF_PREFIX}${scheduleId}`;
   }
 

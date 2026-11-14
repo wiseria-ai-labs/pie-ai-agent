@@ -10,21 +10,29 @@
 // panel without a user gesture, and a tab always opens. The activity feed keeps
 // the in-app record (§6), so the click never has to carry state.
 //
-// Notifications are English — same as the existing schedule notifications
-// (schedules/notify.ts). Panel copy is localized; SW notification copy is not.
-// ponytail: one language for SW notifications until the whole SW layer is
-// localized; the feed itself (where users actually look) is fully localized.
+// Copy comes from the small SW-side table in lib/notifications/copy.ts (the
+// panel's full six-locale dictionaries are too heavy for the service worker).
 
+import { notifT } from "@/lib/notifications/copy";
 import { getMonitor } from "./store";
 import { pauseMonitorOp } from "./ops";
+import type { MonitorPausedReason } from "./types";
 
 export const MONITOR_HIT_NOTIF_PREFIX = "monitor-hit:";
 export const MONITOR_PAUSED_NOTIF_PREFIX = "monitor-paused:";
 
-export const MONITOR_NOTIF_BUTTONS = [
-  { title: "Open page" },
-  { title: "Stop monitoring" },
-] as const;
+/** Localized [打开页面, 停止监控] button row (§4.5). */
+async function monitorButtons(): Promise<Array<{ title: string }>> {
+  return [
+    { title: await notifT("monitor.button.openPage") },
+    { title: await notifT("monitor.button.stop") },
+  ];
+}
+
+/** F9 — label for the dashed box painted onto the page. */
+export function monitorHighlightLabel(): Promise<string> {
+  return notifT("monitor.highlight.label");
+}
 
 function iconUrl(): string {
   try {
@@ -59,7 +67,7 @@ async function createNotification(
   }
 }
 
-/** §4.5 triggered notification. */
+/** §4.5 triggered notification. Title = result, body = evidence (§4.5). */
 export async function notifyMonitorHit(opts: {
   monitorId: string;
   title: string;
@@ -69,7 +77,7 @@ export async function notifyMonitorHit(opts: {
     `${MONITOR_HIT_NOTIF_PREFIX}${opts.monitorId}`,
     opts.title,
     opts.body,
-    [...MONITOR_NOTIF_BUTTONS],
+    await monitorButtons(),
   );
 }
 
@@ -77,13 +85,18 @@ export async function notifyMonitorHit(opts: {
 export async function notifyMonitorPaused(opts: {
   monitorId: string;
   title: string;
-  body: string;
+  count: number;
+  reason: MonitorPausedReason;
 }): Promise<void> {
-  await createNotification(
-    `${MONITOR_PAUSED_NOTIF_PREFIX}${opts.monitorId}`,
-    opts.title,
-    opts.body,
-  );
+  const [title, reasonText] = await Promise.all([
+    notifT("monitor.paused.title", { title: opts.title }),
+    notifT(`monitor.reason.${opts.reason}`),
+  ]);
+  const body = await notifT("monitor.paused.body", {
+    count: opts.count,
+    reason: reasonText,
+  });
+  await createNotification(`${MONITOR_PAUSED_NOTIF_PREFIX}${opts.monitorId}`, title, body);
 }
 
 async function openMonitorPage(monitorId: string): Promise<void> {

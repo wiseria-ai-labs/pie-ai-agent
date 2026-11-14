@@ -278,6 +278,7 @@ async function handleFailure(
   await deps.notifyPaused({
     monitorId: rec.id,
     title: rec.title,
-    body: `Paused after ${failures} failed checks (${reason}).`,
+    count: failures,
+    reason,
   });
 }

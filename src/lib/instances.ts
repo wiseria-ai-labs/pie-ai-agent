@@ -143,9 +143,9 @@ export async function cascadeInstanceDelete(instanceId: string): Promise<void> {
     await patchSchedule(sched.id, { status: "paused" });
     await disarmSchedule(sched.id);
     // Task 8 — notify the user that the schedule was auto-paused because its
-    // bound instance was deleted. Fire-and-forget; notifySchedulePaused wraps
-    // chrome.notifications in try/catch so a broken API is non-fatal.
-    notifySchedulePaused({
+    // bound instance was deleted. Awaited: notifySchedulePaused resolves the UI
+    // locale first, and it still never throws (internal try/catch + this .catch).
+    await notifySchedulePaused({
       scheduleId: sched.id,
       scheduleTitle: sched.title,
       reason: "instance_deleted",
