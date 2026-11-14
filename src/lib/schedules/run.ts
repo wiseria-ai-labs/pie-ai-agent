@@ -51,10 +51,17 @@ import { deriveTitleFromMessages } from "@/lib/sessions/title";
 // schedule list is harmless and may be useful (e.g. "am I already scheduled for
 // X?"). One-shot self-cleanup needs no delete permission — a one-shot schedule
 // auto-completes via maxRuns.
+//
+// Pie 2.0 — the same reasoning applies to monitors: a headless run has no
+// panel to answer `propose_monitor`'s card, and update/delete could silently
+// rewire what the user is watching. `list_monitors` stays (read-class).
 export const HEADLESS_EXCLUDE_TOOL_NAMES = [
   "create_schedule",
   "update_schedule",
   "delete_schedule",
+  "propose_monitor",
+  "update_monitor",
+  "delete_monitor",
 ] as const;
 
 // ── Injectable deps ──────────────────────────────────────────────────────────

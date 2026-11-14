@@ -16,7 +16,8 @@ export type OffscreenRequest =
   | { type: "pdf:read_page"; url: string; pages: number[] }
   | { type: "pdf:search"; url: string; query: string; maxResults: number }
   | { type: "pdf:parse_bytes"; base64: string; cacheKey: string }
-  | { type: "sql:run"; table: string; records: Array<Record<string, unknown>>; sql: string };
+  | { type: "sql:run"; table: string; records: Array<Record<string, unknown>>; sql: string }
+  | { type: "monitor:extract"; html: string; selector: string; anchorText?: string; sample?: string };
 
 export interface OffscreenSuccess<T = unknown> {
   ok: true;
@@ -39,9 +40,11 @@ export async function ensureOffscreen(): Promise<void> {
     }
     await chrome.offscreen.createDocument({
       url: chrome.runtime.getURL(OFFSCREEN_HTML),
-      reasons: [chrome.offscreen.Reason.BLOBS],
+      // DOM_PARSER: page monitors parse fetched HTML with DOMParser (§4.3.1).
+      // BLOBS: LiteParse WASM for the PDF tools.
+      reasons: [chrome.offscreen.Reason.BLOBS, chrome.offscreen.Reason.DOM_PARSER],
       justification:
-        "Parse PDF bytes with the LiteParse WASM module and host the skill-script sandbox iframe; SWs have no DOM and cannot run WASM streaming or embed sandboxed pages.",
+        "Parse PDF bytes with the LiteParse WASM module and parse fetched page HTML with DOMParser; SWs have no DOM and cannot run WASM streaming or parse documents.",
     });
   })().catch((err) => {
     ensurePromise = null;

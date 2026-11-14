@@ -10,12 +10,14 @@
 import type { LocalFileResult } from "./local-file-request";
 import type { ScheduleDraftPayload, ScheduleModelSelection } from "./agent/tools/schedule-meta";
 import type { SkillRunConfirmRequest } from "./agent/tools/skill-script";
+import type { MonitorDraftPayload, MonitorDraftResponse } from "./agent/tools/monitor-meta";
 
 /** kind 注册表：加一种人机交互 = 加一行，编译期校验 payload/返回。 */
 export interface PanelRequestMap {
   "cdp-consent": { req: Record<string, never>; res: boolean };
   "local-file": { req: Record<string, never>; res: LocalFileResult };
   "schedule-model": { req: ScheduleDraftPayload; res: ScheduleModelSelection };
+  "monitor-draft": { req: MonitorDraftPayload; res: MonitorDraftResponse };
   "run-local-agent": {
     req: { prompt: string; cwd: string; agents: { id: string; label: string }[] };
     res: string | null; // 用户选中的后端 agent id；null = 拒绝

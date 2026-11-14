@@ -2935,6 +2935,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             // HEADLESS_EXCLUDE_TOOL_NAMES), so requestFromPanel is never called.
             requestModelSelection: (payload) =>
               requestFromPanel(sessionId, "schedule-model", payload),
+            // Pie 2.0 §4.2 — the monitor card. Same suspension pattern; the
+            // record is created only after the user answers it.
+            requestMonitorDraft: (payload) =>
+              requestFromPanel(sessionId, "monitor-draft", payload),
             // #254 — long-running tools (wait) resolve early on user abort.
             signal,
           });

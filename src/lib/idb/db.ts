@@ -9,7 +9,7 @@ export const DB_NAME = "pie";
 // Bump DB_VERSION and add a new `if (!db.objectStoreNames.contains(...))` branch
 // in onupgradeneeded whenever a new store is added (onupgradeneeded only runs
 // when the version increases).
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const STORES = {
   sessions: "sessions",
@@ -18,6 +18,10 @@ export const STORES = {
   config: "config",
   scratchpads: "scratchpads",
   schedules: "schedules",
+  // Pie 2.0 (v4) — background substrate: the automation activity feed entries
+  // and the page-monitor records. One store each, both keyPath:"id".
+  inbox: "inbox",
+  monitors: "monitors",
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -49,6 +53,11 @@ export function openDb(): Promise<IDBDatabase> {
       //     injected on write and stripped on read by schedules/store.ts.
       if (!db.objectStoreNames.contains(STORES.schedules))
         db.createObjectStore(STORES.schedules, { keyPath: "id" });
+      // Pie 2.0 (v4) — this feature line's stores only.
+      if (!db.objectStoreNames.contains(STORES.inbox))
+        db.createObjectStore(STORES.inbox, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(STORES.monitors))
+        db.createObjectStore(STORES.monitors, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => { dbPromise = null; reject(req.error); };
@@ -110,7 +119,7 @@ export function txMulti(
  *  Production use (e.g. eval harness reset between runs). */
 export async function clearAllStores(): Promise<void> {
   await txMulti(
-    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads, STORES.schedules],
+    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads, STORES.schedules, STORES.inbox, STORES.monitors],
     "readwrite",
     (m) => {
       m[STORES.sessions].clear();
@@ -119,6 +128,8 @@ export async function clearAllStores(): Promise<void> {
       m[STORES.config].clear();
       m[STORES.scratchpads].clear();
       m[STORES.schedules].clear();
+      m[STORES.inbox].clear();
+      m[STORES.monitors].clear();
     },
   );
 }

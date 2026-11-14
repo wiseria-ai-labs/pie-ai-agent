@@ -10,6 +10,7 @@ import { buildEditorTools, type EditorToolDeps } from "./tools/editor";
 import { SKILL_META_TOOLS } from "./tools/skill-meta";
 import { SKILL_ACCESS_TOOLS } from "./tools/skill-access";
 import { SCHEDULE_META_TOOLS } from "./tools/schedule-meta";
+import { MONITOR_META_TOOLS } from "./tools/monitor-meta";
 import { TAB_TOOLS } from "./tools/tabs";
 import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
@@ -34,6 +35,12 @@ export {
   isScheduleMetaToolName,
   type ScheduleMetaToolName,
 } from "./tools/schedule-meta";
+
+export {
+  MONITOR_META_TOOL_NAMES,
+  isMonitorMetaToolName,
+  type MonitorMetaToolName,
+} from "./tools/monitor-meta";
 
 /**
  * Phase 2.5 keyboard tools (dispatch_keyboard_input + press_key). Returned
@@ -386,6 +393,7 @@ USE WHEN:
   readPageTool,
   ...createPageAtlasTargetTools(),
   ...PDF_TOOLS,
+  ...MONITOR_META_TOOLS,
 ];
 
 // iframe spec R-iframe-1 — build-time assertion: writes target a specific

@@ -1,6 +1,7 @@
 import initLiteParse, { LiteParse } from "@llamaindex/liteparse-wasm";
 import { tabUrlForCacheKey } from "@/lib/pdf/detect";
 import { base64ToArrayBuffer } from "@/lib/files/base64";
+import { extractFromDoc } from "@/lib/monitors/html-extract";
 import { runQuery } from "./sql-engine";
 
 export interface ParsedPage {
@@ -39,7 +40,11 @@ export type OffscreenMessage =
   | { type: "pdf:read_page"; url: string; pages: number[] }
   | { type: "pdf:search"; url: string; query: string; maxResults: number }
   | { type: "pdf:parse_bytes"; base64: string; cacheKey: string }
-  | { type: "sql:run"; table: string; records: Array<Record<string, unknown>>; sql: string };
+  | { type: "sql:run"; table: string; records: Array<Record<string, unknown>>; sql: string }
+  // Pie 2.0 monitors — parse fetched HTML and pull the watched target out.
+  // The SW has no DOMParser; the offscreen document does (and runs no page JS,
+  // which is exactly the "direct" mode semantics of §4.3.1).
+  | { type: "monitor:extract"; html: string; selector: string; anchorText?: string; sample?: string };
 
 export type HandleResult =
   | { ok: true; result: unknown }
@@ -142,6 +147,11 @@ export async function handleMessage(
       const r = await runQuery(msg.table, msg.records, msg.sql);
       if ("error" in r) return { ok: false, error: r.error };
       return { ok: true, result: r };
+    }
+
+    if (msg.type === "monitor:extract") {
+      const doc = new DOMParser().parseFromString(msg.html, "text/html");
+      return { ok: true, result: extractFromDoc(doc, msg.selector, msg.anchorText, msg.sample) };
     }
 
     const parsed = await getParsed(msg.url, state, deps);

@@ -59,6 +59,10 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   "untrusted_scratchpad_preview",
   "untrusted_local_agent_output",
   "untrusted_skill_output_list",
+  // Pie 2.0 page monitors — extracted page values / monitor listings are
+  // third-party page text and must never reach the LLM unwrapped.
+  "untrusted_monitor_value",
+  "untrusted_monitor_list",
 ] as const;
 
 // Zero-width / invisible chars that an attacker might hide inside a tag literal.
