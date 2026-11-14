@@ -15,7 +15,7 @@ afterEach(cleanup);
 
 function make(over: Partial<TopBarProps> = {}): TopBarProps {
   return {
-    view: "agent", settingsPage: "root", sessionTitle: "测试会话", pendingCount: 0,
+    view: "agent", settingsPage: "root", sessionTitle: "测试会话",
     onToggleDrawer: vi.fn(), onNewSession: vi.fn(),
     onNavigate: vi.fn(), onBack: vi.fn(),
     pinnedTabs: null, pinMode: null, streaming: false,
@@ -34,11 +34,6 @@ describe("TopBar 六态", () => {
     expect(screen.getByTestId("topbar-schedules")).toBeTruthy();
     expect(screen.getByTestId("topbar-skills")).toBeTruthy();
     expect(screen.queryByTestId("topbar-back")).toBeNull();
-  });
-
-  it("chat：pendingCount>0 显示红点", () => {
-    render(<TopBar {...make({ pendingCount: 2 })} />);
-    expect(screen.getByTestId("topbar-pending-dot")).toBeTruthy();
   });
 
   it("schedules：back + schedules 按钮 aria-pressed，无抽屉/新会话", () => {

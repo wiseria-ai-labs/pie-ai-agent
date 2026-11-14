@@ -234,7 +234,7 @@ export async function createSession(
   // I-1 — scrub ImageAttachment.data bytes before persisting, consistent
   // with setSessionMeta's R10 scrub. Today no caller passes ImageAttachments
   // to createSession, but the surface is open; this closes it defensively.
-  const meta = scrubAttachmentBytes(rawMeta);
+  const meta = scrubMessageBytes(rawMeta);
 
   const agent: SessionAgentState = {
     agentMessages: [],
@@ -283,44 +283,96 @@ export async function getSessionMeta(id: string): Promise<SessionMeta | null> {
 
 // ── R10 storage scrub ────────────────────────────────────────────────────────
 //
-// `ImageAttachment.data` (base64 bytes) must not land in persisted SessionMeta.
-// Not for a hard quota reason anymore (IDB has no 8 MB ceiling), but for size
-// hygiene: bytes are the heaviest part of a message and don't belong at rest in
-// the meta record. Before persisting SessionMeta we strip `data` + `byteLength`
-// from every ImageAttachment in `meta.messages`, replacing the entry with an
-// ImagePlaceholder. The in-memory cache (image-cache.ts) holds the bytes for
-// the lifetime of the session; hydrateAttachments re-inflates on resume if the
-// session is still warm, or leaves the placeholder on a cold-start cache miss
-// (the user sees a "session drifted" card) — the placeholder round-trip is what
-// preserves attachment identity across reload.
-function scrubAttachmentBytes(meta: SessionMeta): SessionMeta {
-  if (!meta.messages?.length) return meta;
-  let mutated = false;
-  // Cast through unknown: DisplayMessage currently has no `attachments` field
-  // in its static type, but Phase 5 may add one; this guard is defensive and
-  // runtime-correct regardless of the static type shape.
-  const scrubbed = (meta.messages as unknown[]).map((msg) => {
-    const m = msg as Record<string, unknown>;
-    const attachments = m["attachments"];
-    if (!Array.isArray(attachments) || attachments.length === 0) return msg;
-    const scrubbed = attachments.map((a) => {
-      if ((a as ImageAttachment).kind !== "image") return a;
-      const img = a as ImageAttachment;
-      // Strip bytes → ImagePlaceholder. `data` and `byteLength` are omitted.
-      const placeholder = {
-        kind: "image_placeholder" as const,
-        id: img.id,
-        mediaType: img.mediaType,
-        width: img.width,
-        height: img.height,
-      };
-      mutated = true;
-      return placeholder;
-    });
-    return { ...m, attachments: scrubbed };
+// Two kinds of base64 bytes must not land in persisted SessionMeta (IDB has no
+// quota ceiling anymore; this is size hygiene — bytes are by far the heaviest
+// part of a message, and every read of the meta record pays for them):
+//
+//   1. `ImageAttachment.data` (user-pasted images). The in-memory cache
+//      (image-cache.ts) holds the bytes for the lifetime of the session;
+//      hydrateAttachments re-inflates on resume if the session is still warm,
+//      or leaves the ImagePlaceholder on a cold-start cache miss (the user
+//      sees a "session drifted" card) — the placeholder round-trip is what
+//      preserves attachment identity across reload.
+//   2. `agent-step.image.data` (#438 — screenshot tool steps). Displays as a
+//      "released" badge; the LLM already consumed the bytes, they are history.
+//
+// Before the fix in (2) every screenshot taken by an agent step was written to
+// IDB verbatim and stayed in the panel's slots forever.
+//
+// `toAtRestMessages` is exported because the panel needs the same at-rest shape
+// for comparisons: the store-bus echo of a persist carries scrubbed messages,
+// so the panel must compare its live (bytes-bearing) slot against the at-rest
+// form — otherwise every screenshot row "differs" and the echo overwrites the
+// live bytes (#438 review, round 2).
+
+/**
+ * Drop `image.data` from ONE message (any display row that carries it — today
+ * only agent-step). Dimensions survive so the panel can render a "released"
+ * badge. Returns the same object when there is nothing to strip, so callers
+ * can preserve reference identity for React.
+ */
+export function stripImageBytes(message: DisplayMessage): DisplayMessage {
+  const m = message as unknown as Record<string, unknown>;
+  const image = m["image"];
+  if (
+    image === null ||
+    typeof image !== "object" ||
+    typeof (image as Record<string, unknown>)["data"] !== "string"
+  ) {
+    return message;
+  }
+  const { data: _drop, ...rest } = image as Record<string, unknown>;
+  void _drop;
+  return { ...m, image: rest } as unknown as DisplayMessage;
+}
+
+/**
+ * The at-rest form of ONE display message: image bytes dropped, user image
+ * attachments replaced by their placeholder. Returns the same object when
+ * nothing needed scrubbing.
+ */
+function toAtRestMessage(message: DisplayMessage): DisplayMessage {
+  const stripped = stripImageBytes(message);
+  const m = stripped as unknown as Record<string, unknown>;
+  const attachments = m["attachments"];
+  if (!Array.isArray(attachments) || attachments.length === 0) return stripped;
+  let changed = false;
+  const scrubbedAttachments = attachments.map((a) => {
+    if ((a as ImageAttachment).kind !== "image") return a;
+    const img = a as ImageAttachment;
+    // Strip bytes → ImagePlaceholder. `data` and `byteLength` are omitted.
+    changed = true;
+    return {
+      kind: "image_placeholder" as const,
+      id: img.id,
+      mediaType: img.mediaType,
+      width: img.width,
+      height: img.height,
+    };
   });
-  if (!mutated) return meta;
-  return { ...meta, messages: scrubbed as SessionMeta["messages"] };
+  if (!changed) return stripped;
+  return { ...m, attachments: scrubbedAttachments } as unknown as DisplayMessage;
+}
+
+/**
+ * At-rest form of a message list. Returns the SAME array when nothing needed
+ * scrubbing (identity preserved → React skips the re-render, and equality
+ * checks against a stored copy stay cheap).
+ */
+export function toAtRestMessages(messages: DisplayMessage[]): DisplayMessage[] {
+  let changed = false;
+  const out = messages.map((m) => {
+    const next = toAtRestMessage(m);
+    if (next !== m) changed = true;
+    return next;
+  });
+  return changed ? out : messages;
+}
+
+function scrubMessageBytes(meta: SessionMeta): SessionMeta {
+  if (!meta.messages?.length) return meta;
+  const scrubbed = toAtRestMessages(meta.messages);
+  return scrubbed === meta.messages ? meta : { ...meta, messages: scrubbed };
 }
 
 /**
@@ -329,9 +381,10 @@ function scrubAttachmentBytes(meta: SessionMeta): SessionMeta {
  * in the same atomic batch (D9). If the session is missing from the index
  * altogether (e.g. createSession was bypassed in a test) it is added.
  *
- * R10 — strips `ImageAttachment.data` bytes from `meta.messages` before
- * persisting. Bytes live in the in-memory image cache; placeholders survive
- * in storage so identity is preserved for warm-resume hydration.
+ * R10 / #438 — strips image bytes from `meta.messages` before persisting
+ * (user `ImageAttachment.data` → placeholder, agent-step screenshot bytes →
+ * dropped). Attachment bytes live in the in-memory image cache; placeholders
+ * survive in storage so identity is preserved for warm-resume hydration.
  */
 function indexEntryChanged(
   existing: SessionIndexEntry | undefined,
@@ -349,7 +402,7 @@ function indexEntryChanged(
 }
 
 export async function setSessionMeta(meta: SessionMeta): Promise<void> {
-  const scrubbedMeta = scrubAttachmentBytes(meta);
+  const scrubbedMeta = scrubMessageBytes(meta);
   const index = await readIndex();
   const nextEntry = indexEntryFromMeta(scrubbedMeta);
   const existingEntry = index.find((e) => e.id === scrubbedMeta.id);
@@ -393,7 +446,7 @@ export async function updateSessionMeta(
     const current = raw as SessionMeta;
     const next = transform(current);
     if (next === null || next === current) return null;
-    const scrubbed = scrubAttachmentBytes(next);
+    const scrubbed = scrubMessageBytes(next);
     const index = Array.isArray(rawIndex)
       ? rawIndex.filter(
           (e): e is SessionIndexEntry =>
@@ -421,6 +474,9 @@ export async function updateSessionMeta(
  * erase a concurrently-written task pin (the pin-bar bug). Only touches
  * `messages`, `lastAccessedAt` and (when unset) `title`; every other field —
  * pin state included — is whatever is committed at transaction time.
+ *
+ * Image bytes in `next` are stripped by `updateSessionMeta`'s scrub before the
+ * write lands (#438) — callers pass the live panel array unchanged.
  */
 export async function persistSessionMessages(
   id: string,
@@ -891,62 +947,4 @@ async function getStoresByteLength(): Promise<number> {
     total += JSON.stringify(all).length;
   }
   return total;
-}
-
-// ── SEC-PLAN-009 — pending confirm flood protection ───────────────────────────
-//
-// When ≥ PENDING_CONFIRM_FLOOD_LIMIT sessions simultaneously have a live
-// `pendingConfirm`, a runaway agent loop is the most likely cause. The SW
-// uses `isPendingConfirmFloodLimited` to detect this and auto-reject the
-// N+1th confirm rather than silently queueing an unbounded number of
-// blocking confirm dialogs. This protects BYOK users from runaway spending
-// (informed-approval invariant K-1) and prevents unbounded storage growth
-// (D6). Limit = 5 (experimentally generous enough for multi-tab workflows
-// while still catching runaway loops).
-
-export const PENDING_CONFIRM_FLOOD_LIMIT = 5;
-
-/**
- * Count the number of sessions that currently have a live `pendingConfirm`
- * in their agent state. Reads ALL agent records (`${id}:agent`) from the
- * `sessions` IDB store in one `getAll`.
- *
- * This is deliberately a full-scan because (a) the index doesn't carry
- * pendingConfirm, and (b) this is called only in the hot confirm path, not on
- * every tick. Records are wrapped as `{ id, value }` in the store.
- */
-export async function getPendingConfirmCount(): Promise<number> {
-  const all = await tx<Array<{ id: string; value: unknown }>>(
-    STORES.sessions,
-    "readonly",
-    (s) => s.getAll(),
-  );
-  let count = 0;
-  for (const { id, value } of all) {
-    // Record id shape: `${sessionId}:agent`
-    if (!id.endsWith(":agent")) continue;
-    const agentState = value as SessionAgentState | null | undefined;
-    // P1-10 — only count agent-tool confirms toward the flood limit.
-    // Drift-card pendingConfirm (kind='pinned-tab-drift') is written by
-    // handleResumeRequest and persists as long as a session is paused-with-
-    // drift (status='paused'). Cold-start scrub skips paused sessions, so
-    // after ~6 Resume+drift cycles getPendingConfirmCount would return >5
-    // forever, permanently DoSing every confirm in every session.
-    // Fix (c): filter on kind='agent-tool' — only live agent-tool confirms
-    // should count toward D6 storage pressure / SEC-PLAN-009 flood limit.
-    if (agentState?.pendingConfirm?.kind === "agent-tool") {
-      count++;
-    }
-  }
-  return count;
-}
-
-/**
- * Returns `true` when the number of sessions with a live `pendingConfirm`
- * exceeds PENDING_CONFIRM_FLOOD_LIMIT. The SW should auto-reject the next
- * confirm and emit a toast warning to the panel.
- */
-export async function isPendingConfirmFloodLimited(): Promise<boolean> {
-  const count = await getPendingConfirmCount();
-  return count > PENDING_CONFIRM_FLOOD_LIMIT;
 }

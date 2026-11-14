@@ -134,11 +134,20 @@ export default function AgentStepLine({
               <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-3">
                 {t("agentStep.screenshot")}
               </div>
-              <img
-                src={`data:${image.mediaType};base64,${image.data}`}
-                alt={t("agentStep.screenshotAlt", { width: image.width, height: image.height })}
-                className="mt-1 max-w-full rounded border border-line"
-              />
+              {image.data ? (
+                <img
+                  src={`data:${image.mediaType};base64,${image.data}`}
+                  alt={t("agentStep.screenshotAlt", { width: image.width, height: image.height })}
+                  className="mt-1 max-w-full rounded border border-line"
+                />
+              ) : (
+                // #438 — bytes are stripped at the storage boundary, so a step
+                // read back from IDB keeps only its dimensions. Same badge the
+                // user-attachment placeholder uses.
+                <span className="mt-1 inline-block rounded border border-line bg-field px-2 py-0.5 font-mono text-[10px] text-fg-3">
+                  {t("chat.attachment.imageReleasedBadge", { width: image.width, height: image.height })}
+                </span>
+              )}
             </div>
           )}
           {observation && (

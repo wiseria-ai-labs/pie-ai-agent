@@ -10,6 +10,7 @@ import {
 import { setIndex } from "@/lib/idb/sessions-store";
 import { _resetForTests } from "@/lib/idb/db";
 import { useSession } from ".";
+import type { DisplayMessage } from "@/types";
 
 // Session persistence now lives in IndexedDB (the `pie` db). The shared
 // test/setup.ts beforeEach only clears the chrome.storage mock, so without an
@@ -1287,6 +1288,104 @@ describe("setActive — multi-session port lifecycle (#30)", () => {
       expect(result.current.sessionId).toBe(id);
     });
     expect(result.current.usage).toBeUndefined();
+  });
+});
+
+describe("#438 — the persist echo must not strip the ACTIVE session's screenshots", () => {
+  it("keeps image.data on the live slot after chat-done persists the task", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const sid = result.current.sessionId!;
+    const port = chromeMock.runtime.__ports[0]!;
+    const image = { mediaType: "image/jpeg", data: "BASE64BYTES", width: 10, height: 10 };
+
+    act(() => result.current.sendMessage({ content: "capture the page" }));
+    await waitFor(() => expect(result.current.streaming).toBe(true));
+    act(() =>
+      emitWithSession(
+        port,
+        {
+          type: "agent-step",
+          stepIndex: 0,
+          tool: "capture_visible_tab",
+          args: {},
+          status: "ok",
+          observation: "captured",
+          image,
+        },
+        sid,
+      ),
+    );
+
+    // chat-done flushes + persists the task; the store-bus echo of that write
+    // carries the at-rest (bytes-stripped) copy. Adopting it would replace the
+    // screenshot the user is looking at with a "[released]" badge.
+    act(() => emitWithSession(port, { type: "chat-done" }, sid));
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+    // Give the store-bus handler's async getSessionMeta + compare a chance to run.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    const step = result.current.messages.find((m) => m.role === "agent-step") as Extract<
+      DisplayMessage,
+      { role: "agent-step" }
+    >;
+    expect(step).toBeDefined();
+    expect(step.image?.data).toBe("BASE64BYTES");
+  });
+});
+
+describe("#438 — screenshot bytes released on session switch", () => {
+  it("strips agent-step image bytes from the outgoing slot (keeps the active one)", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const idA = result.current.sessionId!;
+    const port = chromeMock.runtime.__ports[0]!;
+
+    // A task runs in A and produces one screenshot step.
+    act(() => result.current.sendMessage({ content: "capture the page" }));
+    await waitFor(() => expect(result.current.streaming).toBe(true));
+    act(() =>
+      emitWithSession(
+        port,
+        {
+          type: "agent-step",
+          stepIndex: 0,
+          tool: "capture_visible_tab",
+          args: {},
+          status: "ok",
+          observation: "captured",
+          image: { mediaType: "image/jpeg", data: "BASE64BYTES", width: 10, height: 10 },
+        },
+        idA,
+      ),
+    );
+    const liveStep = result.current.messages.find((m) => m.role === "agent-step");
+    expect(
+      (liveStep as Extract<DisplayMessage, { role: "agent-step" }>).image?.data,
+    ).toBe("BASE64BYTES");
+
+    // Switch away — A keeps streaming in the background, so its live slot is
+    // NOT re-hydrated from storage when we come back; that makes the release
+    // observable.
+    let idB: string | null = null;
+    await act(async () => {
+      idB = await result.current.createAndActivate();
+    });
+    expect(idB).not.toBe(idA);
+
+    await act(async () => {
+      await result.current.setActive(idA);
+    });
+    const back = result.current.messages.find((m) => m.role === "agent-step") as Extract<
+      DisplayMessage,
+      { role: "agent-step" }
+    >;
+    // Step survives, bytes gone (dimensions drive the "released" badge).
+    expect(back.tool).toBe("capture_visible_tab");
+    expect(back.image?.data).toBeUndefined();
+    expect(back.image?.width).toBe(10);
   });
 });
 

@@ -36,7 +36,6 @@ export interface TopBarProps {
   view: AppView;
   settingsPage: SettingsPage;
   sessionTitle: string;
-  pendingCount: number;
   onToggleDrawer: () => void;
   onNewSession: () => void;
   onNavigate: (v: "schedules" | "research" | "skills") => void;
@@ -55,7 +54,6 @@ export default function TopBar({
   view,
   settingsPage,
   sessionTitle,
-  pendingCount,
   onToggleDrawer,
   onNewSession,
   onNavigate,
@@ -97,22 +95,13 @@ export default function TopBar({
       <div className="flex items-center gap-1.5">
         {isChat ? (
           <>
-            <div className="relative">
-              <IconButton
-                data-testid="topbar-drawer"
-                size="sm"
-                aria-label={t("topBar.openSessionsList")}
-                icon={<Menu {...ICON} />}
-                onClick={onToggleDrawer}
-              />
-              {pendingCount > 0 && (
-                <span
-                  data-testid="topbar-pending-dot"
-                  className="pointer-events-none absolute right-1 top-1 h-1.5 w-1.5 rounded-full"
-                  style={{ background: "var(--c-pending)" }}
-                />
-              )}
-            </div>
+            <IconButton
+              data-testid="topbar-drawer"
+              size="sm"
+              aria-label={t("topBar.openSessionsList")}
+              icon={<Menu {...ICON} />}
+              onClick={onToggleDrawer}
+            />
             <IconButton
               data-testid="topbar-new"
               size="sm"

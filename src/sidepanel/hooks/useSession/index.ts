@@ -17,6 +17,7 @@ import {
   setSessionAgent,
   updateSessionMeta,
   persistSessionMessages,
+  toAtRestMessages,
   updateLastAccessed,
 } from "@/lib/sessions/storage";
 import { deriveTitleFromMessages } from "@/lib/sessions/title";
@@ -31,6 +32,7 @@ import {
 import {
   EMPTY_SLOT,
   deriveActiveView,
+  releaseImageBytes,
   withSlot,
   type SessionRuntimeSlot,
 } from "./runtime-map";
@@ -263,6 +265,25 @@ export function useSession(): UseSession {
     [],
   );
 
+  // #438 — the panel only renders the active slot; drop screenshot bytes from
+  // every other visited slot (and from archived sessions, which can't come
+  // back) so they don't sit in memory for the life of the panel page.
+  const releaseOtherSlots = useCallback((activeId: string) => {
+    const prev = slotsRef.current;
+    const next = new Map(prev);
+    let changed = false;
+    for (const [slotId, slot] of prev) {
+      if (slotId === activeId) continue;
+      const messages = releaseImageBytes(slot.messages);
+      if (messages === slot.messages) continue;
+      next.set(slotId, { ...slot, messages });
+      changed = true;
+    }
+    if (!changed) return;
+    slotsRef.current = next;
+    setSlots(next);
+  }, []);
+
   // #30 — derive active session view; passed back through UseSession interface.
   const active = deriveActiveView(slots, sessionId);
 
@@ -296,6 +317,24 @@ export function useSession(): UseSession {
       postMessageRef: postWithReconnectRef,
     }),
     [persistMessagesById],
+  );
+
+  // #438 — one subscription per session. swPort.connect returns an unsubscribe
+  // that used to be dropped, so every re-activation of a session piled another
+  // disconnect closure onto that session's subscriber Set (per panel page).
+  const portUnsubsRef = useRef(new Map<string, () => void>());
+  const connectPort = useCallback(
+    (id: string) => {
+      portUnsubsRef.current.get(id)?.();
+      portUnsubsRef.current.set(
+        id,
+        swPort.connect(id, {
+          onMessage: portHandlers.handleMessage,
+          onDisconnect: portHandlers.makeDisconnectHandler(id),
+        }),
+      );
+    },
+    [portHandlers],
   );
 
   // ── Mount: bootstrap active session + open per-session port ─────────
@@ -353,10 +392,7 @@ export function useSession(): UseSession {
         setPinnedTabsState(null);
         setPinModeState(meta.pinMode ?? "auto");
         patchSlot(meta.id, EMPTY_SLOT);
-        swPort.connect(meta.id, {
-          onMessage: portHandlers.handleMessage,
-          onDisconnect: portHandlers.makeDisconnectHandler(meta.id),
-        });
+        connectPort(meta.id);
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -412,11 +448,18 @@ export function useSession(): UseSession {
   // the per-key `newValue`) is gone. We now ride the coarse store-bus
   // "sessions" event and re-read the active session's meta from IDB. Behavior
   // is equivalent: the refetched meta is the authoritative persisted state.
-  // We re-read on EVERY "sessions" event (the bus is coarse / id-less for
-  // batch writes) and apply the same adoption rules to the fetched meta.
-  useStoreChange("sessions", () => {
+  // We re-read on every event that can touch this session's meta record —
+  // id-less batch writes plus this session's own `:meta` writes (#438 skips
+  // other sessions' records to keep the per-step `:agent` writes off the path)
+  // — and apply the same adoption rules to the fetched meta.
+  useStoreChange("sessions", (change) => {
     const sid = sessionId;
     if (!sid) return;
+    // #438 — the store event carries the record id for single-record writes
+    // (only batch writes are coarse/id-less). Every per-step SW write is the
+    // `:agent` record, which this handler never reads: skip the full-meta
+    // deserialization (all messages) instead of paying it per agent step.
+    if (change.id !== undefined && change.id !== `${sid}:meta`) return;
     void (async () => {
       const newMeta = await getSessionMeta(sid);
       // The active session changed out from under us while awaiting — bail.
@@ -461,10 +504,17 @@ export function useSession(): UseSession {
         //    write-back (remote.length < local.length AND remote is a strict
         //    prefix of local). Both are signs the SW round-tripped a stale meta
         //    after the panel's authoritative state moved forward.
+        //
+        // #438 — the stored copy is ALWAYS the at-rest shape (image bytes
+        // scrubbed), while the slot holds the live bytes-bearing rows. Compare
+        // against the at-rest form of `local`, otherwise every screenshot row
+        // "differs": the self-echo would be adopted (dropping the live
+        // screenshots the user is looking at) and the stale-prefix guard would
+        // stop matching.
         if (slotsRef.current.get(sessionIdRef.current ?? "")?.streaming) {
           return;
         }
-        const local = slotsRef.current.get(sid)?.messages ?? [];
+        const local = toAtRestMessages(slotsRef.current.get(sid)?.messages ?? []);
         const remote = newMeta.messages;
         if (remote.length === local.length) {
           if (JSON.stringify(remote) === JSON.stringify(local)) {
@@ -940,6 +990,8 @@ export function useSession(): UseSession {
     }
     if (!didMigrate) await updateLastAccessed(id);
 
+    releaseOtherSlots(id);
+
     sessionIdRef.current = id;
     setSessionId(id);
     setStatus(metaForActivate.status);
@@ -978,14 +1030,11 @@ export function useSession(): UseSession {
     // port, never opens a second one nor re-sends panel-mounted), so we call it
     // unconditionally for runnable sessions — no "already has a port" guard.
     if (metaForActivate.status !== "archived" && metaForActivate.status !== "paused") {
-      swPort.connect(id, {
-        onMessage: portHandlers.handleMessage,
-        onDisconnect: portHandlers.makeDisconnectHandler(id),
-      });
+      connectPort(id);
     }
 
     return id;
-  }, [patchSlot, portHandlers]);
+  }, [patchSlot, connectPort, releaseOtherSlots]);
 
   /**
    * M2-U2 — create a new session and make it active. Returns the new
@@ -1006,13 +1055,11 @@ export function useSession(): UseSession {
     setStatus(meta.status);
     setPinnedTabsState(null);
     setPinModeState("auto");
+    releaseOtherSlots(meta.id);
     patchSlot(meta.id, EMPTY_SLOT);
-    swPort.connect(meta.id, {
-      onMessage: portHandlers.handleMessage,
-      onDisconnect: portHandlers.makeDisconnectHandler(meta.id),
-    });
+    connectPort(meta.id);
     return meta.id;
-  }, [patchSlot, portHandlers]);
+  }, [patchSlot, connectPort, releaseOtherSlots]);
 
   // v1.5 — PinnedTabDropdown actions. Direct IDB writes (panel can write
   // session_${id}_meta) — no need to round-trip through SW. The store-bus

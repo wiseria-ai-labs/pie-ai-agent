@@ -180,6 +180,7 @@ export default function Chat({
     ratelimitResumeAt,
     error,
     errorKind,
+    rewindAndResend,
     toast,
     pinnedTabs,
     pinMode,
@@ -197,6 +198,8 @@ export default function Chat({
     addPendingInstruction,
     cancelPendingInstruction,
     pendingByChatMessageId,
+    discardTask,
+    downloadOutput,
   } = session;
   const [input, setInput] = useState("");
   const [hasConfig, setHasConfig] = useState<boolean | null>(null);
@@ -733,17 +736,137 @@ export default function Chat({
   // `messages` array (visibleMessages preserves those references), so indexOf
   // recovers its true position even though the render maps `visibleMessages`.
   // `editedContent` undefined ⇒ resend-as-is; a string ⇒ edit then resend.
+  // #438 — depend on the (stable) hook callback, not the `session` object
+  // literal, so the identity only moves when `messages` does; that is what
+  // lets the memoized message rows below skip re-rendering while the user
+  // types in the composer.
   const handleRewind = useCallback(
     (msg: DisplayMessage, editedContent?: string) => {
       if (msg.role !== "user") return;
       const idx = messages.indexOf(msg);
       if (idx < 0) return;
-      session.rewindAndResend(idx, buildRewindInput(msg, editedContent));
+      rewindAndResend(idx, buildRewindInput(msg, editedContent));
     },
-    [messages, session],
+    [messages, rewindAndResend],
   );
 
   const popoverOpen = slashState !== null && input !== dismissedInput;
+
+  // #438 — memoize the rendered message rows. `input` lives in this component,
+  // so without this every keystroke re-rendered the whole scrollback (and
+  // ReactMarkdown for each reply), which is what made typing in a long session
+  // feel laggy. Every dep below only moves when the message data itself does;
+  // the callbacks are stable (useCallback / module fns / setState).
+  const messageRows = useMemo(
+    () => (
+      <>
+        {segments.map((seg, segIndex) => {
+          // M5 motion: bubble-in for content rows, scale-in for
+          // session-confirm cards. Wrappers carry the animation class
+          // so message components stay layout-agnostic.
+          // For agent-step groups, the wrapper plays bubble-in once on
+          // group mount; subsequent in-place updates of the active step
+          // don't replay because React reuses the same DOM nodes.
+          if (seg.kind === "steps") {
+            return (
+              <div key={`steps-${seg.firstIndex}`} className="bubble-in">
+                <AgentStepGroup
+                  doneSteps={seg.doneSteps}
+                  currentStep={seg.currentStep}
+                />
+              </div>
+            );
+          }
+          const { msg, firstIndex } = seg;
+          if (msg.role === "user" || msg.role === "assistant") {
+            // Issue #245 — expose rewind only on idle (streaming hidden)
+            // user bubbles. Binding the handler to `msg` here keeps
+            // MessageBubble unaware of list indices.
+            const rewindMsg = msg;
+            return (
+              <div key={firstIndex} className="bubble-in">
+                <MessageBubble
+                  message={msg}
+                  showHeader={agentHeader.indexes.has(segIndex)}
+                  celebrating={celebrating && segIndex === lastAgentRowIndex}
+                  {...(msg.role === "user" && !streaming
+                    ? {
+                        onRewind: (editedContent?: string) =>
+                          handleRewind(rewindMsg, editedContent),
+                      }
+                    : {})}
+                  {...(msg.role === "assistant" &&
+                  !streaming &&
+                  segIndex === lastAssistantSegIndex
+                    ? { onReport: () => setReportIndex(firstIndex) }
+                    : {})}
+                />
+              </div>
+            );
+          }
+          if (msg.role === "agent-summary") {
+            return (
+              <div key={firstIndex} className="bubble-in">
+                <AgentSummary
+                  success={msg.success}
+                  summary={msg.summary}
+                  summaryKey={msg.summaryKey}
+                  stepCount={msg.stepCount}
+                  celebrating={celebrating && segIndex === lastAgentRowIndex}
+                />
+              </div>
+            );
+          }
+          if (msg.role === "session-confirm") {
+            return (
+              <div key={firstIndex} className="scale-in">
+                <SessionConfirmCard
+                  kind={msg.kind}
+                  payload={msg.payload}
+                  resolved={msg.resolved}
+                  onDiscard={() => discardTask(msg.confirmationId)}
+                />
+              </div>
+            );
+          }
+          if (msg.role === "file-output") {
+            // Key by artifactId (not the numeric index) so React never
+            // reuses a card instance across sessions/artifacts — index keys
+            // let a previous session's card (and its local expired state)
+            // get reused at the same position when switching sessions.
+            return (
+              <div key={`fileout-${msg.artifactId}`} className="bubble-in">
+                <FileOutputCard
+                  artifactId={msg.artifactId}
+                  filename={msg.filename}
+                  mime={msg.mime}
+                  size={msg.size}
+                  preview={msg.preview}
+                  totalLines={msg.totalLines}
+                  onDownload={downloadOutput}
+                  onProbe={artifactExists}
+                />
+              </div>
+            );
+          }
+          return null;
+        })}
+      </>
+    ),
+    // Streaming text/thinking are deliberately NOT deps: the live bubble below
+    // re-renders per chunk, the finished rows above only when data changes.
+    [
+      segments,
+      agentHeader,
+      celebrating,
+      lastAgentRowIndex,
+      lastAssistantSegIndex,
+      streaming,
+      handleRewind,
+      discardTask,
+      downloadOutput,
+    ],
+  );
 
   useEffect(() => {
     setPopoverSelected(0);
@@ -1111,97 +1234,7 @@ After the skill completes, briefly summarize what was created (the user will see
               <PageChangedBanner onNewTask={handleNewTask} />
             )}
 
-            {segments.map((seg, segIndex) => {
-              // M5 motion: bubble-in for content rows, scale-in for
-              // session-confirm cards. Wrappers carry the animation class
-              // so message components stay layout-agnostic.
-              // For agent-step groups, the wrapper plays bubble-in once on
-              // group mount; subsequent in-place updates of the active step
-              // don't replay because React reuses the same DOM nodes.
-              if (seg.kind === "steps") {
-                return (
-                  <div key={`steps-${seg.firstIndex}`} className="bubble-in">
-                    <AgentStepGroup
-                      doneSteps={seg.doneSteps}
-                      currentStep={seg.currentStep}
-                    />
-                  </div>
-                );
-              }
-              const { msg, firstIndex } = seg;
-              if (msg.role === "user" || msg.role === "assistant") {
-                // Issue #245 — expose rewind only on idle (streaming hidden)
-                // user bubbles. Binding the handler to `msg` here keeps
-                // MessageBubble unaware of list indices.
-                const rewindMsg = msg;
-                return (
-                  <div key={firstIndex} className="bubble-in">
-                    <MessageBubble
-                      message={msg}
-                      showHeader={agentHeader.indexes.has(segIndex)}
-                      celebrating={celebrating && segIndex === lastAgentRowIndex}
-                      {...(msg.role === "user" && !streaming
-                        ? {
-                            onRewind: (editedContent?: string) =>
-                              handleRewind(rewindMsg, editedContent),
-                          }
-                        : {})}
-                      {...(msg.role === "assistant" &&
-                      !streaming &&
-                      segIndex === lastAssistantSegIndex
-                        ? { onReport: () => setReportIndex(firstIndex) }
-                        : {})}
-                    />
-                  </div>
-                );
-              }
-              if (msg.role === "agent-summary") {
-                return (
-                  <div key={firstIndex} className="bubble-in">
-                    <AgentSummary
-                      success={msg.success}
-                      summary={msg.summary}
-                      summaryKey={msg.summaryKey}
-                      stepCount={msg.stepCount}
-                      celebrating={celebrating && segIndex === lastAgentRowIndex}
-                    />
-                  </div>
-                );
-              }
-              if (msg.role === "session-confirm") {
-                return (
-                  <div key={firstIndex} className="scale-in">
-                    <SessionConfirmCard
-                      kind={msg.kind}
-                      payload={msg.payload}
-                      resolved={msg.resolved}
-                      onDiscard={() => session.discardTask(msg.confirmationId)}
-                    />
-                  </div>
-                );
-              }
-              if (msg.role === "file-output") {
-                // Key by artifactId (not the numeric index) so React never
-                // reuses a card instance across sessions/artifacts — index keys
-                // let a previous session's card (and its local expired state)
-                // get reused at the same position when switching sessions.
-                return (
-                  <div key={`fileout-${msg.artifactId}`} className="bubble-in">
-                    <FileOutputCard
-                      artifactId={msg.artifactId}
-                      filename={msg.filename}
-                      mime={msg.mime}
-                      size={msg.size}
-                      preview={msg.preview}
-                      totalLines={msg.totalLines}
-                      onDownload={session.downloadOutput}
-                      onProbe={artifactExists}
-                    />
-                  </div>
-                );
-              }
-              return null;
-            })}
+            {messageRows}
 
             {streaming && (streamingText || streamingThinking) && (
               <MessageBubble

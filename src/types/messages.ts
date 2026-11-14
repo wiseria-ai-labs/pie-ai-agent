@@ -304,8 +304,9 @@ export type DisplayMessage =
       /** Phase 5 follow-up — for screenshot tool steps (capture_visible_tab /
        *  capture_fullpage_tab). Carries the post-resize JPEG bytes that were
        *  fed to the LLM so the panel can render the same image alongside the
-       *  text observation in the details block. Wire-only / React-state-only:
-       *  agent-step is never persisted, so these bytes never hit storage. */
+       *  text observation in the details block. #438 — `data` is stripped at
+       *  the storage boundary (scrubMessageBytes), so a message read back from
+       *  IDB keeps only the dimensions and renders a "released" badge. */
       image?: AgentStepImageExtras;
       /** Long-running skill script: live poll snapshot (queued/running + stdout tail). */
       progress?: AgentStepProgress;
@@ -374,8 +375,11 @@ export interface AgentStepProgress {
 export interface AgentStepImageExtras {
   /** Post-resize MIME, currently always image/jpeg. */
   mediaType: string;
-  /** base64-encoded post-resize JPEG bytes. Same bytes that went to the LLM. */
-  data: string;
+  /** base64-encoded post-resize JPEG bytes. Same bytes that went to the LLM.
+   *  #438 — absent on a row read back from storage: the persist boundary
+   *  (scrubMessageBytes) drops it so screenshots don't pile up in IDB and in
+   *  the panel's per-session slots. Only `mediaType`/`width`/`height` survive. */
+  data?: string;
   width: number;
   height: number;
 }
@@ -399,8 +403,9 @@ export interface AgentStepMessage {
    * Phase 5 follow-up — screenshot tools attach the captured image bytes
    *  here so the panel can render the same image in the step's details
    *  block (alongside the text observation). Absent for non-screenshot
-   *  tools and for screenshot steps that ended in error. Wire-only:
-   *  agent-step is React-state-only and never hits storage. */
+   *  tools and for screenshot steps that ended in error. #438 — the persist
+   *  boundary strips `image.data` (see AgentStepImageExtras); in-panel slots
+   *  drop it too once the session is switched away from. */
   image?: AgentStepImageExtras;
   /** Long-running skill script poll snapshot. Wire-only; same as DisplayMessage.progress. */
   progress?: AgentStepProgress;
