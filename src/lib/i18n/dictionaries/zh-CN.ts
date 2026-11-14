@@ -1168,6 +1168,18 @@ export const zhCNDict = {
       done: "已完成",
       stopped: "已停止",
       failed: "操作失败",
+      activity: {
+        readPage: "正在读取页面",
+        actPage: "正在操作页面",
+        openPage: "正在打开页面",
+        readPdf: "正在读取 PDF",
+        searchBookmarks: "正在查找书签",
+        searchHistory: "正在查找浏览记录",
+        bookmarks: "正在整理书签",
+        memory: "正在更新记忆",
+        monitor: "正在设置监控",
+        other: "正在处理…",
+      },
     },
   },
 

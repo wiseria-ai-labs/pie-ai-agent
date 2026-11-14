@@ -69,7 +69,9 @@ import {
 } from "../scratchpad/service";
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillEntries, getActiveSkillSource } from "@/background/skill-source";
-import { hideSurfaces, showSurfaces, withSurfaceHidden } from "@/lib/overlay/surface-bridge";
+import { beginPageOperation, endPageOperation, withSurfacePeekHidden } from "@/lib/overlay/surface-bridge";
+import { getToolSurface } from "./tool-names";
+import { pageOperationTarget } from "@/lib/overlay/page-operation";
 import { isFilePdfUrl, isPdfTabAsync } from "../pdf/detect";
 import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
@@ -2993,7 +2995,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           }
 
           const captureCtx = { sessionId, pinnedTabId };
-          const outcome = await withSurfaceHidden(pinnedTabId, async () =>
+          // Visibility-only, for this frame: the card keeps its layout so the
+          // restore is imperceptible (the old display:none flashed the page).
+          const outcome = await withSurfacePeekHidden(pinnedTabId, async () =>
             tc.name === "capture_video_frame"
               ? await dispatchCaptureVideoFrame(captureCtx, (tc.args ?? {}) as { timeSeconds?: unknown })
               : tc.name === "capture_visible_tab"
@@ -3083,9 +3087,14 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // agent cannot see; hide it for the duration so a click can never land
         // on Pie's own surface. Reads are untouched (cheap, and they never
         // dispatch a pointer event).
-        const hideOwnSurface = getToolClass(tc.name) === "write";
+        // Page-DOM tools only, and the PAGE decides by rectangle overlap —
+        // a bookmark write must never move the overlay. Screenshots are
+        // handled above; everything else leaves the overlay alone.
+        const surface = getToolSurface(tc.name);
         try {
-          if (hideOwnSurface) await hideSurfaces(pinnedTabId);
+          if (surface === "page") {
+            await beginPageOperation(pinnedTabId, pageOperationTarget(tc.name, tc.args));
+          }
           result = await tool.handler(tc.args, {
             tabId: pinnedTabId,
             // #296 — session 维度产物隔离：run_skill_script / read_skill_output 透传给 daemon。
@@ -3143,7 +3152,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             error: e instanceof Error ? e.message : "Tool execution failed",
           };
         } finally {
-          if (hideOwnSurface) await showSurfaces(pinnedTabId);
+          if (surface === "page") await endPageOperation(pinnedTabId);
         }
 
         let observation = result.observation ?? result.error ?? "";

@@ -1179,6 +1179,18 @@ export const enDict = {
       done: "Done",
       stopped: "Stopped",
       failed: "Something went wrong",
+      activity: {
+        readPage: "Reading the page",
+        actPage: "Working on the page",
+        openPage: "Opening a page",
+        readPdf: "Reading the PDF",
+        searchBookmarks: "Searching bookmarks",
+        searchHistory: "Searching history",
+        bookmarks: "Updating bookmarks",
+        memory: "Updating memory",
+        monitor: "Setting up a monitor",
+        other: "Working…",
+      },
     },
   },
 

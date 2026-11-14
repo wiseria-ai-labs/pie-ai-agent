@@ -3,13 +3,9 @@ import {
   applyOverlayEmit,
   capsuleSteps,
   createOverlayRun,
-  currentStepLabel,
   detachedMessagesToPersist,
   isTerminalEmit,
-  isWriteStep,
   markStopped,
-  stepLabel,
-  summarizeToolArgs,
 } from "./run-state";
 import type { PortMessageToPanel } from "@/types";
 
@@ -135,30 +131,29 @@ describe("overlay run state", () => {
     expect(run.pending).toHaveLength(0);
   });
 
-  it("capsule lists steps with consecutive duplicates collapsed", () => {
+  it("capsule lists TOOLS (not args), folding consecutive same-activity steps", () => {
     let run = createOverlayRun(SID, 7);
     run = applyOverlayEmit(run, step({ stepIndex: 1 }));
     run = applyOverlayEmit(run, step({ stepIndex: 2 }));
     run = applyOverlayEmit(run, step({ stepIndex: 3, tool: "type", args: { text: "hi" } }));
-    expect(capsuleSteps(run)).toEqual(["click · 发送", "type · hi"]);
-    expect(currentStepLabel(run)).toBe("type · hi");
+    // click → click → type are all "working on the page": ONE row, newest
+    // status, and no args anywhere.
+    expect(capsuleSteps(run)).toEqual([{ tool: "type", status: "pending" }]);
+    // Same activity failing keeps the error visible.
+    run = applyOverlayEmit(run, step({ stepIndex: 4, tool: "hover", status: "error" }));
+    expect(capsuleSteps(run)).toEqual([{ tool: "hover", status: "error" }]);
+    // A different activity starts a new row.
+    run = applyOverlayEmit(run, step({ stepIndex: 5, tool: "read_page", status: "ok" }));
+    expect(capsuleSteps(run)).toEqual([
+      { tool: "hover", status: "error" },
+      { tool: "read_page", status: "ok" },
+    ]);
   });
 
-  it("classifies write tools (capsule collapse trigger) via the shared registry", () => {
-    expect(isWriteStep("click")).toBe(true);
-    expect(isWriteStep("type")).toBe(true);
-    expect(isWriteStep("read_page")).toBe(false);
-    expect(isWriteStep("propose_rewrite")).toBe(false);
-  });
-
-  it("summarizeToolArgs prefers a human field and bounds the length", () => {
-    expect(summarizeToolArgs({ selector: "#a", label: "发送" })).toBe("发送");
-    expect(summarizeToolArgs({})).toBe("");
-    expect(summarizeToolArgs(null)).toBe("");
-    const long = summarizeToolArgs({ text: "x".repeat(200) });
-    expect(long.length).toBeLessThanOrEqual(61);
-    expect(long.endsWith("…")).toBe(true);
-    expect(stepLabel("click", { label: "发送" })).toBe("click · 发送");
-    expect(stepLabel("wait", undefined)).toBe("wait");
+  it("keeps the last status for repeated same-activity steps", () => {
+    let run = createOverlayRun(SID, 7);
+    run = applyOverlayEmit(run, step({ stepIndex: 1, tool: "click", status: "pending" }));
+    run = applyOverlayEmit(run, step({ stepIndex: 2, tool: "click", status: "ok" }));
+    expect(capsuleSteps(run)).toEqual([{ tool: "click", status: "ok" }]);
   });
 });

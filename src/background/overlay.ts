@@ -42,10 +42,8 @@ import {
   applyOverlayEmit,
   capsuleSteps,
   createOverlayRun,
-  currentStepLabel,
   detachedMessagesToPersist,
   isTerminalEmit,
-  isWriteStep,
   markStopped,
   type OverlayRun,
 } from "@/lib/overlay/run-state";
@@ -89,7 +87,7 @@ export interface RunRuntime {
   /** Side-panel client of the same run (live handoff). */
   panel: PanelFanout;
   abort: AbortController | null;
-  /** True once the capsule was shown for this run (write tool ran). */
+  /** True while the capsule stands in for the surface the user closed. */
   capsuleShown: boolean;
   finishedAt: number | null;
 }
@@ -199,8 +197,13 @@ export function detachOverlayRun(sessionId: string): void {
   if (!rt) return;
   rt.run = { ...rt.run, detached: true };
   rt.port = null;
-  // Re-push capsule state: the page's own content script may still be there.
-  void pushCapsule(rt);
+  // The page replaced the document mid-task: that is the one case where the
+  // capsule is the ONLY surviving surface, so it is shown (a user-closed
+  // overlay keeps its hidden document and does not come through here).
+  if (rt.run.status === "run") {
+    rt.capsuleShown = true;
+    void pushCapsule(rt);
+  }
 }
 
 /** The overlay reopened on the same tab while a task is still running. */
@@ -208,9 +211,36 @@ export function rebindOverlayRunPort(sessionId: string, port: chrome.runtime.Por
   const rt = runs.get(sessionId);
   if (!rt || rt.run.status !== "run") return false;
   rt.port = port;
+  // The user is back in the live conversation: the capsule has no job.
+  clearCapsule(rt);
   // `detached` stays true: the SW remains the owner of persistence for this
   // run, so a re-attached overlay does not double-write the messages.
   return true;
+}
+
+/** The overlay surface is visible again (reused document or new mount). */
+export function markOverlayReopened(sessionId: string | undefined): void {
+  const rt = sessionId ? runs.get(sessionId) : undefined;
+  if (!rt) return;
+  clearCapsule(rt);
+}
+
+function clearCapsule(rt: RunRuntime): void {
+  if (!rt.capsuleShown) return;
+  rt.capsuleShown = false;
+  void sendToTab(rt.run.tabId, { type: CAPSULE_STATE, state: null });
+}
+
+/**
+ * The user closed the overlay (Esc / outside click / ×). If the task is still
+ * running, THAT is when the capsule appears — never merely because a tool ran.
+ */
+export function markOverlayClosedByUser(sessionId: string | undefined, tabId?: number): void {
+  const rt = sessionId ? runs.get(sessionId) : undefined;
+  if (!rt || rt.run.status !== "run") return;
+  if (typeof tabId === "number" && tabId !== rt.run.tabId) return;
+  rt.capsuleShown = true;
+  void pushCapsule(rt);
 }
 
 export function abortOverlayRun(sessionId: string): void {
@@ -238,10 +268,10 @@ export function wrapOverlayEmit(
     // it gets the same events, incl. the replay log for late attach.
     postToPanel(runtime.panel, m);
 
-    if (m.type === "agent-step" && m.status === "pending" && isWriteStep(m.tool)) {
-      runtime.capsuleShown = true;
-      void pushCapsule(runtime);
-    } else if (m.type === "agent-step" && runtime.capsuleShown) {
+    // The capsule only mirrors a run the user already closed the overlay on.
+    // Tool steps NEVER create it themselves (a bookmark write used to, which
+    // collapsed the overlay for a tool that never touches the page).
+    if (m.type === "agent-step" && runtime.capsuleShown) {
       void pushCapsule(runtime);
     }
 
@@ -256,17 +286,7 @@ export function wrapOverlayEmit(
 
 function capsuleStateFor(run: OverlayRun): OverlayCapsuleState {
   const steps = capsuleSteps(run);
-  const base = { sessionId: run.sessionId, steps, label: currentStepLabel(run) };
-  switch (run.status) {
-    case "done":
-      return { status: "done", ...base };
-    case "failed":
-      return { status: "failed", ...base };
-    case "stopped":
-      return { status: "stopped", ...base };
-    default:
-      return { status: "run", ...base };
-  }
+  return { status: run.status, sessionId: run.sessionId, steps };
 }
 
 async function pushCapsule(runtime: RunRuntime): Promise<void> {
@@ -462,6 +482,9 @@ export async function openOverlayOnTabId(tabId: number, opts: OpenOverlayOptions
     pageTitle,
     pageUrl,
   };
+  // Reopening the surface = back to the live conversation; a capsule standing
+  // in for the closed overlay has no job any more.
+  markOverlayReopened(sessionId);
   pendingOpens.set(tabId, {
     state: {
       sessionId,
@@ -781,6 +804,16 @@ export async function overlayConfigReply(browserLanguage?: string): Promise<Over
       capsuleDone: t("overlay.capsule.done"),
       capsuleStopped: t("overlay.capsule.stopped"),
       capsuleFailed: t("overlay.capsule.failed"),
+      activityReadPage: t("overlay.capsule.activity.readPage"),
+      activityActPage: t("overlay.capsule.activity.actPage"),
+      activityOpenPage: t("overlay.capsule.activity.openPage"),
+      activityReadPdf: t("overlay.capsule.activity.readPdf"),
+      activitySearchBookmarks: t("overlay.capsule.activity.searchBookmarks"),
+      activitySearchHistory: t("overlay.capsule.activity.searchHistory"),
+      activityBookmarks: t("overlay.capsule.activity.bookmarks"),
+      activityMemory: t("overlay.capsule.activity.memory"),
+      activityMonitor: t("overlay.capsule.activity.monitor"),
+      activityOther: t("overlay.capsule.activity.other"),
     },
   };
 }

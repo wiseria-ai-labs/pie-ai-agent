@@ -408,6 +408,119 @@ export function getToolClass(name: string): ToolClass {
   return TOOL_CLASSES[name] ?? "read";
 }
 
+// ── Surface classification (does the tool touch the page?) ──────────────────
+//
+// NOT the read/write class above. That one feeds the R7 cross-session tab
+// lock, where `create_bookmark` is a write — but a bookmark never touches a
+// page element, and hiding the overlay for it was the bug that collapsed the
+// overlay into a capsule mid-conversation.
+//
+//   page       — dispatches input/scroll at page DOM. The overlay hides for
+//                the call ONLY when its rectangle overlaps the target.
+//   screenshot — the capture must not contain Pie's own surfaces; the overlay
+//                is hidden for that frame (visibility only) and restored.
+//   none       — no effect on the overlay (bookmarks, history, memory,
+//                monitors, PDFs, cross-tab reads, skills, scratchpad, …).
+export type ToolSurface = "page" | "screenshot" | "none";
+
+export const TOOL_SURFACES: Readonly<Record<string, ToolSurface>> = {
+  // page DOM operations
+  click: "page",
+  hover: "page",
+  type: "page",
+  select: "page",
+  scroll: "page",
+  press_key: "page",
+  dispatch_keyboard_input: "page",
+  set_editor_value: "page",
+  // capture must never include the overlay/capsule
+  capture_visible_tab: "screenshot",
+  capture_fullpage_tab: "screenshot",
+  capture_video_frame: "screenshot",
+  // everything else
+  wait: "none",
+  done: "none",
+  fail: "none",
+  read_page: "none",
+  find_target: "none",
+  read_struct: "none",
+  read_target: "none",
+  extract_records: "none",
+  read_editor: "none",
+  search_web: "none",
+  load_tools: "none",
+  list_tabs: "none",
+  close_tabs: "none",
+  activate_tab: "none",
+  group_tabs: "none",
+  ungroup_tabs: "none",
+  move_tabs: "none",
+  focus_tab: "none",
+  open_url: "none",
+  unpin_tab: "none",
+  switch_to_new_tab: "none",
+  read_pdf: "none",
+  search_pdf: "none",
+  get_pdf_outline: "none",
+  output_file: "none",
+  read_local_file: "none",
+  request_local_file: "none",
+  save_scratchpad: "none",
+  update_scratchpad_notes: "none",
+  read_scratchpad: "none",
+  clear_scratchpad: "none",
+  query_scratchpad: "none",
+  create_skill: "none",
+  update_skill: "none",
+  delete_skill: "none",
+  list_skills: "none",
+  use_skill: "none",
+  read_skill_file: "none",
+  run_skill_script: "none",
+  read_skill_output: "none",
+  create_schedule: "none",
+  update_schedule: "none",
+  delete_schedule: "none",
+  list_schedules: "none",
+  propose_monitor: "none",
+  list_monitors: "none",
+  update_monitor: "none",
+  delete_monitor: "none",
+  search_bookmarks: "none",
+  get_bookmark_tree: "none",
+  check_bookmark_links: "none",
+  create_bookmark: "none",
+  update_bookmark: "none",
+  propose_bookmark_plan: "none",
+  search_history: "none",
+  propose_history_deletion: "none",
+  remember: "none",
+  forget: "none",
+  recall_memory: "none",
+  propose_rewrite: "none",
+  run_local_agent: "none",
+  handoff_to_agent: "none",
+};
+
+for (const name of [
+  ...KNOWN_BUILT_IN_TOOL_NAMES,
+  ...KNOWN_KEYBOARD_TOOL_NAMES,
+  ...KNOWN_EDITOR_TOOL_NAMES,
+  ...LOCAL_BRIDGE_TOOL_NAMES,
+]) {
+  if (!(name in TOOL_SURFACES)) {
+    throw new Error(
+      `[surface] tool "${name}" has no TOOL_SURFACES entry in ` +
+        `src/lib/agent/tool-names.ts. Classify it as page / screenshot / none — ` +
+        `otherwise the overlay may collapse for a tool that never touched the page.`,
+    );
+  }
+}
+
+export function getToolSurface(name: string): ToolSurface {
+  return TOOL_SURFACES[name] ?? "none";
+}
+
 // ── Progressive tool disclosure — disclosure group registry ──────────────────
 //
 // Every tool belongs to exactly one DisclosureGroup. The agent loop discloses

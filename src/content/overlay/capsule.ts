@@ -9,6 +9,7 @@
 // args summaries, and the status line is localized by the SW.
 
 import type { CapsuleAction, OverlayCapsuleState, OverlayUiStrings } from "@/lib/overlay/protocol";
+import { toolActivityKey, type ToolActivityKey } from "@/lib/agent/tool-activity";
 
 const HOST_ATTR = "data-pie-capsule";
 const EDGE = 18;
@@ -78,10 +79,30 @@ export interface CapsuleHandlers {
   onAction: (action: CapsuleAction) => void;
 }
 
+/** Activity key → the localized line the SW shipped in `strings`. */
+const ACTIVITY_STRING: Record<ToolActivityKey, keyof OverlayUiStrings> = {
+  readPage: "activityReadPage",
+  actPage: "activityActPage",
+  openPage: "activityOpenPage",
+  readPdf: "activityReadPdf",
+  searchBookmarks: "activitySearchBookmarks",
+  searchHistory: "activitySearchHistory",
+  bookmarks: "activityBookmarks",
+  memory: "activityMemory",
+  monitor: "activityMonitor",
+  other: "activityOther",
+};
+
+function activityText(tool: string, strings: OverlayUiStrings): string {
+  return strings[ACTIVITY_STRING[toolActivityKey(tool)]] ?? strings.activityOther;
+}
+
 function statusText(state: OverlayCapsuleState, strings: OverlayUiStrings): string {
   switch (state.status) {
-    case "run":
-      return state.label;
+    case "run": {
+      const last = state.steps[state.steps.length - 1];
+      return last ? activityText(last.tool, strings) : strings.activityOther;
+    }
     case "done":
       return strings.capsuleDone;
     case "stopped":
@@ -117,8 +138,9 @@ export function showCapsule(
     ? `<div class="pop" hidden>${state.steps
         .map((s, i) => {
           const last = i === state.steps.length - 1;
-          const cls = state.status === "failed" && last ? "error" : last && state.status === "run" ? "pending" : "";
-          return `<div class="row ${cls}"><span class="i">${cls === "error" ? "!" : cls === "pending" ? "•" : "✓"}</span><span class="t">${escapeHtml(s)}</span></div>`;
+          const cls =
+            s.status === "error" ? "error" : s.status === "pending" && last && state.status === "run" ? "pending" : "";
+          return `<div class="row ${cls}"><span class="i">${cls === "error" ? "!" : cls === "pending" ? "•" : "✓"}</span><span class="t">${escapeHtml(activityText(s.tool, strings))}</span></div>`;
         })
         .join("")}</div>`
     : "";
@@ -160,4 +182,10 @@ export function isCapsuleVisible(): boolean {
 export function setCapsuleSurfaceHidden(value: boolean): void {
   if (!host) return;
   host.style.display = value ? "none" : "block";
+}
+
+/** Screenshot frame: keep the layout, hide the pixels. */
+export function setCapsulePeekHidden(value: boolean): void {
+  if (!host) return;
+  host.style.visibility = value ? "hidden" : "";
 }

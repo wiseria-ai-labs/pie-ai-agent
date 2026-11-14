@@ -173,6 +173,7 @@ import {
   capsuleForTab,
   closeOverlayOnTab,
   detachOverlayRun,
+  markOverlayClosedByUser,
   detachPanelFromRun,
   forgetTabOverlay,
   handleCapsuleAction,
@@ -1080,8 +1081,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "overlay:closed") {
     const m = message as { sessionId?: string };
     // `keep` = a task is still running on that session; the document must stay
-    // mounted (hidden) because its port is the task's lifeline.
-    sendResponse({ keep: shouldKeepOverlayDocument(m.sessionId) });
+    // mounted (hidden) because its port is the task's lifeline. A live run is
+    // ALSO the only thing that may raise the capsule: the user closed the
+    // overlay while work continues, so the capsule takes its place.
+    const keep = shouldKeepOverlayDocument(m.sessionId);
+    if (keep) markOverlayClosedByUser(m.sessionId, sender.tab?.id);
+    sendResponse({ keep });
     return;
   }
 

@@ -14,15 +14,15 @@
 //      (the document that would normally persist them is gone).
 
 import type { DisplayMessage, PortMessageToPanel } from "@/types";
-import { getToolClass } from "@/lib/agent/tool-names";
+import { toolActivityKey } from "@/lib/agent/tool-activity";
+import type { OverlayCapsuleStep } from "./protocol";
 
 export type OverlayRunStatus = "run" | "done" | "stopped" | "failed";
 
 export interface OverlayRunStep {
+  /** Tool name only. The capsule renders a localized activity line from it
+   *  (tool-activity.ts) and never shows args. */
   tool: string;
-  /** Short human-readable hint: `click · “发送”`. Untrusted page text never
-   *  enters here — only the tool name and a bounded args summary. */
-  label: string;
   status: "pending" | "ok" | "error";
 }
 
@@ -45,7 +45,6 @@ export interface OverlayRun {
 }
 
 const MAX_STEPS = 12;
-const MAX_LABEL = 60;
 
 export function createOverlayRun(sessionId: string, tabId: number, now = Date.now()): OverlayRun {
   return {
@@ -58,40 +57,6 @@ export function createOverlayRun(sessionId: string, tabId: number, now = Date.no
     accumulated: "",
     pending: [],
   };
-}
-
-/** Bound + flatten an args object into a one-line hint. */
-export function summarizeToolArgs(args: unknown): string {
-  if (args === null || args === undefined) return "";
-  let text: string;
-  try {
-    text = typeof args === "string" ? args : JSON.stringify(args);
-  } catch {
-    return "";
-  }
-  if (!text || text === "{}") return "";
-  // Prefer a human-meaningful field when the tool carries one.
-  try {
-    const o = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : null;
-    if (o) {
-      for (const key of ["label", "text", "selector", "url", "target", "query", "instruction"]) {
-        const v = o[key];
-        if (typeof v === "string" && v.trim()) {
-          text = v.trim();
-          break;
-        }
-      }
-    }
-  } catch {
-    // keep the JSON fallback
-  }
-  const oneLine = text.replace(/\s+/g, " ").trim();
-  return oneLine.length > MAX_LABEL ? `${oneLine.slice(0, MAX_LABEL)}…` : oneLine;
-}
-
-export function stepLabel(tool: string, args: unknown): string {
-  const hint = summarizeToolArgs(args);
-  return hint ? `${tool} · ${hint}` : tool;
 }
 
 /** Flush streamed assistant text into the pending display list. */
@@ -117,11 +82,7 @@ export function applyOverlayEmit(run: OverlayRun, msg: PortMessageToPanel): Over
       // A step starts a new assistant turn only when it is the first event of
       // one — the loop flushes accumulated text before every step.
       const base = flushAssistant(run);
-      const entry: OverlayRunStep = {
-        tool: msg.tool,
-        label: stepLabel(msg.tool, msg.args),
-        status: msg.status,
-      };
+      const entry: OverlayRunStep = { tool: msg.tool, status: msg.status };
       const steps = [...base.steps, entry].slice(-MAX_STEPS);
       const pending: DisplayMessage[] = [
         ...base.pending,
@@ -200,17 +161,17 @@ export function isTerminalEmit(msg: PortMessageToPanel): boolean {
   return msg.type === "chat-done" || msg.type === "agent-done-task" || msg.type === "chat-error";
 }
 
-/** The step the capsule headline shows (the newest one). */
-export function currentStepLabel(run: OverlayRun): string {
-  const last = run.steps[run.steps.length - 1];
-  return last ? last.label : "";
-}
-
-/** Latest step list, oldest first, deduped consecutive repeats. */
-export function capsuleSteps(run: OverlayRun): string[] {
-  const out: string[] = [];
+/** Capsule rows: one per activity family, consecutive repeats folded, with
+ *  the latest status winning (pending → ok must not leave two rows). */
+export function capsuleSteps(run: OverlayRun): OverlayCapsuleStep[] {
+  const out: OverlayCapsuleStep[] = [];
   for (const s of run.steps) {
-    if (out[out.length - 1] !== s.label) out.push(s.label);
+    const last = out[out.length - 1];
+    if (last && toolActivityKey(last.tool) === toolActivityKey(s.tool)) {
+      out[out.length - 1] = { tool: s.tool, status: s.status };
+    } else {
+      out.push({ tool: s.tool, status: s.status });
+    }
   }
   return out;
 }
@@ -230,8 +191,4 @@ export function detachedMessagesToPersist(run: OverlayRun): DisplayMessage[] {
 /** Build the display messages a disconnected overlay would have shown. */
 export function displayMessagesForRun(run: OverlayRun): DisplayMessage[] {
   return run.pending;
-}
-
-export function isWriteStep(tool: string): boolean {
-  return getToolClass(tool) === "write";
 }

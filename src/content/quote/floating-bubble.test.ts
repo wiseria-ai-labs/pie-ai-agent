@@ -4,6 +4,16 @@ import type { OverlayUiStrings } from "@/lib/overlay/protocol";
 
 const strings: OverlayUiStrings = {
   barAsk: "Ask Pie",
+  activityReadPage: "Reading the page",
+  activityActPage: "Working on the page",
+  activityOpenPage: "Opening a page",
+  activityReadPdf: "Reading the PDF",
+  activitySearchBookmarks: "Searching bookmarks",
+  activitySearchHistory: "Searching history",
+  activityBookmarks: "Updating bookmarks",
+  activityMemory: "Updating memory",
+  activityMonitor: "Setting up a monitor",
+  activityOther: "Working…",
   barExplain: "Explain",
   barTranslate: "Translate",
   barQuote: "Quote",

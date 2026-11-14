@@ -28,7 +28,18 @@ let host: HTMLDivElement | null = null;
 let iframe: HTMLIFrameElement | null = null;
 let hidden = false;
 let surfaceHidden = false;
+/** Screenshot frame: pixels hidden, layout intact. */
+let peekHidden = false;
+/** One page-DOM operation is executing under the card. */
+let operationHidden = false;
 let mountedSessionId: string | null = null;
+
+/** Recompute the non-layout hiding flags (`display` is owned by show/conceal). */
+function applyVisibilityFlags(): void {
+  if (!host) return;
+  host.style.visibility = peekHidden || operationHidden ? "hidden" : "";
+  host.style.pointerEvents = operationHidden ? "none" : "";
+}
 
 export function isOverlayMounted(): boolean {
   return host !== null;
@@ -220,11 +231,34 @@ export function setSurfaceHidden(value: boolean): void {
   else if (!hidden) show();
 }
 
+/** Screenshot path — visibility only, so the iframe keeps its size and the
+ *  restore is imperceptible (no relayout, no scroll jump). */
+export function setSurfacePeekHidden(value: boolean): void {
+  peekHidden = value;
+  applyVisibilityFlags();
+}
+
+/** Page-DOM operation path — hidden pixels AND pointer-events:none, because
+ *  the operation may dispatch a real click at coordinates under the card. */
+export function setOperationHidden(value: boolean): void {
+  operationHidden = value;
+  applyVisibilityFlags();
+}
+
+/** The card's current rectangle on screen (null when not mounted/visible).
+ *  Used by the page-operation guard to decide overlap. */
+export function overlayHostRect(): DOMRect | null {
+  if (!host || hidden || surfaceHidden) return null;
+  return host.getBoundingClientRect();
+}
+
 export function destroyOverlaySurface(): void {
   host?.remove();
   host = null;
   iframe = null;
   hidden = false;
+  peekHidden = false;
+  operationHidden = false;
   mountedSessionId = null;
   window.removeEventListener("resize", pushMaxHeight);
 }

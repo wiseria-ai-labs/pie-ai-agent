@@ -1168,6 +1168,18 @@ export const zhTWDict = {
       done: "已完成",
       stopped: "已停止",
       failed: "操作失敗",
+      activity: {
+        readPage: "正在讀取頁面",
+        actPage: "正在操作頁面",
+        openPage: "正在開啟頁面",
+        readPdf: "正在讀取 PDF",
+        searchBookmarks: "正在尋找書籤",
+        searchHistory: "正在尋找瀏覽記錄",
+        bookmarks: "正在整理書籤",
+        memory: "正在更新記憶",
+        monitor: "正在設定監控",
+        other: "正在處理…",
+      },
     },
   },
 

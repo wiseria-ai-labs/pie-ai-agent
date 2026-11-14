@@ -1170,6 +1170,18 @@ export const ptBRDict = {
       done: "Concluído",
       stopped: "Parado",
       failed: "Algo falhou",
+      activity: {
+        readPage: "Lendo a página",
+        actPage: "Operando na página",
+        openPage: "Abrindo uma página",
+        readPdf: "Lendo o PDF",
+        searchBookmarks: "Buscando favoritos",
+        searchHistory: "Buscando no histórico",
+        bookmarks: "Organizando favoritos",
+        memory: "Atualizando a memória",
+        monitor: "Configurando um monitor",
+        other: "Processando…",
+      },
     },
   },
 

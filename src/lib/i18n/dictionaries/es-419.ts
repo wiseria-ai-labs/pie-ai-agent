@@ -1170,6 +1170,18 @@ export const es419Dict = {
       done: "Listo",
       stopped: "Detenido",
       failed: "Algo falló",
+      activity: {
+        readPage: "Leyendo la página",
+        actPage: "Operando en la página",
+        openPage: "Abriendo una página",
+        readPdf: "Leyendo el PDF",
+        searchBookmarks: "Buscando marcadores",
+        searchHistory: "Buscando en el historial",
+        bookmarks: "Organizando marcadores",
+        memory: "Actualizando la memoria",
+        monitor: "Configurando un monitor",
+        other: "Procesando…",
+      },
     },
   },
 

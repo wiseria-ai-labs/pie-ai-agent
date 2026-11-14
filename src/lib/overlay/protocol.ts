@@ -105,6 +105,17 @@ export interface OverlayOpenState {
 }
 
 export interface OverlayUiStrings {
+  /** Capsule activity lines — one per tool family, never carrying args. */
+  activityReadPage: string;
+  activityActPage: string;
+  activityOpenPage: string;
+  activityReadPdf: string;
+  activitySearchBookmarks: string;
+  activitySearchHistory: string;
+  activityBookmarks: string;
+  activityMemory: string;
+  activityMonitor: string;
+  activityOther: string;
   barAsk: string;
   barExplain: string;
   barTranslate: string;
@@ -127,32 +138,23 @@ export interface OverlayConfigReply {
   strings: OverlayUiStrings;
 }
 
-/** Capsule state pushed by the SW while an overlay task touches the page. */
-export type OverlayCapsuleState =
-  | {
-      status: "run";
-      sessionId: string;
-      label: string;
-      steps: string[];
-    }
-  | {
-      status: "done";
-      sessionId: string;
-      label: string;
-      steps: string[];
-    }
-  | {
-      status: "stopped";
-      sessionId: string;
-      label: string;
-      steps: string[];
-    }
-  | {
-      status: "failed";
-      sessionId: string;
-      label: string;
-      steps: string[];
-    };
+export type OverlayCapsuleStepStatus = "pending" | "ok" | "error";
+
+/** One capsule row: the TOOL only — the page renders the localized activity
+ *  line and never shows args (they are model data, not user copy). */
+export interface OverlayCapsuleStep {
+  tool: string;
+  status: OverlayCapsuleStepStatus;
+}
+
+/** Capsule is shown only while a task runs after the user closed the overlay
+ *  (and on the page that replaced a navigating task) — never because a tool
+ *  merely ran. */
+export type OverlayCapsuleState = {
+  status: "run" | "done" | "stopped" | "failed";
+  sessionId: string;
+  steps: OverlayCapsuleStep[];
+};
 
 /** Result of a write-back attempt. `stale` degrades the button to copy. */
 export type OverlayReplaceResult = { ok: true } | { ok: false; reason: "stale" | "readonly" | "error" };
@@ -167,6 +169,21 @@ export const OVERLAY_CONFIG = "pie-overlay:config";
 export const CAPSULE_STATE = "pie-capsule:state";
 export const SURFACE_HIDE = "pie-surface:hide";
 export const SURFACE_SHOW = "pie-surface:show";
+/** Hide for exactly one screenshot frame (visibility only, layout untouched). */
+export const SURFACE_PEEK_HIDE = "pie-surface:peek-hide";
+export const SURFACE_PEEK_SHOW = "pie-surface:peek-show";
+/** Around one page-DOM operation; the page decides by rectangle overlap. */
+export const SURFACE_PAGE_GUARD = "pie-surface:page-guard";
+
+/** Where a page-DOM tool will act — the page guards only if that meets the
+ *  overlay. `viewport` = a whole-page scroll (no hit test, never guarded);
+ *  no resolvable rect (cross-origin frame) is treated as "assume overlap". */
+export interface PageOperationTarget {
+  frameId?: number;
+  elementIndex?: number;
+  activeElement?: boolean;
+  viewport?: boolean;
+}
 
 // ── tab/document → SW message types ────────────────────────────────────────
 

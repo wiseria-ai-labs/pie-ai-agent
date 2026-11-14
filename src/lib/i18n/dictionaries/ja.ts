@@ -1168,6 +1168,18 @@ export const jaDict = {
       done: "完了",
       stopped: "停止しました",
       failed: "失敗しました",
+      activity: {
+        readPage: "ページを読み取り中",
+        actPage: "ページを操作中",
+        openPage: "ページを開いています",
+        readPdf: "PDF を読み取り中",
+        searchBookmarks: "ブックマークを検索中",
+        searchHistory: "履歴を検索中",
+        bookmarks: "ブックマークを整理中",
+        memory: "メモリを更新中",
+        monitor: "モニターを設定中",
+        other: "処理中…",
+      },
     },
   },
 
