@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import Markdown from "@/sidepanel/components/Markdown";
 import { getLocale, useT } from "@/lib/i18n";
 import type { DictKey } from "@/lib/i18n";
@@ -628,7 +628,7 @@ export default function OverlayApp() {
       >
         {chat && (
           <div className="flex h-[42px] shrink-0 items-center gap-2 border-b border-line px-3">
-            <PieMark className="h-[15px] w-[15px] shrink-0" />
+            <PieMark className="h-[15px] w-[15px] shrink-0 text-fg-1" />
             <span className="truncate text-[12.5px] font-medium">{sessionTitle(messages, t("overlay.ui.newChat"))}</span>
             <span className="shrink-0 text-[11.5px] text-fg-3">· {t("overlay.ui.sameSession")}</span>
             <span className="flex-1" />
@@ -708,7 +708,6 @@ export default function OverlayApp() {
 
         <div className="flex shrink-0 flex-col gap-1 px-3 pb-2 pt-2">
           <div className="flex items-end gap-2 rounded-[11px] border border-line bg-field px-2.5 py-1.5">
-            <PieMark className="mb-1 h-[13px] w-[13px] shrink-0" />
             <textarea
               ref={textareaRef}
               rows={1}
@@ -769,15 +768,18 @@ function charCount(text: string): number {
   return Array.from(text).length;
 }
 
-/** The bite-marked white disc from the app icon — no square plate. */
+/** The bite-marked disc from the app icon, no square plate. Painted in the
+ *  text colour, so it is a dark disc on light themes and a white one on dark,
+ *  which keeps it solid in both and never reads as a loading ring. */
 function PieMark({ className }: { className?: string }) {
+  const maskId = useId();
   return (
-    <svg viewBox="0 0 128 128" className={`pie-mark ${className ?? ""}`} aria-hidden="true">
-      <mask id="pie-mark-bite">
+    <svg viewBox="0 0 128 128" className={className} aria-hidden="true">
+      <mask id={maskId}>
         <rect width="128" height="128" fill="#fff" />
         <circle cx="98" cy="30" r="22" fill="#000" />
       </mask>
-      <circle cx="64" cy="64" r="44" fill="#FAFBFC" mask="url(#pie-mark-bite)" />
+      <circle cx="64" cy="64" r="44" fill="currentColor" mask={`url(#${maskId})`} />
     </svg>
   );
 }

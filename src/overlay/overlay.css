@@ -71,18 +71,3 @@ body {
   background: transparent;
 }
 
-/* The brand disc needs an edge to stay legible on both themes (the icon is
- * white on white in light mode otherwise). */
-.pie-mark circle {
-  stroke: rgba(20, 24, 29, 0.55);
-  /* 12/128 of the box ≈ 1.4px at the 15px header size: thin strokes vanish. */
-  stroke-width: 12;
-}
-html[data-theme="dark"] .pie-mark circle {
-  stroke: rgba(255, 255, 255, 0.6);
-}
-@media (prefers-color-scheme: dark) {
-  html:not([data-theme="light"]) .pie-mark circle {
-    stroke: rgba(255, 255, 255, 0.6);
-  }
-}
