@@ -35,6 +35,8 @@ const HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Overlay fi
   <label>Reply<textarea id="reply">好的，我这周五前发给你。</textarea></label>
   <div class="ed" id="ed" contenteditable="true">这周五前必须把报告交上来，别再拖了。</div>
   <p><a href="/other">another page</a></p>
+  <div id="under" style="position:fixed;left:600px;top:120px;width:120px;height:40px;background:#eef">under the card</div>
+  <div id="far" style="position:fixed;left:40px;top:700px;width:120px;height:40px;background:#efe">far away</div>
 </body></html>`;
 
 const server = http.createServer((req, res) => {
@@ -366,9 +368,20 @@ try {
 
 // ── E. capsule survives + renders ─────────────────────────────────────────
 try {
+  // The capsule only exists while the overlay is closed (user closed a live
+  // run); with the overlay visible its state is dropped by design.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
   await sendToTab({
     type: "pie-capsule:state",
-    state: { status: "run", sessionId, label: "click · 发送", steps: ["click · 发送", "type · 报告"] },
+    state: {
+      status: "run",
+      sessionId,
+      steps: [
+        { tool: "click", status: "ok" },
+        { tool: "type", status: "pending" },
+      ],
+    },
   });
   await page.waitForTimeout(500);
   const cap = await page.evaluate(() => {
@@ -377,7 +390,14 @@ try {
     const wrap = h.shadowRoot.querySelector(".wrap");
     return { text: wrap?.textContent?.trim().slice(0, 80), bottomRight: true };
   });
-  rec("E1 capsule renders", cap && cap.text?.includes("click") ? "PASS" : "FAIL", JSON.stringify(cap));
+  // Copy is the localized activity line — never the tool name or its args.
+  rec(
+    "E1 capsule renders human activity, no tool names/args",
+    cap && cap.text?.includes("Working on the page") && !cap.text.includes("click") && !cap.text.includes("{")
+      ? "PASS"
+      : "FAIL",
+    JSON.stringify(cap),
+  );
   await snap(page, "capsule");
 
   await sendToTab({ type: "pie-surface:hide" });
@@ -488,6 +508,101 @@ try {
   await snap(page, "rewrite-chips");
 } catch (e) {
   rec("G0 structured tasks", "ERROR", e.message);
+}
+
+// ── H. surface rules: no auto-collapse, screenshot peek, overlap guard ─────
+try {
+  // Start from an open overlay (G3 left one open).
+  const openFrame = page.frames().find((f) => f.url().includes("src/overlay/index.html"));
+  // H1 — a capsule push (the old write-tool trigger) must NOT hide the overlay.
+  await sendToTab({
+    type: "pie-capsule:state",
+    state: { status: "run", sessionId, steps: [{ tool: "create_bookmark", status: "pending" }] },
+  });
+  await page.waitForTimeout(400);
+  const h1 = await page.evaluate(() => {
+    const h = document.querySelector("[data-pie-overlay-host]");
+    return {
+      overlayDisplay: h ? getComputedStyle(h).display : "absent",
+      overlayVisibility: h ? getComputedStyle(h).visibility : "absent",
+      capsule: Boolean(document.querySelector("[data-pie-capsule]")),
+    };
+  });
+  rec(
+    "H1 bookmark step does not collapse the overlay",
+    h1.overlayDisplay === "block" && h1.overlayVisibility === "visible" && h1.capsule === false ? "PASS" : "FAIL",
+    JSON.stringify(h1),
+  );
+  await snap(page, "bookmark-step-overlay-open");
+
+  // H2 — screenshot peek: visibility only, layout untouched, restored after.
+  const beforeH = await page.evaluate(() => {
+    const f = document.querySelector("[data-pie-overlay-host]").shadowRoot.querySelector("iframe");
+    return Math.round(f.getBoundingClientRect().height);
+  });
+  await sendToTab({ type: "pie-surface:peek-hide" });
+  await page.waitForTimeout(150);
+  const peeked = await page.evaluate(() => {
+    const h = document.querySelector("[data-pie-overlay-host]");
+    const f = h.shadowRoot.querySelector("iframe");
+    return { visibility: getComputedStyle(h).visibility, h: Math.round(f.getBoundingClientRect().height) };
+  });
+  await sendToTab({ type: "pie-surface:peek-show" });
+  await page.waitForTimeout(150);
+  const restored = await page.evaluate(() => {
+    const h = document.querySelector("[data-pie-overlay-host]");
+    return getComputedStyle(h).visibility;
+  });
+  rec(
+    "H2 screenshot peek hidden one frame, layout kept",
+    peeked.visibility === "hidden" && peeked.h === beforeH && restored === "visible" ? "PASS" : "FAIL",
+    JSON.stringify({ beforeH, ...peeked, restored }),
+  );
+
+  // H3 — page guard hides only when the target rectangle meets the card.
+  await page.evaluate(() => {
+    // Park #under on top of the card wherever it currently is, and #far well
+    // outside it, so the overlap test does not depend on placement mode.
+    const host = document.querySelector("[data-pie-overlay-host]");
+    const r = host.getBoundingClientRect();
+    const under = document.getElementById("under");
+    under.style.left = `${Math.round(r.left + 30)}px`;
+    under.style.top = `${Math.round(r.top + 30)}px`;
+    under.setAttribute("data-pie-idx", "101");
+    const far = document.getElementById("far");
+    far.style.left = `${Math.max(4, Math.round(r.left - 160))}px`;
+    far.style.top = `${Math.round(r.top + 30)}px`;
+    far.setAttribute("data-pie-idx", "102");
+  });
+  const guard = async (target) => {
+    await sendToTab({ type: "pie-surface:page-guard", phase: "begin", target });
+    await page.waitForTimeout(120);
+    const on = await page.evaluate(() => {
+      const h = document.querySelector("[data-pie-overlay-host]");
+      return { visibility: getComputedStyle(h).visibility, pointer: getComputedStyle(h).pointerEvents };
+    });
+    await sendToTab({ type: "pie-surface:page-guard", phase: "end" });
+    await page.waitForTimeout(120);
+    const off = await page.evaluate(() => getComputedStyle(document.querySelector("[data-pie-overlay-host]")).visibility);
+    return { on, off };
+  };
+  const overlapping = await guard({ frameId: 0, elementIndex: 101 });
+  const farAway = await guard({ frameId: 0, elementIndex: 102 });
+  const unknown = await guard({ frameId: 9, elementIndex: 101 });
+  rec(
+    "H3 page guard only when the target meets the card",
+    overlapping.on.visibility === "hidden" &&
+      overlapping.on.pointer === "none" &&
+      overlapping.off === "visible" &&
+      farAway.on.visibility === "visible" &&
+      unknown.on.visibility === "hidden"
+      ? "PASS"
+      : "FAIL",
+    JSON.stringify({ overlapping, farAway, unknown }),
+  );
+  await snap(page, "page-guard");
+} catch (e) {
+  rec("H0 surface rules", "ERROR", e.message);
 }
 
 fs.writeFileSync(`${BASE}/report/results.json`, JSON.stringify(results, null, 2));
