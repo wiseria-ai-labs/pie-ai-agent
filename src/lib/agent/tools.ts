@@ -15,6 +15,7 @@ import { searchWebTool } from "./tools/search";
 import { readPageTool } from "./tools/read-page";
 import { createPageAtlasTargetTools } from "./tools/page-atlas";
 import { PDF_TOOLS } from "./tools/pdf";
+import { BROWSER_DATA_TOOLS } from "./tools/browser-data";
 
 export {
   KEYBOARD_TOOL_NAMES,
@@ -386,6 +387,8 @@ USE WHEN:
   readPageTool,
   ...createPageAtlasTargetTools(),
   ...PDF_TOOLS,
+  // Pie 2.0 — bookmarks / history (optional permissions; see tools/browser-data.ts)
+  ...BROWSER_DATA_TOOLS,
 ];
 
 // iframe spec R-iframe-1 — build-time assertion: writes target a specific

@@ -145,6 +145,25 @@ export const SCRATCHPAD_TOOL_NAMES = [
   "query_scratchpad",
 ] as const;
 
+// Pie 2.0 — bookmarks / history tools (optional permissions, spec §3.2).
+//
+//   search_bookmarks / get_bookmark_tree / propose_bookmark_plan — read
+//   create_bookmark / update_bookmark — write (mutate the user's bookmark tree)
+//   search_history / propose_history_deletion — read
+//
+// propose_* are read on purpose: they only produce a card; the mutation runs
+// after the user clicks Apply (spec §8). These tools never target a tab, so the
+// read/write class is a truthful mutation label, not an R7 input.
+export const BROWSER_DATA_TOOL_NAMES = [
+  "search_bookmarks",
+  "get_bookmark_tree",
+  "create_bookmark",
+  "update_bookmark",
+  "propose_bookmark_plan",
+  "search_history",
+  "propose_history_deletion",
+] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -158,6 +177,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PDF_TOOL_NAMES,
   ...LOCAL_FILE_TOOL_NAMES,
   ...SCRATCHPAD_TOOL_NAMES,
+  ...BROWSER_DATA_TOOL_NAMES,
   ...DISCLOSURE_TOOL_NAMES,
 ] as const;
 
@@ -302,6 +322,15 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   run_local_agent: "write",
   // hand-off：建目录 / 落盘 / 唤起本地交互式会话——本地写动作。
   handoff_to_agent: "write",
+  // Pie 2.0 — 书签 / 历史（可选权限）。propose_* 只产出方案卡，真正改动在用户
+  // 点击后由 SW 执行，故 classify 为 read；单条 create/update 直接执行 → write。
+  search_bookmarks: "read",
+  get_bookmark_tree: "read",
+  propose_bookmark_plan: "read",
+  create_bookmark: "write",
+  update_bookmark: "write",
+  search_history: "read",
+  propose_history_deletion: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class
@@ -356,7 +385,8 @@ export type DisclosureGroup =
   | "local-file"
   | "scratchpad"
   | "schedule"
-  | "skill-authoring";
+  | "skill-authoring"
+  | "browser-data";
 
 export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   // core — basic sense/act/control loop
@@ -387,6 +417,11 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   delete_schedule: "schedule", list_schedules: "schedule",
   create_skill: "skill-authoring", update_skill: "skill-authoring",
   delete_skill: "skill-authoring", list_skills: "skill-authoring",
+  // Pie 2.0 — bookmarks / history (optional permissions; lazy, catalog-advertised)
+  search_bookmarks: "browser-data", get_bookmark_tree: "browser-data",
+  create_bookmark: "browser-data", update_bookmark: "browser-data",
+  propose_bookmark_plan: "browser-data",
+  search_history: "browser-data", propose_history_deletion: "browser-data",
   // Local Daemon Bridge — always core (existence gated by bridge connectivity,
   // not by disclosure).
   run_local_agent: "core",

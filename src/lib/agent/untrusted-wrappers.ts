@@ -59,6 +59,9 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   "untrusted_scratchpad_preview",
   "untrusted_local_agent_output",
   "untrusted_skill_output_list",
+  // Pie 2.0 §3.2 — Chrome bookmark / history titles are external data.
+  "untrusted_bookmark",
+  "untrusted_history_entry",
 ] as const;
 
 // Zero-width / invisible chars that an attacker might hide inside a tag literal.

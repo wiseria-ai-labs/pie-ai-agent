@@ -9,7 +9,7 @@ export const DB_NAME = "pie";
 // Bump DB_VERSION and add a new `if (!db.objectStoreNames.contains(...))` branch
 // in onupgradeneeded whenever a new store is added (onupgradeneeded only runs
 // when the version increases).
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const STORES = {
   sessions: "sessions",
@@ -18,6 +18,7 @@ export const STORES = {
   config: "config",
   scratchpads: "scratchpads",
   schedules: "schedules",
+  bookmarkSnapshots: "bookmark_snapshots",
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -49,6 +50,11 @@ export function openDb(): Promise<IDBDatabase> {
       //     injected on write and stripped on read by schedules/store.ts.
       if (!db.objectStoreNames.contains(STORES.schedules))
         db.createObjectStore(STORES.schedules, { keyPath: "id" });
+      // bookmark_snapshots holds BrowserChangeRecord rows: Pie's bookmark
+      // mutations (with their inverse ops, for restore) plus history-deletion
+      // log rows (never restorable). 30-day retention, pruned lazily on read.
+      if (!db.objectStoreNames.contains(STORES.bookmarkSnapshots))
+        db.createObjectStore(STORES.bookmarkSnapshots, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => { dbPromise = null; reject(req.error); };
@@ -110,7 +116,7 @@ export function txMulti(
  *  Production use (e.g. eval harness reset between runs). */
 export async function clearAllStores(): Promise<void> {
   await txMulti(
-    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads, STORES.schedules],
+    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads, STORES.schedules, STORES.bookmarkSnapshots],
     "readwrite",
     (m) => {
       m[STORES.sessions].clear();
@@ -119,6 +125,7 @@ export async function clearAllStores(): Promise<void> {
       m[STORES.config].clear();
       m[STORES.scratchpads].clear();
       m[STORES.schedules].clear();
+      m[STORES.bookmarkSnapshots].clear();
     },
   );
 }
