@@ -82,6 +82,13 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   attachments?: Attachment[];
+  /**
+   * Pie 2.0 overlay — an untrusted `<user_memory>` block attached to the live
+   * task turn. The loop appends it AFTER the trusted `<user_task>` wrapper, so
+   * memory never gains trusted-block authority (spec §5.5 trust boundary).
+   * Wire-only: never persisted, never rendered.
+   */
+  memoryBlock?: string;
 }
 
 export interface ChatResponse {

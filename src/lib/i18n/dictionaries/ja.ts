@@ -1120,6 +1120,8 @@ export const jaDict = {
       thinking: "ページを読み取っています…",
       error: "問題が発生しました：{error}",
       viewerNotice: "このタスクは以前に開始され、バックグラウンドで実行中です。",
+      needsPanelConfirm: "サイドパネルで確認が必要です · 開きました",
+      memoryWrong: "違う",
       rewriteLabel: "書き換え",
       original: "元の文",
       replace: "置き換え",

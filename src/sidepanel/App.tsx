@@ -27,7 +27,7 @@ import RecordingMode from "@/sidepanel/components/RecordingMode";
 import { listSessionIndex } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
-import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE, parseResearchDetailDeeplink, DEEPLINK_OVERLAY_RESTRICTED, parseOverlayPanelDeeplink, parseOverlayPrefillDeeplink } from "@/lib/deeplink";
+import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE, parseResearchDetailDeeplink, DEEPLINK_OVERLAY_RESTRICTED, parseOverlayPanelDeeplink, parseOverlayPrefillDeeplink, parseSettingsDeeplink } from "@/lib/deeplink";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
 import { useT } from "@/lib/i18n";
@@ -207,6 +207,13 @@ export default function App() {
         void chrome.storage.session.remove(DEEPLINK_KEY);
         setChatPrefill(prefill);
         setView("agent");
+        return;
+      }
+      // 2.0 overlay → settings page ("不对" on a memory row).
+      const deeplinkPage = parseSettingsDeeplink(val);
+      if (deeplinkPage === "memory") {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        openSettings("memory");
         return;
       }
     };

@@ -7,6 +7,10 @@ import { getToolClass } from "@/lib/agent/tool-names";
 import type { DisplayMessage } from "@/types";
 import type { OverlayOpenState, OverlayReplaceResult, OverlaySelection } from "@/lib/overlay/protocol";
 import { buildOverlayWireContent as buildWireContent } from "@/lib/overlay/wire";
+import { startMemoryPrefetch, type MemoryPrefetch } from "@/lib/memory/selector";
+import type { MemoryEntry } from "@/lib/memory/types";
+import { MEMORY_SEND_WAIT_MS, shouldReuseMemoryPick } from "@/lib/overlay/memory-task";
+import { MemoryEventRow, MemoryUsedChip } from "@/sidepanel/components/MemoryRows";
 import { useOverlaySession } from "./useOverlaySession";
 
 /** Below this the composer never collapses — matches the host's min height. */
@@ -51,6 +55,45 @@ export default function OverlayApp() {
   const session = useOverlaySession({ sessionId, tabId, runningElsewhere });
   const { messages, streaming, streamingText, streamingThinking } = session;
 
+  // ── Memory prefetch (spec §5.5) ───────────────────────────────────────────
+  // Started as soon as the overlay opens — the user's typing time is the
+  // budget. The pick is reused at send time unless the typed task drifted.
+  const openStateRef = useRef<OverlayOpenState | null>(null);
+  openStateRef.current = openState;
+  const prefetchRef = useRef<{ task: string; prefetch: MemoryPrefetch } | null>(null);
+  /** A send is waiting on the pick — swallow a second Enter. */
+  const sendingRef = useRef(false);
+
+  const takeMemoryPick = useCallback(
+    async (text: string): Promise<{ pick: MemoryEntry[]; at: number } | null> => {
+      const cur = prefetchRef.current;
+      const reuse = cur !== null && shouldReuseMemoryPick(cur.task, text);
+      const prefetch = reuse
+        ? cur!.prefetch
+        : startMemoryPrefetch({
+            task: text,
+            pageTitle: openStateRef.current?.pageTitle,
+            pageUrl: openStateRef.current?.pageUrl,
+          });
+      const at = reuse ? cur!.prefetch.startedAt : Date.now();
+      const timedOut = Symbol("timeout");
+      const result = await Promise.race([
+        prefetch.promise,
+        new Promise<typeof timedOut>((resolve) =>
+          window.setTimeout(() => resolve(timedOut), MEMORY_SEND_WAIT_MS),
+        ),
+      ]);
+      if (result === timedOut) {
+        // A reused prefetch may still settle for a later turn; a fresh one only
+        // existed to make this send wait, so drop it.
+        if (!reuse) prefetch.abort();
+        return null;
+      }
+      return result.length > 0 ? { pick: result, at } : null;
+    },
+    [],
+  );
+
   // ── Theme: same config the side panel uses ────────────────────────────────
   useEffect(() => {
     void getConfig<string>("theme-mode").then((mode) => {
@@ -90,6 +133,20 @@ export default function OverlayApp() {
     };
   }, [sessionId, tabId]);
 
+  // ── Memory prefetch kick-off ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!openState) return;
+    const task =
+      (openState.selection?.text ?? "").trim() || openState.pageTitle || openState.pageUrl || "";
+    const prefetch = startMemoryPrefetch({
+      task,
+      pageTitle: openState.pageTitle,
+      pageUrl: openState.pageUrl,
+    });
+    prefetchRef.current = { task, prefetch };
+    return () => prefetch.abort();
+  }, [openState]);
+
   // ── Auto-send (explain / translate / rewrite / omnibox) ───────────────────
   const autoSentRef = useRef(false);
   const sendRefForAuto = session.send;
@@ -100,14 +157,19 @@ export default function OverlayApp() {
     if (!readyForAuto) return;
     autoSentRef.current = true;
     const sel = openState.selection;
-    sendRefForAuto({
-      content: openState.prompt,
-      expandedForLLM: buildWireContent(openState.prompt, sel),
-      editableSelection: sel?.editable === true,
-    });
+    const prompt = openState.prompt;
+    void (async () => {
+      const mem = await takeMemoryPick(prompt);
+      sendRefForAuto({
+        content: prompt,
+        expandedForLLM: buildWireContent(prompt, sel),
+        editableSelection: sel?.editable === true,
+        ...(mem ? { memoryPick: mem.pick, memoryPickAsOf: mem.at } : {}),
+      });
+    })();
     setSelectionConsumed(true);
     setInput("");
-  }, [openState, readyForAuto, sendRefForAuto]);
+  }, [openState, readyForAuto, sendRefForAuto, takeMemoryPick]);
 
   // ── Height reporting for the iframe host ──────────────────────────────────
   useEffect(() => {
@@ -130,23 +192,33 @@ export default function OverlayApp() {
 
   const send = useCallback(() => {
     const text = input.trim();
-    if (!text || streaming || !session.ready) return;
+    if (!text || streaming || !session.ready || sendingRef.current) return;
     const sel = selectionConsumed ? null : selection;
-    session.send({
-      content: text,
-      expandedForLLM: buildWireContent(text, sel),
-      editableSelection: sel?.editable === true,
-    });
     setInput("");
     setSelectionConsumed(true);
     setNotice(null);
-  }, [input, selection, selectionConsumed, session, streaming]);
+    sendingRef.current = true;
+    void (async () => {
+      const mem = await takeMemoryPick(text);
+      session.send({
+        content: text,
+        expandedForLLM: buildWireContent(text, sel),
+        editableSelection: sel?.editable === true,
+        ...(mem ? { memoryPick: mem.pick, memoryPickAsOf: mem.at } : {}),
+      });
+      sendingRef.current = false;
+    })();
+  }, [input, selection, selectionConsumed, session, streaming, takeMemoryPick]);
 
   sendRef.current = send;
 
   const toPanel = useCallback(() => {
     void chrome.runtime.sendMessage({ type: "overlay:to-panel", sessionId, tabId });
   }, [sessionId, tabId]);
+
+  const openMemorySettings = useCallback(() => {
+    void chrome.runtime.sendMessage({ type: "overlay:open-memory-settings", tabId });
+  }, [tabId]);
 
   const newChat = useCallback(() => {
     void chrome.runtime.sendMessage({ type: "overlay:new-chat", tabId });
@@ -297,8 +369,14 @@ export default function OverlayApp() {
               onReplace={() => void doReplace(i, rewriteCards[i]!)}
               onUndo={() => void doUndo(i, rewriteCards[i]!)}
               onCopy={copyText}
+              onMemoryWrong={openMemorySettings}
             />
           ))}
+          {session.panelNotice === "panel-request" && (
+            <div className="text-[11.5px] text-fg-3" data-testid="overlay-panel-notice">
+              {t("overlay.ui.needsPanelConfirm")}
+            </div>
+          )}
           {streaming && (
             <div className="flex flex-col gap-1.5">
               {streamingThinking && (
@@ -459,6 +537,7 @@ function MessageRow({
   onReplace,
   onUndo,
   onCopy,
+  onMemoryWrong,
 }: {
   m: DisplayMessage;
   rewrite?: RewriteCardState;
@@ -468,6 +547,7 @@ function MessageRow({
   onReplace: () => void;
   onUndo: () => void;
   onCopy: (text: string) => void;
+  onMemoryWrong: () => void;
 }) {
   const t = useT();
   if (m.role === "user") {
@@ -540,6 +620,13 @@ function MessageRow({
         </div>
       </div>
     );
+  }
+  // Pie 2.0 memory — F4 rows. "不对" jumps to the panel's memory page.
+  if (m.role === "memory-used") {
+    return <MemoryUsedChip items={m.items} onWrong={onMemoryWrong} />;
+  }
+  if (m.role === "memory-event") {
+    return <MemoryEventRow msg={m} />;
   }
   if (m.role === "agent-summary") {
     return (

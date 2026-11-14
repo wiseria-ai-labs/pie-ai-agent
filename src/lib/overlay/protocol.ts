@@ -49,6 +49,10 @@ export interface OverlayOpenPayload {
   position: OverlayPosition;
   /** Set when the conversation is being resumed inside the retention window. */
   resumed: boolean;
+  /** Page identity — the overlay document's memory prefetch needs it (spec
+   *  §5.5); the iframe cannot read the host page's title/URL itself. */
+  pageTitle?: string;
+  pageUrl?: string;
 }
 
 /** Everything the overlay document needs on mount (fetched from the SW). */
@@ -60,6 +64,8 @@ export interface OverlayOpenState {
   autoSend: boolean;
   resumed: boolean;
   position: OverlayPosition;
+  pageTitle?: string;
+  pageUrl?: string;
 }
 
 export interface OverlayUiStrings {

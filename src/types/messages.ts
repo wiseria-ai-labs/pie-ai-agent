@@ -5,6 +5,7 @@ import type { FileAttachment } from "@/lib/files/types";
 import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/types";
 import type { Quote, QuoteAddedMessage, PickerStartMessage, PickerStopMessage } from "./quotes";
 import type { BrowserResultEntry } from "@/lib/browser-data/types";
+import type { MemoryEntry } from "@/lib/memory/types";
 
 // --- Page Content ---
 
@@ -83,6 +84,18 @@ export interface ChatStartMessage {
    * read-only selections and for the side panel.
    */
   editableSelection?: boolean;
+  /**
+   * Pie 2.0 memory — entries the overlay prefetched while the user was typing
+   * (spec §5.5). The SW turns them into ONE untrusted `<user_memory>` block on
+   * the live task turn (outside the trusted `<user_task>`) and emits the
+   * `memory-used` chip; the loop then skips its own pick for this task.
+   *
+   * Optional / additive: absent from the side panel (the loop picks on its
+   * own) and from older overlay builds.
+   */
+  memoryPick?: MemoryEntry[];
+  /** When the pick ran (the block's `as_of` timestamp). */
+  memoryPickAsOf?: number;
 }
 
 export interface ChatAbortMessage {
@@ -217,6 +230,18 @@ export interface ChatRatelimitWaitMessage {
   /** 预计恢复时刻（epoch ms）。waiter 竞争下实际可能更晚，panel 钳 ≥0 显示。 */
   resumeAt: number;
   sessionId: string;
+}
+
+/**
+ * 2.0 overlay — SW → the overlay DOCUMENT only: the run needs the side panel
+ * for something the in-page surface cannot do (a HITL card). The panel is
+ * being opened with the same session attached; the overlay shows a one-line
+ * explanation instead of a dead card.
+ */
+export interface OverlayNoticeMessage {
+  type: "overlay-notice";
+  sessionId: string;
+  notice: "panel-request";
 }
 
 /**
@@ -800,4 +825,5 @@ export type PortMessageToPanel =
   | MemoryUsedMessage                 // Pie 2.0 — 用到 N 条记忆 chip
   | MemoryEventMessage                // Pie 2.0 — 记忆事件行（可撤销）
   | ChatRatelimitWaitMessage         // Provider RPM 限流排队等待
-  | ChatAttachMessage;               // 2.0 overlay — live-run handoff attach
+  | ChatAttachMessage                // 2.0 overlay — live-run handoff attach
+  | OverlayNoticeMessage;            // 2.0 overlay — overlay document only

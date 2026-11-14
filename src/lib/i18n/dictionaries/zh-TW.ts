@@ -1120,6 +1120,8 @@ export const zhTWDict = {
       thinking: "正在讀取目前頁面…",
       error: "發生問題：{error}",
       viewerNotice: "這個任務先前已開始，正在背景繼續執行。",
+      needsPanelConfirm: "需要在側欄確認 · 已開啟",
+      memoryWrong: "不對",
       rewriteLabel: "改寫",
       original: "原文",
       replace: "取代原文",

@@ -350,6 +350,13 @@ export interface AgentLoopContext {
    * every other caller, including the side panel.
    */
   hasEditableSelection?: boolean;
+  /**
+   * Pie 2.0 memory — the caller already picked memory for this turn (overlay
+   * prefetch, spec §5.5) and attached it to the live message as
+   * `<user_memory>`. Skip this task's own pick so one turn never spends two
+   * selector calls (daily cap) and never injects memory twice.
+   */
+  memoryPickProvided?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -387,9 +394,13 @@ export function chatMessageToAgentMessage(
         ? `<user_task>${escapeTrustedWrappers(m.content)}</user_task>`
         : `<untrusted_user_message>${escapeUntrustedWrappers(m.content)}</untrusted_user_message>`
       : "";
+  // Pie 2.0 overlay — prefetched memory rides AFTER the wrapper, never inside
+  // it: `<user_memory>` is untrusted data and `<user_task>` is trusted
+  // (spec §5.5). The block is pre-escaped by its builder.
+  const text = m.memoryBlock ? `${wrappedText}\n\n${m.memoryBlock}` : wrappedText;
 
   if (!m.attachments?.length) {
-    return { role: "user", content: wrappedText };
+    return { role: "user", content: text };
   }
 
   const blocks: ContentBlock[] = [];
@@ -406,7 +417,7 @@ export function chatMessageToAgentMessage(
       });
     }
   }
-  if (wrappedText) blocks.push({ type: "text", text: wrappedText });
+  if (wrappedText) blocks.push({ type: "text", text });
   return { role: "user", content: blocks };
 }
 
@@ -1687,7 +1698,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   }
   // 挑选层：与 agent 第一轮并行；结果在 step 2 之前补一次 <system_notice>。
   let memoryPrefetch: MemoryPrefetch | null = null;
-  let memoryPickInjected = false;
+  // Overlay prefetch already produced this turn's pick (and the caller put it
+  // on the live message) — nothing left to pick, nothing to inject later.
+  let memoryPickInjected = ctx.memoryPickProvided === true;
 
   // Task 7 — progressive tool disclosure. Seed the live `activeToolGroups`
   // set BEFORE the (static, once-per-task) system prompt is built so the

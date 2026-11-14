@@ -1120,6 +1120,8 @@ export const zhCNDict = {
       thinking: "正在读取当前页…",
       error: "出了点问题：{error}",
       viewerNotice: "这个任务之前就开始了，正在后台继续运行。",
+      needsPanelConfirm: "需要在侧栏确认 · 已打开",
+      memoryWrong: "不对",
       rewriteLabel: "改写",
       original: "原文",
       replace: "替换原文",
