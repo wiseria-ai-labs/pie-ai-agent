@@ -18,6 +18,10 @@ import {
 } from "@/lib/memory/store";
 import { nextCompactionAt } from "@/lib/memory/compact";
 import {
+  grantBrowserDataPermission,
+  hasBrowserDataPermission,
+} from "@/lib/browser-data/permissions";
+import {
   LONG_TERM_KINDS,
   MEMORY_KINDS,
   MEMORY_MAX_CHARS,
@@ -79,6 +83,8 @@ export default function MemoryPage({
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [enabled, setEnabled] = useState(true);
   const [excluded, setExcluded] = useState<string[]>([]);
+  const [historySource, setHistorySource] = useState(false);
+  const [historyPerm, setHistoryPerm] = useState(false);
   const [lastSummary, setLastSummary] = useState<
     | { at: number; added: number; updated: number; merged: number; expired: number; deleted: number }
     | undefined
@@ -103,6 +109,8 @@ export default function MemoryPage({
       setEntries(es);
       setEnabled(settings.enabled);
       setExcluded(settings.excludedDomains);
+      setHistorySource(settings.historySource === true);
+      setHistoryPerm(await hasBrowserDataPermission("history"));
       setLastSummary(state.lastSummary);
       setLastCompactedAt(state.lastCompactedAt);
       setHasSnapshot(!!snap);
@@ -127,6 +135,24 @@ export default function MemoryPage({
   const toggle = async (next: boolean) => {
     setEnabled(next);
     await setMemorySettings({ enabled: next });
+  };
+
+  /**
+   * 浏览历史来源（spec §5.3）。打开时必须在这个点击手势里申请 history 可选权限
+   * ——复用书签历史线的授权 helper，不自己调 chrome.permissions。
+   * 关掉只是停止使用历史，不回收权限（search_history 等还在用它）。
+   */
+  const toggleHistorySource = async (next: boolean) => {
+    if (!next) {
+      setHistorySource(false);
+      await setMemorySettings({ historySource: false });
+      return;
+    }
+    const granted = await grantBrowserDataPermission("history");
+    setHistoryPerm(granted);
+    if (!granted) return; // 用户拒绝 → 开关保持关
+    setHistorySource(true);
+    await setMemorySettings({ historySource: true });
   };
 
   const addDomain = async () => {
@@ -276,7 +302,7 @@ export default function MemoryPage({
         </div>
       </div>
 
-      {/* 来源（浏览历史来源按本期范围不做，只保留对话） */}
+      {/* 来源：对话 + 浏览历史（历史只读网站与标题，权限与书签历史线共用） */}
       <div>
         <GroupLabel>{t("settings.memory.sourcesTitle")}</GroupLabel>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
@@ -288,6 +314,24 @@ export default function MemoryPage({
               </small>
             </span>
             <Switch testId="memory-source-chat" checked={enabled} onChange={() => void toggle(!enabled)} />
+          </div>
+          <div className="flex min-h-[46px] items-center gap-3 border-t border-line px-3.5 py-2">
+            <span className="flex-1 text-[13px] font-medium text-fg-1">
+              {t("settings.memory.sourceHistory")}
+              <small className="block text-[11px] font-normal text-fg-3">
+                {t("settings.memory.sourceHistoryDesc")}
+              </small>
+              {historySource && !historyPerm && (
+                <small className="mt-0.5 block text-[11px] text-warning">
+                  {t("settings.memory.historyPermissionNeeded")}
+                </small>
+              )}
+            </span>
+            <Switch
+              testId="memory-source-history"
+              checked={historySource}
+              onChange={(v) => void toggleHistorySource(v)}
+            />
           </div>
         </div>
       </div>

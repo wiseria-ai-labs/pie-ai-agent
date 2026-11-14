@@ -42,6 +42,7 @@ const DEFAULT_SETTINGS: MemorySettingsRecord = {
   id: MEMORY_SETTINGS_ID,
   enabled: true,
   excludedDomains: [],
+  historySource: false,
 };
 
 const DEFAULT_STATE: MemoryStateRecord = {
@@ -103,7 +104,7 @@ export async function getMemorySettings(): Promise<MemorySettingsRecord> {
 }
 
 export async function setMemorySettings(
-  patch: Partial<Pick<MemorySettingsRecord, "enabled" | "excludedDomains">>,
+  patch: Partial<Pick<MemorySettingsRecord, "enabled" | "excludedDomains" | "historySource">>,
 ): Promise<MemorySettingsRecord> {
   const cur = await getMemorySettings();
   const next: MemorySettingsRecord = { ...cur, ...patch, id: MEMORY_SETTINGS_ID };
