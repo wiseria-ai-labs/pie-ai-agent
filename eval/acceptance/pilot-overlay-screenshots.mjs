@@ -161,8 +161,12 @@ const longId = await seed([
   { role: "assistant", content: LONG_ANSWER },
 ]);
 
-async function openAndShoot(sessionId, file) {
+async function openAndShoot(sessionId, file, { hostDark = false } = {}) {
   await page.goto(`http://localhost:${PORT}/`);
+  if (hostDark) {
+    // The card must stay transparent over a dark page too (no tinted box).
+    await page.addStyleTag({ content: "html,body{background:#14161a;color:#e8eaed}" });
+  }
   await page.waitForTimeout(1400); // content script at document_idle
   await sendToTab({
     type: "pie-overlay:open",
@@ -200,6 +204,8 @@ async function openAndShoot(sessionId, file) {
 
 await openAndShoot(shortId, `${THEME}-short.png`);
 await openAndShoot(longId, `${THEME}-long.png`);
+// Light card on a dark host page — the round-4 report's fourth corner case.
+if (THEME === "light") await openAndShoot(shortId, "host-dark-short.png", { hostDark: true });
 
 console.log("\nDONE");
 await ctx.close();
