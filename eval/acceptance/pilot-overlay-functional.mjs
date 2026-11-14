@@ -163,6 +163,29 @@ try {
   });
   rec("A3 resize bridge", h > 130 ? "PASS" : "FAIL", `iframe height=${Math.round(h)}`);
 
+  // 卡片几何：iframe 456（卡片 420 + 两侧 18px 透明留白），阴影不被裁、圆角外透明
+  const ovFrame = page.frames().find((f) => f.url().includes("src/overlay/index.html"));
+  const layout = await ovFrame.evaluate(() => {
+    const root = document.getElementById("overlay-root");
+    const card = root?.querySelector("[data-card]");
+    const cs = root ? getComputedStyle(root) : null;
+    const r = card?.getBoundingClientRect();
+    return {
+      pad: cs?.paddingTop,
+      cardW: r ? Math.round(r.width) : 0,
+      iframeH: Math.round(window.innerHeight),
+      iframeColorScheme: getComputedStyle(document.documentElement).colorScheme,
+      bodyBg: getComputedStyle(document.body).backgroundColor,
+    };
+  });
+  rec(
+    "A4 card geometry inside a transparent iframe",
+    host.hostWidth === 456 && layout.pad === "18px" && layout.cardW === 420 && layout.bodyBg === "rgba(0, 0, 0, 0)"
+      ? "PASS"
+      : "FAIL",
+    JSON.stringify({ host: host.hostWidth, ...layout }),
+  );
+
   // ── B. Esc closes; reopen keeps the conversation ──────────────────────────
   await iframe.locator("textarea").click();
   await page.keyboard.press("Escape");
@@ -373,6 +396,98 @@ try {
     `hidden=${hiddenCap} shown=${shownCap}`);
 } catch (e) {
   rec("E0 capsule", "ERROR", e.message);
+}
+
+// ── G. structured translate / rewrite (round 4 redesign) ───────────────────
+try {
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(600);
+
+  // Translate: select the read-only paragraph and use the real selection bar.
+  await page.evaluate(() => {
+    const p = document.getElementById("read");
+    const range = document.createRange();
+    range.selectNodeContents(p);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+  });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    document.querySelector("[data-pie-quote-bubble]").shadowRoot.querySelector('[data-act="translate"]').click();
+  });
+  await page.waitForTimeout(1200);
+  const tFrame = page.frames().find((f) => f.url().includes("src/overlay/index.html"));
+  const chip = tFrame.locator("#overlay-root button", { hasText: "Translate to" }).first();
+  const chipText = (await chip.textContent())?.trim();
+  const prefill = await tFrame.locator("#overlay-root textarea").inputValue();
+  rec(
+    "G1 translate opens with a target chip, no auto-send",
+    Boolean(chipText?.includes("Translate to")) && prefill.startsWith("Translate to") ? "PASS" : "FAIL",
+    `chip=${JSON.stringify(chipText)} prefill=${JSON.stringify(prefill)}`,
+  );
+  await snap(page, "translate-chip");
+
+  // Switch the target language: chip + prefill follow and the choice persists.
+  await chip.click();
+  await page.waitForTimeout(250);
+  await snap(page, "translate-languages");
+  await tFrame.locator('#overlay-root [role="option"]', { hasText: "Japanese" }).click();
+  await page.waitForTimeout(400);
+  const after = await tFrame.locator("#overlay-root textarea").inputValue();
+  // Read the persisted preference in the extension origin (the SW shares the
+  // same IDB; the fixture page has its own origin-local database).
+  const stored = await sw.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const req = indexedDB.open("pie");
+        req.onsuccess = () => {
+          const db = req.result;
+          const g = db.transaction("config").objectStore("config").get("overlay_settings");
+          g.onsuccess = () => {
+            db.close();
+            resolve(g.result?.value ?? null);
+          };
+        };
+      }),
+  );
+  rec(
+    "G2 language switch updates prefill and is remembered",
+    after.includes("Japanese") && stored?.lastTranslateLang === "ja" ? "PASS" : "FAIL",
+    `prefill=${JSON.stringify(after)} stored=${stored?.lastTranslateLang}`,
+  );
+  await snap(page, "translate-japanese");
+
+  // Rewrite: clicking 改写 must open with style chips, NOT send automatically.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    const ed = document.getElementById("ed");
+    const range = document.createRange();
+    range.selectNodeContents(ed);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+  });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    document.querySelector("[data-pie-quote-bubble]").shadowRoot.querySelector('[data-act="rewrite"]').click();
+  });
+  await page.waitForTimeout(1200);
+  const rFrame = page.frames().find((f) => f.url().includes("src/overlay/index.html"));
+  const chipTexts = await rFrame.locator("#overlay-root button").allTextContents();
+  const placeholder = await rFrame.locator("#overlay-root textarea").getAttribute("placeholder");
+  const styles = ["More formal", "Shorter", "More casual", "Fix typos & grammar", "Expand"];
+  rec(
+    "G3 rewrite opens with style chips, no auto-send",
+    styles.every((x) => chipTexts.includes(x)) && /how should i change it/i.test(placeholder ?? "") ? "PASS" : "FAIL",
+    `chips=${JSON.stringify(chipTexts)} placeholder=${JSON.stringify(placeholder)}`,
+  );
+  await snap(page, "rewrite-chips");
+} catch (e) {
+  rec("G0 structured tasks", "ERROR", e.message);
 }
 
 fs.writeFileSync(`${BASE}/report/results.json`, JSON.stringify(results, null, 2));
