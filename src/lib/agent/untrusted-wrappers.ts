@@ -59,6 +59,8 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   "untrusted_scratchpad_preview",
   "untrusted_local_agent_output",
   "untrusted_skill_output_list",
+  // Pie 2.0 记忆层 — 画像 + 被选中的记忆条目（user role，不是指令）。
+  "user_memory",
 ] as const;
 
 // Zero-width / invisible chars that an attacker might hide inside a tag literal.
