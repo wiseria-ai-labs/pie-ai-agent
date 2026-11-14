@@ -1299,7 +1299,7 @@ describe("#438 — the persist echo must not strip the ACTIVE session's screensh
     const port = chromeMock.runtime.__ports[0]!;
     const image = { mediaType: "image/jpeg", data: "BASE64BYTES", width: 10, height: 10 };
 
-    act(() => result.current.sendMessage({ content: "capture the page" }));
+    await act(async () => result.current.sendMessage({ content: "capture the page" }));
     await waitFor(() => expect(result.current.streaming).toBe(true));
     act(() =>
       emitWithSession(
@@ -1344,7 +1344,7 @@ describe("#438 — screenshot bytes released on session switch", () => {
     const port = chromeMock.runtime.__ports[0]!;
 
     // A task runs in A and produces one screenshot step.
-    act(() => result.current.sendMessage({ content: "capture the page" }));
+    await act(async () => result.current.sendMessage({ content: "capture the page" }));
     await waitFor(() => expect(result.current.streaming).toBe(true));
     act(() =>
       emitWithSession(
