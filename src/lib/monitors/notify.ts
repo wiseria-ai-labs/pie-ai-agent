@@ -17,7 +17,6 @@
 
 import { getMonitor } from "./store";
 import { pauseMonitorOp } from "./ops";
-import type { MonitorRecord } from "./types";
 
 export const MONITOR_HIT_NOTIF_PREFIX = "monitor-hit:";
 export const MONITOR_PAUSED_NOTIF_PREFIX = "monitor-paused:";
@@ -143,10 +142,4 @@ export async function handleMonitorNotificationButton(
   } catch {
     /* listener must never crash the SW */
   }
-}
-
-/** Body text helpers so check.ts and ops.ts agree on the copy shape. */
-export function describeConditionValue(rec: MonitorRecord): string {
-  const v = rec.lastValue;
-  return v == null || v.length === 0 ? "no value yet" : v.slice(0, 160);
 }

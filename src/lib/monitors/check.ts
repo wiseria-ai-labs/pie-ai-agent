@@ -14,7 +14,7 @@
 // an extension runtime.
 
 import { addInboxEntry } from "@/lib/inbox/store";
-import { evaluateCondition } from "./condition";
+import { addedItems, evaluateCondition } from "./condition";
 import { extractDirect, extractViaTab, type ExtractOutcome } from "./extract";
 import { notifyMonitorHit, notifyMonitorPaused } from "./notify";
 import {
@@ -203,7 +203,12 @@ export async function checkMonitor(
 
   if (!shouldNotify) return;
 
-  const body = evidenceLine(rec.lastValue, outcome.value);
+  // §4.5 — the body is the evidence. For a list condition "old → new" would be
+  // an unreadable wall of text, so name the new rows instead.
+  const body =
+    rec.condition.kind === "list_added"
+      ? addedItems(rec.lastValue, outcome.value).slice(0, 5).join(" · ")
+      : evidenceLine(rec.lastValue, outcome.value);
   await deps.addInbox({
     source: "monitor",
     refId: monitorId,
