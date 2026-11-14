@@ -1,3 +1,5 @@
+import type { BrowserSearchResults } from "../browser-data/types";
+
 export interface ActionResult {
   success: boolean;
   observation?: string;
@@ -21,4 +23,17 @@ export interface ActionResult {
     byteLength: number;
     id?: string;
   };
+  /**
+   * Pie 2.0 — bookmarks/history search results for the clickable F6 list.
+   * loop.ts turns this into a `browser-results` port message; the text
+   * observation is still what the model reads.
+   */
+  browserResults?: BrowserSearchResults;
+  /**
+   * Pie 2.0 — an applied bookmark change recorded under `bookmark_snapshots`.
+   * loop.ts turns this into a `browser-change` port message so the conversation
+   * keeps an inline undo row (F7 "已整理 … · 还原"). The panel reads the record
+   * from IDB by id — nothing else travels on the wire.
+   */
+  browserChange?: { recordId: string };
 }

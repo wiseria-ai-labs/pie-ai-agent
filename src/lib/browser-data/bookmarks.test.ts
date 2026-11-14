@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { _resetForTests } from "@/lib/idb/db";
 import { installChromeApi, installFakeBookmarks, type FakeBookmarks } from "@/test/fake-browser-data";
 import {
   applyBookmarkPlan,
+  checkBookmarkLinks,
   createBookmark,
+  MAX_LINK_CHECKS,
   planBookmarkOps,
   readBookmarkTree,
   restoreChangeById,
@@ -161,7 +163,7 @@ describe("applyBookmarkPlan + restore", () => {
     expect(planned.ok).toBe(true);
     if (!planned.ok) return;
 
-    const applied = await applyBookmarkPlan(planned.ops, "整理书签");
+    const applied = await applyBookmarkPlan(planned.ops);
     expect(applied.ok).toBe(true);
     expect(applied.applied).toBe(3);
 
@@ -192,7 +194,7 @@ describe("applyBookmarkPlan + restore", () => {
       { op: "move", id: a.id, parentId: "工作" },
     ]);
     if (!planned.ok) throw new Error("plan failed");
-    await applyBookmarkPlan(planned.ops, "整理书签");
+    await applyBookmarkPlan(planned.ops);
     const rec = (await listChanges())[0];
 
     // User takes the bookmark back out AND puts something in the new folder.
@@ -204,5 +206,104 @@ describe("applyBookmarkPlan + restore", () => {
     expect(restored.restored).toBe(0);
     expect(restored.skipped).toBe(2);
     expect(findNodeByTitle("工作")).toBeTruthy(); // keeps the user's content
+  });
+});
+
+// ── check_bookmark_links (spec §3.2: HEAD, concurrency 6, 5 s timeout) ──────
+
+describe("checkBookmarkLinks", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    vi.unstubAllGlobals();
+  });
+
+  function mockFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {
+    const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+      handler(String(input), init),
+    );
+    globalThis.fetch = fn as unknown as typeof fetch;
+    return fn;
+  }
+
+  it("uses HEAD and reports only 404 / 410 / transport failures", async () => {
+    const seen: string[] = [];
+    mockFetch((url) => {
+      seen.push(url);
+      if (url.includes("/gone")) return new Response(null, { status: 404 });
+      if (url.includes("/removed")) return new Response(null, { status: 410 });
+      if (url.includes("/blocked")) return new Response(null, { status: 403 });
+      if (url.includes("/headless")) return new Response(null, { status: 405 });
+      if (url.includes("/down")) throw new TypeError("Failed to fetch");
+      return new Response(null, { status: 200 });
+    });
+    for (const [title, path] of [
+      ["Gone", "gone"],
+      ["Removed", "removed"],
+      ["Blocked", "blocked"],
+      ["NoHead", "headless"],
+      ["Down", "down"],
+      ["Live", "live"],
+    ] as const) {
+      await bm.create({ parentId: bm.barId, title, url: `https://x.example.com/${path}` });
+    }
+
+    const res = await checkBookmarkLinks({});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.checked).toBe(8); // 2 seeded + 6
+    expect(res.dead.map((d) => [d.title, d.reason]).sort()).toEqual([
+      ["Down", "network"],
+      ["Gone", "404"],
+      ["Removed", "410"],
+    ]);
+    expect(seen.every((u) => u.startsWith("https://"))).toBe(true);
+  });
+
+  it("treats a request that never settles as a timeout (aborted)", async () => {
+    mockFetch(() => {
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      throw err;
+    });
+    const res = await checkBookmarkLinks({});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.dead.every((d) => d.reason === "timeout")).toBe(true);
+  });
+
+  it("honours the per-call concurrency cap of 6", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    mockFetch(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 1));
+      inFlight -= 1;
+      return new Response(null, { status: 200 });
+    });
+    for (let i = 0; i < 12; i += 1) {
+      await bm.create({ parentId: bm.barId, title: `L${i}`, url: `https://c.example.com/${i}` });
+    }
+    const res = await checkBookmarkLinks({});
+    expect(res.ok && res.checked).toBe(14);
+    expect(peak).toBeLessThanOrEqual(6);
+  });
+
+  it("checks a single folder subtree", async () => {
+    const folder = await bm.create({ parentId: bm.barId, title: "Work" });
+    await bm.create({ parentId: folder.id, title: "Inside", url: "https://w.example.com/in" });
+    mockFetch(() => new Response(null, { status: 200 }));
+    const res = await checkBookmarkLinks({ folderId: "Work" });
+    expect(res.ok && res.checked).toBe(1);
+  });
+
+  it("refuses scopes above the cap instead of silently truncating", async () => {
+    for (let i = 0; i < MAX_LINK_CHECKS + 1; i += 1) {
+      await bm.create({ parentId: bm.barId, title: `B${i}`, url: `https://big.example.com/${i}` });
+    }
+    const res = await checkBookmarkLinks({});
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain("narrow");
   });
 });

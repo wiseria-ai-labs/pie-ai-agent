@@ -154,12 +154,8 @@ export async function proposeHistoryDeletion(opts: {
 
   const actualFrom = Math.min(...unique.map((r) => r.lastVisitTime || from));
   const actualTo = Math.max(...unique.map((r) => r.lastVisitTime || to));
-  const fmt = (ms: number) =>
-    new Date(ms).toLocaleDateString(undefined, { month: "2-digit", day: "2-digit" });
-  const criteria = [domain || `${sites.length} 个网站`, `${fmt(actualFrom)} 至 ${fmt(actualTo)}`]
-    .filter(Boolean)
-    .join(" · ");
 
+  // Structured only: the card renders count / range / sites through i18n.
   return {
     ok: true,
     request: {
@@ -167,7 +163,6 @@ export async function proposeHistoryDeletion(opts: {
       from: actualFrom,
       to: actualTo,
       sites,
-      criteria,
     },
     urls: unique.map((r) => r.url),
   };
@@ -176,7 +171,6 @@ export async function proposeHistoryDeletion(opts: {
 /** Delete every visit of each URL. Logged as irreversible; no snapshot. */
 export async function applyHistoryDeletion(
   urls: string[],
-  summary: string,
 ): Promise<{ ok: boolean; deleted: number; error?: string; recordId?: string }> {
   const h = api();
   if (!h) return { ok: false, deleted: 0, error: PERMISSION_ERROR };
@@ -192,11 +186,12 @@ export async function applyHistoryDeletion(
     }
   }
   if (deleted > 0) {
+    const domains = [...new Set(urls.slice(0, deleted).map(hostOf).filter(Boolean))].slice(0, 3);
     const rec = await putChange({
       kind: "history_delete",
-      summary,
       restorable: false,
       count: deleted,
+      domains,
     });
     return { ok: !error, deleted, recordId: rec.id, ...(error ? { error } : {}) };
   }
@@ -204,4 +199,4 @@ export async function applyHistoryDeletion(
 }
 
 export const PERMISSION_ERROR =
-  "history permission is not granted — ask the user to allow it from the card, or in Settings → 书签与历史";
+  "history permission is not granted — ask the user to allow it from the card, or in Settings → Bookmarks & history";

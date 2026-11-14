@@ -897,6 +897,8 @@ export const es419Dict = {
       decline: "Ahora no",
     },
     plan: {
+      title: "{count} cambios",
+      description: "No se elimina ningún marcador. Se guarda una instantánea antes de aplicar y puedes deshacerlo en Ajustes → Marcadores e historial.",
       cancel: "Cancelar",
       apply: "Aplicar",
       chipFolders: "{count} carpetas nuevas",
@@ -905,11 +907,29 @@ export const es419Dict = {
       showAll: "Ver los {count} cambios",
       showLess: "Ver menos",
     },
+    change: {
+      planLabel: "Organizar marcadores",
+      created: "Marcador creado · {title}",
+      updated: "Marcador actualizado · {title}",
+      gone: "Este registro de cambio expiró.",
+    },
+    results: {
+      historyTitle: "Historial de navegación",
+      bookmarksTitle: "Marcadores",
+      total: "{count} resultados",
+      addBookmark: "Añadir a marcadores",
+      added: "Añadido",
+      open: "Abrir",
+      visits: "{count} visitas",
+      needBookmarksPermission: "El permiso de marcadores está desactivado; actívalo en Ajustes → Marcadores e historial.",
+      more: "{count} más sin mostrar",
+    },
     deletion: {
       title: "Borrar {count} registros de historial",
       sitesLabel: "Sitios",
       warning: "El historial borrado no se puede recuperar y Pie no guarda copia. Los marcadores no se ven afectados.",
       deleteCount: "Borrar {count}",
+      rangeSites: "{sites} sitios · {from} – {to}",
     },
     page: {
       permissionsGroup: "Permisos",

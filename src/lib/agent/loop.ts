@@ -3029,6 +3029,32 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           );
         }
 
+        // Pie 2.0 — bookmarks/history: hand the panel the clickable result
+        // list (F6) and the inline undo row (F7). The text observation above
+        // is still what the model reads; these only drive the UI.
+        if (result.browserResults) {
+          emit(
+            withSession(
+              {
+                type: "browser-results",
+                kind: result.browserResults.kind,
+                query: result.browserResults.query,
+                total: result.browserResults.total,
+                entries: result.browserResults.entries,
+              },
+              sessionId,
+            ),
+          );
+        }
+        if (result.browserChange) {
+          emit(
+            withSession(
+              { type: "browser-change", recordId: result.browserChange.recordId },
+              sessionId,
+            ),
+          );
+        }
+
         // Check for terminal tools
         if (tc.name === "done" && result.success) {
           shouldTerminate = true;

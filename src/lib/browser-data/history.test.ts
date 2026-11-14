@@ -115,7 +115,7 @@ describe("applyHistoryDeletion", () => {
   it("deletes every visit per URL and logs an irreversible change", async () => {
     const proposed = await proposeHistoryDeletion({ domain: "example.com" });
     if (!proposed.ok) throw new Error("propose failed");
-    const res = await applyHistoryDeletion(proposed.urls, "删除 2 条浏览记录");
+    const res = await applyHistoryDeletion(proposed.urls);
     expect(res).toMatchObject({ ok: true, deleted: 2 });
     expect(hist.entries.map((e) => e.title)).toEqual(["Mall", "News"]);
 

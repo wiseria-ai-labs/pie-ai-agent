@@ -896,6 +896,8 @@ export const zhTWDict = {
       decline: "不用了",
     },
     plan: {
+      title: "共 {count} 項改動",
+      description: "不會刪除任何書籤。套用前會自動儲存一份快照，可在「設定 → 書籤與歷史」還原。",
       cancel: "取消",
       apply: "套用",
       chipFolders: "新資料夾 {count}",
@@ -904,11 +906,29 @@ export const zhTWDict = {
       showAll: "看全部 {count} 項改動",
       showLess: "收合",
     },
+    change: {
+      planLabel: "整理書籤",
+      created: "新增書籤 · {title}",
+      updated: "更新書籤 · {title}",
+      gone: "這筆改動紀錄已過期。",
+    },
+    results: {
+      historyTitle: "瀏覽紀錄",
+      bookmarksTitle: "書籤",
+      total: "{count} 筆結果",
+      addBookmark: "加到書籤",
+      added: "已加入",
+      open: "開啟",
+      visits: "{count} 次瀏覽",
+      needBookmarksPermission: "Pie 還沒有書籤權限，請到「設定 → 書籤與歷史」開啟。",
+      more: "還有 {count} 筆未顯示",
+    },
     deletion: {
       title: "刪除 {count} 筆瀏覽紀錄",
       sitesLabel: "網站",
       warning: "瀏覽紀錄刪除後無法復原，Pie 也沒有備份。書籤不受影響。",
       deleteCount: "刪除 {count} 筆",
+      rangeSites: "{sites} 個網站 · {from} 至 {to}",
     },
     page: {
       permissionsGroup: "授權",

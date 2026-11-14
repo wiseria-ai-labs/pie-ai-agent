@@ -89,7 +89,7 @@ describe("permission gate", () => {
     requestMock.mockRejectedValueOnce(new Error("no sidepanel port"));
     const res = await tool("search_bookmarks").handler({}, ctx());
     expect(res.success).toBe(false);
-    expect(res.error).toContain("Settings → 书签与历史");
+    expect(res.error).toContain("Settings → Bookmarks & history");
   });
 
   it("skips the card entirely when the permission is already held", async () => {
@@ -177,8 +177,9 @@ describe("propose_* cards", () => {
 });
 
 describe("tool registry invariants", () => {
-  it("declares all seven tools", () => {
+  it("declares all eight tools", () => {
     expect(BROWSER_DATA_TOOLS.map((t) => t.name).sort()).toEqual([
+      "check_bookmark_links",
       "create_bookmark",
       "get_bookmark_tree",
       "propose_bookmark_plan",
@@ -198,5 +199,87 @@ describe("tool registry invariants", () => {
       "move",
       "rename",
     ]);
+  });
+});
+
+// ── Pie 2.0 round 2 — panel payloads + dead-link check ──────────────────────
+
+describe("panel payloads", () => {
+  it("search_history hands the panel structured results (no prose)", async () => {
+    perms.granted.add("history");
+    const res = await tool("search_history").handler({ query: "cart" }, ctx());
+    expect(res.success).toBe(true);
+    expect(res.browserResults).toMatchObject({
+      kind: "history",
+      query: "cart",
+      total: 1,
+    });
+    expect(res.browserResults?.entries[0]).toMatchObject({
+      url: "https://shop.example.com/a",
+      visits: 2,
+    });
+  });
+
+  it("search_bookmarks hands the panel structured results with ids", async () => {
+    perms.granted.add("bookmarks");
+    const res = await tool("search_bookmarks").handler({ query: "vec" }, ctx());
+    expect(res.browserResults).toMatchObject({ kind: "bookmarks", total: 1 });
+    expect(res.browserResults?.entries[0].id).toBeTruthy();
+  });
+
+  it("create_bookmark and propose_bookmark_plan emit an inline undo row", async () => {
+    perms.granted.add("bookmarks");
+    const created = await tool("create_bookmark").handler(
+      { url: "https://d.example.com/x", title: "D" },
+      ctx(),
+    );
+    expect(created.browserChange?.recordId).toBeTruthy();
+
+    requestMock.mockResolvedValueOnce(true);
+    const target = [...bm.nodes.values()].find((n) => n.title === "Vectors")!;
+    const planned = await tool("propose_bookmark_plan").handler(
+      { ops: [{ op: "rename", id: target.id, title: "Vectors 2" }] },
+      ctx(),
+    );
+    expect(planned.browserChange?.recordId).toBeTruthy();
+  });
+
+  it("a declined plan emits no undo row", async () => {
+    perms.granted.add("bookmarks");
+    requestMock.mockResolvedValueOnce(false);
+    const target = [...bm.nodes.values()].find((n) => n.title === "Vectors")!;
+    const res = await tool("propose_bookmark_plan").handler(
+      { ops: [{ op: "rename", id: target.id, title: "Nope" }] },
+      ctx(),
+    );
+    expect(res.browserChange).toBeUndefined();
+  });
+});
+
+describe("check_bookmark_links tool", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it("is permission-gated and wraps dead-link titles as untrusted data", async () => {
+    globalThis.fetch = (async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
+    requestMock.mockImplementationOnce(async () => {
+      perms.granted.add("bookmarks");
+      return true;
+    });
+    const res = await tool("check_bookmark_links").handler({}, ctx());
+    expect(res.success).toBe(true);
+    const obs = res.observation ?? "";
+    expect(obs).toContain("dead=\"404\"");
+    expect(obs).toContain("<untrusted_bookmark");
+    expect(obs).toContain("Never delete bookmarks");
+  });
+
+  it("says all reachable when nothing is dead", async () => {
+    perms.granted.add("bookmarks");
+    globalThis.fetch = (async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
+    const res = await tool("check_bookmark_links").handler({}, ctx());
+    expect(res.observation).toContain("all reachable");
   });
 });

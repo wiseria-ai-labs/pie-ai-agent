@@ -44,9 +44,9 @@ describe("BrowserDataPage", () => {
   });
 
   it("lists irreversible history deletions without a restore button", async () => {
-    await putChange({ kind: "history_delete", summary: "删除 37 条浏览记录", restorable: false, count: 37 });
+    await putChange({ kind: "history_delete", restorable: false, count: 37, domains: ["shop.example.com"] });
     render(<BrowserDataPage />);
-    await waitFor(() => expect(screen.getByText("删除 37 条浏览记录")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Delete 37 browsing history entries/)).toBeTruthy());
     expect(screen.getByText(/Can't be undone/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Restore/ })).toBeNull();
   });
@@ -55,12 +55,12 @@ describe("BrowserDataPage", () => {
     const created = await bm.create({ parentId: bm.barId, title: "New one", url: "https://n.example.com" });
     await putChange({
       kind: "bookmark_create",
-      summary: "新建书签 · New one",
+      title: "New one",
       restorable: true,
       ops: [{ op: "create_bookmark", id: created.id, parentId: bm.barId, title: "New one", url: "https://n.example.com" }],
     });
     render(<BrowserDataPage />);
-    await waitFor(() => expect(screen.getByText("新建书签 · New one")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Bookmark created · New one/)).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /Restore/ }));
     await waitFor(() => expect(screen.getByText(/Restored 1 change/)).toBeTruthy());
     expect(bm.nodes.has(created.id)).toBe(false);

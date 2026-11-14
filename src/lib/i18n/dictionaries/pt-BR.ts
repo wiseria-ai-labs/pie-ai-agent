@@ -897,6 +897,8 @@ export const ptBRDict = {
       decline: "Agora não",
     },
     plan: {
+      title: "{count} mudanças",
+      description: "Nenhum favorito é excluído. Um snapshot é salvo antes de aplicar e você pode desfazer em Configurações → Favoritos e histórico.",
       cancel: "Cancelar",
       apply: "Aplicar",
       chipFolders: "{count} pastas novas",
@@ -905,11 +907,29 @@ export const ptBRDict = {
       showAll: "Ver todas as {count} mudanças",
       showLess: "Ver menos",
     },
+    change: {
+      planLabel: "Organizar favoritos",
+      created: "Favorito criado · {title}",
+      updated: "Favorito atualizado · {title}",
+      gone: "Este registro de mudança expirou.",
+    },
+    results: {
+      historyTitle: "Histórico de navegação",
+      bookmarksTitle: "Favoritos",
+      total: "{count} resultados",
+      addBookmark: "Adicionar aos favoritos",
+      added: "Adicionado",
+      open: "Abrir",
+      visits: "{count} visitas",
+      needBookmarksPermission: "A permissão de favoritos está desativada — ative em Configurações → Favoritos e histórico.",
+      more: "{count} mais não exibidos",
+    },
     deletion: {
       title: "Excluir {count} registros de histórico",
       sitesLabel: "Sites",
       warning: "O histórico excluído não pode ser recuperado e o Pie não guarda backup. Os favoritos não são afetados.",
       deleteCount: "Excluir {count}",
+      rangeSites: "{sites} sites · {from} – {to}",
     },
     page: {
       permissionsGroup: "Permissões",

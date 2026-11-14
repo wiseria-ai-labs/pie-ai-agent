@@ -896,6 +896,8 @@ export const jaDict = {
       decline: "今はしない",
     },
     plan: {
+      title: "{count} 件の変更",
+      description: "ブックマークは削除しません。適用前にスナップショットを保存し、「設定 → ブックマークと履歴」から元に戻せます。",
       cancel: "キャンセル",
       apply: "適用",
       chipFolders: "新規フォルダ {count}",
@@ -904,11 +906,29 @@ export const jaDict = {
       showAll: "変更 {count} 件をすべて見る",
       showLess: "閉じる",
     },
+    change: {
+      planLabel: "ブックマーク整理",
+      created: "ブックマークを追加 · {title}",
+      updated: "ブックマークを更新 · {title}",
+      gone: "この変更記録は期限切れです。",
+    },
+    results: {
+      historyTitle: "閲覧履歴",
+      bookmarksTitle: "ブックマーク",
+      total: "{count} 件の結果",
+      addBookmark: "ブックマークに追加",
+      added: "追加済み",
+      open: "開く",
+      visits: "{count} 回",
+      needBookmarksPermission: "ブックマークの権限がありません。「設定 → ブックマークと履歴」で有効にしてください。",
+      more: "残り {count} 件は非表示",
+    },
     deletion: {
       title: "閲覧履歴 {count} 件を削除",
       sitesLabel: "サイト",
       warning: "削除した履歴は復元できません。Pie もバックアップを取りません。ブックマークは影響を受けません。",
       deleteCount: "{count} 件を削除",
+      rangeSites: "{sites} サイト · {from} 〜 {to}",
     },
     page: {
       permissionsGroup: "権限",

@@ -15,20 +15,31 @@ const TrashIcon = () => (
   </svg>
 );
 
+/** Localized `MM-DD` for the matched range (device locale). */
+function shortDate(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, { month: "2-digit", day: "2-digit" });
+}
+
 /**
  * F8 — history deletion card. Irreversible, so the primary button names the
  * exact count and the warning is coral. History is never snapshotted: Chrome
  * can re-add a URL but not its original visit times (spec §3.2).
  */
+
 export function HistoryDeletionCard({ payload, onDecision }: Props) {
   const t = useT();
+  const range = t("browserData.deletion.rangeSites", {
+    sites: payload.sites.length,
+    from: shortDate(payload.from),
+    to: shortDate(payload.to),
+  });
   return (
     <HitlCardShell
       register="danger"
       icon={<TrashIcon />}
       capsLabel={t("hitl.caps.historyDeletion")}
       title={t("browserData.deletion.title", { count: payload.count })}
-      description={payload.criteria}
+      description={range}
       actions={
         <>
           <HitlSecondaryButton onClick={() => onDecision(false)}>

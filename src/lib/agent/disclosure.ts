@@ -63,8 +63,10 @@ const LOCAL_FILE_GUIDANCE =
 const BROWSER_DATA_GUIDANCE =
   "Bookmarks & history tools (optional Chrome permissions, granted per domain on first use): " +
   "search_bookmarks / get_bookmark_tree read the bookmark tree (ids are stable — use them for " +
-  "update_bookmark and propose_bookmark_plan); create_bookmark / update_bookmark change ONE bookmark " +
-  "immediately and are restorable from Settings → 书签与历史. Batch reorganization goes through " +
+  "update_bookmark and propose_bookmark_plan); check_bookmark_links HEAD-checks a folder or id list and " +
+  "reports dead links (404 / 410 / unreachable) — move those into a \"待确认\" / \"to verify\" folder with " +
+  "propose_bookmark_plan, never delete them; create_bookmark / update_bookmark change ONE bookmark " +
+  "immediately and are restorable from Settings → Bookmarks & history. Batch reorganization goes through " +
   "propose_bookmark_plan (create_folder / move / rename only — plans never delete bookmarks) and only " +
   "happens after the user clicks Apply. search_history returns titles, URLs, last-visit times and visit " +
   "counts — Chrome has NO dwell time, so never say how long the user spent on a page. " +
@@ -103,7 +105,8 @@ export const GROUP_META: Record<DisclosureGroup, GroupMeta> = {
   },
   "browser-data": {
     kind: "lazy", loadable: true,
-    catalogLine: "browser-data — 查找书签与浏览历史、整理书签、清理历史（需用户授权）",
+    catalogLine:
+      "browser-data — search bookmarks & browsing history, tidy bookmarks, clear history (needs the user's permission)",
     guidance: BROWSER_DATA_GUIDANCE,
   },
 };

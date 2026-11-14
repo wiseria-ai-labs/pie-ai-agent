@@ -15,6 +15,8 @@ import type {
   BookmarkPlanLine,
   BookmarkPlanOp,
   BookmarkPlanRequest,
+  DeadBookmarkLink,
+  DeadLinkReason,
   RestoreResult,
 } from "./types";
 import { getChange, markChangeRestored, putChange } from "./changes";
@@ -252,7 +254,10 @@ export async function createBookmark(input: {
   url: string;
   title: string;
   folder?: string;
-}): Promise<{ ok: true; id: string; path: string; duplicateId?: string } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; id: string; path: string; duplicateId?: string; recordId?: string }
+  | { ok: false; error: string }
+> {
   const b = api();
   if (!b) return { ok: false, error: PERMISSION_ERROR };
   const url = input.url.trim();
@@ -278,20 +283,23 @@ export async function createBookmark(input: {
   }
 
   const created = await b.create({ parentId: folder.id, title, url });
-  await putChange({
+  const rec = await putChange({
     kind: "bookmark_create",
-    summary: `新建书签 · ${title}`,
+    title,
     restorable: true,
     ops: [{ op: "create_bookmark", id: created.id, parentId: folder.id, title, url }],
   });
-  return { ok: true, id: created.id, path: flatFolder?.path ?? "" };
+  return { ok: true, id: created.id, path: flatFolder?.path ?? "", recordId: rec.id };
 }
 
 export async function updateBookmark(input: {
   id: string;
   title?: string;
   parentId?: string;
-}): Promise<{ ok: true; id: string; changed: string[] } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; id: string; changed: string[]; recordId?: string }
+  | { ok: false; error: string }
+> {
   const b = api();
   if (!b) return { ok: false, error: PERMISSION_ERROR };
   const index = await loadIndex();
@@ -328,16 +336,13 @@ export async function updateBookmark(input: {
 
   if (ops.length === 0) return { ok: true, id: input.id, changed };
 
-  const parts: string[] = [];
-  if (changed.includes("title")) parts.push("改名");
-  if (changed.includes("parent")) parts.push("移动");
-  await putChange({
+  const rec = await putChange({
     kind: "bookmark_update",
-    summary: `${parts.join(" + ")}书签 · ${nextTitle ?? current.node.title}`,
+    title: nextTitle ?? current.node.title,
     restorable: true,
     ops,
   });
-  return { ok: true, id: input.id, changed };
+  return { ok: true, id: input.id, changed, recordId: rec.id };
 }
 
 // ── Plan (propose_bookmark_plan) ─────────────────────────────────────────────
@@ -460,13 +465,8 @@ export async function planBookmarkOps(rawOps: unknown): Promise<
   }
 
   const totalAffected = counts.folders + counts.moves + counts.renames;
-  const titleBits: string[] = [];
-  if (counts.folders) titleBits.push(`新建 ${counts.folders} 个文件夹`);
-  if (counts.moves) titleBits.push(`移动 ${counts.moves} 个书签`);
-  if (counts.renames) titleBits.push(`重命名 ${counts.renames} 个书签`);
+  // Structured only — the card builds its title/description through i18n.
   const request: BookmarkPlanRequest = {
-    title: titleBits.join(" · ") || "书签整理",
-    description: "不会删除任何书签。应用前会自动保存一份快照，可在「设置 → 书签与历史」还原。",
     counts,
     lines: lines.slice(0, MAX_PLAN_OPS),
     totalAffected,
@@ -477,7 +477,6 @@ export async function planBookmarkOps(rawOps: unknown): Promise<
 /** Apply a validated plan: snapshot first, then mutate sequentially. */
 export async function applyBookmarkPlan(
   ops: BookmarkPlanOp[],
-  label: string,
 ): Promise<{ ok: boolean; applied: number; recordId: string; error?: string }> {
   const b = api();
   if (!b) return { ok: false, applied: 0, recordId: "", error: PERMISSION_ERROR };
@@ -486,7 +485,7 @@ export async function applyBookmarkPlan(
 
   const record = await putChange({
     kind: "bookmark_plan",
-    summary: label,
+    changeCounts: { folders: 0, moves: 0, renames: 0 },
     restorable: true,
     ops: [],
   });
@@ -495,8 +494,9 @@ export async function applyBookmarkPlan(
   const created = new Map<string, string>();
   let error: string | undefined;
 
+  const counts: BookmarkPlanCounts = { folders: 0, moves: 0, renames: 0 };
   const flush = async () => {
-    await putChange({ ...record, ops: appliedOps });
+    await putChange({ ...record, ops: appliedOps, changeCounts: counts });
   };
 
   for (const op of ops) {
@@ -507,6 +507,7 @@ export async function applyBookmarkPlan(
         const node = await b.create({ parentId: parent.id, title: op.title });
         created.set(op.title.toLowerCase(), node.id);
         appliedOps.push({ op: "create_folder", id: node.id, parentId: parent.id, title: op.title });
+        counts.folders += 1;
       } else if (op.op === "move") {
         const parent = resolveFolder(index, op.parentId, created);
         if (!parent.ok) throw new Error(parent.error);
@@ -519,11 +520,13 @@ export async function applyBookmarkPlan(
           fromParentId: target.parentId ?? BOOKMARKS_BAR_ID,
           toParentId: parent.id,
         });
+        counts.moves += 1;
       } else {
         const target = index.byId.get(op.id);
         if (!target) throw new Error(`bookmark not found: ${op.id}`);
         await b.update(op.id, { title: op.title });
         appliedOps.push({ op: "rename", id: op.id, fromTitle: target.node.title, toTitle: op.title });
+        counts.renames += 1;
       }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -625,5 +628,111 @@ export async function restoreChangeById(id: string): Promise<RestoreResult> {
   return { ok: true, restored, skipped };
 }
 
+// ── Dead-link check (spec §3.2: HEAD, concurrency 6, 5 s timeout) ───────────
+
+export const LINK_CHECK_CONCURRENCY = 6;
+export const LINK_CHECK_TIMEOUT_MS = 5000;
+export const MAX_LINK_CHECKS = 100;
+
+/**
+ * HEAD every URL in scope and report the ones that are gone.
+ *
+ * Conservative on purpose: only 404 / 410 and transport failures count as dead.
+ * 401 / 403 / 405 / 429 / 5xx mean the server answered — bot walls, HEAD
+ * refusals and transient outages are not "the page is gone", and mislabeling a
+ * live bookmark as dead is exactly the failure this check must avoid.
+ *
+ * Read-only: nothing is moved or deleted here. The model turns the result into
+ * a propose_bookmark_plan that moves dead links into a "待确认" / "to verify" folder.
+ */
+export async function checkBookmarkLinks(opts: {
+  folderId?: string;
+  ids?: string[];
+}): Promise<
+  | { ok: true; checked: number; dead: DeadBookmarkLink[]; skipped: number }
+  | { ok: false; error: string }
+> {
+  const b = api();
+  if (!b) return { ok: false, error: PERMISSION_ERROR };
+  const index = await loadIndex();
+  if (!index) return { ok: false, error: PERMISSION_ERROR };
+
+  let nodes: FlatNode[];
+  if (opts.ids && opts.ids.length > 0) {
+    nodes = [];
+    for (const id of opts.ids) {
+      const flat = index.byId.get(id);
+      if (!flat) return { ok: false, error: `bookmark not found: ${id}` };
+      nodes.push(flat);
+    }
+  } else {
+    const readFullPath = (n: chrome.bookmarks.BookmarkTreeNode, acc: FlatNode[]): void => {
+      const flat = index.byId.get(n.id);
+      if (flat && n.url) acc.push(flat);
+      for (const child of n.children ?? []) readFullPath(child, acc);
+    };
+    let starts: chrome.bookmarks.BookmarkTreeNode[];
+    if (opts.folderId && opts.folderId.trim()) {
+      const folder = resolveFolder(index, opts.folderId);
+      if (!folder.ok) return { ok: false, error: folder.error };
+      const node = index.byId.get(folder.id)?.node;
+      starts = node ? [node] : [];
+    } else {
+      starts = index.roots;
+    }
+    nodes = [];
+    for (const start of starts) readFullPath(start, nodes);
+  }
+
+  const targets = nodes.filter((n) => n.node.url && isHttpUrl(n.node.url));
+  const skipped = nodes.length - targets.length;
+  if (targets.length === 0) return { ok: true, checked: 0, dead: [], skipped };
+  if (targets.length > MAX_LINK_CHECKS) {
+    return {
+      ok: false,
+      error: `that scope has ${targets.length} links (cap ${MAX_LINK_CHECKS}) — narrow it with folderId or ids`,
+    };
+  }
+
+  const dead: DeadBookmarkLink[] = [];
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < targets.length) {
+      const target = targets[next++]!;
+      const url = target.node.url as string;
+      const reason = await probeUrl(url);
+      if (reason) {
+        dead.push({ id: target.node.id, title: target.node.title, url, reason });
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(LINK_CHECK_CONCURRENCY, targets.length) }, () => worker()),
+  );
+  return { ok: true, checked: targets.length, dead, skipped };
+}
+
+async function probeUrl(url: string): Promise<DeadLinkReason | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LINK_CHECK_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      cache: "no-store",
+      credentials: "omit",
+      signal: controller.signal,
+    });
+    if (res.status === 404) return "404";
+    if (res.status === 410) return "410";
+    return null;
+  } catch (e) {
+    const aborted = controller.signal.aborted || (e instanceof Error && e.name === "AbortError");
+    return aborted ? "timeout" : "network";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const PERMISSION_ERROR =
-  "bookmarks permission is not granted — ask the user to allow it from the card, or in Settings → 书签与历史";
+  "bookmarks permission is not granted — ask the user to allow it from the card, or in Settings → Bookmarks & history";

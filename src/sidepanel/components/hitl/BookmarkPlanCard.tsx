@@ -33,8 +33,8 @@ export function BookmarkPlanCard({ payload, onDecision }: Props) {
       register="browser"
       icon={<FolderIcon />}
       capsLabel={t("hitl.caps.bookmarkPlan")}
-      title={payload.title}
-      description={payload.description}
+      title={t("browserData.plan.title", { count: payload.totalAffected })}
+      description={t("browserData.plan.description")}
       actions={
         <>
           <HitlSecondaryButton onClick={() => onDecision(false)}>

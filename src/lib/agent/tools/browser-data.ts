@@ -31,6 +31,7 @@ import {
 import type { BrowserDataDomain } from "../../browser-data/types";
 import {
   applyBookmarkPlan,
+  checkBookmarkLinks,
   createBookmark,
   planBookmarkOps,
   readBookmarkTree,
@@ -74,7 +75,7 @@ async function requirePermission(
   if (isBrowserPermissionDenied(sessionId, domain)) {
     return err(
       `${domain} permission was declined earlier in this conversation — do not ask again. ` +
-        `Tell the user they can enable it in Settings → 书签与历史, and offer a different approach.`,
+        `Tell the user they can enable it in Settings → Bookmarks & history, and offer a different approach.`,
     );
   }
   let granted = false;
@@ -84,7 +85,7 @@ async function requirePermission(
     return err(
       `${domain} permission is not granted and the request card could not be shown ` +
         `(${e instanceof Error ? e.message : String(e)}). Ask the user to open the side panel ` +
-        `and allow it, or enable it in Settings → 书签与历史.`,
+        `and allow it, or enable it in Settings → Bookmarks & history.`,
     );
   }
   if (!granted) {
@@ -174,10 +175,23 @@ const searchBookmarksTool: Tool = {
       );
     }
     const lines = res.entries.map((b, i) => `[${i + 1}] ${bookmarkTag(b)}`);
-    return ok(
-      `${res.total} bookmark(s) matched${res.truncated ? ` (showing first ${res.entries.length})` : ""}. ` +
+    return {
+      success: true,
+      observation:
+        `${res.total} bookmark(s) matched${res.truncated ? ` (showing first ${res.entries.length})` : ""}. ` +
         `Ids are stable — use them with update_bookmark or propose_bookmark_plan.\n${lines.join("\n")}`,
-    );
+      browserResults: {
+        kind: "bookmarks",
+        ...(a.query ? { query: a.query } : {}),
+        total: res.total,
+        entries: res.entries.map((b) => ({
+          id: b.id,
+          title: b.title,
+          url: b.url,
+          ...(b.path ? { folder: b.path } : {}),
+        })),
+      },
+    };
   },
 };
 
@@ -223,7 +237,7 @@ const createBookmarkTool: Tool = {
   name: "create_bookmark",
   description:
     "Save a page as a bookmark. Executes immediately (no plan card) and leaves a restorable entry in " +
-    "Settings → 书签与历史. If the URL is already bookmarked, nothing is created and the existing id is returned.\n\n" +
+    "Settings → Bookmarks & history. If the URL is already bookmarked, nothing is created and the existing id is returned.\n\n" +
     "USE WHEN: the user asks to bookmark one page ('save this', 'add to my reading list').\n" +
     "For batch reorganizing use propose_bookmark_plan instead.",
   parameters: {
@@ -256,10 +270,13 @@ const createBookmarkTool: Tool = {
         `Already bookmarked — no new bookmark created. id=${res.id}${res.path ? ` in "${res.path}"` : ""}.`,
       );
     }
-    return ok(
-      `Bookmark created: id=${res.id}${res.path ? ` in "${res.path}"` : ""}. ` +
-        `Restorable from Settings → 书签与历史.`,
-    );
+    return {
+      success: true,
+      observation:
+        `Bookmark created: id=${res.id}${res.path ? ` in "${res.path}"` : ""}. ` +
+        `An inline undo row was added to the conversation; the change is also listed in Settings → Bookmarks & history.`,
+      ...(res.recordId ? { browserChange: { recordId: res.recordId } } : {}),
+    };
   },
 };
 
@@ -269,7 +286,7 @@ const updateBookmarkTool: Tool = {
   name: "update_bookmark",
   description:
     "Rename and/or move ONE existing bookmark. Executes immediately and leaves a restorable entry in " +
-    "Settings → 书签与历史. Get the bookmark id from search_bookmarks / get_bookmark_tree first.\n\n" +
+    "Settings → Bookmarks & history. Get the bookmark id from search_bookmarks / get_bookmark_tree first.\n\n" +
     "For many bookmarks at once use propose_bookmark_plan (batch changes need the user's apply click).",
   parameters: {
     type: "object",
@@ -295,9 +312,13 @@ const updateBookmarkTool: Tool = {
     const res = await updateBookmark({ id: a.id, title: a.title, parentId: a.parentId });
     if (!res.ok) return err(res.error);
     if (res.changed.length === 0) return ok(`Bookmark ${res.id} already had those values — nothing changed.`);
-    return ok(
-      `Bookmark updated: id=${res.id} (${res.changed.join(", ")}). Restorable from Settings → 书签与历史.`,
-    );
+    return {
+      success: true,
+      observation:
+        `Bookmark updated: id=${res.id} (${res.changed.join(", ")}). ` +
+        `An inline undo row was added to the conversation; the change is also listed in Settings → Bookmarks & history.`,
+      ...(res.recordId ? { browserChange: { recordId: res.recordId } } : {}),
+    };
   },
 };
 
@@ -315,7 +336,7 @@ const proposeBookmarkPlanTool: Tool = {
     '  {"op":"rename","id":"<bookmark id>","title":"<new title>"}\n' +
     "A later op may target a folder created earlier in the same plan by its title.\n\n" +
     "USE WHEN: organizing the bookmark bar, grouping saved pages, cleaning up structure. " +
-    "Read get_bookmark_tree first so ids are real. After the user applies, a snapshot is kept for 30 days under Settings → 书签与历史.",
+    "Read get_bookmark_tree first so ids are real. After the user applies, a snapshot is kept for 30 days under Settings → Bookmarks & history.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -361,18 +382,25 @@ const proposeBookmarkPlanTool: Tool = {
       return ok("The user declined the plan — no bookmarks were changed. Do not re-propose the same plan.");
     }
 
-    const label = `整理书签 · ${planned.request.title}`;
-    const applied = await applyBookmarkPlan(planned.ops, label);
+    const applied = await applyBookmarkPlan(planned.ops);
     if (!applied.ok) {
-      return err(
-        `Applied ${applied.applied} of ${planned.ops.length} operations before failing: ${applied.error}. ` +
-          `The user can restore what was applied from Settings → 书签与历史.`,
-      );
+      return {
+        success: false,
+        error:
+          `Applied ${applied.applied} of ${planned.ops.length} operations before failing: ${applied.error}. ` +
+          `The user can undo what was applied from the inline row or Settings → Bookmarks & history.`,
+        // A partial apply is exactly when the undo row matters most.
+        ...(applied.applied > 0 ? { browserChange: { recordId: applied.recordId } } : {}),
+      };
     }
-    return ok(
-      `Plan applied: ${planned.request.title} (${applied.applied} operations). ` +
-        `A snapshot was saved — the user can undo it from Settings → 书签与历史 or the change log.`,
-    );
+    const c = planned.request.counts;
+    return {
+      success: true,
+      observation:
+        `Plan applied (${applied.applied} operations: ${c.folders} folders, ${c.moves} moved, ${c.renames} renamed). ` +
+        `A snapshot was saved and an inline undo row was added to the conversation.`,
+      browserChange: { recordId: applied.recordId },
+    };
   },
 };
 
@@ -424,11 +452,24 @@ const searchHistoryTool: Tool = {
       ].join(" ");
       return `[${i + 1}] <untrusted_history_entry ${attrs}>${escapeUntrustedWrappers(e.title)}</untrusted_history_entry>`;
     });
-    return ok(
-      `${res.total} history entry(ies) matched${res.truncated ? ` (showing first ${res.entries.length})` : ""}. ` +
+    return {
+      success: true,
+      observation:
+        `${res.total} history entry(ies) matched${res.truncated ? ` (showing first ${res.entries.length})` : ""}. ` +
         `Chrome records titles, URLs, last-visit times and visit counts only — there is no dwell time, ` +
         `so do not describe how long the user spent on a page.\n${lines.join("\n")}`,
-    );
+      browserResults: {
+        kind: "history",
+        ...(a.query ? { query: a.query } : {}),
+        total: res.total,
+        entries: res.entries.map((e) => ({
+          title: e.title,
+          url: e.url,
+          lastVisit: e.lastVisitTime,
+          visits: e.visitCount,
+        })),
+      },
+    };
   },
 };
 
@@ -484,18 +525,77 @@ const proposeHistoryDeletionTool: Tool = {
       return ok("The user cancelled — no history was deleted.");
     }
 
-    const summary = `删除 ${proposed.request.count} 条浏览记录 · ${proposed.request.sites
-      .slice(0, 3)
-      .map((s) => s.domain)
-      .join(", ")}`;
-    const applied = await applyHistoryDeletion(proposed.urls, summary);
+    const applied = await applyHistoryDeletion(proposed.urls);
     if (!applied.ok && applied.deleted === 0) {
       return err(`Deletion failed: ${applied.error ?? "unknown error"}`);
     }
     return ok(
       `Deleted ${applied.deleted} history entr${applied.deleted === 1 ? "y" : "ies"} (all visits per URL). ` +
-        `This cannot be undone — it is listed as irreversible in Settings → 书签与历史.` +
+        `This cannot be undone — it is listed as irreversible in Settings → Bookmarks & history.` +
         (applied.error ? ` Partial failure: ${applied.error}` : ""),
+    );
+  },
+};
+
+// ── Tool: check_bookmark_links ───────────────────────────────────────────────
+
+const checkBookmarkLinksTool: Tool = {
+  name: "check_bookmark_links",
+  description:
+    "HEAD-check bookmarks (all of them, one folder subtree, or an explicit id list) and report the ones that look dead: " +
+    "404, 410, DNS/connection failures or a 5 s timeout. Concurrency 6, read-only — nothing is moved or deleted. " +
+    "Only clear-cut cases count as dead: 401/403/405/429/5xx mean the server answered, so those are NOT reported.\n\n" +
+    "USE WHEN: the user asks to clean up broken bookmarks. Then call propose_bookmark_plan with a create_folder " +
+    "\"待确认\" and moves for the reported ids — dead links are moved aside, never deleted.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      folderId: {
+        type: "string",
+        description: "Check only this folder subtree (id, title, or path). Omit to check every bookmark.",
+      },
+      ids: {
+        type: "array",
+        description: "Check only these bookmark ids (from search_bookmarks / get_bookmark_tree).",
+        items: { type: "string" },
+      },
+    },
+  },
+  handler: async (args, ctx): Promise<ActionResult> => {
+    const a = (args && typeof args === "object" ? args : {}) as {
+      folderId?: string;
+      ids?: unknown;
+    };
+    const denied = await requirePermission(ctx, "bookmarks");
+    if (denied) return denied;
+
+    const ids = Array.isArray(a.ids)
+      ? a.ids.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      : undefined;
+    const res = await checkBookmarkLinks({ folderId: a.folderId, ids });
+    if (!res.ok) return err(res.error);
+    if (res.checked === 0) {
+      return ok("No http(s) bookmarks in that scope — nothing to check.");
+    }
+    if (res.dead.length === 0) {
+      return ok(
+        `Checked ${res.checked} link(s) — all reachable` +
+          (res.skipped > 0 ? ` (${res.skipped} non-http(s) entries skipped).` : "."),
+      );
+    }
+    const lines = res.dead.map((d, i) => {
+      const attrs = [
+        `id="${escapeWrapperAttribute(d.id)}"`,
+        `url="${escapeWrapperAttribute(d.url)}"`,
+        `dead="${d.reason}"`,
+      ].join(" ");
+      return `[${i + 1}] <untrusted_bookmark ${attrs}>${escapeUntrustedWrappers(d.title)}</untrusted_bookmark>`;
+    });
+    return ok(
+      `Checked ${res.checked} link(s): ${res.dead.length} look dead. Only 404 / 410 / network failure / timeout ` +
+        `counts — servers that answered at all were left alone.\n${lines.join("\n")}\n` +
+        `Next step: propose_bookmark_plan with a "待确认" / "to verify" folder and moves for these ids. Never delete bookmarks.`,
     );
   },
 };
@@ -505,6 +605,7 @@ const proposeHistoryDeletionTool: Tool = {
 export const BROWSER_DATA_TOOLS: Tool[] = [
   searchBookmarksTool,
   getBookmarkTreeTool,
+  checkBookmarkLinksTool,
   createBookmarkTool,
   updateBookmarkTool,
   proposeBookmarkPlanTool,
@@ -515,6 +616,7 @@ export const BROWSER_DATA_TOOLS: Tool[] = [
 export const BROWSER_DATA_TOOL_NAMES = [
   "search_bookmarks",
   "get_bookmark_tree",
+  "check_bookmark_links",
   "create_bookmark",
   "update_bookmark",
   "propose_bookmark_plan",

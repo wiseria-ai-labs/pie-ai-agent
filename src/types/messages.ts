@@ -4,6 +4,7 @@ import type { Attachment } from "@/lib/images";
 import type { FileAttachment } from "@/lib/files/types";
 import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/types";
 import type { Quote, QuoteAddedMessage, PickerStartMessage, PickerStopMessage } from "./quotes";
+import type { BrowserResultEntry } from "@/lib/browser-data/types";
 
 // --- Page Content ---
 
@@ -346,6 +347,22 @@ export type DisplayMessage =
       /** 头部内容预览（前几行，已截断） */
       preview?: string;
       totalLines?: number;
+    }
+  | {
+      /** Pie 2.0 — clickable search results (F6). Titles/URLs are data; the
+       *  card localizes its labels. */
+      role: "browser-results";
+      kind: "history" | "bookmarks";
+      query?: string;
+      total: number;
+      entries: BrowserResultEntry[];
+    }
+  | {
+      /** Pie 2.0 — inline undo row for an applied bookmark change (F7). The
+       *  record itself lives in IDB (`bookmark_snapshots`); the panel re-reads
+       *  it so restore state survives reloads. */
+      role: "browser-change";
+      recordId: string;
     };
 
 // --- Agent: resolved element info (from snapshot, not LLM) ---
@@ -637,6 +654,25 @@ export interface FileOutputMessage {
   sessionId: string;
 }
 
+/** Pie 2.0 — SW hands the panel a clickable bookmark/history result list (F6). */
+export interface BrowserResultsMessage {
+  type: "browser-results";
+  kind: "history" | "bookmarks";
+  query?: string;
+  total: number;
+  entries: BrowserResultEntry[];
+  /** M2-U2 — session routing. */
+  sessionId: string;
+}
+
+/** Pie 2.0 — SW tells the panel an applied bookmark change is undoable (F7).
+ *  Only the record id travels; the panel reads the row from IDB. */
+export interface BrowserChangeMessage {
+  type: "browser-change";
+  recordId: string;
+  sessionId: string;
+}
+
 /** output_file — SW replies to a panel download-output request so the panel
  *  can resolve its pending promise (ok = chrome.downloads started; expired =
  *  artifact evicted from cache; error = chrome.downloads threw). */
@@ -685,5 +721,7 @@ export type PortMessageToPanel =
   | ChatInstructionRejectedMessage    // Issue #34
   | NeedsFileAccessMessage            // local file access card
   | FileOutputMessage                 // output_file download card
+  | BrowserResultsMessage             // Pie 2.0 search results card (F6)
+  | BrowserChangeMessage              // Pie 2.0 inline undo row (F7)
   | FileOutputResultMessage           // output_file download result
   | ChatRatelimitWaitMessage;         // Provider RPM 限流排队等待

@@ -157,6 +157,7 @@ export const SCRATCHPAD_TOOL_NAMES = [
 export const BROWSER_DATA_TOOL_NAMES = [
   "search_bookmarks",
   "get_bookmark_tree",
+  "check_bookmark_links",
   "create_bookmark",
   "update_bookmark",
   "propose_bookmark_plan",
@@ -326,6 +327,7 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // 点击后由 SW 执行，故 classify 为 read；单条 create/update 直接执行 → write。
   search_bookmarks: "read",
   get_bookmark_tree: "read",
+  check_bookmark_links: "read",
   propose_bookmark_plan: "read",
   create_bookmark: "write",
   update_bookmark: "write",
@@ -419,6 +421,7 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   delete_skill: "skill-authoring", list_skills: "skill-authoring",
   // Pie 2.0 — bookmarks / history (optional permissions; lazy, catalog-advertised)
   search_bookmarks: "browser-data", get_bookmark_tree: "browser-data",
+  check_bookmark_links: "browser-data",
   create_bookmark: "browser-data", update_bookmark: "browser-data",
   propose_bookmark_plan: "browser-data",
   search_history: "browser-data", propose_history_deletion: "browser-data",

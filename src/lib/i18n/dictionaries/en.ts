@@ -905,6 +905,8 @@ export const enDict = {
       decline: "Not now",
     },
     plan: {
+      title: "{count} changes",
+      description: "No bookmarks are deleted. A snapshot is saved before applying, and you can undo it in Settings → Bookmarks & history.",
       cancel: "Cancel",
       apply: "Apply",
       chipFolders: "{count} new folders",
@@ -913,11 +915,29 @@ export const enDict = {
       showAll: "Show all {count} changes",
       showLess: "Show less",
     },
+    change: {
+      planLabel: "Bookmark cleanup",
+      created: "Bookmark created · {title}",
+      updated: "Bookmark updated · {title}",
+      gone: "This change record has expired.",
+    },
+    results: {
+      historyTitle: "Browsing history",
+      bookmarksTitle: "Bookmarks",
+      total: "{count} results",
+      addBookmark: "Add to bookmarks",
+      added: "Added",
+      open: "Open",
+      visits: "{count} visits",
+      needBookmarksPermission: "Bookmarks permission is off — enable it in Settings → Bookmarks & history.",
+      more: "{count} more not shown",
+    },
     deletion: {
       title: "Delete {count} browsing history entries",
       sitesLabel: "Sites",
       warning: "Deleted history cannot be recovered — Pie keeps no backup. Bookmarks are unaffected.",
       deleteCount: "Delete {count}",
+      rangeSites: "{sites} sites · {from} – {to}",
     },
     page: {
       permissionsGroup: "Permissions",

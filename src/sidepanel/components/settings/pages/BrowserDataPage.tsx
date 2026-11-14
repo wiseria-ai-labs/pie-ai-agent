@@ -9,6 +9,7 @@ import {
   hasBrowserDataPermission,
   revokeBrowserDataPermission,
 } from "@/lib/browser-data/permissions";
+import { changeLabel } from "@/lib/browser-data/labels";
 import { listChanges } from "@/lib/browser-data/changes";
 import { restoreChangeById } from "@/lib/browser-data/bookmarks";
 
@@ -172,7 +173,7 @@ export default function BrowserDataPage() {
               >
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className={`truncate text-[13px] ${rec.restorable ? "text-fg-1" : "text-fg-2"}`}>
-                    {rec.summary}
+                    {changeLabel(rec, t)}
                   </span>
                   <span className="text-[11px] leading-[16px] text-fg-3">
                     {new Date(rec.at).toLocaleString()}

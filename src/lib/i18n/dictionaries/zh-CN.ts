@@ -896,6 +896,8 @@ export const zhCNDict = {
       decline: "不用了",
     },
     plan: {
+      title: "共 {count} 项改动",
+      description: "不会删除任何书签。应用前会自动保存一份快照，可在「设置 → 书签与历史」还原。",
       cancel: "取消",
       apply: "应用",
       chipFolders: "新文件夹 {count}",
@@ -904,11 +906,29 @@ export const zhCNDict = {
       showAll: "看全部 {count} 项改动",
       showLess: "收起",
     },
+    change: {
+      planLabel: "整理书签",
+      created: "新建书签 · {title}",
+      updated: "更新书签 · {title}",
+      gone: "这条改动记录已过期。",
+    },
+    results: {
+      historyTitle: "浏览记录",
+      bookmarksTitle: "书签",
+      total: "{count} 条结果",
+      addBookmark: "加到书签",
+      added: "已加入",
+      open: "打开",
+      visits: "{count} 次访问",
+      needBookmarksPermission: "Pie 还没有书签权限，去「设置 → 书签与历史」开启。",
+      more: "还有 {count} 条未显示",
+    },
     deletion: {
       title: "删除 {count} 条浏览记录",
       sitesLabel: "网站",
       warning: "浏览记录删除后无法恢复，Pie 也没有备份。书签不受影响。",
       deleteCount: "删除 {count} 条",
+      rangeSites: "{sites} 个网站 · {from} 至 {to}",
     },
     page: {
       permissionsGroup: "授权",
