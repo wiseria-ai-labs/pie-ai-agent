@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ZoomIn,
   RotateCcw,
+  Bookmark,
 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
@@ -407,7 +408,20 @@ export default function SettingsRoot({
         </Group>
       </div>
 
-      {/* Group 2 — preferences */}
+      {/* Group 2 — personalization (Pie 2.0 §1: memory · browser data · overlay · rules) */}
+      <div>
+        <GroupLabel>{t("settings.nav.personalization")}</GroupLabel>
+        <Group>
+          <NavRow
+            id="browserData"
+            icon={<Bookmark {...ROW_ICON} />}
+            label={t("settings.nav.browserData")}
+            onClick={() => onOpenPage("browserData")}
+          />
+        </Group>
+      </div>
+
+      {/* Group 3 — preferences */}
       <div>
         <GroupLabel>{t("settings.nav.preferences")}</GroupLabel>
         <Group>
@@ -439,7 +453,7 @@ export default function SettingsRoot({
         </Group>
       </div>
 
-      {/* Group 3 — about & support */}
+      {/* Group 4 — about & support */}
       <div>
         <GroupLabel>{t("settings.nav.support")}</GroupLabel>
         <Group>
