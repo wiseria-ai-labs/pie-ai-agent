@@ -69,7 +69,12 @@ describe("permission gate", () => {
     });
 
     const res = await tool("search_bookmarks").handler({ query: "vec" }, ctx());
-    expect(requestMock).toHaveBeenCalledWith("s1", "browser-permission", { domain: "bookmarks" });
+    expect(requestMock).toHaveBeenCalledWith(
+      "s1",
+      "browser-permission",
+      { domain: "bookmarks" },
+      expect.objectContaining({ signal: undefined }),
+    );
     expect(res.success).toBe(true);
     expect(res.observation).toContain("untrusted_bookmark");
   });
@@ -138,7 +143,7 @@ describe("propose_* cards", () => {
       },
       ctx(),
     );
-    expect(requestMock).toHaveBeenCalledWith("s1", "bookmark-plan", expect.anything());
+    expect(requestMock).toHaveBeenCalledWith("s1", "bookmark-plan", expect.anything(), expect.anything());
     expect(res.success).toBe(true);
     expect([...bm.nodes.values()].some((n) => n.title === "工作")).toBe(true);
   });

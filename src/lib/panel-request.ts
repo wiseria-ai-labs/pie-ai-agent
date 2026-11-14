@@ -6,6 +6,15 @@
 //
 // 注意：本原语**不是**风险拦截 confirm 层（那套已删，有 no-confirm-* 跨层测试守着）。
 // 它只服务"工具语义即问人"（授权 / 选文件 / 选模型）的场景。
+//
+// 可靠性契约（2.0 真机 bug 修复）：
+//   1. SW 侧 pending 保留 kind + payload，可**重投**。面板挂载 / 切换会话回来 /
+//      端口重连都通过 `panel-request-sync` 或 `registerPanelPort` 触发重投，同一个
+//      requestId 重发；面板按 requestId 去重，不会出现两张卡。
+//   2. `requestFromPanel` 接受 `signal`：abort 时立刻丢弃 pending、reject，并给面板
+//      发 `panel-request-resolved` 让卡片消失。Stop 必须能打断等待。
+//   3. 端口断开（面板刷新 / swPort 重连）**不再** reject pending —— 重连后重投即可
+//      恢复；真正放弃由用户 Stop（abort）或超时决定。
 
 import type { LocalFileResult } from "./local-file-request";
 import type { ScheduleDraftPayload, ScheduleModelSelection } from "./agent/tools/schedule-meta";
@@ -50,12 +59,23 @@ export interface PanelRequestMap {
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 
+export interface PanelRequestOptions {
+  timeoutMs?: number;
+  panelAttachMs?: number;
+  /** Abort the wait (user pressed Stop): drop the pending request and dismiss the card. */
+  signal?: AbortSignal;
+}
+
 interface PendingRequest {
   sessionId: string;
   kind: PanelRequestKind;
+  /** Retained so the request can be re-posted after a panel remount / reconnect. */
+  payload: unknown;
   resolve: (data: unknown) => void;
   reject: (e: Error) => void;
   timer?: ReturnType<typeof setTimeout>;
+  /** Detach the abort listener once settled (any path). */
+  cleanup?: () => void;
 }
 
 const portsBySession = new Map<string, chrome.runtime.Port>();
@@ -84,8 +104,52 @@ export function __resetPanelRequestState(): void {
   portsBySession.clear();
   portWaiters.clear();
   panelOpener = null;
-  for (const p of pendingByRequestId.values()) if (p.timer) clearTimeout(p.timer);
+  for (const p of pendingByRequestId.values()) {
+    if (p.timer) clearTimeout(p.timer);
+    p.cleanup?.();
+  }
   pendingByRequestId.clear();
+}
+
+// ── Delivery ────────────────────────────────────────────────────────────────
+
+/** Post to whatever port this session has right now; never throws. */
+function post(sessionId: string, msg: Record<string, unknown>): void {
+  const port = portsBySession.get(sessionId);
+  if (!port) return;
+  try {
+    port.postMessage(msg);
+  } catch (e) {
+    // Dead port — the pending entry survives and a reconnecting panel re-syncs.
+    console.warn(`[sw] panel-request post failed for session=${sessionId}:`, e);
+  }
+}
+
+function postRequest(sessionId: string, requestId: string, p: PendingRequest): void {
+  post(sessionId, {
+    type: "panel-request",
+    sessionId,
+    requestId,
+    kind: p.kind,
+    payload: p.payload,
+  });
+}
+
+/** Re-post every still-pending request for a session (same requestId). */
+function redeliverPending(sessionId: string): void {
+  if (!portsBySession.has(sessionId)) return;
+  for (const [requestId, p] of pendingByRequestId) {
+    if (p.sessionId !== sessionId) continue;
+    postRequest(sessionId, requestId, p);
+  }
+}
+
+/**
+ * 面板主动要一次全量重投（挂载 / 切回某会话 / 端口重连时发）。
+ * 幂等：面板按 requestId 去重。
+ */
+export function resyncPanelRequests(sessionId: string): void {
+  redeliverPending(sessionId);
 }
 
 export function registerPanelPort(sessionId: string, port: chrome.runtime.Port): void {
@@ -95,47 +159,74 @@ export function registerPanelPort(sessionId: string, port: chrome.runtime.Port):
     portWaiters.delete(sessionId);
     for (const resolve of waiters) resolve(port);
   }
+  // The SW may have delivered a card before this panel's listener existed
+  // (overlay hand-off, remount). Re-post whatever is still waiting.
+  redeliverPending(sessionId);
 }
 
-/** 等端口出现；超时返回 undefined。已存在则同步返回。 */
+/** 等端口出现；超时或 abort 返回 undefined。已存在则同步返回。 */
 function waitForPanelPort(
   sessionId: string,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<chrome.runtime.Port | undefined> {
   const existing = portsBySession.get(sessionId);
   if (existing) return Promise.resolve(existing);
+  if (signal?.aborted) return Promise.resolve(undefined);
   return new Promise((resolve) => {
     const set = portWaiters.get(sessionId) ?? new Set();
     portWaiters.set(sessionId, set);
+    const onAbort = () => finish(undefined);
     const finish = (port: chrome.runtime.Port | undefined) => {
       clearTimeout(timer);
       set.delete(done);
       if (set.size === 0) portWaiters.delete(sessionId);
+      signal?.removeEventListener("abort", onAbort);
       resolve(port);
     };
     const timer = setTimeout(() => finish(undefined), timeoutMs);
     const done = (port: chrome.runtime.Port) => finish(port);
     set.add(done);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    // Abort may have landed between the early return above and the listener
+    // registration (an already-aborted signal never fires) — settle now.
+    if (signal?.aborted) finish(undefined);
   });
 }
 
-/** Panel 关闭：reject 该 session 全部 pending，避免悬挂。 */
-export function unregisterPanelPort(sessionId: string): void {
+/**
+ * 端口断开：只清映射，**不** reject pending。
+ *
+ * 面板刷新 / swPort 透明重连 / 浮层交棒都会先断后连；旧实现把 pending 直接
+ * reject 掉，正在等用户点卡的 turn 就无故失败了。现在 pending 留着，下一个端口
+ * 注册时 `registerPanelPort` 立即重投；面板自己也会发 sync 再兜一层。
+ *
+ * `port` 可选：传入时只在"断的正是当前登记的那个端口"时才清映射（sibling 重连
+ * 可能已经写入新 port，别误删）。
+ */
+export function unregisterPanelPort(sessionId: string, port?: chrome.runtime.Port): void {
+  const current = portsBySession.get(sessionId);
+  if (port && current && current !== port) return;
   portsBySession.delete(sessionId);
-  for (const [reqId, p] of pendingByRequestId.entries()) {
-    if (p.sessionId !== sessionId) continue;
-    if (p.timer) clearTimeout(p.timer);
-    pendingByRequestId.delete(reqId);
-    p.reject(new Error(`panel-request cancelled (panel closed) for session ${sessionId}`));
-  }
+}
+
+// ── Request ─────────────────────────────────────────────────────────────────
+
+function abortError(kind: PanelRequestKind): Error {
+  const err = new Error(`panel-request "${kind}" aborted`);
+  err.name = "AbortError";
+  return err;
 }
 
 export async function requestFromPanel<K extends PanelRequestKind>(
   sessionId: string,
   kind: K,
   payload: PanelRequestMap[K]["req"],
-  opts?: { timeoutMs?: number; panelAttachMs?: number },
+  opts?: PanelRequestOptions,
 ): Promise<PanelRequestMap[K]["res"]> {
+  const signal = opts?.signal;
+  if (signal?.aborted) throw abortError(kind);
+
   let port = portsBySession.get(sessionId);
   if (!port) {
     // 2.0 overlay — an in-page run has no side panel to render a card in. Hand
@@ -150,32 +241,51 @@ export async function requestFromPanel<K extends PanelRequestKind>(
     if (!opened) {
       throw new Error(`Cannot send panel-request "${kind}": no sidepanel port for session ${sessionId}`);
     }
-    port = await waitForPanelPort(sessionId, opts?.panelAttachMs ?? PANEL_ATTACH_TIMEOUT_MS);
+    port = await waitForPanelPort(sessionId, opts?.panelAttachMs ?? PANEL_ATTACH_TIMEOUT_MS, signal);
+    if (signal?.aborted) throw abortError(kind);
     if (!port) {
       throw new Error(
         `Cannot send panel-request "${kind}": side panel did not attach for session ${sessionId}`,
       );
     }
   }
+
   const requestId = crypto.randomUUID();
   return new Promise<PanelRequestMap[K]["res"]>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (opts?.timeoutMs != null) {
       timer = setTimeout(() => {
-        pendingByRequestId.delete(requestId);
-        const p = portsBySession.get(sessionId);
-        if (p) p.postMessage({ type: "panel-request-timeout", sessionId, requestId });
+        if (!pendingByRequestId.delete(requestId)) return;
+        cleanup();
+        post(sessionId, { type: "panel-request-timeout", sessionId, requestId });
         reject(new Error(`panel-request "${kind}" timed out`));
       }, opts.timeoutMs);
     }
-    pendingByRequestId.set(requestId, {
+
+    const onAbort = () => {
+      if (!pendingByRequestId.delete(requestId)) return;
+      if (timer) clearTimeout(timer);
+      cleanup();
+      // Dismiss the card — the turn is over, nobody should answer it.
+      post(sessionId, { type: "panel-request-resolved", sessionId, requestId });
+      reject(abortError(kind));
+    };
+
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+
+    const pending: PendingRequest = {
       sessionId,
       kind,
+      payload,
       resolve: resolve as (data: unknown) => void,
       reject,
       timer,
-    });
-    port.postMessage({ type: "panel-request", sessionId, requestId, kind, payload });
+      cleanup,
+    };
+    pendingByRequestId.set(requestId, pending);
+    postRequest(sessionId, requestId, pending);
   });
 }
 
@@ -187,6 +297,7 @@ export function handlePanelResponse(
   const pending = pendingByRequestId.get(requestId);
   if (!pending) return;
   if (pending.timer) clearTimeout(pending.timer);
+  pending.cleanup?.();
   pendingByRequestId.delete(requestId);
   if (response.ok) pending.resolve(response.data);
   else pending.reject(new Error(response.reason));
@@ -204,9 +315,9 @@ export function resolvePendingByKind<K extends PanelRequestKind>(
   for (const [reqId, p] of pendingByRequestId.entries()) {
     if (p.kind !== kind) continue;
     if (p.timer) clearTimeout(p.timer);
+    p.cleanup?.();
     pendingByRequestId.delete(reqId);
-    const port = portsBySession.get(p.sessionId);
-    if (port) port.postMessage({ type: "panel-request-resolved", sessionId: p.sessionId, requestId: reqId });
+    post(p.sessionId, { type: "panel-request-resolved", sessionId: p.sessionId, requestId: reqId });
     p.resolve(data);
   }
 }

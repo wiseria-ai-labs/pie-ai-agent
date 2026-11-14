@@ -2239,10 +2239,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // IME hint below; it no longer gates tool availability.
       const cdpAvailable = currentCdpInput !== false;
 
+      // Per-task signal threaded into every HITL wait so Stop aborts a card.
+      const requestConsent = (sid: string) => requestCdpInputConsent(sid, { signal });
       const mouseDeps: import("./tools").MouseToolDeps = {
         acquireSession: acquireSessionForTask,
         sessionId,
-        requestConsent: requestCdpInputConsent,
+        requestConsent,
       };
       const mouseTools = getMouseTools(mouseDeps);
 
@@ -2250,12 +2252,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         acquireSession: acquireSessionForTask,
         pinnedOrigin,
         sessionId,
-        requestConsent: requestCdpInputConsent,
+        requestConsent,
       });
       const editorTools = getEditorTools({
         acquireSession: acquireSessionForTask,
         sessionId,
-        requestConsent: requestCdpInputConsent,
+        requestConsent,
       });
       // #62 — fail-closed vision gating (see filterToolsByVision). Screenshot
       // tools are only offered to models KNOWN to support vision; non-vision
@@ -2265,7 +2267,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       });
       const requestLocalFileTool = buildRequestLocalFileTool({
         sessionId,
-        requestFile: requestLocalFileFromPanel,
+        requestFile: (sid: string) => requestLocalFileFromPanel(sid, { signal }),
       });
       const outputFileTool = buildOutputFileTool({
         sessionId,
@@ -2310,10 +2312,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         confirmSkillRun: makeSessionSkillConfirm({
           isApproved: (skillId) => isSkillApprovedInSession(sessionId, skillId),
           requestConfirm: (p) =>
-            requestFromPanel(sessionId, "skill-run-confirm", {
-              ...p,
-              skillIsolation: bridgeSkillIsolation(),
-            }),
+            requestFromPanel(
+              sessionId,
+              "skill-run-confirm",
+              { ...p, skillIsolation: bridgeSkillIsolation() },
+              { signal },
+            ),
           record: (skillId) => recordSkillApproval(sessionId, skillId),
         }),
         // #330 — daemon-off 时 declares-no-scripts 报错追加 Pie Link 开启引导。
@@ -2351,11 +2355,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                 return usable.map(({ id, label }) => ({ id, label }));
               },
               requestConsent: (p) =>
-                requestFromPanel(sessionId, "run-local-agent", {
-                  prompt: p.prompt,
-                  cwd: p.cwd,
-                  agents: p.agents,
-                }),
+                requestFromPanel(
+                  sessionId,
+                  "run-local-agent",
+                  { prompt: p.prompt, cwd: p.cwd, agents: p.agents },
+                  { signal },
+                ),
             }),
             // hand-off 门禁在 daemon 声明的能力上（spec §7 能力交集降级）：新扩展对旧
             // daemon（Slice 0，不报 handoff_to_agent）时不装配此工具，静默降级。
@@ -2373,7 +2378,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
                         appLaunch,
                       }));
                     },
-                    requestConsent: (p) => requestFromPanel(sessionId, "handoff-to-agent", p),
+                    requestConsent: (p) =>
+                      requestFromPanel(sessionId, "handoff-to-agent", p, { signal }),
                   }),
                 ]
               : []),
@@ -3129,11 +3135,11 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             // excluded from their tool set via excludeToolNames (run.ts
             // HEADLESS_EXCLUDE_TOOL_NAMES), so requestFromPanel is never called.
             requestModelSelection: (payload) =>
-              requestFromPanel(sessionId, "schedule-model", payload),
+              requestFromPanel(sessionId, "schedule-model", payload, { signal }),
             // Pie 2.0 §4.2 — the monitor card. Same suspension pattern; the
             // record is created only after the user answers it.
             requestMonitorDraft: (payload) =>
-              requestFromPanel(sessionId, "monitor-draft", payload),
+              requestFromPanel(sessionId, "monitor-draft", payload, { signal }),
             // #254 — long-running tools (wait) resolve early on user abort.
             signal,
           });

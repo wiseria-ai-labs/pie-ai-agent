@@ -27,6 +27,9 @@ export function usePanelRequest(sessionId: string | null): State {
   const [active, setActive] = useState<ActivePanelRequest | null>(null);
 
   useEffect(() => {
+    // Switching sessions drops the card; if the new session has a suspended
+    // request, the sync below brings it back immediately.
+    setActive(null);
     if (!sessionId) return;
     const listener = (msg: unknown) => {
       if (typeof msg !== "object" || msg === null) return;
@@ -39,7 +42,13 @@ export function usePanelRequest(sessionId: string | null): State {
       };
       if (m.sessionId !== sessionId) return;
       if (m.type === "panel-request" && m.requestId && m.kind) {
-        setActive({ requestId: m.requestId, kind: m.kind, payload: m.payload });
+        // Same requestId re-delivered (sync / port reconnect) → keep the
+        // existing object so the card keeps its internal state untouched.
+        setActive((cur) =>
+          cur && cur.requestId === m.requestId
+            ? cur
+            : { requestId: m.requestId!, kind: m.kind!, payload: m.payload },
+        );
       } else if (
         m.type === "panel-request-timeout" ||
         m.type === "panel-request-resolved"
@@ -48,11 +57,13 @@ export function usePanelRequest(sessionId: string | null): State {
       }
     };
     const unsubscribe = swPort.connect(sessionId, { onMessage: listener });
+    // Ask the SW to re-post anything still pending for this session. Covers
+    // the hook mounting after the SW already delivered (e.g. overlay hand-off
+    // opened the panel, or Chat mounted later than useSession's port) and
+    // switching back to a session whose card is still suspended.
+    swPort.send(sessionId, { type: "panel-request-sync", sessionId });
     return unsubscribe;
   }, [sessionId]);
-
-  // 切 session 时清卡，避免残留。
-  useEffect(() => setActive(null), [sessionId]);
 
   const respond = useCallback(
     (requestId: string, body: PanelResponseBody) => {

@@ -11,6 +11,12 @@ export interface LocalFileResult {
 
 export const REQUEST_TIMEOUT_MS = 120_000;
 
-export async function requestLocalFileFromPanel(sessionId: string): Promise<LocalFileResult> {
-  return requestFromPanel(sessionId, "local-file", {}, { timeoutMs: REQUEST_TIMEOUT_MS });
+export async function requestLocalFileFromPanel(
+  sessionId: string,
+  opts?: { signal?: AbortSignal },
+): Promise<LocalFileResult> {
+  return requestFromPanel(sessionId, "local-file", {}, {
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    signal: opts?.signal,
+  });
 }

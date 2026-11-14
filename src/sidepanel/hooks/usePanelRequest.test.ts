@@ -51,4 +51,42 @@ describe("usePanelRequest", () => {
     act(() => trigger({ type: "panel-request-resolved", sessionId: "S1", requestId: "r1" }));
     expect(result.current.active).toBeNull();
   });
+
+  // ── Reliability: the panel asks the SW to re-post on mount / switch / reconnect ──
+  it("asks the SW to re-post pending cards on mount", () => {
+    renderHook(() => usePanelRequest("S1"));
+    expect(send).toHaveBeenCalledWith("S1", { type: "panel-request-sync", sessionId: "S1" });
+  });
+
+  it("does not connect or sync without a session", () => {
+    renderHook(() => usePanelRequest(null));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("keeps the card through a session round-trip (switch away and back)", () => {
+    const { result, rerender } = renderHook(({ sid }) => usePanelRequest(sid), {
+      initialProps: { sid: "S1" as string | null },
+    });
+    act(() => trigger({ type: "panel-request", sessionId: "S1", requestId: "r1", kind: "bookmark-plan", payload: { a: 1 } }));
+    expect(result.current.active).toMatchObject({ requestId: "r1" });
+
+    // Switch away → the card is cleared and the other session is synced.
+    rerender({ sid: "S2" });
+    expect(result.current.active).toBeNull();
+    expect(send).toHaveBeenCalledWith("S2", { type: "panel-request-sync", sessionId: "S2" });
+
+    // Switch back → sync again; the SW re-posts the still-pending card.
+    rerender({ sid: "S1" });
+    expect(send).toHaveBeenCalledWith("S1", { type: "panel-request-sync", sessionId: "S1" });
+    act(() => trigger({ type: "panel-request", sessionId: "S1", requestId: "r1", kind: "bookmark-plan", payload: { a: 1 } }));
+    expect(result.current.active).toMatchObject({ requestId: "r1" });
+  });
+
+  it("a re-delivered requestId does not reset the card (one card, stable identity)", () => {
+    const { result } = renderHook(() => usePanelRequest("S1"));
+    act(() => trigger({ type: "panel-request", sessionId: "S1", requestId: "r1", kind: "bookmark-plan", payload: {} }));
+    const first = result.current.active;
+    act(() => trigger({ type: "panel-request", sessionId: "S1", requestId: "r1", kind: "bookmark-plan", payload: {} }));
+    expect(result.current.active).toBe(first);
+  });
 });

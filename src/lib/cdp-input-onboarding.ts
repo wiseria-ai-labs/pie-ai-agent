@@ -9,8 +9,11 @@ import { requestFromPanel, resolvePendingByKind } from "./panel-request";
  * session 翻开关触发带外放行（见 onCdpInputEnabledChanged）。resolve 后持久化
  * 授权 flag（幂等；放行路径下 flag 已为 true，重设无副作用）。
  */
-export async function requestCdpInputConsent(sessionId: string): Promise<boolean> {
-  const granted = await requestFromPanel(sessionId, "cdp-consent", {});
+export async function requestCdpInputConsent(
+  sessionId: string,
+  opts?: { signal?: AbortSignal },
+): Promise<boolean> {
+  const granted = await requestFromPanel(sessionId, "cdp-consent", {}, { signal: opts?.signal });
   await setCdpInputEnabled(granted);
   return granted;
 }

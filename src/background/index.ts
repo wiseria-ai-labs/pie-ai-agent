@@ -103,6 +103,7 @@ import {
   registerPanelPort,
   unregisterPanelPort,
   handlePanelResponse,
+  resyncPanelRequests,
 } from "@/lib/panel-request";
 import { onCdpInputEnabledChanged } from "@/lib/cdp-input-onboarding";
 import {
@@ -2329,6 +2330,12 @@ chrome.runtime.onConnect.addListener((port) => {
       if (r.ok === true) handlePanelResponse(r.requestId, { ok: true, data: r.data });
       else if (r.ok === false) handlePanelResponse(r.requestId, { ok: false, reason: typeof r.reason === "string" ? r.reason : "panel-response error" });
     }
+    // HITL — the panel mounted / switched back / reconnected and wants every
+    // still-pending card re-posted (same requestId). The port's own session is
+    // authoritative; a mismatched sessionId in the message is ignored.
+    if (rawMsg.type === "panel-request-sync") {
+      resyncPanelRequests(portSessionId);
+    }
     // output_file — panel asks SW to download a cached artifact. SW shows a
     // Save As dialog (saveAs:true) so the user picks the location; replies with
     // file-output-result so the panel resolves its pending promise.
@@ -2368,7 +2375,9 @@ chrome.runtime.onConnect.addListener((port) => {
       // deleting them here would evict the real side panel of the same session.
       detachPanelFromRun(portSessionId, port);
       portsBySession.delete(portSessionId);
-      unregisterPanelPort(portSessionId);
+      // Only clears the mapping when this really is the registered port;
+      // pending cards survive and are re-delivered on reconnect.
+      unregisterPanelPort(portSessionId, port);
     }
 
     // 2.0 overlay — an overlay task's port lives in the page document, so a

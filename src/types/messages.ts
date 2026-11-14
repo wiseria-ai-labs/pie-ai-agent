@@ -153,6 +153,17 @@ export interface PanelResponseMessage {
 }
 
 /**
+ * HITL — panel → SW: "re-post every panel-request still pending for this
+ * session". Sent when usePanelRequest mounts, when the user switches back to a
+ * session, and on port reconnect; the SW re-sends with the same requestId so
+ * the panel's single-active-slot state never duplicates a card.
+ */
+export interface PanelRequestSyncMessage {
+  type: "panel-request-sync";
+  sessionId: string;
+}
+
+/**
  * Issue #34 — SW → panel: broadcast current pending queue state.
  * Sent after every queue mutation (add / cancel / drain) and on panel
  * reconnect. Panel cross-references chatMessageId to slot.messages.id to
@@ -775,6 +786,7 @@ export type PortMessageToWorker =
   | ChatInstructionCancelMessage   // Issue #34
   | DownloadOutputMessage          // output_file
   | PanelResponseMessage           // HITL panel-request
+  | PanelRequestSyncMessage        // HITL panel-request re-delivery
   | PickerStartMessage             // issue #38 element picker
   | PickerStopMessage;             // issue #38 element picker
 

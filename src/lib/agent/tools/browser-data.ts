@@ -51,6 +51,16 @@ function ok(observation: string): ActionResult {
   return { success: true, observation };
 }
 
+/**
+ * The user pressed Stop while the card was open. `requestFromPanel` rejects
+ * with an AbortError; report that plainly instead of "the card could not be
+ * shown", and create nothing.
+ */
+function aborted(ctx: ToolHandlerContext): ActionResult | null {
+  if (!ctx.signal?.aborted) return null;
+  return err("The user stopped the task while the card was open — no changes were made.");
+}
+
 /** Local `YYYY-MM-DD HH:mm` (times are the user's device times). */
 function fmtTime(ms: number | undefined): string {
   if (!ms) return "";
@@ -80,8 +90,10 @@ async function requirePermission(
   }
   let granted = false;
   try {
-    granted = await requestFromPanel(sessionId, "browser-permission", { domain });
+    granted = await requestFromPanel(sessionId, "browser-permission", { domain }, { signal: ctx.signal });
   } catch (e) {
+    const stopped = aborted(ctx);
+    if (stopped) return stopped;
     return err(
       `${domain} permission is not granted and the request card could not be shown ` +
         `(${e instanceof Error ? e.message : String(e)}). Ask the user to open the side panel ` +
@@ -358,8 +370,12 @@ const proposeBookmarkPlanTool: Tool = {
 
     let approved = false;
     try {
-      approved = await requestFromPanel(ctx.sessionId, "bookmark-plan", planned.request);
+      approved = await requestFromPanel(ctx.sessionId, "bookmark-plan", planned.request, {
+        signal: ctx.signal,
+      });
     } catch (e) {
+      const stopped = aborted(ctx);
+      if (stopped) return stopped;
       return err(
         `The plan card could not be shown (${e instanceof Error ? e.message : String(e)}). ` +
           `Tell the user the plan is ready and to reopen the side panel.`,
@@ -488,8 +504,12 @@ const proposeHistoryDeletionTool: Tool = {
 
     let approved = false;
     try {
-      approved = await requestFromPanel(ctx.sessionId, "history-deletion", proposed.request);
+      approved = await requestFromPanel(ctx.sessionId, "history-deletion", proposed.request, {
+        signal: ctx.signal,
+      });
     } catch (e) {
+      const stopped = aborted(ctx);
+      if (stopped) return stopped;
       return err(
         `The deletion card could not be shown (${e instanceof Error ? e.message : String(e)}). ` +
           `Tell the user it is ready and to reopen the side panel.`,

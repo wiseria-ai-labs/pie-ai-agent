@@ -6,6 +6,7 @@ import {
   handlePanelResponse,
   resolvePendingByKind,
   setPanelRequestOpener,
+  resyncPanelRequests,
   __resetPanelRequestState,
 } from "./panel-request";
 
@@ -52,12 +53,108 @@ describe("panel-request", () => {
     await expect(b).resolves.toMatchObject({ name: "f" });
   });
 
-  it("rejects all pending for a session when the panel port unregisters", async () => {
+  // ── Reliability: a card must survive the panel going away and coming back ──
+  it("keeps a pending request across a port replacement and re-delivers it", async () => {
+    const p1 = fakePort();
+    registerPanelPort("S1", p1);
+    const p = requestFromPanel<"cdp-consent">("S1", "cdp-consent", {});
+    const requestId = p1.sent[0].requestId;
+
+    // Panel refresh / swPort reconnect: old port drops, new one registers.
+    unregisterPanelPort("S1", p1 as unknown as chrome.runtime.Port);
+    const p2 = fakePort();
+    registerPanelPort("S1", p2);
+
+    const redelivered = p2.sent.find((m) => m.type === "panel-request" && m.requestId === requestId);
+    expect(redelivered).toMatchObject({ kind: "cdp-consent", sessionId: "S1" });
+
+    handlePanelResponse(requestId, { ok: true, data: true });
+    await expect(p).resolves.toBe(true);
+  });
+
+  it("ignores a stale port's unregister (sibling reconnect already replaced it)", async () => {
+    const p1 = fakePort();
+    const p2 = fakePort();
+    registerPanelPort("S1", p1);
+    registerPanelPort("S1", p2);
+    unregisterPanelPort("S1", p1 as unknown as chrome.runtime.Port);
+    const p = requestFromPanel<"cdp-consent">("S1", "cdp-consent", {});
+    expect(p2.sent.some((m) => m.type === "panel-request")).toBe(true);
+    handlePanelResponse(p2.sent[0].requestId, { ok: true, data: false });
+    await expect(p).resolves.toBe(false);
+  });
+
+  it("re-posts on an explicit panel sync with the same requestId and payload", async () => {
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    void requestFromPanel<"browser-permission">("S1", "browser-permission", { domain: "history" });
+    const first = port.sent[0];
+    resyncPanelRequests("S1");
+    const again = port.sent.filter((m) => m.type === "panel-request").at(-1)!;
+    expect(again.requestId).toBe(first.requestId);
+    expect(again.payload).toEqual({ domain: "history" });
+    handlePanelResponse(first.requestId, { ok: true, data: true });
+  });
+
+  it("does not re-post after the request settled", async () => {
     const port = fakePort();
     registerPanelPort("S1", port);
     const p = requestFromPanel<"cdp-consent">("S1", "cdp-consent", {});
-    unregisterPanelPort("S1");
-    await expect(p).rejects.toThrow(/panel closed/i);
+    handlePanelResponse(port.sent[0].requestId, { ok: true, data: true });
+    await p;
+    resyncPanelRequests("S1");
+    expect(port.sent.filter((m) => m.type === "panel-request")).toHaveLength(1);
+  });
+
+  // ── Abort: Stop must end the wait and dismiss the card ────────────────────
+  it("abort rejects immediately, dismisses the card, and drops the pending", async () => {
+    const controller = new AbortController();
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestFromPanel<"cdp-consent">("S1", "cdp-consent", {}, { signal: controller.signal });
+    const requestId = port.sent[0].requestId;
+
+    controller.abort();
+    await expect(p).rejects.toThrow(/aborted/i);
+    expect(port.sent.some((m) => m.type === "panel-request-resolved" && m.requestId === requestId)).toBe(true);
+
+    // A late answer is a no-op — nothing is pending anymore.
+    handlePanelResponse(requestId, { ok: true, data: true });
+    resyncPanelRequests("S1");
+    expect(port.sent.filter((m) => m.type === "panel-request")).toHaveLength(1);
+  });
+
+  it("rejects before posting when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    await expect(
+      requestFromPanel("S1", "cdp-consent", {}, { signal: controller.signal }),
+    ).rejects.toThrow(/aborted/i);
+    expect(port.sent).toHaveLength(0);
+  });
+
+  it("abort also interrupts waiting for the panel to attach", async () => {
+    setPanelRequestOpener(vi.fn(async () => true));
+    const controller = new AbortController();
+    const p = requestFromPanel("S1", "cdp-consent", {}, {
+      panelAttachMs: 5_000,
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(p).rejects.toThrow(/aborted/i);
+  });
+
+  it("stops listening for abort once answered", async () => {
+    const controller = new AbortController();
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestFromPanel<"cdp-consent">("S1", "cdp-consent", {}, { signal: controller.signal });
+    handlePanelResponse(port.sent[0].requestId, { ok: true, data: true });
+    await p;
+    controller.abort();
+    expect(port.sent.some((m) => m.type === "panel-request-resolved")).toBe(false);
   });
 
   it("rejects on timeout and posts a timeout dismiss", async () => {
