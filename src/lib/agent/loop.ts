@@ -58,6 +58,7 @@ import { buildReadLocalFileTool, buildRequestLocalFileTool, buildOutputFileTool 
 import { buildScratchpadTools } from "./tools/scratchpad";
 import { createExtractRecordsTool } from "./tools/page-atlas";
 import { buildRunSkillScriptTool, buildReadSkillOutputTool, makeSessionSkillConfirm } from "./tools/skill-script";
+import { buildProposeRewriteTool } from "./tools/rewrite";
 import {
   saveRecords as svcSaveRecords,
   updateNotes as svcUpdateNotes,
@@ -68,6 +69,7 @@ import {
 } from "../scratchpad/service";
 import { queryScratchpad as svcQueryScratchpad } from "../scratchpad/sql-bridge";
 import { getEnabledSkillEntries, getActiveSkillSource } from "@/background/skill-source";
+import { hideSurfaces, showSurfaces, withSurfaceHidden } from "@/lib/overlay/surface-bridge";
 import { isFilePdfUrl, isPdfTabAsync } from "../pdf/detect";
 import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
@@ -335,6 +337,12 @@ export interface AgentLoopContext {
    * the two exclusion paths compose cleanly without order dependency.
    */
   excludeToolNames?: readonly string[];
+  /**
+   * 2.0 overlay — this run may offer `propose_rewrite` because the user's
+   * current selection is editable (write-back is possible). False/absent for
+   * every other caller, including the side panel.
+   */
+  hasEditableSelection?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1446,8 +1454,17 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
     sendAgentDone(emit, { ...msg, sessionId });
   };
   // M2-U2 P1-11 — session-bound sendAgentStep that auto-injects sessionId.
+  // 2.0 overlay — also stamps the focused tab so the in-page capsule can
+  // follow the agent across tabs. `pinnedTabId` is assigned before any emit
+  // (the closure only runs after the task started).
   const emitStep = (msg: Omit<AgentStepMessage, "sessionId">): void => {
-    sendAgentStep(emit, { ...msg, sessionId });
+    sendAgentStep(emit, {
+      ...msg,
+      sessionId,
+      ...(typeof pinnedTabId === "number" && pinnedTabId !== NO_PAGE_SENTINEL
+        ? { focusTabId: pinnedTabId }
+        : {}),
+    });
   };
 
   // 1. Anchor tab + origin at task start.
@@ -2205,6 +2222,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         readSkillOutputTool,
         loadToolsTool,
         ...localBridgeTools, // Slice 0 — run_local_agent (bridge-gated)
+        // 2.0 overlay — only when this turn carries an EDITABLE selection:
+        // a rewrite of read-only text could never be written back.
+        ...(ctx.hasEditableSelection ? [buildProposeRewriteTool()] : []),
       ];
       const disclosed = selectTools(fullToolList, activeToolGroups);
       const allToolsBeforeExclude = filterToolsByVision(disclosed, modelConfig.vision);
@@ -2806,13 +2826,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           }
 
           const captureCtx = { sessionId, pinnedTabId };
-          const outcome = tc.name === "capture_video_frame"
-            ? await dispatchCaptureVideoFrame(captureCtx, (tc.args ?? {}) as { timeSeconds?: unknown })
-            : tc.name === "capture_visible_tab"
-            ? await dispatchCaptureVisibleTab(captureCtx)
-            : await dispatchCaptureFullPageTab(captureCtx, {
-                acquireSession: async ({ tabId }) => acquireSessionForTask(tabId),
-              });
+          const outcome = await withSurfaceHidden(pinnedTabId, async () =>
+            tc.name === "capture_video_frame"
+              ? await dispatchCaptureVideoFrame(captureCtx, (tc.args ?? {}) as { timeSeconds?: unknown })
+              : tc.name === "capture_visible_tab"
+                ? await dispatchCaptureVisibleTab(captureCtx)
+                : await dispatchCaptureFullPageTab(captureCtx, {
+                    acquireSession: async ({ tabId }) => acquireSessionForTask(tabId),
+                  }),
+          );
 
           if (!outcome.ok) {
             const rejectObs = tc.name === "capture_video_frame"
@@ -2890,7 +2912,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
           args: redactArgsForPanel(tc.name, tc.args),
         };
         let result;
+        // 2.0 overlay — write-class tools act on the page under a capsule the
+        // agent cannot see; hide it for the duration so a click can never land
+        // on Pie's own surface. Reads are untouched (cheap, and they never
+        // dispatch a pointer event).
+        const hideOwnSurface = getToolClass(tc.name) === "write";
         try {
+          if (hideOwnSurface) await hideSurfaces(pinnedTabId);
           result = await tool.handler(tc.args, {
             tabId: pinnedTabId,
             // #296 — session 维度产物隔离：run_skill_script / read_skill_output 透传给 daemon。
@@ -2943,6 +2971,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             success: false,
             error: e instanceof Error ? e.message : "Tool execution failed",
           };
+        } finally {
+          if (hideOwnSurface) await showSurfaces(pinnedTabId);
         }
 
         let observation = result.observation ?? result.error ?? "";

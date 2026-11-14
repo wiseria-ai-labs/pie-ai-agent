@@ -145,6 +145,10 @@ export const SCRATCHPAD_TOOL_NAMES = [
   "query_scratchpad",
 ] as const;
 
+// 2.0 overlay — rewrite proposal (read class: it only produces the card; the
+// user's Replace click is what writes the page).
+export const REWRITE_TOOL_NAMES = ["propose_rewrite"] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
@@ -158,6 +162,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PDF_TOOL_NAMES,
   ...LOCAL_FILE_TOOL_NAMES,
   ...SCRATCHPAD_TOOL_NAMES,
+  ...REWRITE_TOOL_NAMES,
   ...DISCLOSURE_TOOL_NAMES,
 ] as const;
 
@@ -302,6 +307,9 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   run_local_agent: "write",
   // hand-off：建目录 / 落盘 / 唤起本地交互式会话——本地写动作。
   handoff_to_agent: "write",
+  // 2.0 overlay — propose_rewrite only renders a card; the write is the user's
+  // "替换原文" click, handled by the content script, not by a tool.
+  propose_rewrite: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class
@@ -391,6 +399,9 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   // not by disclosure).
   run_local_agent: "core",
   handoff_to_agent: "core",
+  // 2.0 overlay — present only on runs that carry an editable selection
+  // (existence gated by the chat-start payload, not by disclosure).
+  propose_rewrite: "core",
 };
 
 // Build-time exhaustive check — every known tool MUST declare a group.
