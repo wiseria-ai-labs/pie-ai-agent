@@ -281,6 +281,11 @@ const monitorKeepAlive: KeepAlive = createKeepAlive({
 });
 
 async function checkMonitorWithDeps(monitorId: string): Promise<void> {
+  // Skip-if-running — same guard schedules get from listRunningRuns. Without it
+  // a startup reconcile racing the alarm that woke the SW (single-shot alarms
+  // are removed by Chrome when they fire, so reconcile sees "no alarm" and
+  // dispatches too) would run two checks for one edge and could notify twice.
+  if (runningMonitorIds.has(monitorId)) return;
   runningMonitorIds.add(monitorId);
   monitorKeepAlive.ensure();
   try {
