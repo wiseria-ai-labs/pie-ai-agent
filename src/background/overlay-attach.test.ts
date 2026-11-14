@@ -12,10 +12,16 @@ import {
   attachPanelToRun,
   detachOverlayRun,
   detachPanelFromRun,
+  ensurePanelForOverlayRequest,
   isOverlayRunLive,
   startOverlayRun,
   wrapOverlayEmit,
 } from "./overlay";
+import { openPanel } from "./panel-open";
+
+// The panel open path itself has its own suite (panel-open.test.ts); here we
+// only pin that the HITL fallback asks for it.
+vi.mock("./panel-open", () => ({ openPanel: vi.fn() }));
 
 vi.stubGlobal("chrome", {
   runtime: {
@@ -113,5 +119,28 @@ describe("overlay run → side panel attach (detached run keeps streaming)", () 
     const before = panel.postMessage.mock.calls.length;
     emit(chunk(sid, "after-detach"));
     expect(panel.postMessage.mock.calls.length).toBe(before);
+  });
+
+  // HITL: a panel-request inside an overlay run hands the conversation over to
+  // the side panel (the card can't render in the page) and tells the overlay.
+  it("panel-request handoff opens the panel and notifies the overlay document", async () => {
+    const sid = "hitl-1";
+    const overlayPort = fakePort();
+    startOverlayRun(
+      sid,
+      11,
+      overlayPort as unknown as chrome.runtime.Port,
+      new AbortController(),
+    );
+
+    await expect(ensurePanelForOverlayRequest(sid)).resolves.toBe(true);
+    expect(overlayPort.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "overlay-notice", sessionId: sid, notice: "panel-request" }),
+    );
+    expect(openPanel).toHaveBeenCalledWith({ tabId: 11 }, expect.any(String));
+  });
+
+  it("declines the handoff for sessions without an overlay run", async () => {
+    await expect(ensurePanelForOverlayRequest("no-run")).resolves.toBe(false);
   });
 });

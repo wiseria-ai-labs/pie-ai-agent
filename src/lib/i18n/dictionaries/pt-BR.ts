@@ -1125,6 +1125,8 @@ export const ptBRDict = {
       thinking: "Lendo a página…",
       error: "Algo deu errado: {error}",
       viewerNotice: "Esta tarefa começou antes e continua rodando em segundo plano.",
+      needsPanelConfirm: "Precisa de confirmação no painel lateral · aberto",
+      memoryWrong: "Não está certo",
       rewriteLabel: "Reescrita",
       original: "Original",
       replace: "Substituir",

@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/lib/model-router";
 import type { DisplayMessage, PortMessageToPanel, PortMessageToWorker } from "@/types";
+import type { MemoryEntry } from "@/lib/memory/types";
 import { getSessionMeta, persistSessionMessages } from "@/lib/sessions/storage";
 import { deriveTitleFromMessages } from "@/lib/sessions/title";
 import { swPort } from "@/lib/sw-connection/manager";
@@ -21,6 +22,9 @@ export interface OverlaySendInput {
   content: string;
   expandedForLLM?: string;
   editableSelection?: boolean;
+  /** Pie 2.0 memory — overlay prefetch result for this turn (spec §5.5). */
+  memoryPick?: MemoryEntry[];
+  memoryPickAsOf?: number;
 }
 
 export interface OverlaySessionApi {
@@ -30,6 +34,8 @@ export interface OverlaySessionApi {
   streamingText: string;
   streamingThinking: string;
   error: string | null;
+  /** The run needs the side panel (a HITL card); the panel was opened. */
+  panelNotice: "panel-request" | null;
   send: (input: OverlaySendInput) => void;
   abort: () => void;
   reload: () => Promise<void>;
@@ -68,6 +74,7 @@ export function useOverlaySession(args: {
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [panelNotice, setPanelNotice] = useState<"panel-request" | null>(null);
 
   const messagesRef = useRef<DisplayMessage[]>([]);
   const accumulatedRef = useRef("");
@@ -130,6 +137,7 @@ export function useOverlaySession(args: {
       if (msg.type === "chat-done") {
         const next = flushAssistant();
         setStreaming(false);
+        setPanelNotice(null);
         persist(next);
         if (!startedHereRef.current) void reload();
         return;
@@ -137,6 +145,7 @@ export function useOverlaySession(args: {
       if (msg.type === "chat-error") {
         const next = flushAssistant();
         setStreaming(false);
+        setPanelNotice(null);
         setError(msg.error);
         persist(next);
         if (!startedHereRef.current) void reload();
@@ -182,12 +191,47 @@ export function useOverlaySession(args: {
         ];
         patchMessages(next);
         setStreaming(false);
+        setPanelNotice(null);
         persist(next);
         if (!startedHereRef.current) void reload();
         return;
       }
       if (msg.type === "session-toast") {
         setError(msg.text);
+        return;
+      }
+      // 2.0 memory — the chip under the answer, and remember/forget rows. The
+      // SW emitted the chip right before the turn's terminal event, so the
+      // answer text is still in the accumulator and must be flushed first.
+      if (msg.type === "memory-used") {
+        if (msg.items.length === 0) return;
+        const base = flushAssistant();
+        const next: DisplayMessage[] = [...base, { role: "memory-used", items: msg.items }];
+        patchMessages(next);
+        persist(next);
+        return;
+      }
+      if (msg.type === "memory-event") {
+        const base = flushAssistant();
+        const next: DisplayMessage[] = [
+          ...base,
+          {
+            role: "memory-event",
+            eventId: msg.eventId,
+            kind: msg.kind,
+            label: msg.label,
+            ...(msg.encrypted ? { encrypted: true as const } : {}),
+            count: msg.count,
+          },
+        ];
+        patchMessages(next);
+        persist(next);
+        return;
+      }
+      // 2.0 overlay — the run needs a HITL card the page surface can't show;
+      // the SW opened the side panel on this session.
+      if (msg.type === "overlay-notice") {
+        setPanelNotice(msg.notice);
         return;
       }
       // Everything else (quotes, usage, instructions, HITL cards, file output)
@@ -251,6 +295,7 @@ export function useOverlaySession(args: {
       setStreamingThinking("");
       setStreaming(true);
       setError(null);
+      setPanelNotice(null);
       startedHereRef.current = true;
 
       const fallbackTitle = isFirstMessage ? deriveTitleFromMessages(next) : undefined;
@@ -261,6 +306,10 @@ export function useOverlaySession(args: {
         overlayTabId: tabId,
         anchorTabId: tabId,
         ...(input.editableSelection ? { editableSelection: true } : {}),
+        ...(input.memoryPick && input.memoryPick.length > 0
+          ? { memoryPick: input.memoryPick }
+          : {}),
+        ...(input.memoryPickAsOf !== undefined ? { memoryPickAsOf: input.memoryPickAsOf } : {}),
         ...(fallbackTitle !== undefined ? { fallbackTitle } : {}),
       } satisfies PortMessageToWorker);
 
@@ -285,6 +334,7 @@ export function useOverlaySession(args: {
     streamingText,
     streamingThinking,
     error,
+    panelNotice,
     send,
     abort,
     reload,

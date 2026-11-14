@@ -117,6 +117,24 @@ describe("overlay run state", () => {
     expect(detachedMessagesToPersist({ ...run, detached: true })).toHaveLength(1);
   });
 
+  it("keeps the memory chip under the answer (flush, then append)", () => {
+    let run = createOverlayRun(SID, 7);
+    run = applyOverlayEmit(run, { type: "chat-chunk", text: "回答", sessionId: SID } as PortMessageToPanel);
+    run = applyOverlayEmit(run, {
+      type: "memory-used",
+      sessionId: SID,
+      items: [{ id: "m_1", title: "住在杭州" }],
+    } as PortMessageToPanel);
+    run = applyOverlayEmit(run, { type: "chat-done", sessionId: SID } as PortMessageToPanel);
+    expect(run.pending.map((m) => m.role)).toEqual(["assistant", "memory-used"]);
+  });
+
+  it("drops an empty memory chip", () => {
+    let run = createOverlayRun(SID, 7);
+    run = applyOverlayEmit(run, { type: "memory-used", sessionId: SID, items: [] } as PortMessageToPanel);
+    expect(run.pending).toHaveLength(0);
+  });
+
   it("capsule lists steps with consecutive duplicates collapsed", () => {
     let run = createOverlayRun(SID, 7);
     run = applyOverlayEmit(run, step({ stepIndex: 1 }));

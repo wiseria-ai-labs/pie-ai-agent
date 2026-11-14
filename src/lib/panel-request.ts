@@ -61,15 +61,62 @@ interface PendingRequest {
 const portsBySession = new Map<string, chrome.runtime.Port>();
 const pendingByRequestId = new Map<string, PendingRequest>();
 
+/** 2.0 overlay — 没有 panel port 时的自动交棒钩子（只在 SW 里注册一次）。 */
+type PanelOpener = (sessionId: string) => Promise<boolean>;
+let panelOpener: PanelOpener | null = null;
+
+/** 等待 panel port 出现的预算：深链 → 面板挂载 → 端口连接。 */
+export const PANEL_ATTACH_TIMEOUT_MS = 15_000;
+
+/** sessionId → 等端口的回调。端口注册时统一唤醒。 */
+const portWaiters = new Map<string, Set<(port: chrome.runtime.Port) => void>>();
+
+/**
+ * 浮层 run 里没有面板可问时，SW 用它把面板拉起来（深链 + live attach）。
+ * 返回 false 表示这不是一个可交棒的场景，调用方按原样报错。
+ */
+export function setPanelRequestOpener(opener: PanelOpener | null): void {
+  panelOpener = opener;
+}
+
 /** Test-only：清空模块状态。 */
 export function __resetPanelRequestState(): void {
   portsBySession.clear();
+  portWaiters.clear();
+  panelOpener = null;
   for (const p of pendingByRequestId.values()) if (p.timer) clearTimeout(p.timer);
   pendingByRequestId.clear();
 }
 
 export function registerPanelPort(sessionId: string, port: chrome.runtime.Port): void {
   portsBySession.set(sessionId, port);
+  const waiters = portWaiters.get(sessionId);
+  if (waiters) {
+    portWaiters.delete(sessionId);
+    for (const resolve of waiters) resolve(port);
+  }
+}
+
+/** 等端口出现；超时返回 undefined。已存在则同步返回。 */
+function waitForPanelPort(
+  sessionId: string,
+  timeoutMs: number,
+): Promise<chrome.runtime.Port | undefined> {
+  const existing = portsBySession.get(sessionId);
+  if (existing) return Promise.resolve(existing);
+  return new Promise((resolve) => {
+    const set = portWaiters.get(sessionId) ?? new Set();
+    portWaiters.set(sessionId, set);
+    const finish = (port: chrome.runtime.Port | undefined) => {
+      clearTimeout(timer);
+      set.delete(done);
+      if (set.size === 0) portWaiters.delete(sessionId);
+      resolve(port);
+    };
+    const timer = setTimeout(() => finish(undefined), timeoutMs);
+    const done = (port: chrome.runtime.Port) => finish(port);
+    set.add(done);
+  });
 }
 
 /** Panel 关闭：reject 该 session 全部 pending，避免悬挂。 */
@@ -87,11 +134,28 @@ export async function requestFromPanel<K extends PanelRequestKind>(
   sessionId: string,
   kind: K,
   payload: PanelRequestMap[K]["req"],
-  opts?: { timeoutMs?: number },
+  opts?: { timeoutMs?: number; panelAttachMs?: number },
 ): Promise<PanelRequestMap[K]["res"]> {
-  const port = portsBySession.get(sessionId);
+  let port = portsBySession.get(sessionId);
   if (!port) {
-    throw new Error(`Cannot send panel-request "${kind}": no sidepanel port for session ${sessionId}`);
+    // 2.0 overlay — an in-page run has no side panel to render a card in. Hand
+    // the conversation over (open the panel + attach the live run) and wait for
+    // its port, instead of throwing "no sidepanel port".
+    let opened = false;
+    try {
+      opened = (await panelOpener?.(sessionId)) ?? false;
+    } catch (e) {
+      console.warn(`[sw] panel-request opener failed for session=${sessionId}:`, e);
+    }
+    if (!opened) {
+      throw new Error(`Cannot send panel-request "${kind}": no sidepanel port for session ${sessionId}`);
+    }
+    port = await waitForPanelPort(sessionId, opts?.panelAttachMs ?? PANEL_ATTACH_TIMEOUT_MS);
+    if (!port) {
+      throw new Error(
+        `Cannot send panel-request "${kind}": side panel did not attach for session ${sessionId}`,
+      );
+    }
   }
   const requestId = crypto.randomUUID();
   return new Promise<PanelRequestMap[K]["res"]>((resolve, reject) => {

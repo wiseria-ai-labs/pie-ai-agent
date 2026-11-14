@@ -5,6 +5,7 @@ import {
   requestFromPanel,
   handlePanelResponse,
   resolvePendingByKind,
+  setPanelRequestOpener,
   __resetPanelRequestState,
 } from "./panel-request";
 
@@ -109,5 +110,41 @@ describe("panel-request", () => {
     const sent = port.sent.at(-1)!;
     handlePanelResponse(sent.requestId, { ok: true, data: "claude-terminal" });
     await expect(p).resolves.toBe("claude-terminal");
+  });
+
+  // 2.0 overlay — an in-page run has no panel to render the card in; the SW
+  // hands the conversation over instead of failing the tool.
+  describe("overlay run fallback (no panel port yet)", () => {
+    it("opens the panel, waits for its port, then posts the request", async () => {
+      const opener = vi.fn(async () => true);
+      setPanelRequestOpener(opener);
+      const p = requestFromPanel<"browser-permission">("S1", "browser-permission", {
+        domain: "bookmarks",
+      });
+
+      // The panel boots asynchronously — its port shows up after the opener.
+      const port = fakePort();
+      registerPanelPort("S1", port);
+
+      await vi.waitFor(() => expect(port.sent).toHaveLength(1));
+      expect(opener).toHaveBeenCalledWith("S1");
+      expect(port.sent[0]).toMatchObject({ type: "panel-request", kind: "browser-permission" });
+      handlePanelResponse(port.sent[0].requestId, { ok: true, data: true });
+      await expect(p).resolves.toBe(true);
+    });
+
+    it("keeps the hard error when the opener declines (not an overlay run)", async () => {
+      setPanelRequestOpener(vi.fn(async () => false));
+      await expect(requestFromPanel("S1", "cdp-consent", {})).rejects.toThrow(
+        /no sidepanel port/i,
+      );
+    });
+
+    it("rejects cleanly when the panel never attaches", async () => {
+      setPanelRequestOpener(vi.fn(async () => true));
+      await expect(
+        requestFromPanel("S1", "cdp-consent", {}, { panelAttachMs: 5 }),
+      ).rejects.toThrow(/did not attach/i);
+    });
   });
 });

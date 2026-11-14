@@ -161,6 +161,30 @@ export function applyOverlayEmit(run: OverlayRun, msg: PortMessageToPanel): Over
       const base = flushAssistant(run);
       return { ...base, status: "failed", doneLabel: msg.error };
     }
+    // Pie 2.0 memory rows — they are display messages like any other, so a
+    // detached run must persist them too (the chip sits after the answer).
+    case "memory-used": {
+      if (msg.items.length === 0) return run;
+      const base = flushAssistant(run);
+      return { ...base, pending: [...base.pending, { role: "memory-used", items: msg.items }] };
+    }
+    case "memory-event": {
+      const base = flushAssistant(run);
+      return {
+        ...base,
+        pending: [
+          ...base.pending,
+          {
+            role: "memory-event",
+            eventId: msg.eventId,
+            kind: msg.kind,
+            label: msg.label,
+            ...(msg.encrypted ? { encrypted: true } : {}),
+            count: msg.count,
+          },
+        ],
+      };
+    }
     default:
       return run;
   }

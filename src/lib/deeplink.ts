@@ -46,3 +46,18 @@ export function parseOverlayPrefillDeeplink(val: unknown): string | null {
   const text = val.slice(OVERLAY_PREFILL_PREFIX.length);
   return text || null;
 }
+
+// ── Overlay → side panel settings page ──────────────────────────────────────
+// "不对" on a memory row (and any future overlay→settings jump) opens the panel
+// straight on a settings page. Only the SW ever writes this value.
+
+const SETTINGS_PREFIX = "settings:";
+
+export function settingsDeeplink(page: string): string {
+  return `${SETTINGS_PREFIX}${page}`;
+}
+
+export function parseSettingsDeeplink(val: unknown): string | null {
+  if (typeof val !== "string" || !val.startsWith(SETTINGS_PREFIX)) return null;
+  return val.slice(SETTINGS_PREFIX.length) || null;
+}

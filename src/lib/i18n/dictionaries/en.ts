@@ -1134,6 +1134,8 @@ export const enDict = {
       thinking: "Reading the page…",
       error: "Something went wrong: {error}",
       viewerNotice: "This task started earlier and keeps running in the background.",
+      needsPanelConfirm: "Needs confirmation in the side panel · opened",
+      memoryWrong: "Not right",
       rewriteLabel: "Rewrite",
       original: "Before",
       replace: "Replace",

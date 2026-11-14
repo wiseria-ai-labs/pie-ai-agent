@@ -72,6 +72,7 @@ import {
   DEEPLINK_OVERLAY_RESTRICTED,
   overlayPanelDeeplink,
   overlayPrefillDeeplink,
+  settingsDeeplink,
 } from "@/lib/deeplink";
 
 // ── Run mirror ──────────────────────────────────────────────────────────────
@@ -441,6 +442,8 @@ export async function openOverlayOnTabId(tabId: number, opts: OpenOverlayOptions
   const selection = opts.selection ?? (await askTabSelection(tabId));
   const prompt = opts.prompt;
   const autoSend = opts.autoSend && prompt !== null;
+  const pageTitle = tab.title ?? "";
+  const pageUrl = tab.url ?? "";
 
   const payload: OverlayOpenPayload = {
     sessionId,
@@ -451,6 +454,8 @@ export async function openOverlayOnTabId(tabId: number, opts: OpenOverlayOptions
     autoSend,
     position: settings.position,
     resumed,
+    pageTitle,
+    pageUrl,
   };
   pendingOpens.set(tabId, {
     state: {
@@ -461,6 +466,8 @@ export async function openOverlayOnTabId(tabId: number, opts: OpenOverlayOptions
       autoSend,
       resumed,
       position: settings.position,
+      pageTitle,
+      pageUrl,
     },
     at: Date.now(),
   });
@@ -531,6 +538,36 @@ async function stashDeeplink(value: string): Promise<void> {
   }
 }
 
+/**
+ * HITL handoff: an overlay run needs a panel-request card, and the in-page
+ * surface cannot render one. Open the side panel on this session (the live
+ * attach then carries the stream over) and tell the in-page overlay why.
+ *
+ * Returns false when this session has no overlay run — the caller keeps the
+ * original "no sidepanel port" error for every other path.
+ */
+export async function ensurePanelForOverlayRequest(sessionId: string): Promise<boolean> {
+  const rt = runs.get(sessionId);
+  if (!rt) return false;
+  // Without its document (detached run) there is nobody to notify — still open
+  // the panel, which is where the card must live.
+  safePost(rt.port, {
+    type: "overlay-notice",
+    sessionId,
+    notice: "panel-request",
+  });
+  await openSessionInPanel(sessionId, rt.run.tabId);
+  return true;
+}
+
+/** Overlay "不对" → the side panel's memory settings page. */
+export async function openSettingsPageInPanel(page: "memory"): Promise<void> {
+  await stashDeeplink(settingsDeeplink(page));
+  const tab = await queryActiveHostTab().catch(() => undefined);
+  if (typeof tab?.id === "number") openPanel({ tabId: tab.id }, "overlay-settings");
+  else if (typeof tab?.windowId === "number") openPanel({ windowId: tab.windowId }, "overlay-settings");
+}
+
 /** Toolbar click: if this tab's overlay has a conversation, show it. */
 export async function maybeStashOverlaySessionForToolbar(tab: chrome.tabs.Tab): Promise<void> {
   if (typeof tab.id !== "number") return;
@@ -559,6 +596,8 @@ export async function startNewOverlayChat(tabId: number): Promise<void> {
   const meta = await createSession();
   await rememberOverlaySession(tabId, meta.id);
   const position = settings.position;
+  const pageTitle = tab.title ?? "";
+  const pageUrl = tab.url ?? "";
   pendingOpens.set(tabId, {
     state: {
       sessionId: meta.id,
@@ -568,6 +607,8 @@ export async function startNewOverlayChat(tabId: number): Promise<void> {
       autoSend: false,
       resumed: false,
       position,
+      pageTitle,
+      pageUrl,
     },
     at: Date.now(),
   });
@@ -582,6 +623,8 @@ export async function startNewOverlayChat(tabId: number): Promise<void> {
       autoSend: false,
       position,
       resumed: false,
+      pageTitle,
+      pageUrl,
     } satisfies OverlayOpenPayload,
   });
 }
@@ -600,6 +643,17 @@ export async function overlayOpenState(sessionId: string, tabId: number): Promis
   if (pending && pending.state.sessionId === sessionId && Date.now() - pending.at < PENDING_OPEN_TTL_MS) {
     return pending.state;
   }
+  // No pending open (re-opened document): re-read the page identity so the
+  // memory prefetch still gets title/URL.
+  let pageTitle: string | undefined;
+  let pageUrl: string | undefined;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    pageTitle = tab.title ?? "";
+    pageUrl = tab.url ?? "";
+  } catch {
+    // Tab gone — the prefetch just runs without page context.
+  }
   const settings = await getOverlaySettings();
   return {
     sessionId,
@@ -609,6 +663,7 @@ export async function overlayOpenState(sessionId: string, tabId: number): Promis
     autoSend: false,
     resumed: false,
     position: settings.position,
+    ...(pageTitle !== undefined ? { pageTitle, pageUrl } : {}),
   };
 }
 

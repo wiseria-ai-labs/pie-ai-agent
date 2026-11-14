@@ -15,8 +15,11 @@ import type { DisplayMessage } from "@/types";
 
 export function MemoryUsedChip({
   items,
+  onWrong,
 }: {
   items: Array<{ id: string; title: string; encrypted?: boolean }>;
+  /** 2.0 overlay — "不对" jumps to the memory page. The side panel omits it. */
+  onWrong?: () => void;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -46,6 +49,15 @@ export function MemoryUsedChip({
               {it.encrypted ? t("chat.memory.encryptedItem") : it.title}
             </div>
           ))}
+          {onWrong && (
+            <button
+              type="button"
+              onClick={onWrong}
+              className="border-t border-line px-3 py-2 text-left text-[11.5px] text-fg-3 underline underline-offset-2 hover:text-fg-1"
+            >
+              {t("overlay.ui.memoryWrong")}
+            </button>
+          )}
         </div>
       )}
     </div>

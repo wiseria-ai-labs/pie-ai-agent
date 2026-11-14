@@ -1125,6 +1125,8 @@ export const es419Dict = {
       thinking: "Leyendo la página…",
       error: "Algo salió mal: {error}",
       viewerNotice: "Esta tarea empezó antes y sigue ejecutándose en segundo plano.",
+      needsPanelConfirm: "Necesita confirmación en el panel lateral · abierto",
+      memoryWrong: "No es correcto",
       rewriteLabel: "Reescritura",
       original: "Original",
       replace: "Reemplazar",
