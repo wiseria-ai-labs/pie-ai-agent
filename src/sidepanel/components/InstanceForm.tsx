@@ -17,6 +17,10 @@ export interface InstanceFormPayload {
   endpointVariant?: string;
   /** 每分钟请求上限；undefined = 不限。 */
   rpmLimit?: number;
+  /** 表单里当前展示的 /v1/models 拉取结果（新建时随实例落盘，否则刷新到的
+   *  模型会在创建后丢失，Composer 里选不到）。 */
+  fetchedModels?: ModelMeta[];
+  fetchedAt?: number;
 }
 
 /** Render-prop API exposed when the parent wants to compose a custom action footer
@@ -51,9 +55,10 @@ interface Props {
   onAddCustomModel?: (id: string, meta: StoredCustomModelMeta) => void;
   onUpdateCustomModelMeta?: (id: string, meta: StoredCustomModelMeta) => void;
   onRemoveCustomModel?: (id: string) => void;
-  /** Receives the form's effective apiKey (just-typed or existing) so the
-   *  parent can fetch /v1/models without forcing the user to save first. */
-  onRefreshModels?: (apiKey: string) => void | Promise<void>;
+  /** Receives the form's effective apiKey (just-typed or existing) and the
+   *  currently selected endpoint variant (may be unsaved) so the parent can
+   *  fetch /v1/models without forcing the user to save first. */
+  onRefreshModels?: (apiKey: string, endpointVariant?: string) => void | Promise<void>;
   testing?: boolean;
   testStatus?: "idle" | "success";
   saveLabel?: string;
@@ -134,7 +139,14 @@ export default function InstanceForm(props: Props) {
   const testing = props.testing === true;
   const testStatus = props.testStatus ?? "idle";
 
-  const payload: InstanceFormPayload = { nickname: props.initialNickname, apiKey, customModels, endpointVariant, rpmLimit: parsedRpm };
+  const payload: InstanceFormPayload = {
+    nickname: props.initialNickname,
+    apiKey,
+    customModels,
+    endpointVariant,
+    rpmLimit: parsedRpm,
+    ...(props.fetchedModels?.length ? { fetchedModels: props.fetchedModels, fetchedAt: props.fetchedAt } : {}),
+  };
 
   // Managed provider: skip the BYOK form entirely — show account panel instead.
   if (props.provider === "managed") {
@@ -299,7 +311,7 @@ export default function InstanceForm(props: Props) {
             // Effective apiKey: just-typed (replacing OR creating) takes
             // precedence; otherwise fall back to existing stored key.
             const effective = apiKey.trim().length > 0 ? apiKey : (props.existingApiKey ?? "");
-            props.onRefreshModels?.(effective);
+            props.onRefreshModels?.(effective, endpointVariant);
           }}
         />
       </FieldDiv>

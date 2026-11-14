@@ -121,4 +121,41 @@ describe("ModelsPage custom provider entity editing", () => {
     expect(screen.queryByText(/not found/i)).toBeNull();
     expect((await listInstances())[0].fetchedModels).toBeUndefined();
   });
+
+  // review #484 阻断项：向导里刷出来、还没保存就创建的自定义 provider 模型，必须
+  // 随实例落盘，否则创建后在 Composer 里选不到。
+  it("wizard: custom draft 刷新到的模型随创建落盘", async () => {
+    const fetchMock = vi.fn(async (_url: string) => ({
+      ok: true, status: 200,
+      json: async () => ({ data: [{ id: "m-fetched" }] }),
+      text: async () => "",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ModelsPage />);
+    fireEvent.click(await screen.findByTestId("models-new-config"));
+    fireEvent.click(screen.getByRole("button", { name: /select provider/i }));
+    fireEvent.click(screen.getByText(/new custom provider/i));
+    fireEvent.change(screen.getByPlaceholderText(/my custom provider/i), { target: { value: "Proxy2" } });
+    fireEvent.change(screen.getByPlaceholderText(/api\.example\.com/i), {
+      target: { value: "https://draft.example" },
+    });
+
+    fireEvent.click(await screen.findByText(/↻ refresh/i));
+    expect(await screen.findByText("m-fetched")).toBeTruthy();
+    expect(fetchMock.mock.calls[0]![0]).toBe("https://draft.example/v1/models");
+
+    const keyInput = (await screen.findAllByLabelText(/api key/i)).find(
+      (e) => e.tagName === "INPUT" && e.getAttribute("aria-label") === "api key",
+    )!;
+    fireEvent.change(keyInput, { target: { value: "sk-x" } });
+    fireEvent.click(screen.getByText("Create", { selector: "button" }));
+
+    await waitFor(async () => {
+      const insts = await listInstances();
+      expect(insts).toHaveLength(1);
+      expect(insts[0]!.fetchedModels?.map((m) => m.id)).toEqual(["m-fetched"]);
+      expect(insts[0]!.fetchedAt).toBeTypeOf("number");
+    });
+  });
 });

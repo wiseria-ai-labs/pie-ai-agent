@@ -54,8 +54,8 @@ export interface ProviderMeta {
    * refresh affordances (wizard / Settings / picker) gate on this flag, never
    * on a hardcoded provider id. The actual URL is derived from the effective
    * baseUrl by `fetchProviderModels` (it tolerates a baseUrl already ending in
-   * /vN). Custom providers implicitly support it even though they have no
-   * registry entry — see `resolveProviderMeta`.
+   * /vN). Custom providers have no registry entry — their support is decided by
+   * `supportsModelFetch` (provider-models-fetch), which always attempts them.
    */
   modelsEndpoint?: string;
   /** 图标资源路径（相对扩展根；public/ 在 build 期拷到 dist/）。缺省时 UI 走
@@ -453,9 +453,8 @@ export async function resolveProviderMeta(ref: ProviderRef): Promise<ProviderMet
       defaultBaseUrl: cp.baseUrl,
       placeholder: "Custom",
       models: cp.models,
-      // 自定义 provider 一律尝试 /v1/models（OpenAI-compat 约定）；拉不到就静默回退
-      // 到实体自带的 models[]。baseUrl 在 ProviderMeta 不变式里由它自己提供。
-      modelsEndpoint: "/v1/models",
+      // 刷新能力由 supportsModelFetch（provider-models-fetch）按 ref 判定，
+      // 这里不镜像 modelsEndpoint —— 避免两个真源对不上。
     };
   }
 

@@ -16,6 +16,18 @@ export function supportsModelFetch(ref: ProviderRef): boolean {
   return !!getProviderMeta(ref as BuiltinProvider)?.modelsEndpoint;
 }
 
+/**
+ * Builtin provider whose model list exists ONLY behind `GET /v1/models` (empty
+ * curated `models[]`) — offers to pre-fetch on provider select / first picker
+ * expand. Custom providers are excluded on purpose: their models come from the
+ * entity list and a failed auto-fetch would silently retry on every expand.
+ */
+export function isLazyModelProvider(ref: ProviderRef): boolean {
+  if (ref.startsWith(CUSTOM_PREFIX)) return false;
+  const meta = getProviderMeta(ref as BuiltinProvider);
+  return !!meta?.modelsEndpoint && meta.models.length === 0;
+}
+
 export interface ModelFetchTarget {
   /** Overrides the registry / custom-entity baseUrl — e.g. a custom provider
    *  still being authored in the wizard (not saved yet). */

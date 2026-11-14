@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { supportsModelFetch, fetchProviderModels } from "./provider-models-fetch";
+import { supportsModelFetch, fetchProviderModels, isLazyModelProvider } from "./provider-models-fetch";
 import { saveCustomProvider, CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { _resetForTests } from "@/lib/idb/db";
 
@@ -35,6 +35,18 @@ describe("supportsModelFetch — capability gate, never a provider id", () => {
 
   it("every custom provider ref is supported (OpenAI-compat convention)", () => {
     expect(supportsModelFetch(`${CUSTOM_PREFIX}whatever`)).toBe(true);
+  });
+});
+
+describe("isLazyModelProvider — only builtins with an empty curated list", () => {
+  it("OpenRouter is lazy (models[] empty, endpoint set)", () => {
+    expect(isLazyModelProvider("openrouter")).toBe(true);
+  });
+
+  it("builtins with a curated list, custom providers and unsupported wire are not", () => {
+    for (const ref of ["openai", "zhipu", "a2agent", "anthropic", `${CUSTOM_PREFIX}cp1`] as const) {
+      expect(isLazyModelProvider(ref), ref).toBe(false);
+    }
   });
 });
 

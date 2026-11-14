@@ -29,7 +29,7 @@ import { DEFAULT_CUSTOM_MODEL_MAX_CONTEXT } from "@/lib/provider-custom-model-me
 import { useT, providerDisplayName } from "@/lib/i18n";
 import { SmoothHeight } from "./ui/SmoothHeight";
 import { fetchOpenAICompatModels } from "@/lib/openai-compat-models-fetch";
-import { fetchProviderModels, supportsModelFetch } from "@/lib/provider-models-fetch";
+import { fetchProviderModels, isLazyModelProvider, supportsModelFetch } from "@/lib/provider-models-fetch";
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import ProviderDropdown from "./ProviderDropdown";
 import CustomProviderFields from "./CustomProviderFields";
@@ -127,8 +127,7 @@ export default function NewConfigWizard(props: Props) {
     setFetchedAt(undefined);
     // 懒加载 provider（清单为空 + 声明 modelsEndpoint，当前 = OpenRouter，endpoint
     // 公开无需 key）在选择时预拉一次，下拉打开前就已就绪。
-    const meta = provider.startsWith(CUSTOM_PREFIX) ? undefined : getProviderMeta(provider as BuiltinProvider);
-    if (meta?.modelsEndpoint && meta.models.length === 0) {
+    if (isLazyModelProvider(provider)) {
       setIsFetching(true);
       fetchProviderModels(provider)
         .then((list) => {
@@ -523,11 +522,13 @@ export default function NewConfigWizard(props: Props) {
               setMetas(await getProviderCustomModelMetas(builtinProvider));
             }
           }}
-          onRefreshModels={async (apiKey) => {
+          onRefreshModels={async (apiKey, formVariant) => {
             if (!provider || !supportsModelFetch(provider)) return;
             // Draft/edited custom provider: the baseUrl lives in the form, not storage.
-            const target =
-              isDraft || customMode === "edit" ? { baseUrl: draftBaseUrl.trim() } : undefined;
+            const target = {
+              endpointVariant: formVariant,
+              ...(isDraft || customMode === "edit" ? { baseUrl: draftBaseUrl.trim() } : {}),
+            };
             setIsFetching(true);
             try {
               const fetched = await fetchProviderModels(provider, apiKey || undefined, target);

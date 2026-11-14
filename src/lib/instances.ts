@@ -55,6 +55,9 @@ export async function createInstance(input: {
   customModels?: string[];
   endpointVariant?: string;
   rpmLimit?: number;
+  /** 向导里 /v1/models 拉到的清单（还没保存就被创建，随实例落盘）。 */
+  fetchedModels?: StoredInstance["fetchedModels"];
+  fetchedAt?: number;
 }): Promise<string> {
   if (!input.apiKey.trim()) throw new Error("API key cannot be empty");
   const idx = await readIndex();
@@ -74,6 +77,10 @@ export async function createInstance(input: {
     ...(input.customModels && input.customModels.length > 0 && { customModels: input.customModels }),
     ...(input.endpointVariant && { endpointVariant: input.endpointVariant }),
     ...(input.rpmLimit != null && input.rpmLimit > 0 && { rpmLimit: Math.floor(input.rpmLimit) }),
+    ...(input.fetchedModels && input.fetchedModels.length > 0 && {
+      fetchedModels: input.fetchedModels,
+      fetchedAt: input.fetchedAt ?? Date.now(),
+    }),
     createdAt: Date.now(),
   };
   idx.push(id);

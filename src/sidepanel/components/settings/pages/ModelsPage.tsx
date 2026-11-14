@@ -380,10 +380,11 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
                     }
                     await reload();
                   }}
-                  onRefreshModels={async (apiKey) => {
+                  onRefreshModels={async (apiKey, formVariant) => {
                     try {
                       const fetched = await fetchProviderModels(inst.provider, apiKey || undefined, {
-                        endpointVariant: inst.endpointVariant,
+                        // 表单里未保存的端点选择优先于已保存值。
+                        endpointVariant: formVariant,
                         // 未保存的实体草稿（改 baseUrl 后立即刷新）优先。
                         ...(isCustom && cpDraft ? { baseUrl: cpDraft.baseUrl.trim() } : {}),
                       });
