@@ -493,10 +493,16 @@ export function useSession(): UseSession {
   // 时建立 port，SW idle-out / 崩溃后 panel 这侧的 port 会自动断开 +
   // swPort.send 透明重连（ensurePort）失败后 revert streaming 并暴露 error。
   const sendMessage = useCallback(
-    (input: SendMessageInput, baseMessages?: DisplayMessage[]) => {
+    async (input: SendMessageInput, baseMessages?: DisplayMessage[]) => {
       if (slotsRef.current.get(sessionIdRef.current ?? "")?.streaming) return;
       const id = sessionIdRef.current;
       if (!id) return;
+      // Issue #473 — start the anchor capture at the moment the user presses
+      // send, before any other I/O. The SW has no window of its own, so only
+      // the panel can answer "which tab was the user looking at". The promise
+      // is awaited just before chat-start fires; what matters is that the
+      // query was issued here, not after model/title work.
+      const anchorPinPromise = captureActivePinnedTab();
       const userMessage: DisplayMessage = {
         role: "user",
         content: input.content,
@@ -599,11 +605,17 @@ export function useSession(): UseSession {
       // not the SW-facing expanded chatMessages).
       const fallbackTitle = deriveTitleFromMessages(updated);
 
+      // Issue #473 — the send-time anchor (capture started at the top of this
+      // callback). Sent by id so the SW pins THIS tab instead of re-querying
+      // "the active tab" against whatever window happens to be focused.
+      const anchorPin = await anchorPinPromise;
+
       const sent = swPort.send(id, {
         type: "chat-start",
         messages: chatMessages,
         sessionId: id,
         ...(fallbackTitle !== undefined ? { fallbackTitle } : {}),
+        ...(anchorPin ? { anchorTabId: anchorPin.tabId } : {}),
       });
       if (!sent) {
         // SW 连续两次拒收（罕见：连重连后的新 port 也立刻死）→ 撤回
@@ -626,13 +638,10 @@ export function useSession(): UseSession {
       // ordering. Patching pin separately keeps the message persistence
       // path untouched.
       //
-      // First-task ordering note: SW's handleChatStream may read meta
-      // BEFORE the pin patch lands → ctx.pinnedTabs is empty → the
-      // loop falls back to chrome.tabs.query active-tab. That fallback
-      // returns the same tab the user just sent from (no tab switch in
-      // the microsecond gap), so the first task pins to the right tab
-      // via fallback. Subsequent chat-starts read the patched pin via
-      // ctx directly.
+      // First-task ordering note: the SW's pin upgrade at chat-start now uses
+      // the anchor tab shipped on the payload (#473), so it no longer depends
+      // on this patch landing first — both write the same captured tab, and
+      // the second write is an idempotent no-op.
       if (isFirstMessage) {
         void (async () => {
           try {
@@ -640,7 +649,10 @@ export function useSession(): UseSession {
             if (!meta || meta.status === "archived") return;
             // v1.5 — skip if already has pinnedTabs[]
             if (meta.pinnedTabs && meta.pinnedTabs.length > 0) return;
-            const pinEntry = await captureActivePinnedTab();
+            // Issue #473 — reuse the send-time anchor instead of re-capturing
+            // "the active tab" seconds later (the user may already have
+            // switched windows; this patch must persist the tab they meant).
+            const pinEntry = anchorPin;
             if (!pinEntry) return;
             // Single-transaction conditional patch (replaces the old re-read +
             // full write-back, whose window let concurrent writers clobber

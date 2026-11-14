@@ -96,7 +96,7 @@ describe("useSession — bootstrap", () => {
     await waitFor(() => expect(result.current.ready).toBe(true));
 
     // Open a port via sendMessage.
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "hi" });
     });
     const port = chromeMock.runtime.__ports[0]!;
@@ -113,7 +113,7 @@ describe("useSession — sendMessage / streaming", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "hello" });
     });
 
@@ -135,6 +135,41 @@ describe("useSession — sendMessage / streaming", () => {
     ]);
   });
 
+  it("#473 — chat-start carries the panel's own send-time anchor tab", async () => {
+    // The panel is looking at this tab in ITS window. The SW has no window and
+    // used to re-query "the active tab", landing on whatever window was
+    // focused when the user switched away right after sending.
+    chromeMock.tabs.__activeTab = {
+      id: 42,
+      url: "https://anchor.example.com/page",
+      active: true,
+      windowId: 3,
+    };
+
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const id = result.current.sessionId!;
+
+    await act(async () => {
+      result.current.sendMessage({ content: "hello" });
+    });
+
+    const port = chromeMock.runtime.__ports[0]!;
+    expect(port.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "chat-start", anchorTabId: 42 }),
+    );
+
+    // The first-message pin patch reuses the SAME anchor (no second
+    // active-tab query later, when the user may already be in another window).
+    await waitFor(async () => {
+      const meta = await getSessionMeta(id);
+      expect(meta?.pinnedTabs?.[0]).toEqual({
+        tabId: 42,
+        origin: "https://anchor.example.com",
+      });
+    });
+  });
+
   it("issue #353 — chat-start carries the panel-derived fallbackTitle from the display text", async () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
@@ -143,7 +178,7 @@ describe("useSession — sendMessage / streaming", () => {
     // fallback derivation applies (must match deriveTitleFromMessages exactly).
     const longMsg =
       "帮我把这个非常长的第一条消息生成一个会话标题用于测试超过四十个字符的截断行为是否正确工作";
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: longMsg });
     });
 
@@ -161,7 +196,7 @@ describe("useSession — sendMessage / streaming", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({
         content: "/extract",
         expandedForLLM: "Please extract structured data from this page",
@@ -183,7 +218,7 @@ describe("useSession — sendMessage / streaming", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({
         content: "/extract",
         expandedForLLM: "Please extract structured data from this page",
@@ -222,12 +257,12 @@ describe("useSession — sendMessage / streaming", () => {
     const port = chromeMock.runtime.__ports[0]!;
 
     // First sendMessage → finish → second sendMessage on same port.
-    act(() => result.current.sendMessage({ content: "first" }));
+    await act(async () => result.current.sendMessage({ content: "first" }));
     act(() => emitWithSession(port, { type: "chat-chunk", text: "ok" }, result.current.sessionId!));
     act(() => emitWithSession(port, { type: "chat-done" }, result.current.sessionId!));
     await waitFor(() => expect(result.current.streaming).toBe(false));
 
-    act(() => result.current.sendMessage({ content: "second" }));
+    await act(async () => result.current.sendMessage({ content: "second" }));
 
     // Still only one port.
     expect(chromeMock.runtime.__ports).toHaveLength(1);
@@ -242,10 +277,10 @@ describe("useSession — sendMessage / streaming", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "first" });
     });
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "second" });
     });
 
@@ -259,7 +294,7 @@ describe("useSession — sendMessage / streaming", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.sendMessage({ content: "hi" }));
+    await act(async () => result.current.sendMessage({ content: "hi" }));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
 
@@ -278,7 +313,7 @@ describe("useSession — queued instruction ordering", () => {
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
 
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "original" });
       emitWithSession(port, { type: "thinking-chunk", text: "first thought" }, sid);
       emitWithSession(port, { type: "chat-chunk", text: "first answer" }, sid);
@@ -328,7 +363,7 @@ describe("useSession — queued instruction ordering", () => {
     await waitFor(() => expect(result.current.ready).toBe(true));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "original" });
       result.current.addPendingInstruction({ content: "early" });
       result.current.addPendingInstruction({ content: "later" });
@@ -355,7 +390,7 @@ describe("useSession — queued instruction ordering", () => {
     await waitFor(() => expect(result.current.ready).toBe(true));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "original" });
       emitWithSession(port, { type: "chat-chunk", text: "first answer" }, sid);
       result.current.addPendingInstruction({ content: "/first", expandedForLLM: "expanded first" });
@@ -364,7 +399,7 @@ describe("useSession — queued instruction ordering", () => {
     const first = result.current.messages[1]!;
     const latest = result.current.messages[2]!;
     if (first.role !== "user" || latest.role !== "user") throw new Error("expected queued users");
-    act(() => {
+    await act(async () => {
       emitWithSession(port, { type: "chat-done" }, sid);
       emitWithSession(port, { type: "chat-instruction-rejected", chatMessageId: first.id, reason: "not-streaming" }, sid);
       emitWithSession(port, { type: "chat-instruction-rejected", chatMessageId: latest.id, reason: "not-streaming" }, sid);
@@ -397,7 +432,7 @@ describe("useSession — queued instruction ordering", () => {
     await waitFor(() => expect(result.current.ready).toBe(true));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "original" });
       emitWithSession(port, { type: "chat-chunk", text: "first answer" }, sid);
       result.current.addPendingInstruction({ content: "cancelled too late" });
@@ -441,7 +476,7 @@ describe("useSession — queued instruction ordering", () => {
     await waitFor(() => expect(result.current.ready).toBe(true));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "original" });
       emitWithSession(port, { type: "chat-chunk", text: "answer" }, sid);
       result.current.addPendingInstruction({ content: "cancel me" });
@@ -449,7 +484,7 @@ describe("useSession — queued instruction ordering", () => {
     });
     const cancelled = result.current.messages[1]!;
     if (cancelled.role !== "user" || !cancelled.id) throw new Error("expected queued user");
-    act(() => {
+    await act(async () => {
       result.current.cancelPendingInstruction(cancelled.id!);
       emitWithSession(port, { type: "chat-done" }, sid);
       emitWithSession(port, { type: "chat-instruction-rejected", chatMessageId: cancelled.id, reason: "not-streaming" }, sid);
@@ -469,7 +504,7 @@ describe("useSession — persistence boundaries", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.sendMessage({ content: "ping" }));
+    await act(async () => result.current.sendMessage({ content: "ping" }));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
     act(() => emitWithSession(port, { type: "chat-chunk", text: "pong" }, sid));
@@ -500,7 +535,7 @@ describe("useSession — persistence boundaries", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.sendMessage({ content: "ping" }));
+    await act(async () => result.current.sendMessage({ content: "ping" }));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
     act(() => emitWithSession(port, { type: "chat-chunk", text: "partial" }, sid));
@@ -524,7 +559,7 @@ describe("useSession — persistence boundaries", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.sendMessage({ content: "go" }));
+    await act(async () => result.current.sendMessage({ content: "go" }));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
     act(() =>
@@ -558,7 +593,7 @@ describe("useSession — persistence boundaries", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.sendMessage({ content: "ping" }));
+    await act(async () => result.current.sendMessage({ content: "ping" }));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
     act(() => emitWithSession(port, { type: "chat-chunk", text: "halfway" }, sid));
@@ -580,7 +615,7 @@ describe("useSession — persistence boundaries", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.sendMessage({ content: "ping" }));
+    await act(async () => result.current.sendMessage({ content: "ping" }));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
 
@@ -614,7 +649,7 @@ describe("useSession — clearMessages", () => {
     await waitFor(() => expect(result.current.ready).toBe(true));
 
     // Seed messages via a chat-done flow.
-    act(() => result.current.sendMessage({ content: "ping" }));
+    await act(async () => result.current.sendMessage({ content: "ping" }));
     const port = chromeMock.runtime.__ports[0]!;
     const sid = result.current.sessionId!;
     act(() => emitWithSession(port, { type: "chat-chunk", text: "pong" }, sid));
@@ -756,7 +791,7 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
     let meta = await getSessionMeta(id);
     expect(meta?.pinnedTabs).toBeUndefined();
 
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "hello" });
     });
 
@@ -781,7 +816,7 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
     await waitFor(() => expect(result.current.ready).toBe(true));
     const id = result.current.sessionId!;
 
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "first" });
     });
     await waitFor(async () => {
@@ -804,7 +839,7 @@ describe("useSession — M3-U2 lock-on-send pin (post-acceptance rule)", () => {
       windowId: 1,
     };
 
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "second" });
     });
     // Wait for second send to settle.
@@ -1126,7 +1161,7 @@ describe("useSession — abort", () => {
     const { result } = renderHook(() => useSession());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.sendMessage({ content: "ping" }));
+    await act(async () => result.current.sendMessage({ content: "ping" }));
     const port = chromeMock.runtime.__ports[0]!;
 
     act(() => result.current.abort());
@@ -1170,7 +1205,7 @@ describe("setActive — multi-session port lifecycle (#30)", () => {
     const { id: idB } = await createSession({ now: 2000 });
 
     // Start streaming on session A
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "hello" });
     });
     expect(result.current.streaming).toBe(true);
@@ -1287,7 +1322,7 @@ describe("port lifecycle — SW idle-out / disconnect recovery", () => {
     // 模拟 SW idle-out — port 在 panel 侧静默断开。
     act(() => stale.__triggerDisconnect());
 
-    act(() => result.current.sendMessage({ content: "after revival" }));
+    await act(async () => result.current.sendMessage({ content: "after revival" }));
 
     // 应该有第二条 port（lazy reconnect）。
     expect(chromeMock.runtime.__ports).toHaveLength(2);
@@ -1319,7 +1354,7 @@ describe("port lifecycle — SW idle-out / disconnect recovery", () => {
       throw new Error("Attempting to use a disconnected port object");
     });
 
-    act(() => result.current.sendMessage({ content: "hello" }));
+    await act(async () => result.current.sendMessage({ content: "hello" }));
 
     // 第一次 postMessage 在 stale 上失败 → lazy reconnect → 在新 port 上成功。
     expect(chromeMock.runtime.__ports).toHaveLength(2);
@@ -1353,7 +1388,7 @@ describe("port lifecycle — SW idle-out / disconnect recovery", () => {
     });
 
     try {
-      act(() => result.current.sendMessage({ content: "hello" }));
+      await act(async () => result.current.sendMessage({ content: "hello" }));
 
       // streaming 必须 revert，否则 UI 永远卡在 spinner 上。
       await waitFor(() => expect(result.current.streaming).toBe(false));
@@ -1387,7 +1422,7 @@ describe("port lifecycle — SW idle-out / disconnect recovery", () => {
 
     // 断开 A 的 port — B 的 port 不该被波及，B 上 sendMessage 不重连。
     act(() => portA.__triggerDisconnect());
-    act(() => result.current.sendMessage({ content: "on B" }));
+    await act(async () => result.current.sendMessage({ content: "on B" }));
 
     expect(chromeMock.runtime.__ports).toHaveLength(2);
     const bChatStart = portB.postMessage.mock.calls.find(

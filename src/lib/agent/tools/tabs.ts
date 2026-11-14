@@ -531,6 +531,12 @@ USE WHEN:
     }
 
     try {
+      // Issue #473 — this is the ONLY place the agent may call
+      // `tabs.update({active:true})`, and only because the LLM is executing an
+      // explicit user-visible request ("show me that tab"). The loop itself
+      // must never self-focus: stealing focus would move the user's active
+      // tab (and the panel's host window) mid-task. Do not reuse this pattern
+      // for internal bookkeeping.
       await chrome.tabs.update(a.tabId, { active: true });
       return {
         success: true,

@@ -78,12 +78,24 @@ function renderAtlasUnreachableFrames(
  * #471 — `Current URL / Page title` prelude. Values come from the document
  * itself (tab metadata lags SPA routes / mid-navigation); the title is
  * page-controlled and sits OUTSIDE any wrapper, so wrapper tags are escaped.
+ *
+ * #473 — `Tab: <id>` makes the operating tab explicit: the user can have
+ * several windows open, and the model must be able to tell that a read came
+ * from a different tab rather than from a changed page.
  */
-function pageHeaderLines(docUrl: string, docTitle: string, tabUrl: string | undefined): string[] {
+function pageHeaderLines(
+  docUrl: string,
+  docTitle: string,
+  tabUrl: string | undefined,
+  tabId?: number,
+): string[] {
   const lines = [
     `Current URL: ${docUrl}`,
     `Page title: ${escapeTrustedWrappers(escapeUntrustedWrappers(docTitle))}`,
   ];
+  if (typeof tabId === "number") {
+    lines.push(`Tab: ${tabId}`);
+  }
   if (tabUrl && docUrl && tabUrl !== docUrl) {
     lines.push(
       `Note: the tab reports ${tabUrl}, but the document read is at ${docUrl} — the page may still be navigating; call read_page again if this looks like the wrong page.`,
@@ -107,7 +119,7 @@ function wrapPageAtlasObservation(atlas: PageAtlasState, body: string, tabUrl?: 
     // Without it a stale atlas result elides down to a bare marker — every one
     // of them byte-identical — and the LLM can no longer tell which step read
     // which page, so it re-runs read_page instead of relying on history.
-    ...pageHeaderLines(atlas.url, atlas.title, tabUrl),
+    ...pageHeaderLines(atlas.url, atlas.title, tabUrl, atlas.tabId),
     ``,
     `<untrusted_page_content ${attr("tool", "read_page")} ${attr("mode", "atlas")} ${attr("atlas_id", atlas.atlasId)} ${attr("tab_id", atlas.tabId)}>`,
     body,
@@ -543,7 +555,7 @@ export const readPageTool: Tool = {
     }
 
     const headerLines = [
-      ...pageHeaderLines(topUrl, topTitle, tab.url),
+      ...pageHeaderLines(topUrl, topTitle, tab.url, a.tabId),
       ``,
       `<frame_map>`,
       ...frameMapLines,

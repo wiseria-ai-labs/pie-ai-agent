@@ -12,7 +12,7 @@ describe("useSession concurrent (#30) — Case 1: chat-chunk routing", () => {
     const portA = chromeMock.runtime.__ports.at(-1)!;
 
     // Start a task on A so streaming=true (chunks only arrive during streaming)
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "hello from A" });
     });
     expect(result.current.streaming).toBe(true);
@@ -46,7 +46,7 @@ describe("useSession concurrent (#30) — Case 2: background done", () => {
     const idA = result.current.sessionId!;
     const portA = chromeMock.runtime.__ports.at(-1)!;
     // Start a fake task on A
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "hi" });
     });
     expect(result.current.streaming).toBe(true);
@@ -93,7 +93,7 @@ describe("useSession concurrent (#30) — Case 5: Stop scoped to active", () => 
     const portB = chromeMock.runtime.__ports.at(-1)!;
 
     // Send a message on B (active session)
-    act(() => {
+    await act(async () => {
       result.current.sendMessage({ content: "in B" });
     });
 
