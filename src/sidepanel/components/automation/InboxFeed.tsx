@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { onStoreChange } from "@/lib/store-bus";
 import { listInbox, markAllInboxRead } from "@/lib/inbox/store";
@@ -51,15 +51,21 @@ export function InboxFeed({ onOpenSession }: Props) {
   // unread when the feed opened (they keep the highlight for this visit), then
   // mark everything read in the store (which clears the top-bar dot).
   const [unreadOnOpen, setUnreadOnOpen] = useState<ReadonlySet<string>>(new Set());
-  const openedRef = useRef(false);
 
   const reload = useCallback(async () => {
     const list = await listInbox();
-    if (!openedRef.current) {
-      openedRef.current = true;
-      const unreadIds = list.filter((e) => !e.read).map((e) => e.id);
-      setUnreadOnOpen(new Set(unreadIds));
-      if (unreadIds.length > 0) void markAllInboxRead();
+    // F2 — "未读项有边框和黄铜点；打开过就变成普通行". Rows that are unread at the
+    // moment they appear keep the highlight for this visit; anything that
+    // arrives while the feed is open is also "seen now" (otherwise the top-bar
+    // dot would stay lit while the user stares at the feed).
+    const unreadIds = list.filter((e) => !e.read).map((e) => e.id);
+    if (unreadIds.length > 0) {
+      setUnreadOnOpen((prev) => {
+        const next = new Set(prev);
+        for (const id of unreadIds) next.add(id);
+        return next;
+      });
+      void markAllInboxRead();
     }
     setEntries(list);
   }, []);

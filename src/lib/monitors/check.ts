@@ -26,12 +26,19 @@ import { appendMonitorResult, getMonitor, patchMonitor } from "./store";
 import {
   MONITOR_FAILURE_PAUSE_THRESHOLD,
   MONITOR_NOTIFY_COOLDOWN_MS,
+  type MonitorCondition,
   type MonitorHistoryEntry,
   type MonitorPausedReason,
   type MonitorRecord,
 } from "./types";
 
 // ── Same-origin serialization (§4.3.6) ───────────────────────────────────────
+
+/**
+ * Conditions whose `met` is an EVENT ("this poll saw something new") rather
+ * than a STATE. See the trigger gate in checkMonitor.
+ */
+const EVENT_CONDITIONS: ReadonlySet<MonitorCondition["kind"]> = new Set(["changed", "list_added"]);
 
 const domainChains = new Map<string, Promise<unknown>>();
 
@@ -178,11 +185,15 @@ export async function checkMonitor(
   // returns the same number 96 times a day is noise. The very first value is a
   // baseline, not a change.
   const changed = rec.lastValue !== undefined && rec.lastValue !== outcome.value;
-  // Edge trigger: false → true only. The notification is additionally
-  // rate-limited per monitor; the edge state still advances so a suppressed hit
-  // is not replayed on the next check.
+  // Trigger gate. State conditions (number / contains) are edge-triggered:
+  // false → true only. Event conditions (changed / list_added) already mean
+  // "this poll observed something new", so gating them against the previous
+  // poll's `met` would let a value that changes on every check notify exactly
+  // once and then go permanently silent — the 1-hour cooldown is their
+  // anti-spam gate instead.
+  const edgeFire = EVENT_CONDITIONS.has(rec.condition.kind) || !rec.lastMet;
   const shouldNotify =
-    met && !rec.lastMet && now - (rec.lastNotifiedAt ?? 0) >= MONITOR_NOTIFY_COOLDOWN_MS;
+    met && edgeFire && now - (rec.lastNotifiedAt ?? 0) >= MONITOR_NOTIFY_COOLDOWN_MS;
 
   const entry: MonitorHistoryEntry | null = changed || met !== rec.lastMet
     ? { at: now, value: outcome.value, met }

@@ -139,6 +139,46 @@ describe("checkMonitor — edge trigger", () => {
   });
 });
 
+describe("checkMonitor — event conditions keep firing", () => {
+  // Regression: `changed` / `list_added` carry an EVENT ("this poll saw
+  // something new"), so gating them on the previous poll's met value made a
+  // value that changes every check notify exactly once and then go silent.
+  it("notifies on every observed change (cooldown permitting)", async () => {
+    await putMonitor(makeMonitor({ condition: { kind: "changed" } }));
+    let now = NOW;
+    const hits: unknown[] = [];
+    for (const v of ["a", "b", "c", "d"]) {
+      const deps = makeDeps({
+        now: () => now,
+        extractDirect: vi.fn(async () => ({ ok: true, value: v, via: "selector", fetchMode: "direct" }) as ExtractOutcome),
+      });
+      await checkMonitor("mon_test", deps);
+      hits.push(...deps.hits);
+      now += MONITOR_NOTIFY_COOLDOWN_MS + 1;
+    }
+    // "a" is the baseline; b / c / d each notify.
+    expect(hits).toHaveLength(3);
+  });
+
+  it("still rate-limits event conditions to one notification per hour", async () => {
+    await putMonitor(makeMonitor({ condition: { kind: "changed" } }));
+    const poll = async (v: string, at: number) =>
+      makeDeps({
+        now: () => at,
+        extractDirect: vi.fn(async () => ({ ok: true, value: v, via: "selector", fetchMode: "direct" }) as ExtractOutcome),
+      });
+
+    await checkMonitor("mon_test", await poll("a", NOW));          // baseline
+    const notified = await poll("b", NOW + 60_000);
+    await checkMonitor("mon_test", notified);                      // first notification
+    expect(notified.hits).toHaveLength(1);
+
+    const suppressed = await poll("c", NOW + 2 * 60_000);          // 1 min later
+    await checkMonitor("mon_test", suppressed);
+    expect(suppressed.hits).toHaveLength(0);
+  });
+});
+
 describe("checkMonitor — fetchMode upgrade", () => {
   it("upgrades to tab mode when direct mode cannot find the target", async () => {
     await putMonitor(makeMonitor({ condition: { kind: "changed" } }));

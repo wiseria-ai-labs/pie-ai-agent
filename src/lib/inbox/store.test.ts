@@ -48,6 +48,24 @@ describe("inbox store", () => {
     expect(all[0].title).toBe(`t${MAX_INBOX_ENTRIES_PER_REF + 4}`);
   });
 
+  it("keeps trimming other rows when the just-written entry is itself the oldest", async () => {
+    // 20 rows for one ref fills it to the per-ref cap; a 22nd row carrying a
+    // much older `at` (the migration replays historical timestamps) is itself
+    // among the two oldest — the OTHER doomed row must still be deleted.
+    for (let i = 0; i < 20; i++) {
+      await addInboxEntry({ source: "monitor", refId: "mon_x", kind: "triggered", title: `t${i}`, at: 1000 + i });
+    }
+    await addInboxEntry({ source: "monitor", refId: "mon_x", kind: "triggered", title: "old-a", at: 50 });
+    await addInboxEntry({ source: "monitor", refId: "mon_x", kind: "triggered", title: "old-b", at: 10 });
+    const rows = (await listInbox()).filter((e) => e.refId === "mon_x");
+    const titles = rows.map((r) => r.title);
+    // The OTHER doomed row was trimmed (the `return` bug left it behind)…
+    expect(titles).not.toContain("old-a");
+    // …the row just written is never dropped, so the cap can sit one over.
+    expect(titles).toContain("old-b");
+    expect(rows).toHaveLength(MAX_INBOX_ENTRIES_PER_REF + 1);
+  });
+
   it("keeps idempotent ids for migration entries", async () => {
     const input = {
       id: "ibx_unread_run_1",

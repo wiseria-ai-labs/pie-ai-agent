@@ -103,6 +103,20 @@ export async function handleMonitorAlarm(
 }
 
 /**
+ * True when both URLs share an origin. Tab ids are NOT stable across browser
+ * sessions (Chrome restarts numbering), so a persisted `activeTabId` can point
+ * at an unrelated user tab after a restart — reconcile must verify before it
+ * closes anything.
+ */
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Startup reconcile (§6): close orphaned hidden tabs, expire records past
  * `expiresAt`, then re-create lost alarms. A missing alarm whose nextCheckAt is
  * overdue fires once — never a burst of catch-up checks.
@@ -114,11 +128,15 @@ export async function reconcileMonitors(
   const all = await listMonitors();
   for (const rec of all) {
     // Close a hidden tab left behind by an SW kill (owned-tab cleanup, §4.3.2).
+    // Only when the tab is still ours — see sameOrigin above.
     if (rec.activeTabId != null) {
       try {
-        await chrome.tabs.remove(rec.activeTabId);
+        const tab = await chrome.tabs.get(rec.activeTabId);
+        if (tab.url && sameOrigin(tab.url, rec.url)) {
+          await chrome.tabs.remove(rec.activeTabId);
+        }
       } catch {
-        /* already gone */
+        /* tab already gone */
       }
       await patchMonitor(rec.id, { activeTabId: undefined });
     }

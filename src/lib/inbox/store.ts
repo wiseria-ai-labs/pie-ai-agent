@@ -84,7 +84,10 @@ export async function addInboxEntry(input: AddInboxInput): Promise<InboxEntry> {
         drop.add(e.id);
       }
       for (const id of drop) {
-        if (id === entry.id) return; // never drop the row we just wrote
+        // `continue`, not `return`: the just-written row may itself be the
+        // oldest (migration replays an old `at`), and bailing here would leave
+        // every other doomed row in the store, over both caps.
+        if (id === entry.id) continue;
         store.delete(id);
         removed.push(id);
       }

@@ -297,7 +297,7 @@ function MonitorDetail({
         >
           {t("monitors.checkNow")}
         </DetailButton>
-        {rec.status === "paused" ? (
+        {rec.status === "expired" ? null : rec.status === "paused" ? (
           <DetailButton onClick={async () => { await resumeMonitor(rec.id); await onChanged(); }}>
             {t("monitors.resume")}
           </DetailButton>

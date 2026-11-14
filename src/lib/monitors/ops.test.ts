@@ -218,6 +218,13 @@ describe("update / pause / resume / delete / check-now", () => {
     expect(stub.alarms.has(`monitor:${id}`)).toBe(true);
   });
 
+  it("refuses to pause an expired monitor (avoids an unresumable zombie)", async () => {
+    const id = await seeded();
+    await putMonitor({ ...(await getMonitor(id))!, expiresAt: Date.now() - 1, status: "expired" });
+    expect((await pauseMonitorOp(id, "user")).ok).toBe(false);
+    expect((await getMonitor(id))?.status).toBe("expired");
+  });
+
   it("refuses to resume an expired monitor", async () => {
     const id = await seeded();
     await putMonitor({ ...(await getMonitor(id))!, expiresAt: Date.now() - 1 });

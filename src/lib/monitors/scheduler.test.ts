@@ -24,8 +24,14 @@ function installChromeStub() {
     alarms.has(name) ? { name, scheduledTime: alarms.get(name)! } : undefined,
   );
   const remove = vi.fn(async () => undefined);
-  (globalThis as unknown as { chrome: unknown }).chrome = { alarms: { create, clear, get }, tabs: { remove } };
-  return { alarms, create, clear, get, remove };
+  // Reconcile verifies the persisted tab id still points at our page before
+  // closing it (tab ids are reused across browser sessions).
+  const tabs = vi.fn(async (id: number) => ({ id, url: "https://x.example.com/" }));
+  (globalThis as unknown as { chrome: unknown }).chrome = {
+    alarms: { create, clear, get },
+    tabs: { remove, get: tabs },
+  };
+  return { alarms, create, clear, get, remove, tabs };
 }
 
 let stub: ReturnType<typeof installChromeStub>;
@@ -141,6 +147,15 @@ describe("reconcileMonitors", () => {
     await putMonitor(makeMonitor({ activeTabId: 42 }));
     await reconcileMonitors(NOW, deps());
     expect(stub.remove).toHaveBeenCalledWith(42);
+    expect((await getMonitor("mon_a"))?.activeTabId).toBeUndefined();
+  });
+
+  it("never closes a reused tab id that now belongs to another site", async () => {
+    await putMonitor(makeMonitor({ activeTabId: 42 }));
+    stub.tabs.mockResolvedValue({ id: 42, url: "https://user-bank.example.net/" } as never);
+    await reconcileMonitors(NOW, deps());
+    expect(stub.remove).not.toHaveBeenCalled();
+    // The stale pointer is still cleared so it can't be retried on every boot.
     expect((await getMonitor("mon_a"))?.activeTabId).toBeUndefined();
   });
 

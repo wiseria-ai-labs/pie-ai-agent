@@ -242,6 +242,10 @@ export async function pauseMonitorOp(
   if (!isNonEmptyString(id)) return fail("id is required");
   const rec = await getMonitor(id);
   if (!rec) return fail(`monitor not found: ${id}`);
+  // An expired monitor is terminal: flipping it to "paused" would produce a
+  // record whose expiresAt is already past, which resume then refuses — a
+  // zombie state with no way out.
+  if (rec.status === "expired") return fail("monitor has expired");
   await disarmMonitor(id);
   await patchMonitor(id, { status: "paused", pausedReason: reason, nextCheckAt: undefined });
   return ok();

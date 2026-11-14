@@ -30,6 +30,19 @@ function normalize(s: string): string {
 }
 
 /**
+ * Cap the joined text at a LINE boundary. A hard slice can cut the last item in
+ * half; when a long list slides (top row drops off the page), that half item's
+ * full text appears "new" to the next `list_added` comparison and fires a false
+ * hit. Dropping the partial row keeps both snapshots comparable.
+ */
+function capText(s: string): string {
+  if (s.length <= MAX_EXTRACT_CHARS) return s;
+  const cut = s.slice(0, MAX_EXTRACT_CHARS);
+  const nl = cut.lastIndexOf("\n");
+  return nl > 0 ? cut.slice(0, nl) : cut;
+}
+
+/**
  * Extract from a parsed document (no JS executed — this is what "direct" mode
  * sees, i.e. the server-rendered HTML).
  */
@@ -44,7 +57,7 @@ export function extractFromDoc(
     .map((el) => normalize(el.textContent ?? ""))
     .filter((t) => t.length > 0);
   if (texts.length > 0) {
-    return { found: true, via: "selector", text: texts.join("\n").slice(0, MAX_EXTRACT_CHARS) };
+    return { found: true, via: "selector", text: capText(texts.join("\n")) };
   }
 
   // Text anchor — the smallest element whose text contains the anchor string
@@ -60,7 +73,7 @@ export function extractFromDoc(
     if (best == null || t.length < best.length) best = t;
   }
   if (best == null) return { found: false, via: null, text: "" };
-  return { found: true, via: "anchor", text: best.slice(0, MAX_EXTRACT_CHARS) };
+  return { found: true, via: "anchor", text: capText(best) };
 }
 
 /**
@@ -75,13 +88,21 @@ export function extractInPage(args: {
 }): ExtractResult {
   const MAX = 2000;
   const norm = (s: string): string => s.replace(/[\s ]+/g, " ").trim();
+  // Mirror of capText above — executeScript serializes this body, so it cannot
+  // import the canonical helper.
+  const cap = (s: string): string => {
+    if (s.length <= MAX) return s;
+    const cut = s.slice(0, MAX);
+    const nl = cut.lastIndexOf("\n");
+    return nl > 0 ? cut.slice(0, nl) : cut;
+  };
 
   const nodes = Array.from(document.querySelectorAll(args.selector));
   const texts = nodes
     .map((el) => norm((el as HTMLElement).textContent ?? ""))
     .filter((t) => t.length > 0);
   if (texts.length > 0) {
-    return { found: true, via: "selector", text: texts.join("\n").slice(0, MAX) };
+    return { found: true, via: "selector", text: cap(texts.join("\n")) };
   }
 
   const needle =
@@ -96,5 +117,5 @@ export function extractInPage(args: {
     if (best == null || t.length < best.length) best = t;
   }
   if (best == null) return { found: false, via: null, text: "" };
-  return { found: true, via: "anchor", text: best.slice(0, MAX) };
+  return { found: true, via: "anchor", text: cap(best) };
 }
