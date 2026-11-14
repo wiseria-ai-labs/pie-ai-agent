@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ZoomIn,
   RotateCcw,
+  PanelsTopLeft,
 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
@@ -404,6 +405,20 @@ export default function SettingsRoot({
             onClick={() => onOpenPage("search")}
           />
           <CdpRow />
+        </Group>
+      </div>
+
+      {/* Group 1.5 — 个性化 (2.0; this line only — the memory / browser-data
+          rows belong to their own slices) */}
+      <div>
+        <GroupLabel>{t("settings.nav.personalization")}</GroupLabel>
+        <Group>
+          <NavRow
+            id="overlay"
+            icon={<PanelsTopLeft {...ROW_ICON} />}
+            label={t("settings.nav.overlay")}
+            onClick={() => onOpenPage("overlay")}
+          />
         </Group>
       </div>
 

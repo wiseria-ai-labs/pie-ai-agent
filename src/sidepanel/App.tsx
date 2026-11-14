@@ -10,6 +10,7 @@ import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
 import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
 import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
 import CustomRulesPage from "@/sidepanel/components/settings/pages/CustomRulesPage";
+import OverlayPage from "@/sidepanel/components/settings/pages/OverlayPage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import { type ThemeMode, UI_SCALE_KEY, applyUiScale, parseUiScale } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
@@ -23,9 +24,10 @@ import RecordingMode from "@/sidepanel/components/RecordingMode";
 import { listSessionIndex } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
-import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE, parseResearchDetailDeeplink } from "@/lib/deeplink";
+import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE, parseResearchDetailDeeplink, DEEPLINK_OVERLAY_RESTRICTED, parseOverlayPanelDeeplink, parseOverlayPrefillDeeplink } from "@/lib/deeplink";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
+import { useT } from "@/lib/i18n";
 
 /**
  * App — root component.
@@ -40,6 +42,7 @@ import type { SessionIndexEntry } from "@/lib/sessions/types";
  * Chat unmounts (Settings sub-view swap). Plan M1-U2 root-cause #1 fix.
  */
 export default function App() {
+  const t = useT();
   const [view, setView] = useState<AppView>("agent");
   const [hasManagedKey, setHasManagedKey] = useState(false);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("root");
@@ -55,6 +58,9 @@ export default function App() {
   // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
   // Settings → NewConfigWizard to open the managed-subscribe screen.
   const [subscribeNonce, setSubscribeNonce] = useState(0);
+  // 2.0 overlay — one-line explanation shown when the overlay's shortcut had to
+  // fall back to the panel (chrome:// / new tab / Web Store / PDF).
+  const [overlayNotice, setOverlayNotice] = useState<string | null>(null);
   // M1: theme mode owned at App level so the button reflects state and we
   // can persist to localStorage. M2 will wire data-theme to actually switch.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -169,10 +175,34 @@ export default function App() {
         return;
       }
       const researchId = parseResearchDetailDeeplink(val);
-      if (!researchId) return;
-      void chrome.storage.session.remove(DEEPLINK_KEY);
-      setResearchOpenId(researchId);
-      setView("research");
+      if (researchId) {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        setResearchOpenId(researchId);
+        setView("research");
+        return;
+      }
+      // 2.0 overlay — handoff to the side panel.
+      const overlaySession = parseOverlayPanelDeeplink(val);
+      if (overlaySession) {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        setOverlayNotice(null);
+        void session.setActive(overlaySession);
+        setView("agent");
+        return;
+      }
+      if (val === DEEPLINK_OVERLAY_RESTRICTED) {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        setOverlayNotice(t("overlay.panelRestrictedNotice"));
+        setView("agent");
+        return;
+      }
+      const prefill = parseOverlayPrefillDeeplink(val);
+      if (prefill !== null) {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        setChatPrefill(prefill);
+        setView("agent");
+        return;
+      }
     };
     void chrome.storage.session
       .get(DEEPLINK_KEY)
@@ -400,6 +430,26 @@ export default function App() {
         onClearUserPin={() => void session.clearUserPin()}
       />
 
+      {/* 2.0 overlay — restricted-page fallback notice (prototype state ⑪:
+          explained, not an error). */}
+      {overlayNotice && view === "agent" && (
+        <div
+          data-testid="overlay-restricted-notice"
+          className="flex items-start gap-2 border-b border-line bg-field px-3 py-2 text-[11.5px] leading-[16px] text-fg-2"
+        >
+          <span className="mt-[1px] text-accent">ⓘ</span>
+          <span className="flex-1">{overlayNotice}</span>
+          <button
+            type="button"
+            aria-label={t("common.dismiss")}
+            className="text-fg-3 hover:text-fg-1"
+            onClick={() => setOverlayNotice(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* ── Main content area ─────────────────────────────────────────────── */}
       {/* key={view} forces remount on switch so .view-enter keyframe replays.
           The wrapper inherits flex layout from the outer container. */}
@@ -490,6 +540,8 @@ export default function App() {
               <AssistantLanguagePage />
             ) : settingsPage === "customRules" ? (
               <CustomRulesPage />
+            ) : settingsPage === "overlay" ? (
+              <OverlayPage />
             ) : settingsPage === "about" ? (
               <AboutPage />
             ) : (

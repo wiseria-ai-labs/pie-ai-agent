@@ -151,6 +151,33 @@ import {
   waitForTaskReclaim,
 } from "./task-end-guard";
 import { broadcastInstructionState } from "./instruction-broadcast";
+import {
+  capsuleForTab,
+  closeOverlayOnTab,
+  detachOverlayRun,
+  forgetTabOverlay,
+  handleCapsuleAction,
+  handleOmniboxInput,
+  handleOverlayIntent,
+  handleOverlayReplace,
+  isOverlayDocumentPort,
+  isOverlayRunLive,
+  isOverlaySessionRunning,
+  makeOverlayPortShim,
+  maybeStashOverlaySessionForToolbar,
+  openOverlayFromCommand,
+  openSessionInPanel,
+  overlayConfigReply,
+  overlayOpenState,
+  rebindOverlayRunPort,
+  shouldKeepOverlayDocument,
+  startNewOverlayChat,
+  startOverlayRun,
+  wrapOverlayEmit,
+  type RunRuntime,
+} from "./overlay";
+import { OVERLAY_CONFIG, type CapsuleAction, type OverlayIntent, type OverlaySelection } from "@/lib/overlay/protocol";
+import { excludeHostForSelectionBar } from "@/lib/overlay/settings";
 import { mergeCarryoverIntoMessages } from "@/lib/agent/loop-drain";
 import type { ChatInstructionRejectedMessage } from "@/types/messages";
 import { isFilePdfUrl } from "@/lib/pdf/detect";
@@ -372,6 +399,10 @@ function findRecordingSessionByTabId(tabId: number | undefined): RecordingSessio
 // handling up front. action.onClicked is a trusted user gesture for
 // sidePanel.open, so Chrome opens normally through here too.
 chrome.action.onClicked.addListener((tab) => {
+  // 2.0 overlay — the toolbar icon still opens the side panel, but when this
+  // tab's overlay already has a conversation the panel jumps straight to it
+  // (prototype: 「浮层里有进行中的对话时，侧栏直接显示这段对话」).
+  void maybeStashOverlaySessionForToolbar(tab).catch(() => {});
   if (typeof tab.id === "number") {
     openPanel({ tabId: tab.id }, "action-click");
   } else if (typeof tab.windowId === "number") {
@@ -892,8 +923,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return; // no async response
   }
 
-  if (message.type === "quote-text-captured" || message.type === "quote-element-captured") {
-    // ROADMAP §14 v1.1 #4 — auto-open side panel on bubble click. Must run
+  if (message.type === "quote-text-captured" || message.type === "quote-element-captured") {    // ROADMAP §14 v1.1 #4 — auto-open side panel on bubble click. Must run
     // synchronously inside the onMessage handler to preserve the trusted
     // user-gesture chain (bubble click → content sendMessage → here). Any
     // await before this would invalidate the gesture and Chrome would reject
@@ -919,6 +949,115 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return;
   }
+
+  // ── 2.0 overlay ──────────────────────────────────────────────────────────
+  // The page-side host and the overlay document both talk to the SW over
+  // runtime messages; the agent stream itself keeps using the chat-stream port.
+  if (message?.type === "overlay:intent") {
+    const m = message as { intent: OverlayIntent; selection: OverlaySelection | null; prompt?: string };
+    void handleOverlayIntent(sender.tab?.id, m.intent, m.selection ?? null, m.prompt).catch((e) => {
+      console.warn("[sw] overlay intent failed:", e);
+    });
+    return;
+  }
+
+  if (message?.type === "overlay:closed") {
+    const m = message as { sessionId?: string };
+    // `keep` = a task is still running on that session; the document must stay
+    // mounted (hidden) because its port is the task's lifeline.
+    sendResponse({ keep: shouldKeepOverlayDocument(m.sessionId) });
+    return;
+  }
+
+  if (message?.type === "overlay:get-state") {
+    const m = message as { sessionId?: string; tabId?: number };
+    const tabId = sender.tab?.id ?? m.tabId ?? -1;
+    void overlayOpenState(m.sessionId ?? "", tabId)
+      .then((state) =>
+        sendResponse({
+          state,
+          running: isOverlaySessionRunning(m.sessionId ?? ""),
+        }),
+      )
+      .catch(() => sendResponse({ state: null, running: false }));
+    return true;
+  }
+
+  if (message?.type === "overlay:request-replace") {
+    const m = message as { tabId?: number; original?: string; text?: string };
+    void handleOverlayReplace(
+      typeof m.tabId === "number" ? m.tabId : (sender.tab?.id ?? -1),
+      m.original ?? "",
+      m.text ?? "",
+    )
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false, reason: "error" }));
+    return true;
+  }
+
+  if (message?.type === "overlay:exclude-site") {
+    const m = message as { host?: string };
+    void excludeHostForSelectionBar(m.host ?? "").then((settings) => sendResponse(settings));
+    return true;
+  }
+
+  if (message?.type === "overlay:new-chat") {
+    const m = message as { tabId?: number };
+    const tabId = typeof m.tabId === "number" ? m.tabId : sender.tab?.id;
+    if (typeof tabId === "number") {
+      void startNewOverlayChat(tabId).catch((e) => {
+        console.warn("[sw] overlay new chat failed:", e);
+      });
+    }
+    return;
+  }
+
+  if (message?.type === "overlay:to-panel") {
+    const m = message as { sessionId?: string; tabId?: number };
+    const tabId = typeof m.tabId === "number" ? m.tabId : sender.tab?.id;
+    if (m.sessionId) {
+      void (async () => {
+        await openSessionInPanel(m.sessionId!, tabId);
+        // One surface at a time: the page-side overlay goes away once the
+        // panel owns the conversation (a running task detaches, not aborts).
+        if (typeof tabId === "number") await closeOverlayOnTab(tabId);
+      })();
+    }
+    return;
+  }
+
+  if (message?.type === "overlay:capsule-action") {
+    const m = message as { action?: CapsuleAction; sessionId?: string };
+    if (m.action) {
+      void handleCapsuleAction(m.action, m.sessionId, sender.tab?.id).catch((e) => {
+        console.warn("[sw] overlay capsule action failed:", e);
+      });
+    }
+    return;
+  }
+
+  if (message?.type === "overlay:probe") {
+    // Content script just loaded (fresh page / navigation): re-attach a live
+    // capsule if this tab has one.
+    const tabId = sender.tab?.id;
+    const language = (message as { language?: string }).language;
+    void (async () => {
+      const reply = await overlayConfigReply(language);
+      sendResponse({
+        state: typeof tabId === "number" ? capsuleForTab(tabId) : null,
+        strings: reply.strings,
+      });
+    })();
+    return true;
+  }
+
+  if (message?.type === OVERLAY_CONFIG) {
+    const language = (message as { language?: string }).language;
+    void overlayConfigReply(language)
+      .then(sendResponse)
+      .catch(() => sendResponse(undefined));
+    return true;
+  }
 });
 
 // ROADMAP §14 v1.1 #5 — keyboard shortcut for "add selection as quote".
@@ -938,6 +1077,14 @@ function extractCurrentSelectionForQuote(): { text: string; sourceUrl: string } 
 }
 
 chrome.commands.onCommand.addListener((command) => {
+  // 2.0 overlay — the primary entry point. Restricted pages fall back to the
+  // side panel inside openOverlayFromCommand.
+  if (command === "open-overlay") {
+    void openOverlayFromCommand().catch((e) => {
+      console.warn("[sw] open-overlay command failed:", e);
+    });
+    return;
+  }
   // Manual escape hatch for browsers whose side-panel API reports success while
   // rendering nothing. Also pins the capability verdict, so one use is enough —
   // ordinary toolbar clicks route to the fallback window from then on.
@@ -1409,6 +1556,9 @@ async function handleChatStream(
   gen: number,
   fallbackTitle?: string,
   anchorTabId?: number,
+  overlayTabId?: number,
+  editableSelection?: boolean,
+  overlayRun?: RunRuntime | null,
 ) {
   const signal = abortController.signal;
   try {
@@ -1659,12 +1809,20 @@ async function handleChatStream(
         : ("auto" as const);
 
     await runAgentLoop({
-      emit: makeTaskEmit(port, sessionId, gen, signal),
+      // 2.0 overlay — when this task belongs to a page-resident overlay, the
+      // port can vanish mid-run. Emits go through the run mirror (which posts
+      // only while a port is alive) so the loop never touches a dead port.
+      emit: overlayRun
+        ? wrapOverlayEmit(overlayRun, makeTaskEmit(makeOverlayPortShim(overlayRun), sessionId, gen, signal))
+        : makeTaskEmit(port, sessionId, gen, signal),
       task,
       modelConfig,
       instanceId: chatSel.instanceId,
       signal,
       sessionId,
+      // 2.0 overlay — only turns with an editable selection may offer
+      // propose_rewrite (write-back would be impossible otherwise).
+      hasEditableSelection: editableSelection === true,
       // M1-U3 — persist agent state at every step boundary. M2-U1
       // upgrade: also bumps lastAccessedAt every 5 steps + on tombstone
       // (see makeStepSnapshotHandler). Errors caught + logged inside
@@ -1751,6 +1909,13 @@ chrome.runtime.onConnect.addListener((port) => {
   portsBySession.set(portSessionId, port);
   registerPanelPort(portSessionId, port);
 
+  // 2.0 overlay — the overlay document re-opened on a tab whose task kept
+  // running after a navigation. Adopt THIS port as the emit sink so the
+  // rebuilt UI starts receiving the rest of the stream. Only overlay
+  // documents may adopt (a side panel opening the same session must not
+  // silently inherit a task it never started).
+  if (isOverlayDocumentPort(port)) rebindOverlayRunPort(portSessionId, port);
+
   // v1.1 — drain any quote-added stashed while panel was booting (bubble click
   // triggers sidePanel.open + dispatchQuoteAdded back-to-back; the dispatch
   // happens before the panel's port connects). The new port's sessionId is the
@@ -1822,6 +1987,12 @@ chrome.runtime.onConnect.addListener((port) => {
       inFlightSessionIds.add(message.sessionId);
       runningSessionIds.add(message.sessionId);
       keepAlive.ensure();
+      // 2.0 overlay — mirror the run so it survives this port (the overlay
+      // document lives in the page and dies with it).
+      const overlayRun =
+        typeof message.overlayTabId === "number"
+          ? startOverlayRun(message.sessionId, message.overlayTabId, port, abortRotation.current)
+          : null;
       handleChatStream(
         port,
         message.messages,
@@ -1832,6 +2003,9 @@ chrome.runtime.onConnect.addListener((port) => {
         beginTask(message.sessionId),
         message.fallbackTitle,
         message.anchorTabId,
+        message.overlayTabId,
+        message.editableSelection,
+        overlayRun,
       );
     } else if (message.type === "chat-abort") {
       abortRotation.current.abort();
@@ -2003,7 +2177,19 @@ chrome.runtime.onConnect.addListener((port) => {
     portsBySession.delete(portSessionId);
     unregisterPanelPort(portSessionId);
 
-    abortRotation.current.abort();
+    // 2.0 overlay — an overlay task's port lives in the page document, so a
+    // navigation (or a closed overlay tab) drops it while the agent is still
+    // working. For those runs the disconnect is NOT "user closed the panel":
+    // the loop keeps running, the run mirror drives the in-page capsule, and
+    // the terminal emit persists what the dead document would have persisted.
+    const overlayDetached = [...inFlightSessionIds].filter((sid) => isOverlayRunLive(sid));
+    const keepAliveForOverlay =
+      overlayDetached.length > 0 && overlayDetached.length === inFlightSessionIds.size;
+    if (keepAliveForOverlay) {
+      for (const sid of overlayDetached) detachOverlayRun(sid);
+    } else {
+      abortRotation.current.abort();
+    }
     keepAlive.stop();
 
     // Bug-fix-E — panel closed mid-task. The abort above kills the running
@@ -2023,7 +2209,9 @@ chrome.runtime.onConnect.addListener((port) => {
     //
     // Fire-and-forget: MV3 SW stays alive for pending storage promises so
     // the markPaused write completes before the SW idles out.
-    const sessionsToClose = Array.from(inFlightSessionIds);
+    const sessionsToClose = Array.from(inFlightSessionIds).filter(
+      (sid) => !keepAliveForOverlay || !overlayDetached.includes(sid),
+    );
     inFlightSessionIds.clear();
     // R13(d) — evict image cache for all sessions this port was tracking.
     evictByInFlightSet(sessionsToClose);
@@ -2062,6 +2250,17 @@ if (chrome.webNavigation) {
 // (target=_blank / window.open / popups, cross-window included). Capture is
 // NOT injected here — it lands on the new tab's first webNavigation.onCommitted
 // (the existing handler), which fires after about:blank is replaced.
+// 2.0 overlay — omnibox keyword `pie␣`. A normal page gets the overlay with
+// the query sent immediately; a page that cannot host one falls back to the
+// side panel with the query pre-filled.
+if (chrome.omnibox) {
+  chrome.omnibox.onInputEntered.addListener((text) => {
+    void handleOmniboxInput(text).catch((e) => {
+      console.warn("[sw] omnibox open failed:", e);
+    });
+  });
+}
+
 chrome.tabs.onCreated.addListener((tab) => {
   handleRecordingTabCreated(tab);
 });
@@ -2069,6 +2268,8 @@ chrome.tabs.onCreated.addListener((tab) => {
 // Recording v1.1 — drop a closed tab from its flow-set; abort only when the
 // flow-set becomes empty (closing a spawned child no longer kills recording).
 chrome.tabs.onRemoved.addListener((closedTabId) => {
+  // 2.0 overlay — a closed tab forgets its overlay conversation window.
+  void forgetTabOverlay(closedTabId).catch(() => {});
   for (const sess of Array.from(recordingState.values())) {
     if (!sess.tabRefByTabId.has(closedTabId)) continue;
     const port = portsBySession.get(sess.sessionId);

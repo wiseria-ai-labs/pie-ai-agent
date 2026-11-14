@@ -68,6 +68,20 @@ export interface ChatStartMessage {
    * active-tab capture.
    */
   anchorTabId?: number;
+  /**
+   * 2.0 overlay — the tab whose overlay document owns this task's port.
+   * The port dies when that page navigates, so the SW must NOT treat the
+   * disconnect as "user closed the panel" for these runs: it keeps the loop
+   * alive, drives the in-page capsule, and persists the messages the dead
+   * document would have persisted.
+   */
+  overlayTabId?: number;
+  /**
+   * 2.0 overlay — this turn carries an EDITABLE selection, so the run may
+   * offer `propose_rewrite` (write-back is only possible there). Absent for
+   * read-only selections and for the side panel.
+   */
+  editableSelection?: boolean;
 }
 
 export interface ChatAbortMessage {
@@ -409,6 +423,9 @@ export interface AgentStepMessage {
   image?: AgentStepImageExtras;
   /** Long-running skill script poll snapshot. Wire-only; same as DisplayMessage.progress. */
   progress?: AgentStepProgress;
+  /** 2.0 overlay — the tab the loop is currently focused on (pinnedTabId at
+   *  emit time). The in-page capsule follows it across tab switches. */
+  focusTabId?: number;
   /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
   sessionId: string;
 }
