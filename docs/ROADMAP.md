@@ -443,3 +443,4 @@ v1 SHIPPED 2026-05-15 (v0.10.0)。v1.1 collection SHIPPED 2026-05-16（chip 容�
 - **前提**：`token budget 只裁 head 不裁 react`（`window-token-budget.ts:15,142`）；`MAX_STEPS=30` 仍是兜底；`recentSigs`/`reflectionMemory` 为 in-memory loop 状态，SW 重启清零（首版接受，跨重启可后续塞 `SessionAgentState`）。
 
 **优先级归属**：(a)+(b) 属**第一梯队（用户每天会卡）** — 死循环烧光 30 步是真实日常摩擦；(c) 属**成本/质量优化**，与 #57/#58 同主题。立 plan 前仍需走完整 brainstorm → plan 链路（(a) 的 `detectLoop` 是唯一该 TDD 的纯函数部分）。
+
