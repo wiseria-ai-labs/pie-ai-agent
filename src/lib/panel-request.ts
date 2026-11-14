@@ -10,6 +10,7 @@
 import type { LocalFileResult } from "./local-file-request";
 import type { ScheduleDraftPayload, ScheduleModelSelection } from "./agent/tools/schedule-meta";
 import type { SkillRunConfirmRequest } from "./agent/tools/skill-script";
+import type { McpToolConfirmRequest } from "./mcp/agent-tools";
 
 /** kind 注册表：加一种人机交互 = 加一行，编译期校验 payload/返回。 */
 export interface PanelRequestMap {
@@ -34,6 +35,8 @@ export interface PanelRequestMap {
     res: string | null; // 用户选中的形态 id（claude-app 等）；null = 拒绝
   };
   "skill-run-confirm": { req: SkillRunConfirmRequest; res: boolean };
+  /** #481 — D1=A: first call of a remote MCP server's tools in this session. */
+  "mcp-tool-confirm": { req: McpToolConfirmRequest; res: boolean };
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 

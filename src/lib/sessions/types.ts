@@ -243,6 +243,13 @@ export interface SessionAgentState {
    */
   approvedSkillIds?: string[];
   /**
+   * #481 — per-session × per-server remote-MCP approvals (D1=A). A server id in
+   * this list skips the `mcp-tool-confirm` card for the rest of the session.
+   * Same lifecycle and same "only the panel can approve" rule as
+   * `approvedSkillIds` (carried across the task-end tombstone).
+   */
+  approvedMcpServerIds?: string[];
+  /**
    * v1.5 — task-scoped pointer to the currently-focused tab among
    * `SessionMeta.pinnedTabs[]`. Snapshot is taken on this tab each
    * iteration. Mutated by `focus_tab` tool; reset to pinnedTabs[0].tabId

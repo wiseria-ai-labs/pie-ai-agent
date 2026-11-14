@@ -61,6 +61,7 @@ export async function runFunctional({ page, rec, snap, base, hasKey }) {
       "uiLanguage",
       "assistantLanguage",
       "customRules",
+      "mcp",
       "feedback",
       "about",
     ];

@@ -71,6 +71,7 @@ import { getEnabledSkillEntries, getActiveSkillSource } from "@/background/skill
 import { isFilePdfUrl, isPdfTabAsync } from "../pdf/detect";
 import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
+import { createMcpRun } from "../mcp/run";
 // isRestrictedUrl is owned by the shared util (src/lib/url/restricted.ts).
 // Imported here for loop-internal use AND re-exported below so existing
 // `import { isRestrictedUrl } from "../agent/loop"` call sites keep working.
@@ -875,6 +876,11 @@ export function mergeSessionAgentSnapshot(
       ...snapshot,
       pendingInstructions: existing.pendingInstructions,
       ...(existing.approvedSkillIds ? { approvedSkillIds: existing.approvedSkillIds } : {}),
+      // #481 — MCP server approvals are session-scoped too (D1=A): a session
+      // outlives its tasks, so the confirm card must not re-pop next task.
+      ...(existing.approvedMcpServerIds
+        ? { approvedMcpServerIds: existing.approvedMcpServerIds }
+        : {}),
     };
   }
   return { ...existing, ...snapshot };
@@ -1599,8 +1605,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const announcedGroups = new Set<string>(activeToolGroups); // already-known → never re-announce
   // Headless (scheduled) run = no resumed history AND no multi-turn chat prefix
   // (case 3 in the history seed below). Constant per task. load_tools refuses to
-  // arm the `schedule` group in headless runs (recursive-scheduling guard).
+  // arm the `schedule` group in headless runs (recursive-scheduling guard), and
+  // remote MCP groups are not offered at all — their per-session confirm card
+  // has nobody to answer it.
   const isHeadless = !ctx.resumedAgentMessages && !(ctx.messages && ctx.messages.length > 0);
+
+  // ── Remote MCP servers (issue #481) ────────────────────────────────────────
+  // All snapshot / activation / resume / ordering logic lives in createMcpRun
+  // (src/lib/mcp/run.ts); this loop only consumes its four accessors.
+  const mcpRun = await createMcpRun({ sessionId, signal, isHeadless, activeToolGroups });
 
   const systemMsg: AgentMessage = {
     role: "system",
@@ -1631,6 +1644,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // #344 — user custom-rules snapshot (see above). Rendered as a trusted
       // user-preference block after response_language when non-empty.
       customRules,
+      // #481 — one catalog line per configured remote MCP server.
+      mcpRun.catalogLines,
     ),
   };
 
@@ -1926,6 +1941,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Navigation divergence is surfaced once per distinct change; the periodic
       // self-check checkpoint re-appears every BUDGET_NUDGE_INTERVAL steps past
       // the soft checkpoint.
+      // #481 — resumed MCP groups that could not be restored. Held back until
+      // an observation is actually merged into history: the resumed first
+      // iteration skips the merge, so draining there would lose the notice.
+      if (!isResumedFirstIteration) sysNotices.push(...mcpRun.drainStartupNotices());
       if (sysNotices.length > 0) {
         observationText += `\n\n<system_notice>\n${sysNotices.join("\n\n")}\n</system_notice>`;
       }
@@ -2113,6 +2132,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const loadToolsTool = buildLoadToolsTool({
         getActiveGroups: () => activeToolGroups,
         headless: isHeadless,
+        // #481 — one extra loadable group per configured MCP server (task-start
+        // snapshot → the load_tools schema stays byte-stable for the task).
+        extraGroups: mcpRun.loadToolsExtraGroups,
       });
       // run_skill_script 需要 sessionId（运行确认卡走 panel-request）——
       // 与 mouse/keyboard 同模式 per-run 装配，不进 BUILT_IN_TOOLS 静态表。
@@ -2205,6 +2227,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         readSkillOutputTool,
         loadToolsTool,
         ...localBridgeTools, // Slice 0 — run_local_agent (bridge-gated)
+        ...mcpRun.tools(), // #481 — only groups activated via load_tools / resume
       ];
       const disclosed = selectTools(fullToolList, activeToolGroups);
       const allToolsBeforeExclude = filterToolsByVision(disclosed, modelConfig.vision);

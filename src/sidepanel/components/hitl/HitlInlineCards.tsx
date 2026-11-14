@@ -3,6 +3,7 @@ import type { ActivePanelRequest, PanelResponseBody } from "../../hooks/usePanel
 import type { DecryptedInstance } from "@/lib/instances";
 import { ScheduleDraftCard } from "../ScheduleDraftCard";
 import { SkillRunConfirmCard } from "../SkillRunConfirmCard";
+import { McpToolConfirmCard } from "../McpToolConfirmCard";
 import { RunLocalAgentCard } from "../RunLocalAgentCard";
 import { HandoffCard } from "../HandoffCard";
 import { LocalFileRequestCard } from "../LocalFileRequestCard";
@@ -39,6 +40,13 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
         <SkillRunConfirmCard
           key={request.requestId}
           payload={request.payload as import("@/lib/agent/tools/skill-script").SkillRunConfirmRequest}
+          onDecision={(approved) => respond(request.requestId, { ok: true, data: approved })}
+        />
+      )}
+      {request?.kind === "mcp-tool-confirm" && (
+        <McpToolConfirmCard
+          key={request.requestId}
+          payload={request.payload as import("@/lib/mcp/agent-tools").McpToolConfirmRequest}
           onDecision={(approved) => respond(request.requestId, { ok: true, data: approved })}
         />
       )}

@@ -51,7 +51,7 @@ Slug: release-smoke-checklist
 
 | ID | 做什么 | 证据 |
 |---|---|---|
-| F03 | 打开并返回：`models` / `bridge` / `search` / `uiLanguage` / `assistantLanguage` / `customRules` / `feedback` / `about` | 各页特征节点 + 回到 `settings-row-models`。不要写死「共 N 行」——root 测试里那份 7 行清单已经漏了 `customRules` |
+| F03 | 打开并返回：`models` / `bridge` / `search` / `uiLanguage` / `assistantLanguage` / `customRules` / `mcp` / `feedback` / `about` | 各页特征节点 + 回到 `settings-row-models`。不要写死「共 N 行」——root 测试里那份 7 行清单已经漏了 `customRules` |
 | F04 | Theme：`theme-dark` → `documentElement.dataset.theme === "dark"`；`theme-light` → `"light"`；同 profile 重载后仍在 | DOM `aria-pressed` + `dataset.theme` + 重载后仍在。全程不离开设置页再回来「碰巧对」 |
 | F05 | CDP 开关拨开 / 拨关 | 双流：DOM `cdp-switch` 与 `isCdpInputEnabled()` 跟随延迟 ≤ 一轮轮询。clean 旧版若断言永远绿，说明没测到跟随 |
 | F06 | Panel-window 开关拨一次 | DOM `panel-window-switch` 与 IDB `panel-mode` 一致。不验真窗口形态（那是 Chrome 壳，H 区） |
@@ -151,6 +151,7 @@ L03 是整份清单里唯一一条同时锁 **agent loop + 读工具 + 写工具
 | H02 | 本机已装的扩展，点一次 Pie Link / optional 权限。只看「开关还在、弹框还是浏览器的」 | Playwright 点不了浏览器级弹框；harness 还把 `nativeMessaging` 提成必选 |
 | H03 | 若本发版动过 PDF / file://：用一个本地 PDF 看权限卡是否还冒得出 | file URL 授权在浏览器设置里 |
 | H04 | 若本发版动过 HITL（skill-grant / CDP 黄条 / 文件访问卡）：人手走一张卡 | headed 才能点；默认套件为了时间不跑 |
+| H05 | 真实 Google Docs MCP（workspace-mcp + 真 Google OAuth）：设置里加 server → 测试连接列出工具 → 让 agent 读一份文档 → 让它追加一段，文档确实变了，step 列表里有 `mcp_*` 工具名 | 真实 OAuth 与真实 server 的 Origin 放行（`OAUTH_ALLOWED_ORIGINS`）无法自动化，见 issue #481；本地 fixture 只覆盖协议，不覆盖授权 |
 
 不进 H、也不进套件：Windows / Edge、托管订阅支付、OAuth、全 provider 真打、WebArena、录制变 skill、截图/多模态、skill 脚本、定时任务跑通。这些是功能 PR 自己的 `need-human-test`，或下一次加码。
 
@@ -198,4 +199,4 @@ L03 是整份清单里唯一一条同时锁 **agent loop + 读工具 + 写工具
 
 F24（桥跟随）和 F13（custom provider）都进 v1。之后发现新回归，在本清单加 ID，并改 `eval/acceptance/release-smoke/` 同一份套件。
 
-条数：F 24 + P 2 + L 5 + H 4。同一 profile 必须按序（先 F07 再 F09…）。F14 由 runner 关 context 再启同一 `user-data-dir`，不在 F 批中途做。
+条数：F 24 + P 2 + L 5 + H 5。同一 profile 必须按序（先 F07 再 F09…）。F14 由 runner 关 context 再启同一 `user-data-dir`，不在 F 批中途做。

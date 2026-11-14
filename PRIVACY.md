@@ -78,6 +78,13 @@ When you ask the agent to search the web, the query is sent **directly to
 Tavily** using a Tavily API key you add in Settings → Search (subject to
 <https://www.tavily.com/privacy>).
 
+If you connect a remote **MCP server** in Settings → MCP servers, Pie talks to
+that server directly as well: the tool arguments the agent sends and the
+server's responses travel between your browser and the server you configured,
+and those results are then included in what is sent to your model provider. The
+server is your own choice and is not operated or vetted by Pie — review its
+privacy policy too.
+
 These transmissions go **directly from your browser to the provider's API
 endpoint — Pie has no proxy in between.** Supported model providers are Anthropic
 Claude, OpenAI, Google Gemini, OpenRouter, DeepSeek, MiniMax, GLM (Zhipu),

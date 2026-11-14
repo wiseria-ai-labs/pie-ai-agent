@@ -77,6 +77,7 @@ import { setScheduleRunDep } from "@/lib/agent/tools/schedule-meta";
 import { handleScheduleAction } from "@/lib/schedules/action-handler";
 import { SCHEDULE_ACTION_MESSAGE, type ScheduleActionMessage } from "@/lib/schedules/panel-actions";
 import { handleSkillsAction } from "./skills-action-handler";
+import { MCP_TEST_MESSAGE, testMcpServer, type McpTestMessage } from "@/lib/mcp/test-connection";
 import { SKILLS_ACTION_MESSAGE, type SkillsActionMessage } from "@/lib/skills/panel-actions";
 import { DELETE_SESSION_WORKSPACE_MESSAGE, type DeleteSessionWorkspaceMessage } from "@/lib/sessions/workspace-cleanup";
 import {
@@ -765,6 +766,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "extract-page") {
     handleExtractPage().then(sendResponse);
+    return true; // async response
+  }
+
+  // #481 — Settings「MCP servers」测试连接。跑在 SW 里（连接缓存只在这里）；
+  // testMcpServer 自己负责强制重连 + 工具清单，面板共用同一个类型契约。
+  if (message?.type === MCP_TEST_MESSAGE) {
+    const { serverId } = message as McpTestMessage;
+    testMcpServer(typeof serverId === "string" ? serverId : "")
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, tools: [], skipped: [], error: String(e) }));
     return true; // async response
   }
 

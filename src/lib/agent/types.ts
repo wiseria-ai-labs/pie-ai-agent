@@ -106,5 +106,12 @@ export interface Tool {
   name: string;
   description: string;
   parameters: Record<string, unknown>; // JSON Schema object
+  /**
+   * Explicit disclosure group override. MCP tools carry a dynamic group
+   * (`mcp:<slug>`) that is not in the static TOOL_GROUPS registry — without
+   * this field `getToolGroup` would fall back to "core" and keep them visible
+   * on every turn. Static built-in tools omit it.
+   */
+  group?: string;
   handler: (args: unknown, ctx: ToolHandlerContext) => Promise<ActionResult>;
 }
