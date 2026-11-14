@@ -6,6 +6,7 @@ import type { DecryptedInstance } from "@/lib/instances";
 import type { BuiltinProvider, ModelMeta } from "@/lib/model-router";
 import { getProviderMeta, resolveEndpointVariant } from "@/lib/model-router";
 import { CUSTOM_PREFIX } from "@/lib/custom-providers";
+import { isLazyModelProvider } from "@/lib/provider-models-fetch";
 import ProviderIcon from "./ProviderIcon";
 import { getCachedEntitlement, cachedManagedModel } from "@/lib/managed-account";
 import { consumptionDots } from "@/lib/managed-format";
@@ -158,15 +159,12 @@ export default function ModelPicker(props: Props) {
     const next = expandedId === inst.id ? null : inst.id;
     setExpandedId(next);
     if (next) {
-      const meta = inst.provider.startsWith(CUSTOM_PREFIX)
-        ? undefined
-        : getProviderMeta(inst.provider as BuiltinProvider);
-      // 前提：唯一 lazy provider（openrouter）没有 endpointVariants，而所有带
-      // variant 的 provider 默认 models 非空，所以这里暂不感知 variant。若未来
-      // 某个 lazy provider 挂上带 models override 的 variant，需改为按 modelsFor 判断。
+      // 仅内置「懒加载」provider（清单只在 /v1/models 后面）在首次展开时自动拉一次；
+      // 自定义 provider 的刷新入口在向导/设置页，不在 picker 里自动发请求。
       // managed 的 SWR 刷新由上方 useEffect 统一管（覆盖初始展开），不走这里。
-      const lazyEmpty = (meta?.models.length ?? 0) === 0 && (inst.fetchedModels?.length ?? 0) === 0;
-      if (lazyEmpty) props.onRefreshModels?.(inst.id);
+      if (isLazyModelProvider(inst.provider) && (inst.fetchedModels?.length ?? 0) === 0) {
+        props.onRefreshModels?.(inst.id);
+      }
     }
   }
 

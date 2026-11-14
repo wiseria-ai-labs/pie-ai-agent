@@ -61,10 +61,10 @@ describe("ProviderModelList", () => {
     expect(screen.queryByText("should-not-appear")).toBeNull();
   });
 
-  // #3: the 未拉取/↻ refresh row is an openrouter-only affordance. Custom
-  // providers have no /v1/models refresh handler wired, so the row must not
-  // render for them even when onRefresh is passed (it was a dead button).
-  it("never shows the refresh row for custom providers", () => {
+  // #468: the 未拉取/↻ refresh row is driven by the /v1/models capability flag,
+  // not by provider id — custom providers get it too (previously a dead button
+  // because the handler hard-returned for anything but openrouter).
+  it("shows the refresh row for custom providers", () => {
     render(
       <ProviderModelList
         provider="custom:cp1"
@@ -72,8 +72,13 @@ describe("ProviderModelList", () => {
         onRefresh={() => {}}
       />,
     );
+    expect(screen.getByText(/refresh/i)).toBeTruthy();
+    expect(screen.getByText(/not fetched/i)).toBeTruthy();
+  });
+
+  it("hides the refresh row for providers without a /v1/models endpoint", () => {
+    render(<ProviderModelList provider="anthropic" customModels={[]} onRefresh={() => {}} />);
     expect(screen.queryByText(/refresh/i)).toBeNull();
-    expect(screen.queryByText(/not fetched/i)).toBeNull();
   });
 
   // #3 residue: for custom providers the editable custom rows win — a fetched
