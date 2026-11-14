@@ -44,5 +44,5 @@ PR 本身没有人工验收标签了：Review 判断要不要真机，Acceptance
 - **仓库只认 `wiseria-ai-labs/pie-ai-agent`**：所有 `gh` 必须带 `-R wiseria-ai-labs/pie-ai-agent`。禁止 `gh auth switch`。
 - **不创建标签**：`bug` / `feature` / `P0` / `P1` / `P2` 已人工预建，automation 只用不建。
 - **单一身份 `wenkang-xie`（org owner）**：同一身份不能自审自批，review 意见走普通 PR 评论，不用 `gh pr review`。
-- **main 分支保护**：`required_approving_review_count = 0`（保留「需 PR」、`enforce_admins=false`），可用 `gh pr merge --squash --admin`。
+- **main 分支保护**：经典保护 `required_approving_review_count = 0`（保留「需 PR」）；另有 ruleset「main: extension 必过 + 合并前必须与 main 同步」（`strict_required_status_checks_policy=true`，必需检查 `extension`，**bypass 名单为空 → 连 admin 也绕不过**）。合并一律用 `gh pr merge --squash --delete-branch`；**不要加 `--admin`**（`strict` 闸会照样拒，报 `Repository rule violations found`）。PR 落后 main 时先 `gh pr update-branch` 再等新一轮 CI —— `gh run rerun` 复用的还是旧 merge commit，测不到新 main（2026-11-14 #485 就是这样带着断掉的测试进了 main）。
 - 本地能真跑 gate（`pnpm test` / `typecheck` / `build`），绿了才可合。
