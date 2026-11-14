@@ -93,6 +93,12 @@ export interface MemorySettingsRecord {
   enabled: boolean;
   /** 不记住的网站（域名列表）。 */
   excludedDomains: string[];
+  /**
+   * 来源：浏览历史（spec §5.3）。默认关；打开需要 history 可选权限
+   * （与书签/历史线共用 `browser-data/permissions.ts` 的授权）。
+   * 只读「网站 + 标题」，推断常用网站与兴趣，产出只进「近期片段 / 常用网站与账号」。
+   */
+  historySource?: boolean;
 }
 
 export interface ConsolidationSummary {
