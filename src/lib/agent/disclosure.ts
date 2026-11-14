@@ -100,11 +100,11 @@ export function groupsForEnv(s: EnvSignals): DisclosureGroup[] {
   return out;
 }
 
-export function selectTools<T extends { name: string }>(
+export function selectTools<T extends { name: string; group?: string }>(
   tools: readonly T[],
   active: ReadonlySet<string>,
 ): T[] {
-  return tools.filter((t) => active.has(getToolGroup(t.name)));
+  return tools.filter((t) => active.has(t.group ?? getToolGroup(t.name)));
 }
 
 // ── Task 3: catalog block, activation notice, resolveLoadTools ────────────────
@@ -113,10 +113,14 @@ function toolNamesForGroup(group: DisclosureGroup): string[] {
   return Object.keys(TOOL_GROUPS).filter((n) => TOOL_GROUPS[n] === group);
 }
 
-export function buildToolCatalogBlock(startActive: ReadonlySet<string>): string {
+export function buildToolCatalogBlock(
+  startActive: ReadonlySet<string>,
+  extraCatalogLines: readonly string[] = [],
+): string {
   const lines = LOADABLE_GROUPS
     .filter((g) => !startActive.has(g))
-    .map((g) => `- ${GROUP_META[g].catalogLine}`);
+    .map((g) => `- ${GROUP_META[g].catalogLine}`)
+    .concat(extraCatalogLines.map((line) => `- ${line}`));
   if (lines.length === 0) return "";
   return (
     `\n\n<available_tools_catalog>\n` +

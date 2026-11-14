@@ -67,6 +67,23 @@ implement → review ─approved──────────────→ me
 - **sidepanel 以 tab 打开 ≈ 真 side panel**，但排版差异属人工盲区，viewport 建议 420×900。
 - **`PIE_ACCEPT_BASE` 必须短**：daemon 的 unix socket 落 `<BASE>/home/.pie/daemon.sock`，受 macOS `sun_path` 104 字节上限；agent scratchpad 那种 100+ 字符的路径会让 daemon 直接 `Failed to listen`（表现为桥永远连不上、误判成回归）。用 `/tmp/pie<PR>` 一类短路径。
 
+### 远程 MCP fixture（#481）
+
+`eval/acceptance/mcp-fixture-server.mjs`（零依赖，Node 直跑）。本地 Streamable HTTP MCP：
+`initialize` / `notifications/initialized` / `tools/list`（两页 cursor）/ `tools/call`。
+工具：`read_document`、`append_text`（追加并落盘 state 文件）、`search`（每个实例同名，
+验跨 server 撞名）、`broken_schema`（循环 `$ref`）、`huge_schema`（超 20 KB）。
+
+```bash
+node eval/acceptance/mcp-fixture-server.mjs --port 7801 --name docs --state /tmp/pie-mcp/docs.json
+node eval/acceptance/mcp-fixture-server.mjs --port 7802 --name notes --state /tmp/pie-mcp/notes.json   # 第二实例，同名 search
+node eval/acceptance/mcp-fixture-server.mjs --port 7803 --name locked --deny-origin                  # 恒 403 Origin not allowed
+node eval/acceptance/mcp-fixture-server.mjs --port 7804 --name token  --auth SECRET                  # 401 模式（带对 token 才放行）
+node eval/acceptance/mcp-fixture-server.mjs --port 7805 --name sse    --sse                          # SSE 响应路径
+```
+
+验收 1–9 对应：1 → 设置页添加 `http://127.0.0.1:7801/mcp` + 测试连接（工具列表含 read/append/search，broken/huge 出现在「已跳过」）；2 → trace 里 `load_tools(["mcp:docs"])` 后 `mcp_docs_read_document`；3 → `append_text` 后 `/tmp/pie-mcp/docs.json` 的 document 变了 + step 列表有工具名 + 首调弹 `mcp-tool-confirm` 卡（**要真开 sidepanel 页点按钮**，纯 headless 没有卡）；4 → broken/huge 只在「已跳过」里；5 → `--deny-origin` 实例的测试结果与 load_tools 结果带 `403` + `Origin not allowed` + Origin 放行提示；6 → 7801/7802 各一条 `mcp_docs_search` / `mcp_notes_search`，各自打到自己实例（看各自 state 文件）；7 → 给 URL 加 `?token=SECRET`、header `Authorization: Bearer SECRET`，模型可见文本 / step / log_buffer 里搜不到 `SECRET`（fixture 的 `instructions` 含 `</untrusted_mcp_result>` 攻击串，顺便验转义）；8 → 两个 session 同时首次连 7801，abort 其一，另一个照常调用；9 → 未 load 时 tools 无 `mcp_*`、两轮 tools 序列化一致、定时任务（headless）没有 `mcp:*`。
+
 ## 验收标准
 
 - 每条清单项一条断言记录，状态 `PASS / FAIL / ERROR / SKIP`，FAIL/ERROR 附现场值。

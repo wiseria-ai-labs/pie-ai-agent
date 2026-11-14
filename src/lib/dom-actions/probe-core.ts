@@ -205,6 +205,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     "untrusted_scratchpad_preview",
     "untrusted_local_agent_output",
     "untrusted_skill_output_list",
+    "untrusted_mcp_result",
   ];
   const WRAPPER_TAGS = new Set(WRAPPER_TAGS_LIST);
 

@@ -7,6 +7,7 @@ import {
   Globe,
   MessageSquare,
   ScrollText,
+  Cable,
   MousePointerClick,
   AppWindow,
   MessageCircle,
@@ -395,6 +396,12 @@ export default function SettingsRoot({
             label={t("settings.nav.bridge")}
             badge={bridgeBadge}
             onClick={() => onOpenPage("bridge")}
+          />
+          <NavRow
+            id="mcp"
+            icon={<Cable {...ROW_ICON} />}
+            label={t("settings.nav.mcp")}
+            onClick={() => onOpenPage("mcp")}
           />
           <NavRow
             id="search"

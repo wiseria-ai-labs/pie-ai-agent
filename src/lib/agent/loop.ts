@@ -71,6 +71,17 @@ import { getEnabledSkillEntries, getActiveSkillSource } from "@/background/skill
 import { isFilePdfUrl, isPdfTabAsync } from "../pdf/detect";
 import { groupsForEnv, selectTools, growActiveGroups, type EnvSignals } from "./disclosure";
 import { buildLoadToolsTool } from "./tools/disclosure";
+import { connectMcpServer } from "../mcp/connection";
+import {
+  activateMcpServer,
+  dropMcpGroups,
+  makeSessionMcpConfirm,
+  restoreMcpGroups,
+  type McpToolsDeps,
+} from "../mcp/agent-tools";
+import { mcpCatalogLine, mcpGroupId, mcpSlugFromGroup } from "../mcp/names";
+import { listMcpServers } from "../mcp/store";
+import type { McpServerConfig } from "../mcp/types";
 // isRestrictedUrl is owned by the shared util (src/lib/url/restricted.ts).
 // Imported here for loop-internal use AND re-exported below so existing
 // `import { isRestrictedUrl } from "../agent/loop"` call sites keep working.
@@ -93,6 +104,8 @@ import {
   updateSessionAgent,
   isSkillApprovedInSession,
   recordSkillApproval,
+  isMcpServerApprovedInSession,
+  recordMcpServerApproval,
 } from "../sessions/storage";
 import { addPinToMeta, removePinFromMeta } from "../sessions/pin-state";
 import { drainPending, hasPending } from "../sessions/pending-instructions";
@@ -875,6 +888,11 @@ export function mergeSessionAgentSnapshot(
       ...snapshot,
       pendingInstructions: existing.pendingInstructions,
       ...(existing.approvedSkillIds ? { approvedSkillIds: existing.approvedSkillIds } : {}),
+      // #481 — MCP server approvals are session-scoped too (D1=A): a session
+      // outlives its tasks, so the confirm card must not re-pop next task.
+      ...(existing.approvedMcpServerIds
+        ? { approvedMcpServerIds: existing.approvedMcpServerIds }
+        : {}),
     };
   }
   return { ...existing, ...snapshot };
@@ -1599,8 +1617,70 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const announcedGroups = new Set<string>(activeToolGroups); // already-known → never re-announce
   // Headless (scheduled) run = no resumed history AND no multi-turn chat prefix
   // (case 3 in the history seed below). Constant per task. load_tools refuses to
-  // arm the `schedule` group in headless runs (recursive-scheduling guard).
+  // arm the `schedule` group in headless runs (recursive-scheduling guard), and
+  // remote MCP groups are not offered at all — their per-session confirm card
+  // has nobody to answer it.
   const isHeadless = !ctx.resumedAgentMessages && !(ctx.messages && ctx.messages.length > 0);
+
+  // ── Remote MCP servers (issue #481) ────────────────────────────────────────
+  // Snapshot at task start: the catalog lines, the load_tools enum and the
+  // tools array are all part of the cached prompt prefix (#175), so a server
+  // added mid-task only becomes visible in the NEXT task.
+  const mcpServers: McpServerConfig[] = isHeadless
+    ? []
+    : await listMcpServers().catch(() => []);
+  const mcpBySlug = new Map(mcpServers.map((s) => [s.slug, s]));
+  const mcpToolsByGroup = new Map<string, Tool[]>();
+  // Delivered with the first merged observation (resumed-group drops).
+  const startupNotices: string[] = [];
+
+  const mcpToolsDeps = (cfg: McpServerConfig): McpToolsDeps => ({
+    callTool: async (toolName, args, callSignal) => {
+      const live = await connectMcpServer(cfg);
+      return live.client.callTool(toolName, args, { signal: callSignal });
+    },
+    // Per-session × per-server approval (D1=A). The approval signal only ever
+    // arrives via the panel-request round-trip — the LLM cannot self-approve.
+    confirm: makeSessionMcpConfirm({
+      isApproved: (id) => isMcpServerApprovedInSession(sessionId, id),
+      requestConfirm: (p) => requestFromPanel(sessionId, "mcp-tool-confirm", p),
+      record: (id) => recordMcpServerApproval(sessionId, id),
+    }),
+    signal,
+  });
+
+  /** Connect + build one server's tools and register them on success. */
+  const activateMcpGroup = async (group: string): Promise<{ ok: boolean; message: string }> => {
+    const slug = mcpSlugFromGroup(group);
+    const cfg = slug ? mcpBySlug.get(slug) : undefined;
+    if (!cfg) {
+      return { ok: false, message: `Unknown MCP server group "${group}" — the server was deleted or renamed.` };
+    }
+    const res = await activateMcpServer(cfg, mcpToolsDeps(cfg));
+    if (res.ok) mcpToolsByGroup.set(group, res.tools);
+    return { ok: res.ok, message: res.message };
+  };
+
+  if (isHeadless) {
+    // Headless runs expose no MCP groups at all.
+    dropMcpGroups(activeToolGroups);
+  } else {
+    // Resume: restore the groups the prior run had activated. A server that was
+    // deleted / renamed / is unreachable drops its group instead of crashing.
+    // The notice is trusted text, so it names the group only — server error
+    // bodies stay out of <system_notice>.
+    for (const group of await restoreMcpGroups(activeToolGroups, activateMcpGroup)) {
+      startupNotices.push(
+        `The MCP tool group \`${group}\` from the resumed task is no longer usable and was dropped.`,
+      );
+    }
+  }
+
+  // Only servers NOT already active are advertised (resumed groups keep their
+  // tools without re-appearing in the catalog — same rule as static groups).
+  const mcpCatalogLines = mcpServers
+    .filter((s) => !activeToolGroups.has(mcpGroupId(s.slug)))
+    .map((s) => `${mcpGroupId(s.slug)}: ${mcpCatalogLine(s.name)}`);
 
   const systemMsg: AgentMessage = {
     role: "system",
@@ -1631,6 +1711,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // #344 — user custom-rules snapshot (see above). Rendered as a trusted
       // user-preference block after response_language when non-empty.
       customRules,
+      // #481 — one catalog line per configured remote MCP server. Snapshot at
+      // task start; only the user-provided name is included (no URL, no
+      // server-provided text).
+      mcpCatalogLines,
     ),
   };
 
@@ -1926,6 +2010,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // Navigation divergence is surfaced once per distinct change; the periodic
       // self-check checkpoint re-appears every BUDGET_NUDGE_INTERVAL steps past
       // the soft checkpoint.
+      // #481 — resumed MCP groups that could not be restored. Held back until
+      // an observation is actually merged into history: the resumed first
+      // iteration skips the merge, so draining there would lose the notice.
+      if (!isResumedFirstIteration && startupNotices.length > 0) {
+        sysNotices.push(...startupNotices.splice(0));
+      }
       if (sysNotices.length > 0) {
         observationText += `\n\n<system_notice>\n${sysNotices.join("\n\n")}\n</system_notice>`;
       }
@@ -2113,6 +2203,13 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const loadToolsTool = buildLoadToolsTool({
         getActiveGroups: () => activeToolGroups,
         headless: isHeadless,
+        // #481 — one extra loadable group per configured MCP server. The ids
+        // are the task-start snapshot, so the load_tools schema stays
+        // byte-stable for the whole task.
+        extraGroups: mcpServers.map((srv) => {
+          const id = mcpGroupId(srv.slug);
+          return { id, catalogLine: mcpCatalogLine(srv.name), load: () => activateMcpGroup(id) };
+        }),
       });
       // run_skill_script 需要 sessionId（运行确认卡走 panel-request）——
       // 与 mouse/keyboard 同模式 per-run 装配，不进 BUILT_IN_TOOLS 静态表。
@@ -2197,6 +2294,12 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
               : []),
           ]
         : [];
+      // #481 — tools of the MCP groups activated so far. Sorted by exposed
+      // name: activation order must not change the serialized tools prefix
+      // (#175), and two turns in the same state must be byte-identical.
+      const mcpTools = [...mcpToolsByGroup.values()]
+        .flat()
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
       const fullToolList = [
         ...BUILT_IN_TOOLS, ...mouseTools, ...keyboardTools, ...editorTools,
         readLocalFileTool, requestLocalFileTool, outputFileTool, ...scratchpadTools,
@@ -2205,6 +2308,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         readSkillOutputTool,
         loadToolsTool,
         ...localBridgeTools, // Slice 0 — run_local_agent (bridge-gated)
+        ...mcpTools, // #481 — only groups activated via load_tools / resume
       ];
       const disclosed = selectTools(fullToolList, activeToolGroups);
       const allToolsBeforeExclude = filterToolsByVision(disclosed, modelConfig.vision);
