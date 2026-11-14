@@ -352,7 +352,7 @@ export type DisplayMessage =
        *  默认折叠；点开显示标题列表。`items` 是持久化快照（加密条目标题在
        *  SW 侧已替换成占位文案）。 */
       role: "memory-used";
-      items: Array<{ id: string; title: string }>;
+      items: Array<{ id: string; title: string; encrypted?: boolean }>;
     }
   | {
       /** Pie 2.0 记忆层 — remember / forget 的事件行（F13）。用户点「撤销」
@@ -360,7 +360,10 @@ export type DisplayMessage =
       role: "memory-event";
       eventId: string;
       kind: "updated" | "deleted";
+      /** 条目标题；加密条目为空串（面板按语言渲染占位文案）。 */
       label: string;
+      /** 事件涉及「地址与联系方式」类加密条目。 */
+      encrypted?: boolean;
       count: number;
       undone?: boolean;
     };
@@ -671,17 +674,19 @@ export interface FileOutputResultMessage {
  */
 export interface MemoryUsedMessage {
   type: "memory-used";
-  items: Array<{ id: string; title: string }>;
+  items: Array<{ id: string; title: string; encrypted?: boolean }>;
   sessionId: string;
 }
 
 /** 记忆层 — remember / forget 的立即生效事件行（F13「已更新 / 已删除 · 撤销」）。
- *  eventId 指向 memory store 里的一条 undo 记录；面板点「撤销」直接回调。 */
+ *  eventId 指向 memory store 里的一条 undo 记录；面板点「撤销」直接回调。
+ *  label 为空串表示条目标题不可外露（加密条目 / 批量删除），面板按字典渲染。 */
 export interface MemoryEventMessage {
   type: "memory-event";
   eventId: string;
   kind: "updated" | "deleted";
   label: string;
+  encrypted?: boolean;
   count: number;
   sessionId: string;
 }

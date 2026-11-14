@@ -122,6 +122,22 @@ describe("contact entries are encrypted at rest", () => {
     expect(data.entries[0]!.body).toContain("13800000000");
   });
 
+  it("never overwrites an undecryptable entry with empty text", async () => {
+    const res = await rememberEntry({ kind: "contact", title: "住址", body: "西湖区", now: NOW });
+    if (!res.ok) throw new Error("setup");
+    // 模拟密钥变了：密文解不开
+    const raw = (await rawEntry(res.id))!;
+    await tx(STORES.memory, "readwrite", (s) => s.put({ ...raw, body: "!!not-ciphertext!!" }));
+
+    const [broken] = await listMemoryEntries();
+    expect(broken!.decryptFailed).toBe(true);
+    expect(broken!.title).toBe("");
+
+    // 普通整理（空操作）不应把它写回成空文本
+    await applyMemoryOps([], { origin: "consolidated", now: NOW + 1 });
+    expect((await rawEntry(res.id))!.body).toBe("!!not-ciphertext!!");
+  });
+
   it("undo of a deleted contact entry keeps it encrypted at rest", async () => {
     const res = await rememberEntry({
       kind: "contact",

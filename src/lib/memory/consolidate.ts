@@ -75,11 +75,15 @@ export function buildSessionExcerpt(meta: SessionMeta, maxChars = SESSION_EXCERP
   return text.length > maxChars ? text.slice(0, maxChars) + "\n…(truncated)" : text;
 }
 
-/** 会话是否位于「不记住的网站」列表（按其 pinnedTabs 的 origin 判断）。 */
+/**
+ * 会话是否整段不进记忆：无痕窗口的任务（spec §5.3「从不记住」）或
+ * 全部 pin 在「不记住的网站」上的会话。
+ */
 export function isSessionExcluded(
   meta: SessionMeta,
   excludedDomains: readonly string[],
 ): boolean {
+  if (meta.incognito) return true;
   if (excludedDomains.length === 0) return false;
   const origins = (meta.pinnedTabs ?? []).map((p) => p.origin).filter(Boolean);
   if (origins.length === 0) return false;

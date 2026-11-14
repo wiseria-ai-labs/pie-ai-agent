@@ -128,6 +128,7 @@ export class HeadlessTranscript {
           eventId: msg.eventId,
           kind: msg.kind,
           label: msg.label,
+          ...(msg.encrypted ? { encrypted: true } : {}),
           count: msg.count,
         });
         return;

@@ -82,6 +82,8 @@ export interface MemoryEntry {
   origin: MemoryEntryOrigin;
   /** true = title/body 是 AES-GCM 密文（「地址与联系方式」类）。 */
   encrypted?: boolean;
+  /** 运行时标记：密文解不开（密钥变了）。这类条目不写回，避免把密文覆盖成空。 */
+  decryptFailed?: boolean;
 }
 
 /** 落盘记录（未知字段被忽略；`id` 是 store 的 keyPath）。 */

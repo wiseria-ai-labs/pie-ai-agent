@@ -28,8 +28,10 @@ export interface ActionResult {
   memoryEvent?: {
     eventId: string;
     kind: "updated" | "deleted";
-    /** 事件行展示的短语（"高铁坐一等座（公司报销）" / "1 条记忆"）。 */
+    /** 事件行展示的标题；加密条目 / 批量删除为空串（面板按语言渲染文案）。 */
     label: string;
+    /** 事件涉及加密条目（「地址与联系方式」）。 */
+    encrypted?: boolean;
     count: number;
   };
 }

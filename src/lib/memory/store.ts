@@ -84,7 +84,8 @@ async function openEntry(raw: MemoryEntry): Promise<MemoryEntry> {
     };
   } catch {
     // 密钥变了（重装 / 清过 config）——不阻塞其它记忆，只把这一条标成不可读。
-    return { ...raw, title: "(无法解密的记忆)", body: "" };
+    // 文本留空由 UI 走字典文案；decryptFailed 让写回路径跳过它（密文原样保留）。
+    return { ...raw, title: "", body: "", decryptFailed: true };
   }
 }
 
@@ -292,7 +293,10 @@ export async function applyMemoryOps(
   const now = opts.now ?? Date.now();
   const current = await listMemoryEntries({ includeExpired: true });
   const plan = planMemoryOps(current, ops, { now, origin: opts.origin });
-  const sealed = await Promise.all(plan.entries.map(sealEntry));
+  // 解不开的密文条目原样留在库里：写回只有空文本，会把用户数据抹掉。
+  const sealed = await Promise.all(
+    plan.entries.filter((e) => !e.decryptFailed).map(sealEntry),
+  );
 
   await txMulti([STORE], "readwrite", (m) => {
     const store = m[STORE];
@@ -430,7 +434,11 @@ export async function rememberEntry(input: {
   sourceSessionId?: string;
 }): Promise<
   | { ok: false; reason: string }
-  | { ok: true; id: string; event: { eventId: string; kind: "updated"; label: string } }
+  | {
+      ok: true;
+      id: string;
+      event: { eventId: string; kind: "updated"; label: string; encrypted?: boolean };
+    }
 > {
   const now = input.now ?? Date.now();
   // 先做一次准入，把被拒的原因（secret / empty）如实带回给工具层。
@@ -484,8 +492,10 @@ export async function rememberEntry(input: {
       eventId,
       kind: "updated",
       // 「地址与联系方式」类条目的标题也加密存——事件行（和它的持久化副本）
-      // 只给占位文案，不把明文写进对话历史。
-      label: pinned.encrypted ? "已加密的地址/联系方式" : pinned.title,
+      // 只给空标题 + encrypted 标记，由面板按当前语言渲染占位文案：
+      // 明文既不进对话历史，也不会以中文写死在 SW 里。
+      label: pinned.encrypted ? "" : pinned.title,
+      ...(pinned.encrypted ? { encrypted: true } : {}),
     },
   };
 }

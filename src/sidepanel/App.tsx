@@ -486,7 +486,7 @@ export default function App() {
             ) : settingsPage === "search" ? (
               <SearchProviderSection />
             ) : settingsPage === "memory" ? (
-              <MemoryPage />
+              <MemoryPage onOpenSession={(id) => void handleOpenSessionFromSchedule(id)} />
             ) : settingsPage === "uiLanguage" ? (
               <UiLanguagePage />
             ) : settingsPage === "assistantLanguage" ? (

@@ -25,17 +25,24 @@ function err(reason: string): ActionResult {
   return { success: false, error: reason };
 }
 
-/** 当前标签页是否在「不记住的网站」列表里。读不到 tab 就不拦。 */
-async function currentTabExcluded(ctx: ToolHandlerContext): Promise<boolean> {
+/**
+ * 当前标签页为什么不该写记忆。读不到 tab 就不拦（关闭 / 已切换走）。
+ *   incognito —— spec §5.3「从不记住」：无痕窗口里的任务整段不落库；
+ *   excluded  —— 命中用户的「不记住的网站」。
+ */
+async function tabMemoryBlocker(
+  ctx: ToolHandlerContext,
+): Promise<"incognito" | "excluded" | null> {
   try {
-    const settings = await getMemorySettings();
-    if (settings.excludedDomains.length === 0) return false;
     const tab = await chrome.tabs.get(ctx.tabId);
+    if (tab?.incognito) return "incognito";
     const url = tab?.url;
-    if (!url) return false;
-    return isDomainExcluded(hostOf(url), settings.excludedDomains);
+    if (!url) return null;
+    const settings = await getMemorySettings();
+    if (settings.excludedDomains.length === 0) return null;
+    return isDomainExcluded(hostOf(url), settings.excludedDomains) ? "excluded" : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -83,7 +90,13 @@ const rememberTool: Tool = {
         "Automatic memory is turned off. The user can enable it in Settings → Memory.",
       );
     }
-    if (await currentTabExcluded(ctx)) {
+    const blocker = await tabMemoryBlocker(ctx);
+    if (blocker === "incognito") {
+      return err(
+        "This task is running in an incognito window — Pie never saves memory from incognito sessions.",
+      );
+    }
+    if (blocker === "excluded") {
       return err("This site is on the user's \"don't remember\" list — nothing was saved.");
     }
 
@@ -144,11 +157,10 @@ const forgetTool: Tool = {
       };
     }
     const { count, eventId } = await deleteMemoryEntries(matches.map((e) => e.id));
-    // 单条删除时事件行显示标题；加密条目的标题不外露（F13 只显示「已删除 N 条」）。
+    // 单条删除时事件行可以显示标题（面板按语言拼文案）；加密条目与批量删除
+    // 都不外露标题，面板只按 count 渲染。
     const label =
-      matches.length === 1 && !matches[0]!.encrypted
-        ? matches[0]!.title
-        : `已删除 ${count} 条记忆`;
+      matches.length === 1 && !matches[0]!.encrypted ? matches[0]!.title : "";
     return {
       success: true,
       observation: `deleted ${count} memory entr${count === 1 ? "y" : "ies"}.`,

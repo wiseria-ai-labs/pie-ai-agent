@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildSeededTaskContent, prependTimeToLastUserMessage } from "./loop";
+import {
+  buildSeededTaskContent,
+  composeObservationText,
+  prependTimeToLastUserMessage,
+} from "./loop";
 import type { AgentMessage } from "../model-router/types";
 
 /**
@@ -24,6 +28,34 @@ describe("buildSeededTaskContent (headless)", () => {
 
   it("omits the memory block when empty", () => {
     expect(buildSeededTaskContent(NOW, "订高铁", "")).not.toContain("<user_memory");
+  });
+});
+
+describe("composeObservationText", () => {
+  it("keeps <user_memory> outside the trusted <system_notice> block", () => {
+    const out = composeObservationText(
+      "Current URL: https://example.com\nPage title: Example",
+      ["The tab navigated away from the pinned origin."],
+      [MEM],
+    );
+    const noticeEnd = out.indexOf("</system_notice>");
+    const memStart = out.indexOf("<user_memory");
+    expect(noticeEnd).toBeGreaterThan(-1);
+    expect(memStart).toBeGreaterThan(noticeEnd);
+    // 反向断言：system_notice 块内部不含任何记忆内容
+    const noticeBlock = out.slice(out.indexOf("<system_notice>"), noticeEnd);
+    expect(noticeBlock).not.toContain("<user_memory");
+    expect(noticeBlock).not.toContain("高铁一等座");
+  });
+
+  it("omits the notice block when there are no notices", () => {
+    const out = composeObservationText("base", [], [MEM]);
+    expect(out).not.toContain("<system_notice>");
+    expect(out.indexOf("<user_memory")).toBeGreaterThan(out.indexOf("base"));
+  });
+
+  it("is a no-op when there is nothing to append", () => {
+    expect(composeObservationText("base", [], [])).toBe("base");
   });
 });
 

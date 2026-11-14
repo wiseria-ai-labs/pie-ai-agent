@@ -71,6 +71,12 @@ export function shouldCompact(
   return isNewMonth(lastCompactedAt, now) || isNearCapacity(entries);
 }
 
+/** 下一次例行精简的日期（下个自然月 1 号）。容量到 90% 会提前触发。 */
+export function nextCompactionAt(now = Date.now()): number {
+  const d = new Date(now);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+}
+
 /**
  * 跑一次月度精简。返回摘要；不需要 / 不能跑时返回 null。
  * 快照在模型返回之后、写入之前保存 —— 只有真的要改库时才留撤销点。

@@ -16,6 +16,7 @@ import {
   setMemorySettings,
   updateMemoryEntry,
 } from "@/lib/memory/store";
+import { nextCompactionAt } from "@/lib/memory/compact";
 import {
   LONG_TERM_KINDS,
   MEMORY_KINDS,
@@ -42,6 +43,13 @@ function fmtDate(ms?: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** 设计板 F14「下次精简 12-01」——只要日期。 */
+function fmtDay(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="px-1 pb-1.5 font-mono text-[10px] font-medium tracking-[0.14em] text-fg-3">
@@ -60,8 +68,13 @@ const KIND_TITLE_KEY: Record<MemoryKind, DictKey> = {
   recent: "settings.memory.kinds.recent",
 };
 
-/** F14 — 设置 · 记忆（整页）。分类行点进去是 F15 的列表视图（同一组件内切换）。 */
-export default function MemoryPage() {
+/** F14 — 设置 · 记忆（整页）。分类行点进去是 F15 的列表视图（同一组件内切换）。
+ *  `onOpenSession` 由 App 注入：F15 条目来源点回原对话（切到那个 session）。 */
+export default function MemoryPage({
+  onOpenSession,
+}: {
+  onOpenSession?: (sessionId: string) => void;
+}) {
   const t = useT();
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [enabled, setEnabled] = useState(true);
@@ -160,6 +173,7 @@ export default function MemoryPage() {
         entries={byKind(view)}
         onBack={() => setView("root")}
         onChanged={reload}
+        {...(onOpenSession ? { onOpenSession } : {})}
       />
     );
   }
@@ -213,8 +227,14 @@ export default function MemoryPage() {
           ) : (
             <span className="flex-1">{t("settings.memory.neverRun")}</span>
           )}
+        </div>
+        {/* 设计板 F14「下次精简 12-01」——例行精简在每月 1 号，容量到 90% 会提前 */}
+        <div className="flex items-center justify-between text-[11px] text-fg-3">
+          <span>{t("settings.memory.nextCompact", { date: fmtDay(nextCompactionAt()) })}</span>
           {lastCompactedAt && (
-            <span className="font-mono text-[11px] text-fg-3">{fmtDate(lastCompactedAt)}</span>
+            <span className="font-mono">
+              {t("settings.memory.lastCompact", { time: fmtDate(lastCompactedAt) })}
+            </span>
           )}
         </div>
         {profileText && (
@@ -386,11 +406,13 @@ function MemoryList({
   entries,
   onBack,
   onChanged,
+  onOpenSession,
 }: {
   kind: MemoryKind;
   entries: MemoryEntry[];
   onBack: () => void;
   onChanged: () => Promise<void>;
+  onOpenSession?: (sessionId: string) => void;
 }) {
   const t = useT();
   const [query, setQuery] = useState("");
@@ -472,7 +494,7 @@ function MemoryList({
                         {t("settings.memory.masked")}
                       </button>
                     ) : (
-                      e.body || e.title
+                      e.body || e.title || t("settings.memory.decryptFailed")
                     )}
                   </div>
                 )}
@@ -486,7 +508,20 @@ function MemoryList({
                   {e.useCount > 0 && (
                     <span>{t("settings.memory.usedTimes", { count: String(e.useCount) })}</span>
                   )}
-                  {e.sourceSessionId && <span>{t("settings.memory.sourceFrom")}</span>}
+                  {e.sourceSessionId &&
+                    (onOpenSession ? (
+                      <button
+                        type="button"
+                        data-testid={`memory-source-${e.id}`}
+                        onClick={() => onOpenSession(e.sourceSessionId!)}
+                        title={e.sourceTitle}
+                        className="underline underline-offset-2 hover:text-fg-1"
+                      >
+                        {t("settings.memory.sourceFrom")}
+                      </button>
+                    ) : (
+                      <span>{t("settings.memory.sourceFrom")}</span>
+                    ))}
                   <span className="flex-1" />
                   {isEditing ? (
                     <>

@@ -16,7 +16,7 @@ import type { DisplayMessage } from "@/types";
 export function MemoryUsedChip({
   items,
 }: {
-  items: Array<{ id: string; title: string }>;
+  items: Array<{ id: string; title: string; encrypted?: boolean }>;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -43,7 +43,7 @@ export function MemoryUsedChip({
           </div>
           {items.map((it) => (
             <div key={it.id} className="border-t border-line px-3 py-2 text-[12.5px] text-fg-1 first:border-t-0">
-              {it.title}
+              {it.encrypted ? t("chat.memory.encryptedItem") : it.title}
             </div>
           ))}
         </div>
@@ -75,8 +75,14 @@ export function MemoryEventRow({
 
   const label =
     msg.kind === "deleted"
-      ? t("chat.memory.deleted", { count: String(msg.count) })
-      : t("chat.memory.updated", { label: msg.label });
+      ? msg.count > 1
+        ? t("chat.memory.deleted", { count: String(msg.count) })
+        : msg.label
+          ? t("chat.memory.deletedOne", { label: msg.label })
+          : t("chat.memory.deletedOneEncrypted")
+      : msg.label
+        ? t("chat.memory.updated", { label: msg.label })
+        : t("chat.memory.updatedEncrypted");
 
   return (
     <div

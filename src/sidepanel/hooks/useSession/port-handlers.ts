@@ -486,6 +486,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         eventId: msg.eventId,
         kind: msg.kind,
         label: msg.label,
+        ...(msg.encrypted ? { encrypted: true } : {}),
         count: msg.count,
       };
       const flushed = buildAssistant(

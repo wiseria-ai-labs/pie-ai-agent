@@ -10,7 +10,7 @@ import {
   shouldConsolidate,
   stripUntrustedBlocks,
 } from "../consolidate";
-import { isNearCapacity, isNewMonth, runMonthlyCompaction, shouldCompact } from "../compact";
+import { isNearCapacity, isNewMonth, nextCompactionAt, runMonthlyCompaction, shouldCompact } from "../compact";
 import { pickMemory } from "../selector";
 import {
   applyMemoryOps,
@@ -97,6 +97,11 @@ describe("consolidation input", () => {
     expect(isSessionExcluded(m, ["example.com"])).toBe(true);
     expect(isSessionExcluded(m, ["other.com"])).toBe(false);
     expect(isSessionExcluded(meta({ pinnedTabs: [] }), ["example.com"])).toBe(false);
+  });
+
+  it("excludes incognito sessions unconditionally (spec §5.3 从不记住)", () => {
+    expect(isSessionExcluded(meta({ incognito: true }), [])).toBe(true);
+    expect(isSessionExcluded(meta({ incognito: true, pinnedTabs: [] }), [])).toBe(true);
   });
 
   it("requires 20h since the last run", () => {
@@ -203,6 +208,21 @@ describe("runDailyConsolidation", () => {
     expect((await getMemoryState()).watermark).toBe(NOW - HOUR);
     expect(await listMemoryEntries()).toHaveLength(0);
   });
+
+  it("never feeds an incognito session to the model (§5.3 从不记住)", async () => {
+    const callSpy = vi.fn(callModel);
+    const res = await runDailyConsolidation({
+      model,
+      now: NOW,
+      listSessions: async () => sessions.slice(0, 1),
+      readSession: async (id) =>
+        meta({ id, incognito: true, messages: [{ role: "user", content: "无痕里的私事" }] }),
+      callModel: callSpy,
+    });
+    expect(res).toBeNull();
+    expect(callSpy).not.toHaveBeenCalled();
+    expect(await listMemoryEntries()).toHaveLength(0);
+  });
 });
 
 describe("monthly compaction", () => {
@@ -212,6 +232,11 @@ describe("monthly compaction", () => {
     expect(isNewMonth(Date.UTC(2026, 10, 1), NOW)).toBe(false);
     expect(shouldCompact(Date.UTC(2026, 10, 2), [], NOW)).toBe(false);
     expect(isNearCapacity([{ kind: "preference", title: "a", body: "b".repeat(19_000) }])).toBe(true);
+  });
+
+  it("points the next cleanup at the first day of the next month", () => {
+    expect(nextCompactionAt(NOW)).toBe(new Date(2026, 11, 1).getTime());
+    expect(nextCompactionAt(Date.UTC(2026, 11, 15))).toBe(new Date(2027, 0, 1).getTime());
   });
 
   it("snapshots before applying and can be undone", async () => {

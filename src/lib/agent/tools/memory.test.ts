@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { chromeMock } from "@/test/setup";
 import { _resetForTests } from "@/lib/idb/db";
 import { _resetKeyForTests } from "@/lib/crypto";
 import { MEMORY_TOOLS, isMemoryToolName } from "./memory";
@@ -51,6 +52,21 @@ describe("remember", () => {
     const badKind = await tool("remember").handler({ kind: "nope", title: "x" }, ctx);
     expect(badKind.success).toBe(false);
     expect(badKind.error).toContain("kind must be one of");
+  });
+
+  it("refuses to save anything from an incognito window (§5.3 从不记住)", async () => {
+    chromeMock.tabs.__tabsById.set(1, {
+      id: 1,
+      url: "https://example.com/",
+      incognito: true,
+    } as unknown as { id: number; url: string });
+    const res = await tool("remember").handler(
+      { kind: "about", title: "住在杭州", body: "西湖区" },
+      ctx,
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toContain("incognito");
+    expect(await listMemoryEntries()).toHaveLength(0);
   });
 });
 
