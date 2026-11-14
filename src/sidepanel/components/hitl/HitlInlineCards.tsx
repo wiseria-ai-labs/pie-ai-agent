@@ -7,6 +7,9 @@ import { RunLocalAgentCard } from "../RunLocalAgentCard";
 import { HandoffCard } from "../HandoffCard";
 import { LocalFileRequestCard } from "../LocalFileRequestCard";
 import { CdpOnboardingCard } from "../CdpOnboardingCard";
+import { BrowserPermissionCard } from "./BrowserPermissionCard";
+import { BookmarkPlanCard } from "./BookmarkPlanCard";
+import { HistoryDeletionCard } from "./HistoryDeletionCard";
 
 export interface HitlInlineCardsProps {
   request: ActivePanelRequest | null;
@@ -84,6 +87,27 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
         <CdpOnboardingCard
           key={request.requestId}
           onAnswer={(enabled) => respond(request.requestId, { ok: true, data: enabled })}
+        />
+      )}
+      {request?.kind === "browser-permission" && (
+        <BrowserPermissionCard
+          key={request.requestId}
+          domain={(request.payload as { domain: "bookmarks" | "history" }).domain}
+          onAnswer={(granted) => respond(request.requestId, { ok: true, data: granted })}
+        />
+      )}
+      {request?.kind === "bookmark-plan" && (
+        <BookmarkPlanCard
+          key={request.requestId}
+          payload={request.payload as import("@/lib/browser-data/types").BookmarkPlanRequest}
+          onDecision={(apply) => respond(request.requestId, { ok: true, data: apply })}
+        />
+      )}
+      {request?.kind === "history-deletion" && (
+        <HistoryDeletionCard
+          key={request.requestId}
+          payload={request.payload as import("@/lib/browser-data/types").HistoryDeletionRequest}
+          onDecision={(confirmed) => respond(request.requestId, { ok: true, data: confirmed })}
         />
       )}
     </AnimatePresence>

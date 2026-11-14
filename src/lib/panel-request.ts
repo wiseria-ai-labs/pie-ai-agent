@@ -10,6 +10,11 @@
 import type { LocalFileResult } from "./local-file-request";
 import type { ScheduleDraftPayload, ScheduleModelSelection } from "./agent/tools/schedule-meta";
 import type { SkillRunConfirmRequest } from "./agent/tools/skill-script";
+import type {
+  BookmarkPlanRequest,
+  BrowserDataDomain,
+  HistoryDeletionRequest,
+} from "./browser-data/types";
 
 /** kind 注册表：加一种人机交互 = 加一行，编译期校验 payload/返回。 */
 export interface PanelRequestMap {
@@ -34,6 +39,12 @@ export interface PanelRequestMap {
     res: string | null; // 用户选中的形态 id（claude-app 等）；null = 拒绝
   };
   "skill-run-confirm": { req: SkillRunConfirmRequest; res: boolean };
+  /** 可选权限授权（书签 / 历史，分开授权）。res=用户在卡片上点了允许且 Chrome 授权成功。 */
+  "browser-permission": { req: { domain: BrowserDataDomain }; res: boolean };
+  /** 书签整理方案卡。res=用户点了「应用」；真正执行在 SW 工具处理器里。 */
+  "bookmark-plan": { req: BookmarkPlanRequest; res: boolean };
+  /** 历史删除卡（不可逆）。res=用户点了「删除 N 条」。 */
+  "history-deletion": { req: HistoryDeletionRequest; res: boolean };
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 

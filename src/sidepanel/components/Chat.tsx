@@ -97,6 +97,8 @@ import { copyRichText } from "./copy-rich-text";
 import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { HitlInlineCards } from "./hitl/HitlInlineCards";
+import { BrowserResultsCard } from "./browser-data/BrowserResultsCard";
+import { BrowserChangeRow } from "./browser-data/BrowserChangeRow";
 import { usePanelRequest } from "../hooks/usePanelRequest";
 import { ReportProblemDrawer } from "./ReportProblemDrawer";
 import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
@@ -826,6 +828,25 @@ export default function Chat({
                   resolved={msg.resolved}
                   onDiscard={() => discardTask(msg.confirmationId)}
                 />
+              </div>
+            );
+          }
+          if (msg.role === "browser-results") {
+            return (
+              <div key={`bresults-${firstIndex}`} className="bubble-in">
+                <BrowserResultsCard
+                  kind={msg.kind}
+                  query={msg.query}
+                  total={msg.total}
+                  entries={msg.entries}
+                />
+              </div>
+            );
+          }
+          if (msg.role === "browser-change") {
+            return (
+              <div key={`bchange-${msg.recordId}`} className="bubble-in">
+                <BrowserChangeRow recordId={msg.recordId} />
               </div>
             );
           }

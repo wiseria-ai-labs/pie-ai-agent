@@ -63,7 +63,7 @@
 | Incognito 窗口支持 | Phase 3 plan L61 | manifest 不加 `incognito: spanning`，作为 privacy 不变量 |
 | Partial-select confirm（checkbox UI） | Phase 3 plan L62 | 当前 all-or-nothing；用户拒绝后 LLM 重新出更小子集即可 |
 | "智能清理长期未访问标签" 内置 skill | Phase 3 plan L63 | 留给用户用 SkillsList 自助 CRUD 验证 Phase 2.6 |
-| chrome.history 主题趋势分析 | design.md L98 | 已表态不取该权限 |
+| chrome.history 主题趋势分析 | design.md L98 | Pie 2.0 起改为**可选权限、按需授权**（`optional_permissions` 里的 `history`，首次用到时弹授权卡）；不再默认不取 |
 | approve-side sanity reflection（≥5 cross-origin approve 顶部反思条） | Phase 3 plan L150 | 被评 paternalistic 撤回；等真实滥用模式再补 |
 | 两阶段 LLM 分类（>50 tab 时上 TnT-LLM 风格） | Phase 3 plan L103 | v1 单阶段够用 |
 

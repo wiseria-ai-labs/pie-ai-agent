@@ -148,6 +148,12 @@ export function buildTranscript(
       case "file-output":
         lines.push(`[file] ${m.filename} (${m.mime}, ${m.size} bytes)`);
         break;
+      case "browser-results":
+        lines.push(`[${m.kind} results] total=${m.total}`);
+        break;
+      case "browser-change":
+        lines.push(`[bookmark change] ${m.recordId}`);
+        break;
     }
   });
   return capTailBytes(lines.join("\n\n"), MAX_TRANSCRIPT_BYTES);

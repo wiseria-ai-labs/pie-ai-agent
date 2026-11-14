@@ -69,7 +69,7 @@ describe("buildToolCatalogBlock", () => {
     expect(block).toContain("scratchpad —");
   });
   it("returns empty string when every loadable group is active", () => {
-    const all = new Set<string>(["core", "pdf", "local-file", "scratchpad", "schedule", "skill-authoring"]);
+    const all = new Set<string>(["core", "pdf", "local-file", "scratchpad", "schedule", "skill-authoring", "browser-data"]);
     expect(buildToolCatalogBlock(all)).toBe("");
   });
 });

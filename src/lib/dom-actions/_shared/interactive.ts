@@ -102,6 +102,8 @@ export const WRAPPER_TAGS_LIST: readonly string[] = [
   "untrusted_scratchpad_preview",
   "untrusted_local_agent_output",
   "untrusted_skill_output_list",
+  "untrusted_bookmark",
+  "untrusted_history_entry",
 ];
 
 /**

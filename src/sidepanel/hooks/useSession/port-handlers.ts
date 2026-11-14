@@ -456,6 +456,45 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    // Pie 2.0 — clickable search results (F6). Re-emits are de-duped by the
+    // exact (kind, query, total, entries) shape, since one tool call emits once.
+    if (msg.type === "browser-results") {
+      const prev = slotsRef.current.get(msg.sessionId);
+      const baseMessages = prev?.messages ?? [];
+      if (
+        baseMessages.some(
+          (m) =>
+            m.role === "browser-results" &&
+            m.kind === msg.kind &&
+            m.query === msg.query &&
+            m.total === msg.total,
+        )
+      ) {
+        return;
+      }
+      const entry: DisplayMessage = {
+        role: "browser-results",
+        kind: msg.kind,
+        query: msg.query,
+        total: msg.total,
+        entries: msg.entries,
+      };
+      patchSlot(msg.sessionId, { messages: [...baseMessages, entry] });
+      return;
+    }
+
+    // Pie 2.0 — inline undo row (F7). De-duped by recordId.
+    if (msg.type === "browser-change") {
+      const prev = slotsRef.current.get(msg.sessionId);
+      const baseMessages = prev?.messages ?? [];
+      if (baseMessages.some((m) => m.role === "browser-change" && m.recordId === msg.recordId)) {
+        return;
+      }
+      const entry: DisplayMessage = { role: "browser-change", recordId: msg.recordId };
+      patchSlot(msg.sessionId, { messages: [...baseMessages, entry] });
+      return;
+    }
+
     // Subsequent branches added in Tasks 2c–2g.
   };
 
