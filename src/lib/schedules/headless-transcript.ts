@@ -113,6 +113,26 @@ export class HeadlessTranscript {
         });
         return;
       }
+      // Pie 2.0 记忆层 — 与面板侧 port-handlers 保持一致：chip / 事件行都进
+      // 会话转写（headless 跑没有面板，撤销按钮照样能重开会话后用）。
+      case "memory-used": {
+        if (msg.items.length === 0) return;
+        this.flushAssistant();
+        this.messages.push({ role: "memory-used", items: msg.items });
+        return;
+      }
+      case "memory-event": {
+        this.flushAssistant();
+        this.messages.push({
+          role: "memory-event",
+          eventId: msg.eventId,
+          kind: msg.kind,
+          label: msg.label,
+          ...(msg.encrypted ? { encrypted: true } : {}),
+          count: msg.count,
+        });
+        return;
+      }
       default:
         // agent-usage / needs-file-access / session-* / quote-added /
         // recording-* / chat-instruction-* — not part of the rendered

@@ -11,6 +11,7 @@ import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
 import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
 import CustomRulesPage from "@/sidepanel/components/settings/pages/CustomRulesPage";
 import BrowserDataPage from "@/sidepanel/components/settings/pages/BrowserDataPage";
+import MemoryPage from "@/sidepanel/components/settings/pages/MemoryPage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import { type ThemeMode, UI_SCALE_KEY, applyUiScale, parseUiScale } from "@/sidepanel/theme";
 import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
@@ -485,6 +486,8 @@ export default function App() {
               <BridgePage />
             ) : settingsPage === "search" ? (
               <SearchProviderSection />
+            ) : settingsPage === "memory" ? (
+              <MemoryPage onOpenSession={(id) => void handleOpenSessionFromSchedule(id)} />
             ) : settingsPage === "uiLanguage" ? (
               <UiLanguagePage />
             ) : settingsPage === "assistantLanguage" ? (

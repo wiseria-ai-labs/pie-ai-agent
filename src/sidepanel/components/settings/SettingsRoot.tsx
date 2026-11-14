@@ -16,6 +16,7 @@ import {
   ZoomIn,
   RotateCcw,
   Bookmark,
+  Brain,
 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
@@ -24,6 +25,7 @@ import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import { getPanelMode, setPanelMode, PANEL_MODE_KEY } from "@/lib/panel-host/panel-mode";
 import { onStoreChange } from "@/lib/store-bus";
 import { setConfig } from "@/lib/idb/config-store";
+import { getMemorySettings, listMemoryEntries } from "@/lib/memory/store";
 import { Switch } from "@/sidepanel/components/ui/Switch";
 import { IconButton } from "@/sidepanel/components/ui/IconButton";
 import { Popover } from "@/sidepanel/components/ui/Popover";
@@ -349,6 +351,9 @@ export default function SettingsRoot({
   // completes moments later (issue #298).
   const bridge = useBridgeStatus();
   const [searchConfigured, setSearchConfigured] = useState(false);
+  // Pie 2.0 记忆 — 行尾的「开 · N 条」（F14 导航行）。跟着 store-bus 刷新，
+  // 对话里 remember / 后台整理都会即时反映。
+  const [memoryBadge, setMemoryBadge] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let alive = true;
@@ -362,6 +367,24 @@ export default function SettingsRoot({
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      void Promise.all([getMemorySettings(), listMemoryEntries()]).then(([s, es]) => {
+        if (!alive) return;
+        setMemoryBadge(
+          s.enabled ? t("settings.nav.memoryOnCount", { count: String(es.length) }) : t("settings.nav.memoryOff"),
+        );
+      });
+    };
+    refresh();
+    const off = onStoreChange("memory", refresh);
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [t]);
 
   const bridgeBadge =
     bridge && bridge.hasPermission ? (
@@ -412,6 +435,13 @@ export default function SettingsRoot({
       <div>
         <GroupLabel>{t("settings.nav.personalization")}</GroupLabel>
         <Group>
+          <NavRow
+            id="memory"
+            icon={<Brain {...ROW_ICON} />}
+            label={t("settings.nav.memory")}
+            badge={memoryBadge}
+            onClick={() => onOpenPage("memory")}
+          />
           <NavRow
             id="browserData"
             icon={<Bookmark {...ROW_ICON} />}

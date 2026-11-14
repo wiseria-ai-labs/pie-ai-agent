@@ -363,6 +363,26 @@ export type DisplayMessage =
        *  it so restore state survives reloads. */
       role: "browser-change";
       recordId: string;
+    }
+  | {
+      /** Pie 2.0 记忆层 — 「用到 N 条记忆」chip（F4 / F13）。回答下方一行小字，
+       *  默认折叠；点开显示标题列表。`items` 是持久化快照（加密条目标题在
+       *  SW 侧已替换成占位文案）。 */
+      role: "memory-used";
+      items: Array<{ id: string; title: string; encrypted?: boolean }>;
+    }
+  | {
+      /** Pie 2.0 记忆层 — remember / forget 的事件行（F13）。用户点「撤销」
+       *  清掉记忆库里那一次写入；`undone` 只在当前面板会话内标记。 */
+      role: "memory-event";
+      eventId: string;
+      kind: "updated" | "deleted";
+      /** 条目标题；加密条目为空串（面板按语言渲染占位文案）。 */
+      label: string;
+      /** 事件涉及「地址与联系方式」类加密条目。 */
+      encrypted?: boolean;
+      count: number;
+      undone?: boolean;
     };
 
 // --- Agent: resolved element info (from snapshot, not LLM) ---
@@ -683,6 +703,30 @@ export interface FileOutputResultMessage {
   sessionId: string;
 }
 
+/**
+ * Pie 2.0 记忆层 — 挑选层在 step 2 之前注入了一次记忆（>F4/F13 的
+ * 「用到 N 条记忆」chip）。`items` 只带标题（加密条目已被 SW 侧替换成
+ * 占位文案），点开 chip 就能看到用了哪几条。
+ */
+export interface MemoryUsedMessage {
+  type: "memory-used";
+  items: Array<{ id: string; title: string; encrypted?: boolean }>;
+  sessionId: string;
+}
+
+/** 记忆层 — remember / forget 的立即生效事件行（F13「已更新 / 已删除 · 撤销」）。
+ *  eventId 指向 memory store 里的一条 undo 记录；面板点「撤销」直接回调。
+ *  label 为空串表示条目标题不可外露（加密条目 / 批量删除），面板按字典渲染。 */
+export interface MemoryEventMessage {
+  type: "memory-event";
+  eventId: string;
+  kind: "updated" | "deleted";
+  label: string;
+  encrypted?: boolean;
+  count: number;
+  sessionId: string;
+}
+
 // --- Discriminated Unions ---
 
 export type PortMessageToWorker =
@@ -724,4 +768,6 @@ export type PortMessageToPanel =
   | BrowserResultsMessage             // Pie 2.0 search results card (F6)
   | BrowserChangeMessage              // Pie 2.0 inline undo row (F7)
   | FileOutputResultMessage           // output_file download result
+  | MemoryUsedMessage                 // Pie 2.0 — 用到 N 条记忆 chip
+  | MemoryEventMessage                // Pie 2.0 — 记忆事件行（可撤销）
   | ChatRatelimitWaitMessage;         // Provider RPM 限流排队等待

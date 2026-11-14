@@ -164,6 +164,10 @@ export const BROWSER_DATA_TOOL_NAMES = [
   "search_history",
   "propose_history_deletion",
 ] as const;
+// Pie 2.0 记忆层工具（spec §8）。
+//   remember / forget — write（只改记忆库，不碰 tab；立即生效 + 可撤销记录）
+//   recall_memory    — read（复用挑选流程查一次，纯文本产出）
+export const MEMORY_TOOL_NAMES = ["remember", "forget", "recall_memory"] as const;
 
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
@@ -179,6 +183,7 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...LOCAL_FILE_TOOL_NAMES,
   ...SCRATCHPAD_TOOL_NAMES,
   ...BROWSER_DATA_TOOL_NAMES,
+  ...MEMORY_TOOL_NAMES,
   ...DISCLOSURE_TOOL_NAMES,
 ] as const;
 
@@ -333,6 +338,11 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   update_bookmark: "write",
   search_history: "read",
   propose_history_deletion: "read",
+  // 记忆层 — remember / forget 只改记忆库（不碰 tab，故 R7 tab 锁不触发）；
+  // recall_memory 是纯文本查询。
+  remember: "write",
+  forget: "write",
+  recall_memory: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class
@@ -429,6 +439,8 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   // not by disclosure).
   run_local_agent: "core",
   handoff_to_agent: "core",
+  // 记忆层 — core（存在性由 loop 按「自动记忆」开关装配，不靠 disclosure）。
+  remember: "core", forget: "core", recall_memory: "core",
 };
 
 // Build-time exhaustive check — every known tool MUST declare a group.

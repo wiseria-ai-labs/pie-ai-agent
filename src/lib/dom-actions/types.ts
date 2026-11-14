@@ -36,4 +36,17 @@ export interface ActionResult {
    * from IDB by id — nothing else travels on the wire.
    */
   browserChange?: { recordId: string };
+  /**
+   * 记忆工具（remember / forget）—— 对话里留一条可撤销事件行（F13）。
+   * loop.ts 转成 `memory-event` port 消息；eventId 供面板的「撤销」按钮回调。
+   */
+  memoryEvent?: {
+    eventId: string;
+    kind: "updated" | "deleted";
+    /** 事件行展示的标题；加密条目 / 批量删除为空串（面板按语言渲染文案）。 */
+    label: string;
+    /** 事件涉及加密条目（「地址与联系方式」）。 */
+    encrypted?: boolean;
+    count: number;
+  };
 }

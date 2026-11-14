@@ -62,6 +62,8 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   // Pie 2.0 §3.2 — Chrome bookmark / history titles are external data.
   "untrusted_bookmark",
   "untrusted_history_entry",
+  // Pie 2.0 记忆层 — 画像 + 被选中的记忆条目（user role，不是指令）。
+  "user_memory",
 ] as const;
 
 // Zero-width / invisible chars that an attacker might hide inside a tag literal.

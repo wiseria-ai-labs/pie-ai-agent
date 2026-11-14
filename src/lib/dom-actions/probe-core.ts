@@ -207,6 +207,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     "untrusted_skill_output_list",
     "untrusted_bookmark",
     "untrusted_history_entry",
+    "user_memory",
   ];
   const WRAPPER_TAGS = new Set(WRAPPER_TAGS_LIST);
 

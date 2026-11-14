@@ -495,6 +495,54 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    // Pie 2.0 记忆层 — 「用到 N 条记忆」chip。紧跟在当前回答后，随会话持久化。
+    if (msg.type === "memory-used") {
+      if (msg.items.length === 0) return;
+      const prev = slotsRef.current.get(msg.sessionId);
+      const baseMessages = prev?.messages ?? [];
+      const entry: DisplayMessage = { role: "memory-used", items: msg.items };
+      const flushed = buildAssistant(
+        baseMessages,
+        prev?.accumulated ?? "",
+        prev?.streamingThinking ?? "",
+        prev?.unconsumedInstructionIds ?? EMPTY_SLOT.unconsumedInstructionIds,
+      );
+      const next = [...flushed.next, entry];
+      patchSlot(msg.sessionId, {
+        messages: next,
+        ...(flushed.flushed ? { accumulated: "", streamingText: "", streamingThinking: "" } : {}),
+      });
+      void persistMessages(msg.sessionId, next);
+      return;
+    }
+
+    // Pie 2.0 记忆层 — remember / forget 的事件行（可撤销）。
+    if (msg.type === "memory-event") {
+      const prev = slotsRef.current.get(msg.sessionId);
+      const baseMessages = prev?.messages ?? [];
+      const entry: DisplayMessage = {
+        role: "memory-event",
+        eventId: msg.eventId,
+        kind: msg.kind,
+        label: msg.label,
+        ...(msg.encrypted ? { encrypted: true } : {}),
+        count: msg.count,
+      };
+      const flushed = buildAssistant(
+        baseMessages,
+        prev?.accumulated ?? "",
+        prev?.streamingThinking ?? "",
+        prev?.unconsumedInstructionIds ?? EMPTY_SLOT.unconsumedInstructionIds,
+      );
+      const next = [...flushed.next, entry];
+      patchSlot(msg.sessionId, {
+        messages: next,
+        ...(flushed.flushed ? { accumulated: "", streamingText: "", streamingThinking: "" } : {}),
+      });
+      void persistMessages(msg.sessionId, next);
+      return;
+    }
+
     // Subsequent branches added in Tasks 2c–2g.
   };
 
