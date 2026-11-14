@@ -21,4 +21,15 @@ export interface ActionResult {
     byteLength: number;
     id?: string;
   };
+  /**
+   * 记忆工具（remember / forget）—— 对话里留一条可撤销事件行（F13）。
+   * loop.ts 转成 `memory-event` port 消息；eventId 供面板的「撤销」按钮回调。
+   */
+  memoryEvent?: {
+    eventId: string;
+    kind: "updated" | "deleted";
+    /** 事件行展示的短语（"高铁坐一等座（公司报销）" / "1 条记忆"）。 */
+    label: string;
+    count: number;
+  };
 }

@@ -71,6 +71,7 @@ import {
 } from "@/lib/schedules/scheduler";
 import { handleScheduleNotificationClick } from "@/lib/schedules/notify";
 import { handleResearchPollAlarm } from "@/lib/research-poll";
+import { ensureMemoryAlarm, handleMemoryAlarm } from "@/lib/memory/tick";
 import { handleResearchNotificationClick } from "@/background/research-onclick";
 import { RESEARCH_NOTIF_PREFIX } from "@/lib/research-notif";
 import { setScheduleRunDep } from "@/lib/agent/tools/schedule-meta";
@@ -307,6 +308,11 @@ if (chrome.alarms) {
     void scheduleStartupReady
       .then(() => {
         void handleResearchPollAlarm(alarm.name);
+        // Pie 2.0 记忆层 — 每小时心跳（每日整理 / 月度精简）。只在空闲时跑：
+        // 有前台任务或定时任务在跑就跳过这次心跳（下一小时再来）。
+        void handleMemoryAlarm(alarm.name, {
+          isBusy: () => runningSessionIds.size > 0 || runningScheduleIds.size > 0,
+        });
         return handleAlarm(alarm.name, schedulerDeps);
       })
       .catch((e) => {
@@ -314,6 +320,11 @@ if (chrome.alarms) {
       });
   });
 }
+
+// Pie 2.0 记忆层 — 心跳 alarm 的 reconcile（幂等；SW 每次启动都补一次）。
+void ensureMemoryAlarm().catch((e) => {
+  console.warn("[sw] ensureMemoryAlarm failed:", e);
+});
 
 // Task 8 — route notification clicks for schedule-run notifications.
 // notifications.onClicked is NOT a trusted user gesture for chrome.sidePanel.open,

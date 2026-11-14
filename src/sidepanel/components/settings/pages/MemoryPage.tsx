@@ -1,0 +1,528 @@
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Brain, Globe, Lock, Pin, Clock, User, Sliders, Target, Trash2 } from "lucide-react";
+import { useT, type DictKey } from "@/lib/i18n";
+import { onStoreChange } from "@/lib/store-bus";
+import { Switch } from "@/sidepanel/components/ui/Switch";
+import {
+  clearAllMemory,
+  deleteMemoryEntries,
+  exportMemory,
+  getMemoryProfile,
+  getMemorySettings,
+  getMemorySnapshot,
+  getMemoryState,
+  listMemoryEntries,
+  restoreMemorySnapshot,
+  setMemorySettings,
+  updateMemoryEntry,
+} from "@/lib/memory/store";
+import {
+  LONG_TERM_KINDS,
+  MEMORY_KINDS,
+  MEMORY_MAX_CHARS,
+  type MemoryEntry,
+  type MemoryKind,
+} from "@/lib/memory/types";
+
+const ICONS: Record<MemoryKind, typeof User> = {
+  about: User,
+  preference: Sliders,
+  contact: Pin,
+  site: Globe,
+  ongoing: Target,
+  recent: Clock,
+};
+
+const ROW_ICON = { size: 16, strokeWidth: 1.75 } as const;
+
+function fmtDate(ms?: number): string {
+  if (!ms) return "—";
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function GroupLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-1 pb-1.5 font-mono text-[10px] font-medium tracking-[0.14em] text-fg-3">
+      {children}
+    </div>
+  );
+}
+
+/** 类别标签走 i18n（模型侧 prompt 用 types.ts 里的固定中文标签）。 */
+const KIND_TITLE_KEY: Record<MemoryKind, DictKey> = {
+  about: "settings.memory.kinds.about",
+  preference: "settings.memory.kinds.preference",
+  contact: "settings.memory.kinds.contact",
+  site: "settings.memory.kinds.site",
+  ongoing: "settings.memory.kinds.ongoing",
+  recent: "settings.memory.kinds.recent",
+};
+
+/** F14 — 设置 · 记忆（整页）。分类行点进去是 F15 的列表视图（同一组件内切换）。 */
+export default function MemoryPage() {
+  const t = useT();
+  const [entries, setEntries] = useState<MemoryEntry[]>([]);
+  const [enabled, setEnabled] = useState(true);
+  const [excluded, setExcluded] = useState<string[]>([]);
+  const [lastSummary, setLastSummary] = useState<
+    | { at: number; added: number; updated: number; merged: number; expired: number; deleted: number }
+    | undefined
+  >();
+  const [lastCompactedAt, setLastCompactedAt] = useState<number | undefined>();
+  const [hasSnapshot, setHasSnapshot] = useState(false);
+  const [profileText, setProfileText] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [view, setView] = useState<MemoryKind | "root">("root");
+  const [domainDraft, setDomainDraft] = useState("");
+  const [confirmingClear, setConfirmingClear] = useState(false);
+
+  const reload = useMemo(
+    () => async () => {
+      const [es, settings, state, snap, profile] = await Promise.all([
+        listMemoryEntries({ includeExpired: true }),
+        getMemorySettings(),
+        getMemoryState(),
+        getMemorySnapshot(),
+        getMemoryProfile(),
+      ]);
+      setEntries(es);
+      setEnabled(settings.enabled);
+      setExcluded(settings.excludedDomains);
+      setLastSummary(state.lastSummary);
+      setLastCompactedAt(state.lastCompactedAt);
+      setHasSnapshot(!!snap);
+      setProfileText(profile.text);
+      setLoaded(true);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    void reload();
+    // 另一侧（SW 的整理 / 对话里的 remember）改库时刷新。
+    return onStoreChange("memory", () => void reload());
+  }, [reload]);
+
+  const live = entries.filter((e) => e.validTo === undefined);
+  const byKind = (k: MemoryKind) => live.filter((e) => e.kind === k);
+  const longCount = live.filter((e) => LONG_TERM_KINDS.includes(e.kind)).length;
+  const recentCount = live.length - longCount;
+  const usedChars = live.reduce((n, e) => n + e.title.length + e.body.length, 0);
+
+  const toggle = async (next: boolean) => {
+    setEnabled(next);
+    await setMemorySettings({ enabled: next });
+  };
+
+  const addDomain = async () => {
+    const d = domainDraft.trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0] ?? "";
+    if (!d || excluded.includes(d)) return;
+    const next = [...excluded, d];
+    setExcluded(next);
+    setDomainDraft("");
+    await setMemorySettings({ excludedDomains: next });
+  };
+
+  const removeDomain = async (d: string) => {
+    const next = excluded.filter((x) => x !== d);
+    setExcluded(next);
+    await setMemorySettings({ excludedDomains: next });
+  };
+
+  const doExport = async () => {
+    const data = await exportMemory();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "pie-memory.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const doClear = async () => {
+    await clearAllMemory();
+    setConfirmingClear(false);
+    await reload();
+  };
+
+  const doRestore = async () => {
+    await restoreMemorySnapshot();
+    await reload();
+  };
+
+  if (view !== "root") {
+    return (
+      <MemoryList
+        kind={view}
+        entries={byKind(view)}
+        onBack={() => setView("root")}
+        onChanged={reload}
+      />
+    );
+  }
+
+  return (
+    <section className="flex flex-col gap-5" data-testid="memory-page">
+      {/* 顶部卡：开着吗 / 用了多少 / 最近一次整理做了什么 */}
+      <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5">
+        <div className="flex items-center gap-2.5">
+          <Brain {...ROW_ICON} className="text-fg-2" />
+          <span className="flex-1 text-[13.5px] font-semibold text-fg-1">
+            {t("settings.memory.heroTitle")}
+          </span>
+          <Switch testId="memory-switch" checked={enabled} onChange={(v) => void toggle(v)} />
+        </div>
+        <p className="text-[12px] leading-[18px] text-fg-2">{t("settings.memory.heroDesc")}</p>
+
+        <div className="flex flex-col gap-1.5">
+          <div className="flex justify-between text-[11.5px] text-fg-2">
+            <span>{t("settings.memory.usedLabel")}</span>
+            <span className="font-mono text-[11px] text-fg-1">
+              {t("settings.memory.usedChars", {
+                used: String(usedChars),
+                max: String(MEMORY_MAX_CHARS),
+              })}
+            </span>
+          </div>
+          <div className="flex h-1.5 overflow-hidden rounded-full bg-field">
+            <i
+              className="block h-full bg-accent"
+              style={{ width: `${Math.min(100, (usedChars / MEMORY_MAX_CHARS) * 100)}%` }}
+            />
+          </div>
+          <div className="flex gap-3 text-[11px] text-fg-3">
+            <span>{t("settings.memory.longTerm", { count: String(longCount) })}</span>
+            <span>{t("settings.memory.recent", { count: String(recentCount) })}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 border-t border-line pt-2.5 text-[11.5px] text-fg-2">
+          <Clock size={14} strokeWidth={1.75} className="text-fg-3" />
+          {lastSummary ? (
+            <span className="flex-1">
+              {t("settings.memory.lastRun", {
+                time: fmtDate(lastSummary.at),
+                added: String(lastSummary.added),
+                updated: String(lastSummary.updated),
+                merged: String(lastSummary.merged),
+              })}
+            </span>
+          ) : (
+            <span className="flex-1">{t("settings.memory.neverRun")}</span>
+          )}
+          {lastCompactedAt && (
+            <span className="font-mono text-[11px] text-fg-3">{fmtDate(lastCompactedAt)}</span>
+          )}
+        </div>
+        {profileText && (
+          <details className="text-[11.5px] text-fg-2">
+            <summary className="cursor-pointer text-fg-3">{t("settings.memory.profileTitle")}</summary>
+            <p className="mt-1 whitespace-pre-wrap leading-[18px]">{profileText}</p>
+          </details>
+        )}
+      </div>
+
+      {/* 记忆内容 */}
+      <div>
+        <GroupLabel>{t("settings.memory.contentTitle")}</GroupLabel>
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
+          {MEMORY_KINDS.map((k) => {
+            const Icon = ICONS[k];
+            const n = byKind(k).length;
+            return (
+              <button
+                key={k}
+                type="button"
+                data-testid={`memory-kind-${k}`}
+                onClick={() => setView(k)}
+                className="flex h-[46px] w-full items-center gap-3 border-t border-line px-3.5 text-left first:border-t-0 hover:bg-field"
+              >
+                <span className="shrink-0 text-fg-2">
+                  <Icon {...ROW_ICON} />
+                </span>
+                <span className="flex-1 text-[13px] font-medium text-fg-1">
+                  {t(KIND_TITLE_KEY[k])}
+                </span>
+                <span className="flex items-center gap-1 text-[12px] text-fg-3">
+                  {k === "contact" && <Lock size={12} strokeWidth={1.75} />}
+                  {n}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 来源（浏览历史来源按本期范围不做，只保留对话） */}
+      <div>
+        <GroupLabel>{t("settings.memory.sourcesTitle")}</GroupLabel>
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
+          <div className="flex min-h-[46px] items-center gap-3 px-3.5 py-2">
+            <span className="flex-1 text-[13px] font-medium text-fg-1">
+              {t("settings.memory.sourceChat")}
+              <small className="block text-[11px] font-normal text-fg-3">
+                {t("settings.memory.sourceChatDesc")}
+              </small>
+            </span>
+            <Switch testId="memory-source-chat" checked={enabled} onChange={() => void toggle(!enabled)} />
+          </div>
+        </div>
+      </div>
+
+      {/* 隐私与成本 */}
+      <div>
+        <GroupLabel>{t("settings.memory.privacyTitle")}</GroupLabel>
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
+          <div className="flex flex-col gap-2 px-3.5 py-2.5">
+            <span className="text-[13px] font-medium text-fg-1">
+              {t("settings.memory.excludedTitle")}
+              <small className="block text-[11px] font-normal text-fg-3">
+                {t("settings.memory.excludedDesc")}
+              </small>
+            </span>
+            {excluded.length === 0 ? (
+              <span className="text-[11.5px] text-fg-3">{t("settings.memory.excludedEmpty")}</span>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {excluded.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => void removeDomain(d)}
+                    className="flex h-[22px] items-center gap-1.5 rounded-chip bg-field px-2 text-[11.5px] text-fg-2 hover:text-fg-1"
+                    title={t("settings.memory.excludedRemove")}
+                  >
+                    {d} ×
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                data-testid="memory-domain-input"
+                value={domainDraft}
+                onChange={(e) => setDomainDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void addDomain();
+                }}
+                placeholder={t("settings.memory.excludedPlaceholder")}
+                className="h-[30px] flex-1 rounded-control border border-line bg-field px-2.5 text-[12.5px] text-fg-1 placeholder:text-fg-3 focus:outline-none"
+              />
+              <button
+                type="button"
+                data-testid="memory-domain-add"
+                onClick={() => void addDomain()}
+                disabled={!domainDraft.trim()}
+                className="shrink-0 rounded-control bg-accent px-2.5 py-1.5 text-[12px] font-medium text-canvas disabled:opacity-50"
+              >
+                {t("settings.memory.add")}
+              </button>
+            </div>
+          </div>
+          <div className="flex min-h-[46px] items-center gap-3 border-t border-line px-3.5 py-2">
+            <span className="flex-1 text-[13px] font-medium text-fg-1">
+              {t("settings.memory.modelTitle")}
+              <small className="block text-[11px] font-normal text-fg-3">
+                {t("settings.memory.modelDesc")}
+              </small>
+            </span>
+            <span className="text-[12px] text-fg-3">{t("settings.memory.modelValue")}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 底部动作 */}
+      <div className="flex flex-wrap items-center gap-4 px-1 text-[12px]">
+        <button type="button" data-testid="memory-export" onClick={() => void doExport()} className="text-fg-2 hover:text-fg-1">
+          {t("settings.memory.export")}
+        </button>
+        {hasSnapshot && (
+          <button
+            type="button"
+            data-testid="memory-restore"
+            onClick={() => void doRestore()}
+            className="text-fg-2 hover:text-fg-1"
+          >
+            {t("settings.memory.restoreSnapshot")}
+          </button>
+        )}
+        {confirmingClear ? (
+          <span className="flex items-center gap-2">
+            <span className="text-[11.5px] text-warning">{t("settings.memory.clearConfirm")}</span>
+            <button
+              type="button"
+              data-testid="memory-clear-confirm"
+              onClick={() => void doClear()}
+              className="font-medium text-warning underline underline-offset-2"
+            >
+              {t("settings.memory.clearAction")}
+            </button>
+            <button type="button" onClick={() => setConfirmingClear(false)} className="text-fg-3 hover:text-fg-1">
+              {t("common.cancel")}
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            data-testid="memory-clear"
+            onClick={() => setConfirmingClear(true)}
+            className="text-warning hover:opacity-80"
+          >
+            {t("settings.memory.clearAll")}
+          </button>
+        )}
+        {!loaded && <span className="text-[11.5px] text-fg-3">{t("common.loading")}</span>}
+      </div>
+    </section>
+  );
+}
+
+/** F15 — 某一类记忆的列表：搜索、就地编辑、删除。 */
+function MemoryList({
+  kind,
+  entries,
+  onBack,
+  onChanged,
+}: {
+  kind: MemoryKind;
+  entries: MemoryEntry[];
+  onBack: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const t = useT();
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+
+  const visible = entries
+    .filter((e) => e.validTo === undefined)
+    .filter((e) => {
+      if (!query.trim()) return true;
+      const hay = `${e.title} ${e.body} ${e.tags.join(" ")}`.toLowerCase();
+      return hay.includes(query.trim().toLowerCase());
+    });
+
+  const startEdit = (e: MemoryEntry) => {
+    setEditing(e.id);
+    setDraft(e.body || e.title);
+  };
+
+  const save = async (id: string) => {
+    const cur = entries.find((e) => e.id === id);
+    if (!cur) return;
+    await updateMemoryEntry(id, { title: cur.title, body: draft.trim() || cur.title });
+    setEditing(null);
+    await onChanged();
+  };
+
+  const remove = async (id: string) => {
+    await deleteMemoryEntries([id]);
+    if (editing === id) setEditing(null);
+    await onChanged();
+  };
+
+  return (
+    <section className="flex flex-col gap-3" data-testid={`memory-list-${kind}`}>
+      <button type="button" onClick={onBack} className="flex w-fit items-center gap-1 text-[12px] text-fg-2 hover:text-fg-1">
+        <ArrowLeft size={14} strokeWidth={1.75} />
+        {t("settings.memory.title")}
+      </button>
+      <div className="text-[13.5px] font-semibold text-fg-1">{t(KIND_TITLE_KEY[kind])}</div>
+
+      <div className="flex h-8 items-center gap-2 rounded-control border border-line bg-surface px-2.5 text-[12.5px] text-fg-3">
+        <input
+          data-testid="memory-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("settings.memory.searchPlaceholder")}
+          className="flex-1 bg-transparent text-fg-1 placeholder:text-fg-3 focus:outline-none"
+        />
+      </div>
+
+      <div className="overflow-hidden rounded-card border border-line bg-surface">
+        {visible.length === 0 ? (
+          <div className="px-3.5 py-3 text-[12px] text-fg-3">{t("settings.memory.empty")}</div>
+        ) : (
+          visible.map((e) => {
+            const masked = e.encrypted === true && !revealed.has(e.id);
+            const isEditing = editing === e.id;
+            return (
+              <div key={e.id} className="flex flex-col gap-1.5 border-t border-line px-3.5 py-2.5 first:border-t-0">
+                {isEditing ? (
+                  <textarea
+                    data-testid="memory-edit"
+                    value={draft}
+                    onChange={(ev) => setDraft(ev.target.value)}
+                    rows={3}
+                    className="w-full resize-y rounded-control border border-accent bg-surface px-2.5 py-2 text-[13px] leading-[19px] text-fg-1 focus:outline-none"
+                  />
+                ) : (
+                  <div className="text-[13px] leading-[19px] text-fg-1">
+                    {masked ? (
+                      <button
+                        type="button"
+                        onClick={() => setRevealed((s) => new Set(s).add(e.id))}
+                        className="flex items-center gap-1.5 text-fg-3"
+                      >
+                        <Lock size={12} strokeWidth={1.75} />
+                        {t("settings.memory.masked")}
+                      </button>
+                    ) : (
+                      e.body || e.title
+                    )}
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-3">
+                  {e.pinned && (
+                    <span className="rounded-chip border border-line px-1.5 text-[10px]">
+                      {t("settings.memory.pinnedTag")}
+                    </span>
+                  )}
+                  <span>{fmtDate(e.updatedAt)}</span>
+                  {e.useCount > 0 && (
+                    <span>{t("settings.memory.usedTimes", { count: String(e.useCount) })}</span>
+                  )}
+                  {e.sourceSessionId && <span>{t("settings.memory.sourceFrom")}</span>}
+                  <span className="flex-1" />
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void remove(e.id)}
+                        className="flex items-center gap-1 text-warning"
+                      >
+                        <Trash2 size={12} strokeWidth={1.75} />
+                        {t("common.delete")}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="memory-save"
+                        onClick={() => void save(e.id)}
+                        className="rounded-control bg-accent px-2 py-0.5 text-[11px] font-medium text-canvas"
+                      >
+                        {t("common.save")}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid={`memory-edit-${e.id}`}
+                      onClick={() => startEdit(e)}
+                      className="text-fg-2 underline underline-offset-2 hover:text-fg-1"
+                    >
+                      {t("common.edit")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+}

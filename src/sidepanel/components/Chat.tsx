@@ -102,6 +102,7 @@ import { ReportProblemDrawer } from "./ReportProblemDrawer";
 import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
 import { FileAccessCard } from "./FileAccessCard";
 import { FileOutputCard } from "./FileOutputCard";
+import { MemoryEventRow, MemoryUsedChip } from "./MemoryRows";
 import { artifactExists } from "@/lib/files/output-store";
 import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 
@@ -846,6 +847,20 @@ export default function Chat({
                   onDownload={downloadOutput}
                   onProbe={artifactExists}
                 />
+              </div>
+            );
+          }
+          if (msg.role === "memory-used") {
+            return (
+              <div key={`mem-used-${firstIndex}`} className="bubble-in">
+                <MemoryUsedChip items={msg.items} />
+              </div>
+            );
+          }
+          if (msg.role === "memory-event") {
+            return (
+              <div key={`mem-evt-${msg.eventId}`} className="bubble-in">
+                <MemoryEventRow msg={msg} />
               </div>
             );
           }
