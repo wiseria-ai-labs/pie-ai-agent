@@ -10,6 +10,7 @@ import { OVERLAY_EXCLUDE_SITE, OVERLAY_INTENT, type OverlayIntent } from "@/lib/
 import { getCachedOverlayConfig, loadOverlayConfig } from "@/content/overlay/config";
 import { rememberSelection } from "@/content/overlay/state";
 import { isOverlayVisible } from "@/content/overlay/host";
+import { isOrphaned } from "@/content/instance-guard";
 
 // Stale-listener handle: after extension reload + SW reinject, the OLD
 // content-script instance's event listeners are still attached to window.
@@ -32,6 +33,11 @@ const INTENT_BY_ACTION: Partial<Record<SelectionBarAction, OverlayIntent>> = {
 };
 
 function handleSelection(): void {
+  // Extension reloaded under us: a newer instance owns the page now.
+  if (isOrphaned()) {
+    detachSelectionListener();
+    return;
+  }
   const sel = window.getSelection();
   const config = getCachedOverlayConfig();
   const host = location.host || location.origin;

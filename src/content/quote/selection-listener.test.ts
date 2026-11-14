@@ -38,7 +38,7 @@ beforeEach(() => {
   sendMessageMock.mockReset();
   document.body.innerHTML = "<p id='p'>Hello world</p>";
   // @ts-expect-error mock
-  globalThis.chrome = { runtime: { sendMessage: sendMessageMock } };
+  globalThis.chrome = { runtime: { id: "ext", sendMessage: sendMessageMock } };
   // @ts-expect-error
   globalThis.location = { href: "https://example.com/page", host: "example.com" };
   setOverlayConfig({

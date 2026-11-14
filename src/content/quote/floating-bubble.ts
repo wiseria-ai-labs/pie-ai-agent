@@ -14,6 +14,7 @@ const HOST_ATTR = "data-pie-quote-bubble";
 const BAR_HEIGHT = 30;
 const MARGIN = 8;
 
+import { markOwned } from "@/content/instance-guard";
 import type { OverlayUiStrings } from "@/lib/overlay/protocol";
 
 export type SelectionBarAction =
@@ -31,6 +32,7 @@ function ensureHost(): HTMLElement {
   if (host) return host;
   host = document.createElement("div");
   host.setAttribute(HOST_ATTR, "");
+  markOwned(host);
   host.style.position = "fixed";
   host.style.zIndex = "2147483647";
   const shadow = host.attachShadow({ mode: "open" });

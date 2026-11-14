@@ -8,6 +8,7 @@
 // Untrusted data never reaches this DOM: labels come from tool names / bounded
 // args summaries, and the status line is localized by the SW.
 
+import { markOwned } from "@/content/instance-guard";
 import type { CapsuleAction, OverlayCapsuleState, OverlayUiStrings } from "@/lib/overlay/protocol";
 import { toolActivityKey, type ToolActivityKey } from "@/lib/agent/tool-activity";
 
@@ -20,6 +21,7 @@ function ensureHost(): HTMLDivElement {
   if (host) return host;
   host = document.createElement("div");
   host.setAttribute(HOST_ATTR, "");
+  markOwned(host);
   host.style.cssText = `position:fixed;right:${EDGE}px;bottom:${EDGE}px;z-index:2147483646;`;
   host.attachShadow({ mode: "open" });
   document.documentElement.appendChild(host);

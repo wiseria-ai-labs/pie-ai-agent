@@ -1,3 +1,4 @@
+import { markOwned } from "@/content/instance-guard";
 import { extractElementQuotePayload } from "./bbox-extractor";
 import { safeSendMessage } from "./safe-send-message";
 
@@ -13,6 +14,7 @@ function ensureOverlay(): void {
   if (host) return;
   host = document.createElement("div");
   host.setAttribute(HOST_ATTR, "");
+  markOwned(host);
   const shadow = host.attachShadow({ mode: "open" });
   shadow.innerHTML = `
     <style>

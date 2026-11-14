@@ -10,6 +10,7 @@
 // keeps its chat-stream port alive, which keeps a running agent task alive. We
 // only tear the document down when the SW says no task is running.
 
+import { markOwned } from "@/content/instance-guard";
 import { OVERLAY_CARD_PAD, type OverlayOpenPayload } from "@/lib/overlay/protocol";
 
 const HOST_ATTR = "data-pie-overlay-host";
@@ -62,6 +63,7 @@ function buildUrl(payload: OverlayOpenPayload): string {
 function createHost(payload: OverlayOpenPayload): void {
   host = document.createElement("div");
   host.setAttribute(HOST_ATTR, "");
+  markOwned(host);
   // Popover lifts the host into the top layer, above page stacking contexts
   // that no z-index can beat. `manual` = we control visibility ourselves.
   host.popover = "manual";
