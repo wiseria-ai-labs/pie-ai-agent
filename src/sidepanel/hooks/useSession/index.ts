@@ -17,6 +17,7 @@ import {
   setSessionAgent,
   updateSessionMeta,
   persistSessionMessages,
+  toAtRestMessages,
   updateLastAccessed,
 } from "@/lib/sessions/storage";
 import { deriveTitleFromMessages } from "@/lib/sessions/title";
@@ -268,17 +269,19 @@ export function useSession(): UseSession {
   // every other visited slot (and from archived sessions, which can't come
   // back) so they don't sit in memory for the life of the panel page.
   const releaseOtherSlots = useCallback((activeId: string) => {
-    let released = slotsRef.current;
-    for (const [slotId, slot] of slotsRef.current) {
+    const prev = slotsRef.current;
+    const next = new Map(prev);
+    let changed = false;
+    for (const [slotId, slot] of prev) {
       if (slotId === activeId) continue;
       const messages = releaseImageBytes(slot.messages);
       if (messages === slot.messages) continue;
-      released = new Map(released).set(slotId, { ...slot, messages });
+      next.set(slotId, { ...slot, messages });
+      changed = true;
     }
-    if (released !== slotsRef.current) {
-      slotsRef.current = released;
-      setSlots(released);
-    }
+    if (!changed) return;
+    slotsRef.current = next;
+    setSlots(next);
   }, []);
 
   // #30 — derive active session view; passed back through UseSession interface.
@@ -501,10 +504,17 @@ export function useSession(): UseSession {
         //    write-back (remote.length < local.length AND remote is a strict
         //    prefix of local). Both are signs the SW round-tripped a stale meta
         //    after the panel's authoritative state moved forward.
+        //
+        // #438 — the stored copy is ALWAYS the at-rest shape (image bytes
+        // scrubbed), while the slot holds the live bytes-bearing rows. Compare
+        // against the at-rest form of `local`, otherwise every screenshot row
+        // "differs": the self-echo would be adopted (dropping the live
+        // screenshots the user is looking at) and the stale-prefix guard would
+        // stop matching.
         if (slotsRef.current.get(sessionIdRef.current ?? "")?.streaming) {
           return;
         }
-        const local = slotsRef.current.get(sid)?.messages ?? [];
+        const local = toAtRestMessages(slotsRef.current.get(sid)?.messages ?? []);
         const remote = newMeta.messages;
         if (remote.length === local.length) {
           if (JSON.stringify(remote) === JSON.stringify(local)) {

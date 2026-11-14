@@ -1,5 +1,6 @@
 import type { DisplayMessage, Quote } from "@/types";
 import type { SessionAgentState } from "@/lib/sessions/types";
+import { stripImageBytes } from "@/lib/sessions/storage";
 
 /**
  * Per-session task runtime state. One Map<sessionId, SessionRuntimeSlot>
@@ -90,17 +91,17 @@ export function withSlot(
  * #438 — drop screenshot base64 from a slot's messages. Only the active
  * session is rendered, so holding every visited session's screenshots in
  * `slots` is pure retention (a screenshot-heavy task can hold tens of MB).
+ * Uses the same per-message strip as the storage boundary (`stripImageBytes`),
+ * so panel-side release and at-rest shape can't drift apart.
  * Returns the SAME array when there was nothing to release, so callers can
  * skip the state update / React re-render.
  */
 export function releaseImageBytes(messages: DisplayMessage[]): DisplayMessage[] {
   let changed = false;
   const next = messages.map((m) => {
-    if (m.role !== "agent-step" || m.image?.data === undefined) return m;
-    const { data: _drop, ...rest } = m.image;
-    void _drop;
-    changed = true;
-    return { ...m, image: rest };
+    const stripped = stripImageBytes(m);
+    if (stripped !== m) changed = true;
+    return stripped;
   });
   return changed ? next : messages;
 }

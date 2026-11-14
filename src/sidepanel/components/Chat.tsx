@@ -855,7 +855,6 @@ export default function Chat({
     ),
     // Streaming text/thinking are deliberately NOT deps: the live bubble below
     // re-renders per chunk, the finished rows above only when data changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
     [
       segments,
       agentHeader,

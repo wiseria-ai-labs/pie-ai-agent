@@ -1256,6 +1256,51 @@ describe("setActive — multi-session port lifecycle (#30)", () => {
   });
 });
 
+describe("#438 — the persist echo must not strip the ACTIVE session's screenshots", () => {
+  it("keeps image.data on the live slot after chat-done persists the task", async () => {
+    const { result } = renderHook(() => useSession());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const sid = result.current.sessionId!;
+    const port = chromeMock.runtime.__ports[0]!;
+    const image = { mediaType: "image/jpeg", data: "BASE64BYTES", width: 10, height: 10 };
+
+    act(() => result.current.sendMessage({ content: "capture the page" }));
+    await waitFor(() => expect(result.current.streaming).toBe(true));
+    act(() =>
+      emitWithSession(
+        port,
+        {
+          type: "agent-step",
+          stepIndex: 0,
+          tool: "capture_visible_tab",
+          args: {},
+          status: "ok",
+          observation: "captured",
+          image,
+        },
+        sid,
+      ),
+    );
+
+    // chat-done flushes + persists the task; the store-bus echo of that write
+    // carries the at-rest (bytes-stripped) copy. Adopting it would replace the
+    // screenshot the user is looking at with a "[released]" badge.
+    act(() => emitWithSession(port, { type: "chat-done" }, sid));
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+    // Give the store-bus handler's async getSessionMeta + compare a chance to run.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    const step = result.current.messages.find((m) => m.role === "agent-step") as Extract<
+      DisplayMessage,
+      { role: "agent-step" }
+    >;
+    expect(step).toBeDefined();
+    expect(step.image?.data).toBe("BASE64BYTES");
+  });
+});
+
 describe("#438 — screenshot bytes released on session switch", () => {
   it("strips agent-step image bytes from the outgoing slot (keeps the active one)", async () => {
     const { result } = renderHook(() => useSession());

@@ -20,7 +20,7 @@ import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
 import { useRecording } from "@/sidepanel/hooks/useRecording";
 import RecordingMode from "@/sidepanel/components/RecordingMode";
-import { listSessionIndex, getPendingConfirmCount } from "@/lib/sessions/storage";
+import { listSessionIndex } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
 import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE, parseResearchDetailDeeplink } from "@/lib/deeplink";
@@ -34,7 +34,6 @@ import type { SessionIndexEntry } from "@/lib/sessions/types";
  * - New top bar: [≡●] [+] {sessionTitle} ─── [settings icon]
  * - SessionDrawer overlay for session list
  * - activeSessionId managed via useSession.setActive / createAndActivate
- * - pendingCount computed from storage (sessions with live pendingConfirm)
  * - Settings → handleRunSkill detects archived session + auto-creates new one
  *
  * Hook lives at App level so the SW port + onMessage listener survive
@@ -53,7 +52,6 @@ export default function App() {
   const [researchOpenId, setResearchOpenId] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
-  const [pendingCount, setPendingCount] = useState(0);
   // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
   // Settings → NewConfigWizard to open the managed-subscribe screen.
   const [subscribeNonce, setSubscribeNonce] = useState(0);
@@ -123,15 +121,6 @@ export default function App() {
     setSessions(visible);
   }, []);
 
-  // ── Compute pendingCount ──────────────────────────────────────────────────
-  // Count sessions whose :agent record has a live agent-tool pendingConfirm.
-  // #438 — cheap now: walks the session index and reads only the active
-  // sessions' agent records (no more full `sessions` store scan). Refreshed
-  // via the store-bus "sessions" event rather than polling.
-  const refreshPendingCount = useCallback(async () => {
-    setPendingCount(await getPendingConfirmCount());
-  }, []);
-
   // Gates the composer shortcut only — the research tab itself is always
   // visible so BYOK users can reach the paywall and the sample reports.
   const refreshResearchGate = useCallback(async () => {
@@ -152,7 +141,6 @@ export default function App() {
 
     // Initial load
     void refreshSessionIndex();
-    void refreshPendingCount();
 
     // firstRun → open settings root
     void (async () => {
@@ -164,7 +152,7 @@ export default function App() {
 
     loadProviderLabel();
     void refreshResearchGate();
-  }, [refreshSessionIndex, refreshPendingCount, refreshResearchGate]);
+  }, [refreshSessionIndex, refreshResearchGate]);
 
   // ── Deep-link: website "Subscribe" → managed-subscribe screen ──────────────
   // The SW stashes a one-shot intent in chrome.storage.session when it opens the
@@ -211,22 +199,14 @@ export default function App() {
   // instances_index / instance_* → "instances" + "config" (active_instance_id
   // lives in config); theme-mode → "config".
 
-  // Session list + pending count. The session index is written in the same
-  // batch as session records but only emits a coarse "sessions" event
-  // (writeSessionBatch never publishes to the "session_index" store), so one
-  // subscription covers both the index refresh and the pending-count rescan.
-  //
-  // #438 — single-record writes carry the record id, and the two refreshes
-  // depend on different records: the drawer entry lives on the meta record,
-  // the pending badge on the agent record. Per-step SW writes are `:agent`
-  // only, so this keeps the index read off the step path (coarse/id-less
-  // batch events still refresh both).
+  // Session list. The index is written in the same batch as session records
+  // but only emits a coarse "sessions" event (writeSessionBatch never publishes
+  // to the "session_index" store), so every event refreshes the drawer list.
+  // #438 — agent-record writes are skipped: they cannot change the index, and
+  // they fire on every agent step.
   useStoreChange("sessions", (c) => {
     if (c.id === undefined || !c.id.endsWith(":agent")) {
       void refreshSessionIndex();
-    }
-    if (c.id === undefined || c.id.endsWith(":agent")) {
-      void refreshPendingCount();
     }
   });
 
@@ -409,7 +389,6 @@ export default function App() {
         view={view}
         settingsPage={settingsPage}
         sessionTitle={sessionTitle}
-        pendingCount={pendingCount}
         onToggleDrawer={() => setDrawerOpen((v) => !v)}
         onNewSession={() => void handleNewSession()}
         onNavigate={(v) => setView(view === v ? "agent" : v)}
