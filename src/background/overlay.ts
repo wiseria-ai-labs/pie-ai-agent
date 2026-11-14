@@ -48,6 +48,15 @@ import {
   type OverlayRun,
 } from "@/lib/overlay/run-state";
 import { getOverlaySettings, type OverlaySettings } from "@/lib/overlay/settings";
+import {
+  attachPanel,
+  clearPanelLog,
+  createPanelFanout,
+  detachPanel,
+  panelAttached,
+  postToPanel,
+  type PanelFanout,
+} from "@/lib/overlay/run-fanout";
 import { makeT, normalizeBrowserLocale } from "@/lib/i18n";
 import { readLocaleSetting } from "@/lib/i18n/locale-resolver";
 import {
@@ -71,6 +80,8 @@ export interface RunRuntime {
   run: OverlayRun;
   /** Live port while the overlay document is alive; null after detach. */
   port: chrome.runtime.Port | null;
+  /** Side-panel client of the same run (live handoff). */
+  panel: PanelFanout;
   abort: AbortController | null;
   /** True once the capsule was shown for this run (write tool ran). */
   capsuleShown: boolean;
@@ -118,10 +129,12 @@ export function startOverlayRun(
   tabId: number,
   port: chrome.runtime.Port,
   abort: AbortController,
+  panelPort?: chrome.runtime.Port,
 ): RunRuntime {
   const runtime: RunRuntime = {
     run: createOverlayRun(sessionId, tabId),
     port,
+    panel: createPanelFanout(),
     abort,
     capsuleShown: false,
     finishedAt: null,
@@ -129,7 +142,39 @@ export function startOverlayRun(
   runs.set(sessionId, runtime);
   overlayInFlight.add(sessionId);
   overlayKeepAlive.ensure();
+  // The side panel may already be showing this session; it becomes a live
+  // client from the first emit on.
+  if (panelPort) attachPanel(runtime.panel, panelPort, sessionId);
   return runtime;
+}
+
+/**
+ * Bind a side-panel port to a live run (handoff mid-stream). Replays every
+ * emit so far after a `chat-attach` preamble, so the panel continues the turn
+ * instead of waiting for the detached run to persist.
+ *
+ * Returns false when there is no live run — the panel then just shows the
+ * persisted conversation.
+ */
+export function attachPanelToRun(sessionId: string, port: chrome.runtime.Port): boolean {
+  const rt = runs.get(sessionId);
+  if (!rt || rt.run.status !== "run") return false;
+  if (!attachPanel(rt.panel, port, sessionId)) return false;
+  // The panel is alive and will persist the terminal state itself; keep the
+  // overlay document's port (if any) as the other sink.
+  return true;
+}
+
+export function detachPanelFromRun(sessionId: string, port: chrome.runtime.Port): void {
+  const rt = runs.get(sessionId);
+  if (rt) detachPanel(rt.panel, port);
+}
+
+/** `chat-abort` on a port that was attached to a run (the panel's Stop). */
+export function abortOverlayRunFromPort(sessionId: string, port: chrome.runtime.Port): void {
+  const rt = runs.get(sessionId);
+  if (!rt || rt.panel.panel !== port) return;
+  abortOverlayRun(sessionId);
 }
 
 export function getOverlayRun(sessionId: string): OverlayRun | null {
@@ -183,6 +228,9 @@ export function wrapOverlayEmit(
     runtime.run = applyOverlayEmit(before, m);
 
     taskEmit(m);
+    // A side panel attached to this run is a second live client (handoff):
+    // it gets the same events, incl. the replay log for late attach.
+    postToPanel(runtime.panel, m);
 
     if (m.type === "agent-step" && m.status === "pending" && isWriteStep(m.tool)) {
       runtime.capsuleShown = true;
@@ -223,7 +271,9 @@ async function pushCapsule(runtime: RunRuntime): Promise<void> {
 }
 
 async function finishRun(runtime: RunRuntime): Promise<void> {
-  const messages = detachedMessagesToPersist(runtime.run);
+  // A panel attached to the run received the terminal emit and persists the
+  // turn itself; writing here too would duplicate the messages.
+  const messages = panelAttached(runtime.panel) ? [] : detachedMessagesToPersist(runtime.run);
   if (messages.length > 0) {
     try {
       const meta = await getSessionMeta(runtime.run.sessionId);
@@ -238,6 +288,7 @@ async function finishRun(runtime: RunRuntime): Promise<void> {
     }
   }
   await pushCapsule(runtime);
+  clearPanelLog(runtime.panel);
   // No capsule to dismiss → nothing left to remember about this run (a plain
   // Q&A leaves no surface behind).
   if (!runtime.capsuleShown) runs.delete(runtime.run.sessionId);
@@ -488,7 +539,10 @@ export async function maybeStashOverlaySessionForToolbar(tab: chrome.tabs.Tab): 
   const settings = await getOverlaySettings();
   if (!isWithinRetention(remembered.at, settings.retentionMinutes)) return;
   const meta = await getSessionMeta(remembered.sessionId).catch(() => null);
-  if (!meta || (meta.messages?.length ?? 0) === 0) return;
+  // A run in flight has no persisted messages yet — it is exactly the case the
+  // toolbar must hand over to (the panel attaches for the live stream).
+  const live = isOverlayRunLive(remembered.sessionId);
+  if (!meta || ((meta.messages?.length ?? 0) === 0 && !live)) return;
   await stashDeeplink(overlayPanelDeeplink(meta.id));
 }
 

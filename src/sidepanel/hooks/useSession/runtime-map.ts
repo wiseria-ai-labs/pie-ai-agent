@@ -47,6 +47,10 @@ export type SessionRuntimeSlot = {
   /** Provider RPM 限流：streamChat 正在排队等待时的预计恢复时刻（epoch ms）。
    *  null = 未在限流等待。收到任一真实进展消息即清除。 */
   ratelimitResumeAt: number | null;
+  /** 2.0 overlay — this slot is a live client of a run the SW started
+   *  elsewhere (overlay handoff). The SW owns persistence while true, and
+   *  instruction queuing is disabled (the drain lives on the origin port). */
+  attachedRun: boolean;
 };
 
 export const EMPTY_SLOT: SessionRuntimeSlot = {
@@ -65,6 +69,7 @@ export const EMPTY_SLOT: SessionRuntimeSlot = {
   cancelledInstructionMessages: new Map(),
   settledInstructionIds: new Set(),
   ratelimitResumeAt: null,
+  attachedRun: false,
 };
 
 /**

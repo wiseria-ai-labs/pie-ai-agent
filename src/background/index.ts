@@ -152,9 +152,12 @@ import {
 } from "./task-end-guard";
 import { broadcastInstructionState } from "./instruction-broadcast";
 import {
+  abortOverlayRunFromPort,
+  attachPanelToRun,
   capsuleForTab,
   closeOverlayOnTab,
   detachOverlayRun,
+  detachPanelFromRun,
   forgetTabOverlay,
   handleCapsuleAction,
   handleOmniboxInput,
@@ -1903,24 +1906,32 @@ chrome.runtime.onConnect.addListener((port) => {
     return;
   }
 
-  // quote-bridge dispatch (issue #38) needs sessionId→port mapping the moment the
-  // panel connects, not when a recording starts. Without this, quote-added never
-  // reaches the panel because the dispatch loop iterates an empty map.
-  portsBySession.set(portSessionId, port);
-  registerPanelPort(portSessionId, port);
-
-  // 2.0 overlay — the overlay document re-opened on a tab whose task kept
-  // running after a navigation. Adopt THIS port as the emit sink so the
-  // rebuilt UI starts receiving the rest of the stream. Only overlay
-  // documents may adopt (a side panel opening the same session must not
-  // silently inherit a task it never started).
-  if (isOverlayDocumentPort(port)) rebindOverlayRunPort(portSessionId, port);
-
-  // v1.1 — drain any quote-added stashed while panel was booting (bubble click
-  // triggers sidePanel.open + dispatchQuoteAdded back-to-back; the dispatch
-  // happens before the panel's port connects). The new port's sessionId is the
-  // session the panel landed in, which is exactly where the chip belongs.
-  drainPendingQuotesToPort(portSessionId, port);
+  // 2.0 overlay — the overlay document is a second kind of client on the same
+  // port name. It must not register as "the panel" (quote dispatch and
+  // panel-request would target a document that can't answer them), and it may
+  // adopt a run that kept going after a navigation. Everything else is the
+  // side panel: a live client for quote dispatch, panel requests, and — when a
+  // task is already running — for the agent stream itself.
+  const overlayDocumentPort = isOverlayDocumentPort(port);
+  if (overlayDocumentPort) {
+    // Adopt THIS port as the emit sink so the rebuilt overlay UI starts
+    // receiving the rest of the stream.
+    rebindOverlayRunPort(portSessionId, port);
+  } else {
+    // quote-bridge dispatch (issue #38) needs sessionId→port mapping the moment
+    // the panel connects, not when a recording starts. Without this, quote-added
+    // never reaches the panel because the dispatch loop iterates an empty map.
+    portsBySession.set(portSessionId, port);
+    registerPanelPort(portSessionId, port);
+    // Handoff mid-stream: the panel becomes a live client of the running task
+    // (chat-attach + replay of everything the run emitted so far).
+    attachPanelToRun(portSessionId, port);
+    // v1.1 — drain any quote-added stashed while panel was booting (bubble click
+    // triggers sidePanel.open + dispatchQuoteAdded back-to-back; the dispatch
+    // happens before the panel's port connects). The new port's sessionId is the
+    // session the panel landed in, which is exactly where the chip belongs.
+    drainPendingQuotesToPort(portSessionId, port);
+  }
 
   // R13(c) evictOnSetActive removed (#30) — multi-session: a new port no
   // longer means the previous active session is exiting. Image-cache 30 MB
@@ -1988,10 +1999,17 @@ chrome.runtime.onConnect.addListener((port) => {
       runningSessionIds.add(message.sessionId);
       keepAlive.ensure();
       // 2.0 overlay — mirror the run so it survives this port (the overlay
-      // document lives in the page and dies with it).
+      // document lives in the page and dies with it). A side panel already
+      // showing this session becomes a live client of the run from the start.
       const overlayRun =
         typeof message.overlayTabId === "number"
-          ? startOverlayRun(message.sessionId, message.overlayTabId, port, abortRotation.current)
+          ? startOverlayRun(
+              message.sessionId,
+              message.overlayTabId,
+              port,
+              abortRotation.current,
+              portsBySession.get(message.sessionId),
+            )
           : null;
       handleChatStream(
         port,
@@ -2009,6 +2027,9 @@ chrome.runtime.onConnect.addListener((port) => {
       );
     } else if (message.type === "chat-abort") {
       abortRotation.current.abort();
+      // 2.0 overlay — Stop pressed on a port that was ATTACHED to a run it did
+      // not start (panel handoff mid-stream) must reach that run's controller.
+      abortOverlayRunFromPort(portSessionId, port);
     } else if (message.type === "chat-instruction-add") {
       if (!verifyPortSession(message.sessionId, "chat-instruction-add")) return;
 
@@ -2174,8 +2195,13 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => {
     // Recording v1 — panel disconnect aborts any active recording for this session.
     abortRecordingForSession(port, portSessionId, "panel-disconnect");
-    portsBySession.delete(portSessionId);
-    unregisterPanelPort(portSessionId);
+    if (!overlayDocumentPort) {
+      // The overlay document never owned these registrations (see onConnect);
+      // deleting them here would evict the real side panel of the same session.
+      detachPanelFromRun(portSessionId, port);
+      portsBySession.delete(portSessionId);
+      unregisterPanelPort(portSessionId);
+    }
 
     // 2.0 overlay — an overlay task's port lives in the page document, so a
     // navigation (or a closed overlay tab) drops it while the agent is still

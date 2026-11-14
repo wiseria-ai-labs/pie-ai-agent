@@ -219,6 +219,18 @@ export interface ChatRatelimitWaitMessage {
 }
 
 /**
+ * 2.0 overlay — SW → Panel: this port was just attached to a task that is
+ * already running (started by the overlay document, or by the panel before a
+ * reconnect). Sent BEFORE the replay of the run's emits, so the slot enters
+ * streaming mode before chunks arrive. The panel does not own this task's
+ * persistence while attached; the SW does when the port goes away.
+ */
+export interface ChatAttachMessage {
+  type: "chat-attach";
+  sessionId: string;
+}
+
+/**
  * Issue #59 — SW → Panel: emitted after each agent step whose stream produced
  * a real `done.usage`. Panel mirrors into `slot.usage` for ring rendering.
  * SW is the sole accumulator (`totalInputTokens`/`totalOutputTokens` are
@@ -703,4 +715,5 @@ export type PortMessageToPanel =
   | NeedsFileAccessMessage            // local file access card
   | FileOutputMessage                 // output_file download card
   | FileOutputResultMessage           // output_file download result
-  | ChatRatelimitWaitMessage;         // Provider RPM 限流排队等待
+  | ChatRatelimitWaitMessage         // Provider RPM 限流排队等待
+  | ChatAttachMessage;               // 2.0 overlay — live-run handoff attach
