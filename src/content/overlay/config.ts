@@ -18,9 +18,10 @@ export function setOverlayConfig(next: OverlayConfigReply | null): void {
   cache = next;
 }
 
-/** Fetch once (deduped). Resolves null when the SW is unreachable. */
-export async function loadOverlayConfig(): Promise<OverlayConfigReply | null> {
-  if (cache) return cache;
+/** Fetch once (deduped); `force` refetches but keeps serving the old copy
+ *  meanwhile. Resolves null when the SW is unreachable. */
+export async function loadOverlayConfig(force = false): Promise<OverlayConfigReply | null> {
+  if (cache && !force) return cache;
   if (inflight) return inflight;
   inflight = (async () => {
     try {

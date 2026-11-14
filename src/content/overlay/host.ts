@@ -10,16 +10,17 @@
 // keeps its chat-stream port alive, which keeps a running agent task alive. We
 // only tear the document down when the SW says no task is running.
 
-import type { OverlayOpenPayload } from "@/lib/overlay/protocol";
+import { OVERLAY_CARD_PAD, type OverlayOpenPayload } from "@/lib/overlay/protocol";
 
 const HOST_ATTR = "data-pie-overlay-host";
-/** Wrapper width: the card is ~420px, plus the transparent padding the
- *  document reserves so the card's shadow is not clipped by the iframe. */
-const OVERLAY_WIDTH = 456;
+/** Wrapper width: the ~420px card plus that margin on both sides. */
+const OVERLAY_WIDTH = 420 + OVERLAY_CARD_PAD * 2;
 const EDGE = 12;
 const BELOW_SELECTION_GAP = 14;
 const MIN_SPACE_BELOW = 280;
 const MAX_HEIGHT_EDGE = 16;
+/** Visible gap between the card and the viewport bottom (bottom placement). */
+const BOTTOM_GAP = 28;
 const MIN_HEIGHT = 120;
 /** Cap on the overlay's height, as a share of the page viewport. */
 const MAX_HEIGHT_RATIO = 0.7;
@@ -152,25 +153,39 @@ function pushMaxHeight(): void {
 }
 
 function maxHeight(): number {
-  const top = host ? parseFloat(host.style.top || "0") : 0;
   const cap70 = Math.round(window.innerHeight * MAX_HEIGHT_RATIO);
+  // Bottom-placed: the frame grows upwards from its bottom edge.
+  const used = host?.style.bottom
+    ? parseFloat(host.style.bottom)
+    : host
+      ? parseFloat(host.style.top || "0")
+      : 0;
   return Math.max(
     MIN_HEIGHT,
-    Math.min(cap70, window.innerHeight - top - MAX_HEIGHT_EDGE),
+    Math.min(cap70, window.innerHeight - used - MAX_HEIGHT_EDGE),
   );
 }
 
-function place(anchor: DOMRect | null, position: "anchor" | "top"): void {
+function place(anchor: DOMRect | null, position: "anchor" | "bottom"): void {
   if (!host) return;
   const width = Math.min(OVERLAY_WIDTH, window.innerWidth - EDGE * 2);
-  const anchored = anchor && position === "anchor" ? anchor.bottom + BELOW_SELECTION_GAP : null;
-  // Prototype: below the selection when it fits, else top-center; no selection
-  // always top-center.
-  const top = anchored !== null && window.innerHeight - anchored >= MIN_SPACE_BELOW
-    ? anchored
-    : 24;
-  host.style.top = `${Math.round(Math.max(EDGE, top))}px`;
-  host.style.left = `${Math.round(Math.max(EDGE, (window.innerWidth - width) / 2))}px`;
+  // The frame's transparent margin sits between the anchor and the card.
+  const anchored =
+    anchor && position === "anchor" ? anchor.bottom + BELOW_SELECTION_GAP - OVERLAY_CARD_PAD : null;
+  if (anchored !== null && window.innerHeight - anchored >= MIN_SPACE_BELOW) {
+    // Under the selection.
+    host.style.top = `${Math.round(Math.max(0, anchored))}px`;
+    host.style.bottom = "";
+  } else if (anchored !== null) {
+    // No room under the selection, which is therefore low on the screen: top.
+    host.style.top = "0px";
+    host.style.bottom = "";
+  } else {
+    // Shortcut / no selection / fixed setting: bottom-center, growing upwards.
+    host.style.top = "auto";
+    host.style.bottom = `${Math.max(0, BOTTOM_GAP - OVERLAY_CARD_PAD)}px`;
+  }
+  host.style.left = `${Math.round(Math.max(0, (window.innerWidth - width) / 2))}px`;
   if (iframe) {
     iframe.style.width = `${Math.round(width)}px`;
     // Height is content-driven; the document is told the cap and reports back.

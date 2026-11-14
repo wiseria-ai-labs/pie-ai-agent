@@ -68,10 +68,12 @@ function ensureHost(): HTMLElement {
       .b:focus-visible { outline: 2px solid #3f5568; outline-offset: 1px; }
       .b.pie b { font-weight: 600; }
       .sep { width: 1px; height: 14px; margin: 0 3px; background: rgba(20, 24, 29, 0.12); }
+      /* The brand's bite-marked disc (same geometry as the overlay's PieMark). */
       .mark {
         width: 13px; height: 13px; border-radius: 50%;
-        background: radial-gradient(circle at 34% 30%, #fafbfc 0 52%, #14181d 53% 100%);
-        box-shadow: inset 0 0 0 1px rgba(20,24,29,0.12);
+        background: #14181d;
+        -webkit-mask: radial-gradient(circle at 88.6% 11.4%, transparent 3.2px, #000 3.7px);
+        mask: radial-gradient(circle at 88.6% 11.4%, transparent 3.2px, #000 3.7px);
       }
       .more { padding: 0 6px; font-size: 13px; letter-spacing: 1px; }
       .menu {

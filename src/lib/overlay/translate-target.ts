@@ -34,13 +34,28 @@ export function detectScript(text: string): TextScript {
   return best;
 }
 
-function scriptForLocale(locale: Locale): TextScript {
-  switch (locale) {
+/** Translate targets: the UI locales plus the other big languages people
+ *  read. Order = the "more" grid order. */
+export const TRANSLATE_LANGS = [
+  "en", "zh-CN", "zh-TW", "ja", "ko", "fr", "de", "es-419", "pt-BR", "ru",
+] as const;
+export type TranslateLang = (typeof TRANSLATE_LANGS)[number];
+
+export function isTranslateLang(value: unknown): value is TranslateLang {
+  return typeof value === "string" && (TRANSLATE_LANGS as readonly string[]).includes(value);
+}
+
+function scriptForLang(lang: string): TextScript {
+  switch (lang) {
     case "zh-CN":
     case "zh-TW":
       return "cjk";
     case "ja":
       return "kana";
+    case "ko":
+      return "hangul";
+    case "ru":
+      return "cyrillic";
     default:
       return "latin";
   }
@@ -50,12 +65,44 @@ export function isSupportedLocale(value: unknown): value is Locale {
   return typeof value === "string" && (SUPPORTED_LOCALES as readonly string[]).includes(value);
 }
 
+const NAME_TAG: Record<string, string> = { "zh-CN": "zh-Hans", "zh-TW": "zh-Hant", "es-419": "es", "pt-BR": "pt" };
+
+/** Language name in `displayLocale` (Intl owns the translations); falls back
+ *  to the code on runtimes without Intl.DisplayNames. */
+export function translateLangName(code: string, displayLocale: string): string {
+  try {
+    // Script / bare-language tags read better than region names here
+    // ("简体中文", not "中文（中国）"; "西班牙语", not "拉丁美洲西班牙语").
+    const tag = NAME_TAG[code] ?? code;
+    return new Intl.DisplayNames([displayLocale], { type: "language" }).of(tag) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/**
+ * The few languages offered as one-click buttons: the current target first,
+ * then the usual picks, minus the language the text is already written in.
+ * Script-level only (Latin languages are not told apart).
+ */
+export function quickTranslateLangs(current: string, selectionText: string, max = 3): string[] {
+  const script = detectScript(selectionText);
+  const out: string[] = [];
+  for (const lang of [current, "en", "zh-CN", "ja", "ko"]) {
+    if (out.includes(lang)) continue;
+    if (lang !== current && script !== "unknown" && scriptForLang(lang) === script) continue;
+    out.push(lang);
+    if (out.length === max) break;
+  }
+  return out;
+}
+
 /** Answer language, with the "already that language → English" rule applied. */
 export function resolveTranslateTarget(answerLang: Locale, selectionText: string): Locale {
   const script = detectScript(selectionText);
   if (script === "unknown") return answerLang;
   // Translating into the language the text is already in is a no-op.
-  return scriptForLocale(answerLang) === script ? "en" : answerLang;
+  return scriptForLang(answerLang) === script ? "en" : answerLang;
 }
 
 /**
@@ -66,7 +113,7 @@ export function resolveInitialTranslateTarget(
   lastChoice: string | undefined,
   answerLang: Locale,
   selectionText: string,
-): Locale {
-  if (isSupportedLocale(lastChoice)) return lastChoice;
+): string {
+  if (isTranslateLang(lastChoice)) return lastChoice;
   return resolveTranslateTarget(answerLang, selectionText);
 }

@@ -111,6 +111,8 @@ import {
   isCdpInputEnabled,
 } from "@/lib/cdp-input-enabled";
 import { onStoreChange } from "@/lib/store-bus";
+import { STORAGE_KEY_UI_LOCALE } from "@/lib/i18n/types";
+import { OVERLAY_SETTINGS_KEY } from "@/lib/overlay/settings";
 import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE } from "@/lib/deeplink";
 
 import { runStartupMigrations } from "@/lib/startup-migrations";
@@ -199,7 +201,7 @@ import {
   wrapOverlayEmit,
   type RunRuntime,
 } from "./overlay";
-import { OVERLAY_CONFIG, type CapsuleAction, type OverlayIntent, type OverlaySelection } from "@/lib/overlay/protocol";
+import { OVERLAY_CONFIG, OVERLAY_CONFIG_STALE, type CapsuleAction, type OverlayIntent, type OverlaySelection } from "@/lib/overlay/protocol";
 import { setPanelRequestOpener } from "@/lib/panel-request";
 import { wrapEmitWithMemoryChip } from "@/lib/agent/memory-chip";
 import { buildUserMemoryBlock } from "@/lib/memory/prompt";
@@ -691,6 +693,19 @@ onStoreChange("config", (c) => {
       void detachAllSessions("kill-switch");
     }
   })();
+});
+
+// 2.0 overlay — the page-side bar / capsule keep a copy of their labels and
+// settings (content scripts can't read IDB). Tell every tab when the UI
+// language or the overlay settings change so the copy is refetched.
+onStoreChange("config", (c) => {
+  if (c.id !== STORAGE_KEY_UI_LOCALE && c.id !== OVERLAY_SETTINGS_KEY) return;
+  void chrome.tabs.query({}).then((tabs) => {
+    for (const tab of tabs) {
+      if (typeof tab.id !== "number") continue;
+      chrome.tabs.sendMessage(tab.id, { type: OVERLAY_CONFIG_STALE }).catch(() => {});
+    }
+  });
 });
 
 // --- Page Content Extraction ---
@@ -1800,7 +1815,7 @@ async function handleChatStream(
       const setting = await getAssistantLanguageSetting();
       const resolved = resolveAssistantLanguage(setting, uiLocale);
       const answerLang = resolved === "auto-detect-user-message" ? uiLocale : resolved;
-      const instruction = buildOverlayTaskInstruction(overlayTask, answerLang);
+      const instruction = buildOverlayTaskInstruction(overlayTask, answerLang, editableSelection === true);
       const wire = buildOverlayWireContent(
         instruction,
         overlayTask.selection

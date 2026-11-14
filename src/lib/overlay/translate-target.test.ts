@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   detectScript,
+  quickTranslateLangs,
   isSupportedLocale,
   resolveInitialTranslateTarget,
   resolveTranslateTarget,
@@ -31,9 +32,17 @@ describe("overlay translate target", () => {
 
   it("prefers the remembered pick, but only when it is a real locale", () => {
     expect(resolveInitialTranslateTarget("ja", "zh-CN", "hello")).toBe("ja");
-    expect(resolveInitialTranslateTarget("de", "zh-CN", "hello")).toBe("zh-CN");
+    expect(resolveInitialTranslateTarget("de", "zh-CN", "hello")).toBe("de");
+    expect(resolveInitialTranslateTarget("xx", "zh-CN", "hello")).toBe("zh-CN");
     expect(resolveInitialTranslateTarget(undefined, "zh-CN", "你好")).toBe("en");
     expect(isSupportedLocale("zh-TW")).toBe(true);
     expect(isSupportedLocale("de")).toBe(false);
+  });
+
+  it("offers quick languages without the source language", () => {
+    expect(quickTranslateLangs("en", "我的账单明细")).toEqual(["en", "ja", "ko"]);
+    expect(quickTranslateLangs("ja", "hello")).toEqual(["ja", "zh-CN", "ko"]);
+    // The current pick is kept even when it matches the source script.
+    expect(quickTranslateLangs("zh-TW", "你好")).toEqual(["zh-TW", "en", "ja"]);
   });
 });

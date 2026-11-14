@@ -9,6 +9,7 @@ import {
   OVERLAY_ASK_SELECTION,
   OVERLAY_CLOSE,
   OVERLAY_CONFIG,
+  OVERLAY_CONFIG_STALE,
   OVERLAY_EXCLUDE_SITE,
   OVERLAY_INTENT,
   OVERLAY_OPEN,
@@ -194,7 +195,7 @@ export function attachOverlayContentScript(): void {
       hideBubble();
       hideCapsule();
       // Refresh config (labels may have changed since the last open).
-      void loadOverlayConfig();
+      void loadOverlayConfig(true);
       openOverlaySurface(
         payload,
         payload.selection ? getLastSelectionRect() : null,
@@ -204,6 +205,12 @@ export function attachOverlayContentScript(): void {
 
     if (type === OVERLAY_CLOSE) {
       destroyOverlaySurface();
+      return;
+    }
+
+    // UI language / overlay settings changed (SW broadcast).
+    if (type === OVERLAY_CONFIG_STALE) {
+      void loadOverlayConfig(true);
       return;
     }
 

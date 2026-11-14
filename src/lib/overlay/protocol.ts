@@ -166,6 +166,13 @@ export const OVERLAY_CLOSE = "pie-overlay:close";
 export const OVERLAY_ASK_SELECTION = "pie-overlay:ask-selection";
 export const OVERLAY_REPLACE = "pie-overlay:replace";
 export const OVERLAY_CONFIG = "pie-overlay:config";
+/** SW → tabs: labels / settings changed, refetch the config. */
+export const OVERLAY_CONFIG_STALE = "pie-overlay:config-stale";
+
+/** Transparent margin the overlay document keeps around its card, so the
+ *  card's shadow is painted inside the iframe instead of being clipped at the
+ *  frame edge. Shared by the host (frame size / placement) and the document. */
+export const OVERLAY_CARD_PAD = 32;
 export const CAPSULE_STATE = "pie-capsule:state";
 export const SURFACE_HIDE = "pie-surface:hide";
 export const SURFACE_SHOW = "pie-surface:show";

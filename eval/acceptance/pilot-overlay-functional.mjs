@@ -182,7 +182,7 @@ try {
   });
   rec(
     "A4 card geometry inside a transparent iframe",
-    host.hostWidth === 456 && layout.pad === "18px" && layout.cardW === 420 && layout.bodyBg === "rgba(0, 0, 0, 0)"
+    host.hostWidth === 484 && layout.pad === "32px" && layout.cardW === 420 && layout.bodyBg === "rgba(0, 0, 0, 0)"
       ? "PASS"
       : "FAIL",
     JSON.stringify({ host: host.hostWidth, ...layout }),
@@ -439,23 +439,23 @@ try {
   });
   await page.waitForTimeout(1200);
   const tFrame = page.frames().find((f) => f.url().includes("src/overlay/index.html"));
-  const chip = tFrame.locator("#overlay-root button", { hasText: "Translate to" }).first();
-  const chipText = (await chip.textContent())?.trim();
+  const langs = await tFrame.locator("[data-action-row=translate] [data-lang]").allTextContents();
   const prefill = await tFrame.locator("#overlay-root textarea").inputValue();
+  const bubbles0 = await tFrame.locator("#overlay-root [data-thread]").count();
   rec(
-    "G1 translate opens with a target chip, no auto-send",
-    Boolean(chipText?.includes("Translate to")) && prefill.startsWith("Translate to") ? "PASS" : "FAIL",
-    `chip=${JSON.stringify(chipText)} prefill=${JSON.stringify(prefill)}`,
+    "G1 translate opens with one-click language buttons, empty composer, no auto-send",
+    langs.length >= 2 && prefill === "" && bubbles0 === 0 ? "PASS" : "FAIL",
+    `langs=${JSON.stringify(langs)} prefill=${JSON.stringify(prefill)} thread=${bubbles0}`,
   );
   await snap(page, "translate-chip");
 
-  // Switch the target language: chip + prefill follow and the choice persists.
-  await chip.click();
+  // More languages → picking one translates right away and is remembered.
+  await tFrame.locator("[data-action-row=translate] button[aria-expanded]").click();
   await page.waitForTimeout(250);
   await snap(page, "translate-languages");
-  await tFrame.locator('#overlay-root [role="option"]', { hasText: "Japanese" }).click();
-  await page.waitForTimeout(400);
-  const after = await tFrame.locator("#overlay-root textarea").inputValue();
+  await tFrame.locator('#overlay-root [role="option"][data-lang="ja"]').click();
+  await page.waitForTimeout(600);
+  const after = (await tFrame.locator("#overlay-root [data-thread]").innerText().catch(() => "")) ?? "";
   // Read the persisted preference in the extension origin (the SW shares the
   // same IDB; the fixture page has its own origin-local database).
   const stored = await sw.evaluate(
@@ -473,9 +473,9 @@ try {
       }),
   );
   rec(
-    "G2 language switch updates prefill and is remembered",
+    "G2 picking a language sends the translation and is remembered",
     after.includes("Japanese") && stored?.lastTranslateLang === "ja" ? "PASS" : "FAIL",
-    `prefill=${JSON.stringify(after)} stored=${stored?.lastTranslateLang}`,
+    `thread=${JSON.stringify(after.slice(0, 80))} stored=${stored?.lastTranslateLang}`,
   );
   await snap(page, "translate-japanese");
 

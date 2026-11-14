@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import Markdown from "@/sidepanel/components/Markdown";
-import { getLocale, useT } from "@/lib/i18n";
+import { getLocale, useI18n, useT } from "@/lib/i18n";
 import type { DictKey } from "@/lib/i18n";
-import { LOCALE_REGISTRY } from "@/lib/i18n/locales";
 import { getConfig } from "@/lib/idb/config-store";
 import { getToolClass } from "@/lib/agent/tool-names";
 import type { DisplayMessage } from "@/types";
 import {
+  OVERLAY_CARD_PAD as CARD_PAD,
   REWRITE_STYLE_IDS,
   type OverlayIntent,
   type OverlayOpenState,
@@ -16,6 +16,8 @@ import {
   type RewriteStyleId,
 } from "@/lib/overlay/protocol";
 import { buildOverlayWireContent as buildWireContent } from "@/lib/overlay/wire";
+import { buildOverlayTaskInstruction } from "@/lib/overlay/task-text";
+import { TRANSLATE_LANGS, quickTranslateLangs, translateLangName } from "@/lib/overlay/translate-target";
 import { getOverlaySettings, rememberRewriteStyle, rememberTranslateLang } from "@/lib/overlay/settings";
 import { startMemoryPrefetch, type MemoryPrefetch } from "@/lib/memory/selector";
 import type { MemoryEntry } from "@/lib/memory/types";
@@ -26,9 +28,6 @@ import { useOverlaySession } from "./useOverlaySession";
 
 /** Below this the composer never collapses — matches the host's min height. */
 const MAX_TEXTAREA_LINES = 3;
-/** Transparent padding inside the iframe so the card's shadow is not clipped
- *  (the iframe element itself must stay shadow-free). */
-const CARD_PAD = 18;
 /** Fallback cap until the host reports the real viewport-derived one. */
 const FALLBACK_MAX_HEIGHT = 620;
 
@@ -59,22 +58,6 @@ function requestClose(): void {
   window.parent.postMessage({ type: "pie-overlay:close" }, "*");
 }
 
-function langLabel(code: string): string {
-  const meta = LOCALE_REGISTRY[code as keyof typeof LOCALE_REGISTRY];
-  return meta?.nativeLabel ?? code;
-}
-
-/** Language name in the UI language — `Intl` owns the translations, so the
- *  translate chip needs no six-dictionary table of language names. */
-function localizedLangName(code: string): string {
-  try {
-    const name = new Intl.DisplayNames([getLocale()], { type: "language" }).of(code);
-    if (name) return name;
-  } catch {
-    // Old runtime without Intl.DisplayNames — fall back to the native label.
-  }
-  return langLabel(code);
-}
 
 const STYLE_LABEL_KEY: Record<RewriteStyleId, DictKey> = {
   formal: "overlay.ui.styleFormal",
@@ -90,7 +73,7 @@ interface RewriteCardState {
 }
 
 export default function OverlayApp() {
-  const t = useT();
+  const { t, locale } = useI18n();
   const params = useMemo(() => new URLSearchParams(location.search), []);
   const sessionId = params.get("sessionId") ?? "";
   const tabId = Number(params.get("tabId") ?? "-1");
@@ -174,9 +157,8 @@ export default function OverlayApp() {
   // ── Open state (selection / prefill / auto-send) ──────────────────────────
   // The SAME document serves several opens on one tab (hide keeps it alive),
   // so the state is re-read every time the host announces an open — not just
-  // on mount. `openSeq` lets the translate prefill refresh per open.
+  // on mount.
   const aliveRef = useRef(true);
-  const [openSeq, setOpenSeq] = useState(0);
   const autoSentRef = useRef(false);
   /** `openedAt` of the open that last reset the auto-send guard. */
   const autoOpenTokenRef = useRef<number | null>(null);
@@ -192,7 +174,6 @@ export default function OverlayApp() {
       const state = reply?.state ?? null;
       setOpenState(state);
       setRunningElsewhere(reply?.running === true);
-      setOpenSeq((n) => n + 1);
       if (state?.translateTarget) setTranslateTarget(state.translateTarget);
       setSelection(state?.selection ?? null);
       setSelectionConsumed(false);
@@ -256,22 +237,8 @@ export default function OverlayApp() {
 
   const rewriteMode = intent === "rewrite" && selection !== null;
   const translateMode = intent === "translate" && selection !== null;
-  const langName = localizedLangName(translateTarget);
-  const translateShort = t("overlay.ui.translateShort", { lang: langName });
-
-  // Translate opens with its short instruction pre-filled; switching the
-  // language rewrites that pre-fill until the user edits the field.
-  const autoComposerRef = useRef("");
-  useEffect(() => {
-    if (!translateMode) return;
-    const next = translateShort;
-    // Compare against the value captured NOW: React runs the updater during
-    // the next render, by which time autoComposerRef already holds `next`.
-    const prevAuto = autoComposerRef.current;
-    setInput((cur) => (cur === "" || cur === prevAuto ? next : cur));
-    autoComposerRef.current = next;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [translateMode, translateShort, openSeq]);
+  // Language names in the UI language — `Intl` owns the translations.
+  const langName = useCallback((code: string) => translateLangName(code, locale), [locale]);
 
   /** One send path for every mode: pick memory, then hand the turn to the
    *  session (structured tasks carry the overlay intent, not a prompt text). */
@@ -288,11 +255,23 @@ export default function OverlayApp() {
       const text = content.trim();
       if (!text || streaming || !session.ready || sendingRef.current) return false;
       sendingRef.current = true;
+      // A structured turn is stored with the instruction + quote it stood for
+      // (the SW rebuilds the live one). History that only said "翻译成日语"
+      // without the text or target let the next turn copy the previous answer.
+      const task = opts.overlayTask;
+      const wireText =
+        opts.wireText ??
+        (task
+          ? buildWireContent(
+              buildOverlayTaskInstruction(task, getLocale(), opts.editableSelection === true),
+              task.selection ? { ...task.selection, editable: false } : null,
+            )
+          : undefined);
       void (async () => {
         const mem = await takeMemoryPick(text);
         session.send({
           content: text,
-          ...(opts.wireText !== undefined ? { expandedForLLM: opts.wireText } : {}),
+          ...(wireText !== undefined ? { expandedForLLM: wireText } : {}),
           ...(opts.editableSelection ? { editableSelection: true } : {}),
           ...(mem ? { memoryPick: mem.pick, memoryPickAsOf: mem.at } : {}),
           ...(opts.overlayTask ? { overlayTask: opts.overlayTask } : {}),
@@ -357,7 +336,8 @@ export default function OverlayApp() {
   const send = useCallback(() => {
     const text = input.trim();
     if (!text) return;
-    const sel = selectionConsumed ? null : selection;
+    // Translate keeps its selection: typed text there is "do this to it".
+    const sel = selectionConsumed && !translateMode ? null : selection;
     let sent = false;
     if (rewriteMode && selection) {
       // Typed text IS the rewrite instruction; a style chip click sends
@@ -368,15 +348,8 @@ export default function OverlayApp() {
           custom: text,
           selection: { text: selection.text, url: selection.url },
         },
+        editableSelection: selection.editable,
         rememberCustom: text,
-      });
-    } else if (translateMode && selection && text === translateShort) {
-      sent = dispatch(text, {
-        overlayTask: {
-          kind: "translate",
-          targetLang: translateTarget,
-          selection: { text: selection.text, url: selection.url },
-        },
       });
     } else {
       sent = dispatch(text, {
@@ -389,7 +362,7 @@ export default function OverlayApp() {
       setSelectionConsumed(true);
       setNotice(null);
     }
-  }, [input, rewriteMode, selection, selectionConsumed, translateMode, translateShort, translateTarget, dispatch]);
+  }, [input, rewriteMode, translateMode, selection, selectionConsumed, dispatch]);
 
   sendRef.current = send;
 
@@ -403,6 +376,7 @@ export default function OverlayApp() {
           style,
           selection: { text: selection.text, url: selection.url },
         },
+        editableSelection: selection.editable,
       });
       setSelectionConsumed(true);
       setNotice(null);
@@ -410,19 +384,26 @@ export default function OverlayApp() {
     [dispatch, selection, t],
   );
 
-  const chooseTranslateLang = useCallback(
+  /** One click = one translation; picking another language re-translates. */
+  const sendTranslate = useCallback(
     (lang: string) => {
-      setTranslateTarget(lang);
+      if (!selection) return;
       setLangOpen(false);
-      // Update the prefill right here: the effect below can miss the change
-      // when the textarea's value no longer matches its last auto value.
-      const next = t("overlay.ui.translateShort", { lang: localizedLangName(lang) });
-      const prevAuto = autoComposerRef.current;
-      setInput((cur) => (cur === "" || cur === prevAuto ? next : cur));
-      autoComposerRef.current = next;
+      const sent = dispatch(t("overlay.ui.translateShort", { lang: langName(lang) }), {
+        overlayTask: {
+          kind: "translate",
+          targetLang: lang,
+          selection: { text: selection.text, url: selection.url },
+        },
+        editableSelection: selection.editable,
+      });
+      if (!sent) return;
+      setTranslateTarget(lang);
+      setSelectionConsumed(true);
+      setNotice(null);
       void rememberTranslateLang(lang);
     },
-    [t],
+    [dispatch, langName, selection, t],
   );
 
   const toPanel = useCallback(() => {
@@ -552,65 +533,103 @@ export default function OverlayApp() {
   const busy = streaming;
   const cardMaxHeight = Math.max(120, maxHeight - CARD_PAD * 2);
 
-  const modeChips = translateMode || rewriteMode ? (
-    <div className="relative flex shrink-0 flex-wrap items-center gap-1.5 border-t border-line px-3 py-2">
-      {rewriteMode &&
-        REWRITE_STYLE_IDS.map((style) => (
-          <ChipButton key={style} onClick={() => sendRewriteStyle(style)} disabled={busy}>
-            {t(STYLE_LABEL_KEY[style])}
-          </ChipButton>
-        ))}
-      {rewriteMode &&
-        recentStyles.map((text) => (
-          <ChipButton
-            key={`recent-${text}`}
-            onClick={() =>
-              selection &&
-              dispatch(text, {
-                overlayTask: {
-                  kind: "rewrite",
-                  custom: text,
-                  selection: { text: selection.text, url: selection.url },
-                },
-              })
-            }
-            disabled={busy}
-            title={text}
-          >
-            {text}
-          </ChipButton>
-        ))}
-      {translateMode && (
-        <>
-          <ChipButton onClick={() => setLangOpen((v) => !v)} disabled={busy} aria-expanded={langOpen}>
-            {t("overlay.ui.translateChip", { lang: langName })} ▾
-          </ChipButton>
-          {langOpen && (
-            // In flow, not a popover: the card clips its children (rounded
-            // corners + scrolling thread), so an absolutely-positioned list
-            // was cut off entirely. Wrapping to a second row keeps it visible.
-            <div
-              role="listbox"
-              className="order-last grid w-full grid-cols-2 gap-0.5 rounded-[8px] border border-line bg-surface p-1"
+  // The selection the next send acts on. Translate / rewrite keep it for
+  // follow-up clicks; a plain question consumes it.
+  const activeSelection =
+    selection && (translateMode || rewriteMode || !selectionConsumed) ? selection : null;
+
+  const selectionRow = activeSelection ? (
+    <div className="flex items-center gap-2 rounded-[10px] bg-field py-1.5 pl-2.5 pr-1.5" data-selection-row>
+      <span className="h-[14px] w-[2px] shrink-0 rounded-full bg-accent opacity-60" />
+      <span className="min-w-0 flex-1 truncate text-[12px] leading-[18px] text-fg-2">{activeSelection.text}</span>
+      <span className="shrink-0 text-[11px] text-fg-3">
+        {activeSelection.editable
+          ? t("overlay.ui.chipSelectionEditable", { count: charCount(activeSelection.text) })
+          : t("overlay.ui.chipSelection", { count: charCount(activeSelection.text) })}
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          setSelection(null);
+          setSelectionConsumed(true);
+          setLangOpen(false);
+        }}
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[13px] text-fg-3 hover:bg-surface hover:text-fg-1"
+        aria-label={t("overlay.ui.removeSelection")}
+        title={t("overlay.ui.removeSelection")}
+      >
+        ×
+      </button>
+    </div>
+  ) : null;
+
+  const actionRow = translateMode ? (
+    <div className="flex flex-wrap items-center gap-1.5" data-action-row="translate">
+      <span className="pr-0.5 text-[11.5px] text-fg-3">{t("overlay.ui.translateRow")}</span>
+      {quickTranslateLangs(translateTarget, selection?.text ?? "").map((lang) => (
+        <Pill
+          key={lang}
+          primary={lang === translateTarget}
+          onClick={() => sendTranslate(lang)}
+          disabled={busy}
+          data-lang={lang}
+        >
+          {langName(lang)}
+        </Pill>
+      ))}
+      <Pill onClick={() => setLangOpen((v) => !v)} disabled={busy} aria-expanded={langOpen}>
+        {t("overlay.ui.moreLangs")} {langOpen ? "▴" : "▾"}
+      </Pill>
+      {langOpen && (
+        // In flow, not a popover: the card clips its children (rounded corners
+        // + scrolling thread), so an absolutely-positioned list was cut off.
+        <div role="listbox" className="grid w-full grid-cols-3 gap-0.5 rounded-[10px] border border-line bg-surface p-1">
+          {TRANSLATE_LANGS.map((lang) => (
+            <button
+              key={lang}
+              type="button"
+              role="option"
+              aria-selected={lang === translateTarget}
+              data-lang={lang}
+              onClick={() => sendTranslate(lang)}
+              className={`truncate rounded-[6px] px-2 py-1 text-left text-[12px] hover:bg-field ${
+                lang === translateTarget ? "font-medium text-accent" : "text-fg-2"
+              }`}
             >
-              {Object.values(LOCALE_REGISTRY).map((meta) => (
-                <button
-                  key={meta.locale}
-                  type="button"
-                  role="option"
-                  aria-selected={meta.locale === translateTarget}
-                  onClick={() => chooseTranslateLang(meta.locale)}
-                  className={`truncate rounded-[6px] px-2 py-1 text-left text-[12px] hover:bg-field ${
-                    meta.locale === translateTarget ? "font-medium text-fg-1" : "text-fg-2"
-                  }`}
-                >
-                  {localizedLangName(meta.locale)}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
+              {langName(lang)}
+            </button>
+          ))}
+        </div>
       )}
+    </div>
+  ) : rewriteMode ? (
+    <div className="flex flex-wrap items-center gap-1.5" data-action-row="rewrite">
+      <span className="pr-0.5 text-[11.5px] text-fg-3">{t("overlay.ui.rewriteRow")}</span>
+      {REWRITE_STYLE_IDS.map((style) => (
+        <Pill key={style} onClick={() => sendRewriteStyle(style)} disabled={busy}>
+          {t(STYLE_LABEL_KEY[style])}
+        </Pill>
+      ))}
+      {recentStyles.map((text) => (
+        <Pill
+          key={`recent-${text}`}
+          onClick={() =>
+            selection &&
+            dispatch(text, {
+              overlayTask: {
+                kind: "rewrite",
+                custom: text,
+                selection: { text: selection.text, url: selection.url },
+              },
+              editableSelection: selection.editable,
+            })
+          }
+          disabled={busy}
+          title={text}
+        >
+          {text}
+        </Pill>
+      ))}
     </div>
   ) : null;
 
@@ -623,7 +642,7 @@ export default function OverlayApp() {
     >
       <div
         data-card
-        className="flex w-full flex-col overflow-hidden rounded-[16px] border border-line bg-surface font-sans text-fg-1 shadow-[0_10px_30px_rgba(20,24,29,0.20)]"
+        className="flex w-full flex-col overflow-hidden rounded-[16px] border border-line bg-surface font-sans text-fg-1 shadow-[0_10px_28px_-6px_rgba(20,24,29,0.22),0_1px_4px_rgba(20,24,29,0.08)]"
         style={{ maxHeight: cardMaxHeight }}
       >
         {chat && (
@@ -704,10 +723,13 @@ export default function OverlayApp() {
           </div>
         )}
 
-        {modeChips}
-
-        <div className="flex shrink-0 flex-col gap-1 px-3 pb-2 pt-2">
-          <div className="flex items-end gap-2 rounded-[11px] border border-line bg-field px-2.5 py-1.5">
+        <div className={`flex shrink-0 flex-col gap-2 px-3 pb-2 pt-2.5 ${chat ? "border-t border-line" : ""}`}>
+          {selectionRow}
+          {actionRow}
+          <div className="flex items-end gap-2 rounded-[12px] border border-line bg-field py-[5px] pl-2.5 pr-[5px] focus-within:border-fg-3">
+            <span className="flex h-[26px] shrink-0 items-center">
+              <PieMark className="h-[15px] w-[15px] text-fg-1" />
+            </span>
             <textarea
               ref={textareaRef}
               rows={1}
@@ -719,14 +741,16 @@ export default function OverlayApp() {
                   ? t("overlay.ui.placeholderBusy")
                   : rewriteMode
                     ? t("overlay.ui.rewritePlaceholder")
-                    : t("overlay.ui.placeholder")
+                    : translateMode
+                      ? t("overlay.ui.translatePlaceholder")
+                      : t("overlay.ui.placeholder")
               }
-              className="max-h-[57px] min-h-[20px] flex-1 resize-none bg-transparent text-[13.5px] leading-[19px] text-fg-1 outline-none placeholder:text-fg-3"
-              style={{ height: "auto" }}
+              className="min-h-[26px] flex-1 resize-none bg-transparent py-[3px] text-[13.5px] leading-[20px] text-fg-1 outline-none placeholder:text-fg-3"
+              style={{ height: "auto", maxHeight: MAX_TEXTAREA_LINES * 20 + 6 }}
               onInput={(e) => {
                 const el = e.currentTarget;
                 el.style.height = "auto";
-                el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_LINES * 19)}px`;
+                el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_LINES * 20 + 6)}px`;
               }}
             />
             <button
@@ -734,30 +758,16 @@ export default function OverlayApp() {
               onClick={send}
               disabled={busy || input.trim().length === 0}
               aria-label={t("common.send")}
-              className="mb-0.5 flex h-[26px] w-[26px] items-center justify-center rounded-full bg-accent text-[13px] text-white disabled:opacity-40"
+              className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-accent text-[13px] text-white disabled:opacity-40"
             >
               ↑
             </button>
           </div>
-          <div className="flex items-center gap-1.5 px-1 text-[11px] text-fg-3">
-            <Chip label={t("overlay.ui.chipPage")} />
-            {selection && !selectionConsumed && (
-              <Chip
-                label={
-                  selection.editable
-                    ? t("overlay.ui.chipSelectionEditable", { count: charCount(selection.text) })
-                    : t("overlay.ui.chipSelection", { count: charCount(selection.text) })
-                }
-                onRemove={() => {
-                  setSelection(null);
-                  setSelectionConsumed(true);
-                }}
-              />
-            )}
+          <div className="flex items-center gap-2 px-1 text-[11px] text-fg-3">
+            {notice && <span className="truncate text-warning">{notice}</span>}
             <span className="flex-1" />
-            <span className="truncate">{chat ? t("overlay.ui.hintsChat") : t("overlay.ui.hints")}</span>
+            <span className="shrink-0">{chat ? t("overlay.ui.hintsChat") : t("overlay.ui.hints")}</span>
           </div>
-          {notice && <div className="px-1 text-[11px] text-warning">{notice}</div>}
         </div>
       </div>
     </div>
@@ -806,18 +816,21 @@ function selectionTextFor(
   return after.some((m) => m.role === "user") ? null : selectionText;
 }
 
-function ChipButton({
+function Pill({
   children,
   onClick,
   disabled,
   title,
+  primary,
   ...rest
 }: {
   children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   title?: string;
+  primary?: boolean;
   "aria-expanded"?: boolean;
+  "data-lang"?: string;
 }) {
   return (
     <button
@@ -825,7 +838,11 @@ function ChipButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="max-w-[220px] truncate rounded-full border border-line bg-field px-2.5 py-[3px] text-[11.5px] text-fg-2 hover:text-fg-1 disabled:opacity-40"
+      className={`h-[26px] max-w-[200px] truncate rounded-full border px-2.5 text-[12px] disabled:opacity-40 ${
+        primary
+          ? "border-accent bg-surface font-medium text-accent"
+          : "border-line bg-surface text-fg-2 hover:border-fg-3 hover:text-fg-1"
+      }`}
       {...rest}
     >
       {children}
@@ -855,19 +872,6 @@ function IconBtn({
     >
       {children}
     </button>
-  );
-}
-
-function Chip({ label, onRemove }: { label: string; onRemove?: () => void }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-chip bg-field px-1.5 py-[2px] text-[10.5px] text-fg-2">
-      {label}
-      {onRemove && (
-        <button type="button" onClick={onRemove} className="text-fg-3 hover:text-fg-1" aria-label="remove">
-          ×
-        </button>
-      )}
-    </span>
   );
 }
 
