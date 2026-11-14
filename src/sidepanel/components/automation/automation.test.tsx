@@ -32,8 +32,13 @@ const actionMocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/monitors/panel-actions", () => actionMocks);
 
+// Captured so a test can simulate the SW writing a check result back.
+const storeBusCallbacks: Array<(change: { id?: string }) => void> = [];
 vi.mock("@/lib/store-bus", () => ({
-  onStoreChange: vi.fn(() => () => {}),
+  onStoreChange: vi.fn((_store: string, cb: (change: { id?: string }) => void) => {
+    storeBusCallbacks.push(cb);
+    return () => {};
+  }),
   publishChange: vi.fn(),
 }));
 
@@ -78,6 +83,7 @@ beforeEach(async () => {
   await setConfig(STORAGE_KEY_UI_LOCALE, "en");
   entries.length = 0;
   monitors.length = 0;
+  storeBusCallbacks.length = 0;
   vi.clearAllMocks();
 });
 afterEach(() => cleanup());
@@ -168,6 +174,39 @@ describe("MonitorsPanel", () => {
     expect(screen.getByText(/Background fetch/)).toBeTruthy();
     fireEvent.click(screen.getByText("Check now"));
     expect(actionMocks.checkMonitorNow).toHaveBeenCalledWith("mon_3");
+  });
+
+  it("shows 检查中 while a manual check is in flight and restores after the result lands", async () => {
+    monitors.push(makeMonitor({ id: "mon_6", lastCheckedAt: 1 }));
+    ui(<MonitorsPanel />);
+    fireEvent.click(await screen.findByTestId("monitor-row-mon_6"));
+    fireEvent.click(await screen.findByText("Check now"));
+
+    const checking = await screen.findByText("Checking…");
+    expect((checking as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("Check now")).toBeNull();
+
+    // The SW writes the result and the store-bus nudges the panel.
+    monitors[0]!.lastCheckedAt = Date.now() + 1000;
+    storeBusCallbacks.forEach((cb) => cb({ id: "unrelated" }));
+
+    await waitFor(() => expect(screen.getByText("Check now")).toBeTruthy());
+    expect((screen.getByText("Check now") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("restores 立即检查 if the result never lands", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      monitors.push(makeMonitor({ id: "mon_7" }));
+      ui(<MonitorsPanel />);
+      fireEvent.click(await screen.findByTestId("monitor-row-mon_7"));
+      fireEvent.click(screen.getByText("Check now"));
+      expect(await screen.findByText("Checking…")).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(31_000);
+      await waitFor(() => expect(screen.getByText("Check now")).toBeTruthy());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("pauses from the detail view", async () => {

@@ -56,6 +56,10 @@ export function MonitorsPanel() {
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // §4.3 — "立即检查" is fire-and-forget in the SW, so the panel shows a
+  // pending marker until the check writes its result (store-bus refresh) or
+  // 30 s elapse.
+  const [pendingCheck, setPendingCheck] = useState<{ id: string; since: number } | null>(null);
 
   const reload = useCallback(async () => {
     setMonitors(await listMonitors());
@@ -66,6 +70,24 @@ export function MonitorsPanel() {
     void reload();
     return onStoreChange("monitors", () => void reload());
   }, [reload]);
+
+  // Clear the pending marker once the record shows a fresh lastCheckedAt (every
+  // terminal path in check.ts writes it) or the monitor left "active".
+  useEffect(() => {
+    if (!pendingCheck) return;
+    const rec = monitors.find((m) => m.id === pendingCheck.id);
+    if (!rec || rec.status !== "active" || (rec.lastCheckedAt ?? 0) >= pendingCheck.since) {
+      setPendingCheck(null);
+    }
+  }, [monitors, pendingCheck]);
+
+  // Safety valve: a dropped check (tab blocked, SW killed) must not leave the
+  // button spinning forever.
+  useEffect(() => {
+    if (!pendingCheck) return;
+    const timer = setTimeout(() => setPendingCheck(null), 30_000);
+    return () => clearTimeout(timer);
+  }, [pendingCheck]);
 
   const open = monitors.find((m) => m.id === openId) ?? null;
 
@@ -88,6 +110,11 @@ export function MonitorsPanel() {
           setConfirmDelete(false);
         }}
         onChanged={reload}
+        checking={pendingCheck?.id === open.id}
+        onCheckNow={() => {
+          setPendingCheck({ id: open.id, since: Date.now() });
+          void checkMonitorNow(open.id);
+        }}
       />
     );
   }
@@ -163,6 +190,8 @@ function MonitorDetail({
   onDelete,
   onBack,
   onChanged,
+  checking,
+  onCheckNow,
 }: {
   rec: MonitorRecord;
   locale: string;
@@ -172,6 +201,8 @@ function MonitorDetail({
   onDelete: () => Promise<void>;
   onBack: () => void;
   onChanged: () => Promise<void>;
+  checking: boolean;
+  onCheckNow: () => void;
 }) {
   const { t } = useI18n();
 
@@ -289,13 +320,8 @@ function MonitorDetail({
       </div>
 
       <div className="flex items-center gap-2 pb-2">
-        <DetailButton
-          disabled={rec.status !== "active"}
-          onClick={async () => {
-            await checkMonitorNow(rec.id);
-          }}
-        >
-          {t("monitors.checkNow")}
+        <DetailButton disabled={rec.status !== "active" || checking} onClick={onCheckNow}>
+          {checking ? t("monitors.checking") : t("monitors.checkNow")}
         </DetailButton>
         {rec.status === "expired" ? null : rec.status === "paused" ? (
           <DetailButton onClick={async () => { await resumeMonitor(rec.id); await onChanged(); }}>

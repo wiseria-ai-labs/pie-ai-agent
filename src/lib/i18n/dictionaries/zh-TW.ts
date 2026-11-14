@@ -695,6 +695,7 @@ export const zhTWDict = {
     checkModeDirect: "背景直接讀取網頁 — 不開分頁，不呼叫模型",
     checkModeTab: "開啟隱藏分頁讀取 — 不呼叫模型",
     checkNow: "立即檢查",
+    checking: "檢查中…",
     pause: "暫停",
     resume: "恢復",
     delete: "刪除",

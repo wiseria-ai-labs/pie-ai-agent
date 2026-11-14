@@ -695,6 +695,7 @@ export const zhCNDict = {
     checkModeDirect: "后台直接读取网页 — 不开标签页，不调用模型",
     checkModeTab: "打开隐藏标签页读取 — 不调用模型",
     checkNow: "立即检查",
+    checking: "检查中…",
     pause: "暂停",
     resume: "恢复",
     delete: "删除",

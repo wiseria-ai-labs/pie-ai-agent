@@ -694,6 +694,7 @@ export const jaDict = {
     checkModeDirect: "バックグラウンドで直接取得 — タブもモデルも使わない",
     checkModeTab: "非表示タブで取得 — モデルは使わない",
     checkNow: "今すぐ確認",
+    checking: "確認中…",
     pause: "一時停止",
     resume: "再開",
     delete: "削除",

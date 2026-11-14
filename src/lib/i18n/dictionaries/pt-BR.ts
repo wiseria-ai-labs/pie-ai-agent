@@ -696,6 +696,7 @@ export const ptBRDict = {
     checkModeDirect: "Leitura em segundo plano — sem aba, sem modelo",
     checkModeTab: "Aba oculta — sem modelo",
     checkNow: "Verificar agora",
+    checking: "Verificando…",
     pause: "Pausar",
     resume: "Retomar",
     delete: "Excluir",

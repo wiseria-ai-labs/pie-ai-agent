@@ -696,6 +696,7 @@ export const es419Dict = {
     checkModeDirect: "Lectura en segundo plano — sin pestaña ni modelo",
     checkModeTab: "Pestaña oculta — sin modelo",
     checkNow: "Comprobar ahora",
+    checking: "Comprobando…",
     pause: "Pausar",
     resume: "Reanudar",
     delete: "Eliminar",

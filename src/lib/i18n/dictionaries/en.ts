@@ -700,6 +700,7 @@ export const enDict = {
     checkModeDirect: "Background fetch — no tab, no model",
     checkModeTab: "Hidden tab — no model",
     checkNow: "Check now",
+    checking: "Checking…",
     pause: "Pause",
     resume: "Resume",
     delete: "Delete",
