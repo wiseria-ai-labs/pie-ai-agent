@@ -127,8 +127,13 @@ export function escapeUntrustedWrappers(text: string): string {
  * embedding, so it cannot forge a `</user_custom_rules>` close and inject
  * "system text" after the block; (b) the page-content path already escapes
  * trusted wrapper tags, so untrusted page data can never fabricate this block.
+ *
+ * 2.0 overlay — `system_notice` is the other trusted runtime block the prompt
+ * tells the model to obey (runtime status / nav notices). Page text that rides
+ * into a user turn must not be able to fabricate one either, so it is escaped
+ * wherever user-authored content is escaped.
  */
-export const TRUSTED_WRAPPER_TAGS = ["user_task", "user_custom_rules"] as const;
+export const TRUSTED_WRAPPER_TAGS = ["user_task", "user_custom_rules", "system_notice"] as const;
 
 const TRUSTED_TAG_ALT = TRUSTED_WRAPPER_TAGS.join("|");
 
