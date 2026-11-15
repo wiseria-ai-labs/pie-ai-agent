@@ -63,9 +63,13 @@ interface ModelRow {
  *  Exported for unit tests. */
 export function modelsFor(inst: DecryptedInstance): ModelRow[] {
   if (inst.provider === "managed") {
-    const cached = getCachedEntitlement(inst.apiKey)?.models ?? [];
-    if (cached.length > 0) return cached.map((m) => ({ id: m.id, isCustom: false, managed: m }));
-    // 缓存未就绪：回退 registry 单条兜底（保证不空）——落到下方原有逻辑。
+    // 官方分组只在订阅 active 时出现（列表层面按 plan gate）；缓存未就绪就没有
+    // 模型行——不再回落 registry 单条兜底，那条 fallback 选中后必然 401。
+    return (getCachedEntitlement(inst.apiKey)?.models ?? []).map((m) => ({
+      id: m.id,
+      isCustom: false,
+      managed: m,
+    }));
   }
   const isCustom = inst.provider.startsWith(CUSTOM_PREFIX);
   const meta = isCustom ? undefined : getProviderMeta(inst.provider as BuiltinProvider);
@@ -164,6 +168,10 @@ export function ModelPickerBody({
   onClose = () => {},
 }: ModelPickerSelectionProps & { isOpen: boolean; onClose?: () => void }) {
   const t = useT();
+  // 账号未订阅（plan !== active）时官方分组不出现——避免选中后必然 401。
+  const selectable = instances.filter(
+    (i) => i.provider !== "managed" || getCachedEntitlement(i.apiKey)?.plan === "active",
+  );
   const [expandedId, setExpandedId] = useState<string | null>(currentInstanceId);
   const [query, setQuery] = useState("");
   // The list may arrive after this body mounts (the overlay loads instances
@@ -211,10 +219,10 @@ export function ModelPickerBody({
     <>
       <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
-        <span className="font-mono text-[10px] text-fg-3">{instances.length} {t("modelPicker.providersSuffix")}</span>
+        <span className="font-mono text-[10px] text-fg-3">{selectable.length} {t("modelPicker.providersSuffix")}</span>
       </div>
       <div className="flex max-h-[360px] flex-col overflow-y-auto">
-        {instances.map((inst) => {
+        {selectable.map((inst) => {
           const isExpanded = expandedId === inst.id;
           const isCurrentProvider = inst.id === currentInstanceId;
           return (

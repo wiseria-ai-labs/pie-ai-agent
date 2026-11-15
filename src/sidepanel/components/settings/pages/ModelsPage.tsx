@@ -32,7 +32,7 @@ import { Collapse } from "../../ui/Collapse";
 import { useT } from "@/lib/i18n";
 import { testProviderConnection } from "@/lib/provider-test";
 
-export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?: number }) {
+export default function ModelsPage() {
   const t = useT();
   const [instances, setInstances] = useState<DecryptedInstance[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -51,7 +51,8 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
   const [cpDraft, setCpDraft] = useState<{ name: string; baseUrl: string; wire?: "responses" } | null>(null);
 
   const reload = useCallback(async () => {
-    const list = await listInstances();
+    // 账号（provider:"managed"）已从模型配置里独立：不进列表、不计入配置数。
+    const list = (await listInstances()).filter((i) => i.provider !== "managed");
     setInstances(list);
     // Refresh pool for every provider currently represented in the instance list.
     const providers = Array.from(new Set(list.map((i) => i.provider)));
@@ -83,13 +84,6 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
   useEffect(() => {
     reload();
   }, [reload]);
-
-  // Website "Subscribe" deep-link → open the New Config wizard;
-  // NewConfigWizard reads the same nonce to switch to managed mode.
-  useEffect(() => {
-    if (!openSubscribeNonce) return;
-    setShowWizard(true);
-  }, [openSubscribeNonce]);
 
   async function handleCreate(provider: ProviderRef, payload: InstanceFormPayload) {
     // Custom provider: seed the instance's customModels from the entity's model
@@ -242,7 +236,6 @@ export default function ModelsPage({ openSubscribeNonce }: { openSubscribeNonce?
               // 重读，让配置列表的 provider 名称即时同步。
               void reload();
             }}
-            managedEntryNonce={openSubscribeNonce}
           />
         </Collapse>
 
