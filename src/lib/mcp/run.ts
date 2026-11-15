@@ -74,7 +74,7 @@ export async function createMcpRun(args: {
     // arrives via the panel-request round-trip — the LLM cannot self-approve.
     confirm: makeSessionMcpConfirm({
       isApproved: (id) => isMcpServerApprovedInSession(sessionId, id),
-      requestConfirm: (p) => requestFromPanel(sessionId, "mcp-tool-confirm", p),
+      requestConfirm: (p) => requestFromPanel(sessionId, "mcp-tool-confirm", p, { signal }),
       record: (id) => recordMcpServerApproval(sessionId, id),
     }),
     signal,

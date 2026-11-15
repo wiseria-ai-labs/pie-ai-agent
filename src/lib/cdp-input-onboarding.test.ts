@@ -52,4 +52,14 @@ describe("cdp-input-onboarding adapter", () => {
     handlePanelResponse(port.sent[0].requestId, { ok: true, data: false });
     await expect(p).resolves.toBe(false);
   });
+
+  it("abort rejects with AbortError and does not call setCdpInputEnabled", async () => {
+    const controller = new AbortController();
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestCdpInputConsent("S1", { signal: controller.signal });
+    controller.abort();
+    await expect(p).rejects.toMatchObject({ name: "AbortError" });
+    expect(setEnabled).not.toHaveBeenCalled();
+  });
 });
