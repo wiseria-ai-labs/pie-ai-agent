@@ -114,8 +114,8 @@ describe("forget", () => {
 });
 
 describe("recall_memory", () => {
-  it("says nothing was found when there is no memory model", async () => {
-    // 没有配置 DeepSeek instance → resolveMemoryModel() 返回 null → 空结果。
+  it("returns empty when memory is not in cloud_active mode", async () => {
+    // 非活跃订阅态（local_dev / locked）直接返回空结果。
     const res = await tool("recall_memory").handler({ query: "我上次说的地址" }, ctx);
     expect(res.success).toBe(true);
     expect(res.observation).toBe("No relevant memories found.");

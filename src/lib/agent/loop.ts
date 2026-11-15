@@ -2108,7 +2108,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
             ),
           );
         }
-        // 硬超时（4s）由 callMemoryModel 自己兜底，这里无需再管。
+        // 硬超时（4s）由云端 pick 请求兜底，这里无需再管。
       }
 
       // Build observation text

@@ -12,19 +12,61 @@ import { hasBrowserDataPermission } from "@/lib/browser-data/permissions";
 import { getSessionMeta, listSessionIndex } from "@/lib/sessions/storage";
 import type { SessionIndexEntry, SessionMeta } from "@/lib/sessions/types";
 import { getMemoryAccessState } from "./access";
-import { containsSecret, isDomainExcluded } from "./admission";
+import { containsSecret, hostOf, isDomainExcluded } from "./admission";
 import {
   pushCloudMemoryDigests,
   type CloudDigestItem,
   type MemoryCloudDeps,
 } from "./cloud";
-import { buildSessionExcerpt, isSessionExcluded } from "./consolidate";
 import { readHistoryForMemory, type HistorySiteSummary } from "./history-source";
 import { formatMemoryDate } from "./prompt";
 import { getMemorySettings, getMemoryState, setMemoryState } from "./store";
 import { MEMORY_CONSOLIDATE_MIN_INTERVAL_MS } from "./types";
 
+/** 每个会话截断到 ~2k token（约 6000 字符）。 */
+const SESSION_EXCERPT_CHARS = 6_000;
 const MAX_DIGESTS_PER_BATCH = 20;
+
+const UNTRUSTED_BLOCK_RE =
+  /<untrusted_[a-z_]+\b[^>]*>[\s\S]*?<\/untrusted_[a-z_]+>/gi;
+
+/** 用户消息里可能夹着引用的网页原文（<untrusted_page_quote> 等）——整块剔除。 */
+export function stripUntrustedBlocks(text: string): string {
+  return text.replace(UNTRUSTED_BLOCK_RE, " ").replace(/[ \t]{2,}/g, " ").trim();
+}
+
+/** 一个会话的「用户消息 + 最终回答」摘录。 */
+export function buildSessionExcerpt(meta: SessionMeta, maxChars = SESSION_EXCERPT_CHARS): string {
+  const users: string[] = [];
+  let lastAssistant = "";
+  for (const m of meta.messages) {
+    if (m.role === "user") {
+      const text = stripUntrustedBlocks(m.content ?? "").trim();
+      if (text) users.push(`[user] ${text}`);
+    } else if (m.role === "assistant") {
+      const text = (m.content ?? "").trim();
+      if (text) lastAssistant = `[assistant] ${text}`;
+    }
+  }
+  const parts = [...users, ...(lastAssistant ? [lastAssistant] : [])];
+  const text = parts.join("\n");
+  return text.length > maxChars ? text.slice(0, maxChars) + "\n…(truncated)" : text;
+}
+
+/**
+ * 会话是否整段不进记忆：无痕窗口的任务（从不记住）或
+ * 全部 pin 在「不记住的网站」上的会话。
+ */
+export function isSessionExcluded(
+  meta: SessionMeta,
+  excludedDomains: readonly string[],
+): boolean {
+  if (meta.incognito) return true;
+  if (excludedDomains.length === 0) return false;
+  const origins = (meta.pinnedTabs ?? []).map((p) => p.origin).filter(Boolean);
+  if (origins.length === 0) return false;
+  return origins.every((o) => isDomainExcluded(hostOf(o), excludedDomains));
+}
 
 export interface FlushDigestsDeps extends MemoryCloudDeps {
   now?: number;

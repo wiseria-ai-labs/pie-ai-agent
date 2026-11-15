@@ -32,7 +32,6 @@ import {
   rememberEntry,
   removeLocalMirroredEntries,
   replaceLocalMemoryMirror,
-  restoreMemorySnapshot,
   setMemorySettings,
   setMemoryState,
   undoMemoryEvent,
@@ -342,9 +341,6 @@ export async function syncRestoreMemorySnapshot(
   deps: MemoryCloudDeps = {},
 ): Promise<boolean> {
   const access = await getMemoryAccessState();
-  if (access.mode === "local_dev") {
-    return restoreMemorySnapshot();
-  }
   if (access.mode !== "cloud_active") return false;
 
   const res = await cloudRestoreMemorySnapshot(access.apiKey, deps);

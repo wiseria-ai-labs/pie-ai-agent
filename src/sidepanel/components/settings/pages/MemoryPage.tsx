@@ -7,7 +7,6 @@ import {
   exportMemory,
   getMemoryProfile,
   getMemorySettings,
-  getMemorySnapshot,
   getMemoryState,
   listMemoryEntries,
 } from "@/lib/memory/store";
@@ -21,7 +20,6 @@ import {
   syncUpdateMemoryEntry,
 } from "@/lib/memory/sync";
 import MemoryPaywall from "./MemoryPaywall";
-import { nextCompactionAt } from "@/lib/memory/compact";
 import {
   grantBrowserDataPermission,
   hasBrowserDataPermission,
@@ -42,6 +40,12 @@ const ICONS: Record<MemoryKind, typeof User> = {
   ongoing: Target,
   recent: Clock,
 };
+
+/** 下一次例行精简的日期（下个自然月 1 号）。 */
+function nextCompactionAt(now = Date.now()): number {
+  const d = new Date(now);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+}
 
 const ROW_ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -108,12 +112,11 @@ export default function MemoryPage({
 
   const reload = useMemo(
     () => async () => {
-      const [accessState, es, settings, state, snap, profile] = await Promise.all([
+      const [accessState, es, settings, state, profile] = await Promise.all([
         getMemoryAccessState({ fetchIfUncached: false }),
         listMemoryEntries({ includeExpired: true }),
         getMemorySettings(),
         getMemoryState(),
-        getMemorySnapshot(),
         getMemoryProfile(),
       ]);
       setAccess(accessState);
@@ -124,7 +127,7 @@ export default function MemoryPage({
       setHistoryPerm(await hasBrowserDataPermission("history"));
       setLastSummary(state.lastSummary);
       setLastCompactedAt(state.lastCompactedAt);
-      setHasSnapshot(!!snap || state.hasCloudSnapshot === true);
+      setHasSnapshot(state.hasCloudSnapshot === true);
       setProfileText(profile.text);
       setLoaded(true);
     },

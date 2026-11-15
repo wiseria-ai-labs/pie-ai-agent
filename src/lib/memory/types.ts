@@ -29,34 +29,18 @@ export const LONG_TERM_KINDS: readonly MemoryKind[] = [
   "ongoing",
 ];
 
-// ── 容量（spec §10 #4） ──────────────────────────────────────────────────────
+// ── 容量 ─────────────────────────────────────────────────────────────────────
 /** 全部记忆正文总字数上限（约 25k token）。 */
 export const MEMORY_MAX_CHARS = 20_000;
-/** 长期条目数上限。 */
-export const MEMORY_LONG_TERM_MAX = 300;
-/** 近期片段条数上限。 */
-export const MEMORY_RECENT_MAX = 200;
-/** 索引硬上限（超过时先做规则预筛再交给挑选模型）。 */
-export const MEMORY_INDEX_MAX = 500;
 /** 单条正文上限（约 200 token）。 */
 export const MEMORY_BODY_MAX_CHARS = 400;
 /** 单条标题上限。 */
 export const MEMORY_TITLE_MAX_CHARS = 60;
-/** 画像上限（约 1000 token）。 */
-export const MEMORY_PROFILE_MAX_CHARS = 2_000;
-/** 近期片段 30 天未被用到就清除。 */
-export const MEMORY_RECENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /** 每日整理的最小间隔（水位线之外的第二道闸）。 */
 export const MEMORY_CONSOLIDATE_MIN_INTERVAL_MS = 20 * 60 * 60 * 1000;
-/** 容量超过该比例时提前触发月度精简。 */
-export const MEMORY_COMPACT_EARLY_RATIO = 0.9;
-/** 每次挑选最多返回条数。 */
-export const MEMORY_PICK_MAX = 8;
-/** 筛选软超时 / 硬超时（spec §5.5）。 */
+/** 筛选软超时 / 硬超时。 */
 export const MEMORY_PICK_SOFT_TIMEOUT_MS = 2_500;
 export const MEMORY_PICK_HARD_TIMEOUT_MS = 4_000;
-/** 每个用户每日挑选调用上限。 */
-export const MEMORY_PICK_DAILY_CAP = 200;
 
 export type MemoryEntryOrigin = "explicit" | "consolidated" | "user";
 
@@ -146,14 +130,6 @@ export interface MemoryProfileRecord {
   updatedAt: number;
 }
 
-export interface MemorySnapshotRecord {
-  id: "snapshot";
-  at: number;
-  profileText: string;
-  /** 密文原样保存（读回时按需解密）。 */
-  entries: MemoryEntry[];
-}
-
 /** 可撤销记录（F13「撤销」）。值在删除 / 覆盖前抓取，撤销即写回。 */
 export interface MemoryUndoRecord {
   /** "undo_<uuid>" */
@@ -171,39 +147,4 @@ export type MemoryRecord =
   | MemorySettingsRecord
   | MemoryStateRecord
   | MemoryProfileRecord
-  | MemorySnapshotRecord
   | MemoryUndoRecord;
-
-// ── 整理操作序列（spec §5.4） ────────────────────────────────────────────────
-
-export type MemoryOp =
-  | {
-      op: "add";
-      kind: MemoryKind;
-      title: string;
-      body: string;
-      tags?: string[];
-      source_session?: string;
-    }
-  | {
-      op: "update";
-      id: string;
-      patch: { title?: string; body?: string; tags?: string[]; kind?: MemoryKind };
-      reason?: string;
-    }
-  | {
-      op: "merge";
-      ids: string[];
-      title: string;
-      body: string;
-      tags?: string[];
-      kind?: MemoryKind;
-    }
-  | { op: "expire"; id: string }
-  | { op: "delete"; id: string }
-  | { op: "profile"; text: string };
-
-/** 一次整理 / 精简的完整计划。 */
-export interface MemoryOpBatch {
-  ops: MemoryOp[];
-}

@@ -2,28 +2,22 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { _resetForTests, tx, STORES } from "@/lib/idb/db";
 import { _resetKeyForTests } from "@/lib/crypto";
 import {
-  applyMemoryOps,
   clearAllMemory,
   deleteMemoryEntries,
-  expireStaleRecent,
   exportMemory,
   getMemoryEntry,
   getMemoryProfile,
   getMemorySettings,
-  getMemorySnapshot,
   getMemoryState,
   listMemoryEntries,
   recordMemoryUsage,
   rememberEntry,
-  restoreMemorySnapshot,
-  saveMemorySnapshot,
   setMemoryProfileText,
   setMemorySettings,
   undoMemoryEvent,
   updateMemoryEntry,
-  MEMORY_PROFILE_ID,
 } from "../store";
-import { MEMORY_RECENT_TTL_MS, type MemoryEntry } from "../types";
+import type { MemoryEntry } from "../types";
 
 const NOW = Date.UTC(2026, 10, 14, 12, 0, 0);
 
@@ -133,8 +127,8 @@ describe("contact entries are encrypted at rest", () => {
     expect(broken!.decryptFailed).toBe(true);
     expect(broken!.title).toBe("");
 
-    // 普通整理（空操作）不应把它写回成空文本
-    await applyMemoryOps([], { origin: "consolidated", now: NOW + 1 });
+    // 写入其他条目不应覆盖不可解密条目的原始密文
+    await rememberEntry({ kind: "about", title: "其他事项", body: "无关内容", now: NOW + 1 });
     expect((await rawEntry(res.id))!.body).toBe("!!not-ciphertext!!");
   });
 
@@ -170,27 +164,7 @@ describe("contact entries are encrypted at rest", () => {
   });
 });
 
-describe("applyMemoryOps", () => {
-  it("applies a batch and advances the watermark in one go", async () => {
-    const plan = await applyMemoryOps(
-      [
-        { op: "add", kind: "about", title: "住在杭州", body: "西湖区" },
-        { op: "profile", text: "用户住在杭州。" },
-      ],
-      {
-        origin: "consolidated",
-        now: NOW,
-        statePatch: (p) => ({ watermark: 12345, lastConsolidatedAt: NOW, lastSummary: p.summary }),
-      },
-    );
-    expect(plan.summary.added).toBe(1);
-    expect((await listMemoryEntries())[0]!.title).toBe("住在杭州");
-    expect((await getMemoryProfile()).text).toBe("用户住在杭州。");
-    const state = await getMemoryState();
-    expect(state.watermark).toBe(12345);
-    expect(state.lastSummary?.added).toBe(1);
-  });
-
+describe("delete & undo", () => {
   it("delete entries writes an undo record usable once", async () => {
     const res = await rememberEntry({ kind: "about", title: "住在杭州", body: "西湖区", now: NOW });
     expect(res.ok).toBe(true);
@@ -208,7 +182,7 @@ describe("applyMemoryOps", () => {
   });
 });
 
-describe("usage + expiry", () => {
+describe("usage", () => {
   it("records usage counts", async () => {
     const res = await rememberEntry({ kind: "about", title: "住在杭州", body: "西湖区", now: NOW });
     if (!res.ok) throw new Error("setup");
@@ -217,26 +191,9 @@ describe("usage + expiry", () => {
     expect(e!.useCount).toBe(1);
     expect(e!.lastUsedAt).toBe(NOW);
   });
-
-  it("clears stale recent fragments only", async () => {
-    await applyMemoryOps(
-      [
-        { op: "add", kind: "recent", title: "在比降噪耳机", body: "预算 2000" },
-        { op: "add", kind: "preference", title: "一等座", body: "公司报销" },
-      ],
-      { origin: "consolidated", now: NOW - MEMORY_RECENT_TTL_MS - 1000 },
-    );
-    const before = await listMemoryEntries();
-    expect(before).toHaveLength(2);
-    const removed = await expireStaleRecent(NOW);
-    expect(removed).toHaveLength(1);
-    const after = await listMemoryEntries();
-    expect(after).toHaveLength(1);
-    expect(after[0]!.kind).toBe("preference");
-  });
 });
 
-describe("settings + clear + snapshot", () => {
+describe("settings + clear", () => {
   it("defaults to enabled with no exclusions", async () => {
     const s = await getMemorySettings();
     expect(s.enabled).toBe(true);
@@ -250,43 +207,14 @@ describe("settings + clear + snapshot", () => {
     expect(s.excludedDomains).toEqual(["mail.example.com"]);
   });
 
-  it("clearAllMemory wipes entries/profile/snapshot but keeps settings", async () => {
+  it("clearAllMemory wipes entries and profile but keeps settings", async () => {
     await setMemorySettings({ enabled: true, excludedDomains: ["x.com"] });
     await rememberEntry({ kind: "about", title: "住在杭州", body: "西湖区", now: NOW });
     await setMemoryProfileText("画像", NOW);
-    await saveMemorySnapshot(NOW);
     await clearAllMemory();
     expect(await listMemoryEntries({ includeExpired: true })).toHaveLength(0);
     expect((await getMemoryProfile()).text).toBe("");
-    expect(await getMemorySnapshot()).toBeNull();
     expect((await getMemorySettings()).excludedDomains).toEqual(["x.com"]);
-  });
-
-  it("compaction snapshot restores the pre-cleanup store and drops later writes", async () => {
-    await applyMemoryOps(
-      [{ op: "add", kind: "preference", title: "一等座", body: "公司报销" }],
-      { origin: "consolidated", now: NOW },
-    );
-    await setMemoryProfileText("旧画像", NOW);
-    await saveMemorySnapshot(NOW);
-    // Cleanup replaces the entry + profile, then adds a brand-new entry.
-    await applyMemoryOps(
-      [
-        { op: "profile", text: "新画像" },
-        { op: "add", kind: "about", title: "住在杭州", body: "西湖区" },
-      ],
-      { origin: "consolidated", now: NOW + 1000 },
-    );
-    expect((await getMemoryProfile()).text).toBe("新画像");
-
-    expect(await restoreMemorySnapshot()).toBe(true);
-    const restored = await listMemoryEntries();
-    expect(restored).toHaveLength(1);
-    expect(restored[0]!.title).toBe("一等座");
-    expect((await getMemoryProfile()).text).toBe("旧画像");
-    expect(await getMemorySnapshot()).toBeNull();
-    expect(await getMemoryEntry(restored[0]!.id)).not.toBeNull();
-    expect(MEMORY_PROFILE_ID).toBe("profile");
   });
 
   it("manual edits pin the entry and mark origin=user", async () => {

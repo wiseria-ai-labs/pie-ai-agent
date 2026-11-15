@@ -6,7 +6,6 @@
 //   "settings"   → MemorySettingsRecord（总开关 + 不记住的网站）
 //   "state"      → MemoryStateRecord（水位线 / 上次整理 / 挑选计数）
 //   "profile"    → MemoryProfileRecord（常驻画像）
-//   "snapshot"   → MemorySnapshotRecord（精简前快照，只留上一份）
 //   "undo_<id>"  → MemoryUndoRecord（对话里的可撤销记录）
 //
 // 「地址与联系方式」类条目（kind === "contact"）的 title/body 落盘前用
@@ -16,15 +15,10 @@ import { tx, txMulti, STORES } from "@/lib/idb/db";
 import { publishChange } from "@/lib/store-bus";
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
 import { admitMemoryCandidate } from "./admission";
-import { planExpireStaleRecent, planMemoryOps, type PlanResult } from "./ops";
 import {
-  MEMORY_RECENT_TTL_MS,
   type MemoryEntry,
-  type MemoryEntryOrigin,
-  type MemoryOp,
   type MemoryProfileRecord,
   type MemorySettingsRecord,
-  type MemorySnapshotRecord,
   type MemoryStateRecord,
   type MemoryUndoRecord,
 } from "./types";
@@ -36,7 +30,6 @@ const UNDO_PREFIX = "undo_";
 export const MEMORY_SETTINGS_ID = "settings";
 export const MEMORY_STATE_ID = "state";
 export const MEMORY_PROFILE_ID = "profile";
-export const MEMORY_SNAPSHOT_ID = "snapshot";
 
 const DEFAULT_SETTINGS: MemorySettingsRecord = {
   id: MEMORY_SETTINGS_ID,
@@ -58,10 +51,10 @@ function isEntryRecord(r: { id: string }): r is MemoryEntry {
 
 /**
  * 把**明文**条目的「地址与联系方式」类 title/body 加密。所有写条目记录的调用方
- * 拿到的都是解密后的条目（listMemoryEntries / planMemoryOps 的产物），所以这里
+ * 拿到的都是解密后的条目（listMemoryEntries / writeEntries 的产物），所以这里
  * 无条件加密——不要用 `encrypted` 标志判断「是否已加密」：解密后的条目仍然带着
  * `encrypted: true`（表示「这类条目是加密存储的」），按它跳过就会把明文写回库。
- * 唯一绕过本函数直接写记录的是快照 / undo 回放（它们存的就是密文）。
+ * 唯一绕过本函数直接写记录的是 undo 回放（存的就是密文）。
  */
 async function sealEntry(e: MemoryEntry): Promise<MemoryEntry> {
   if (e.kind !== "contact") return e;
@@ -420,122 +413,7 @@ export async function recordMemoryUsage(ids: string[], now = Date.now()): Promis
   );
 }
 
-// ── 操作序列（整理 / 精简） ──────────────────────────────────────────────────
-
-export interface ApplyOpsOptions {
-  origin: MemoryEntryOrigin;
-  now?: number;
-  /**
-   * 与条目写入同一事务提交的状态补丁。传函数时以计划结果为入参（例如要把
-   * 本次整理的精确计数写进 lastSummary）。
-   */
-  statePatch?:
-    | Partial<MemoryStateRecord>
-    | ((plan: PlanResult) => Partial<MemoryStateRecord>);
-}
-
-/**
- * 应用一份操作序列：**一次 txMulti 原子写入**（spec §5.4）。
- * 任何一步抛错整批回滚，水位线也不前进 → 下次心跳重做这一批。
- */
-export async function applyMemoryOps(
-  ops: MemoryOp[],
-  opts: ApplyOpsOptions,
-): Promise<PlanResult> {
-  const now = opts.now ?? Date.now();
-  const current = await listMemoryEntries({ includeExpired: true });
-  const plan = planMemoryOps(current, ops, { now, origin: opts.origin });
-  // 解不开的密文条目原样留在库里：写回只有空文本，会把用户数据抹掉。
-  const sealed = await Promise.all(
-    plan.entries.filter((e) => !e.decryptFailed).map(sealEntry),
-  );
-
-  await txMulti([STORE], "readwrite", (m) => {
-    const store = m[STORE];
-    for (const e of sealed) store.put(e);
-    for (const id of plan.deletedIds) store.delete(id);
-    if (plan.profileText !== undefined) {
-      store.put({
-        id: MEMORY_PROFILE_ID,
-        text: plan.profileText,
-        updatedAt: now,
-      } satisfies MemoryProfileRecord);
-    }
-    if (opts.statePatch) {
-      const patch =
-        typeof opts.statePatch === "function" ? opts.statePatch(plan) : opts.statePatch;
-      // 读-改-写同一个事务内：state 是单例记录，这里直接覆盖已知字段。
-      const req = store.get(MEMORY_STATE_ID);
-      req.onsuccess = () => {
-        const prev = (req.result as MemoryStateRecord | undefined) ?? DEFAULT_STATE;
-        store.put({ ...prev, ...patch, id: MEMORY_STATE_ID });
-      };
-    }
-  });
-  publishChange("memory", "put");
-  return plan;
-}
-
-/** 清掉 30 天没用过的近期片段（月度精简的一部分）。 */
-export async function expireStaleRecent(now = Date.now()): Promise<string[]> {
-  const entries = await listMemoryEntries();
-  const ids = planExpireStaleRecent(entries, now, MEMORY_RECENT_TTL_MS);
-  if (ids.length === 0) return ids;
-  await txMulti([STORE], "readwrite", (m) => {
-    for (const id of ids) m[STORE].delete(id);
-  });
-  publishChange("memory", "put");
-  return ids;
-}
-
-// ── 快照 / 撤销 ─────────────────────────────────────────────────────────────
-
-/** 精简前存一份完整快照（只保留上一份）。 */
-export async function saveMemorySnapshot(now = Date.now()): Promise<void> {
-  const [allRaw, profile] = await Promise.all([
-    readAllRaw(),
-    getMemoryProfile(),
-  ]);
-  const entries = allRaw.filter((r) => isEntryRecord(r as { id: string })) as unknown as MemoryEntry[];
-  const snap: MemorySnapshotRecord = {
-    id: MEMORY_SNAPSHOT_ID,
-    at: now,
-    profileText: profile.text,
-    entries,
-  };
-  await tx(STORE, "readwrite", (s) => s.put(snap));
-  publishChange("memory", "put", MEMORY_SNAPSHOT_ID);
-}
-
-export async function getMemorySnapshot(): Promise<MemorySnapshotRecord | null> {
-  const rec = await tx<MemorySnapshotRecord | undefined>(STORE, "readonly", (s) =>
-    s.get(MEMORY_SNAPSHOT_ID),
-  );
-  return rec ?? null;
-}
-
-/** 撤销本次精简：整库条目回到快照，快照本身清掉（只能撤一次）。 */
-export async function restoreMemorySnapshot(): Promise<boolean> {
-  const [snap, current] = await Promise.all([getMemorySnapshot(), readAllRaw()]);
-  if (!snap) return false;
-  const keep = new Set(snap.entries.map((e) => e.id));
-  const extra = current
-    .filter((r) => isEntryRecord(r as { id: string }) && !keep.has((r as { id: string }).id))
-    .map((r) => (r as { id: string }).id);
-  await txMulti([STORE], "readwrite", (m) => {
-    const store = m[STORE];
-    for (const id of extra) store.delete(id);
-    for (const e of snap.entries) store.put(e);
-    store.put({
-      id: MEMORY_PROFILE_ID,
-      text: snap.profileText,
-      updatedAt: Date.now(),
-    } satisfies MemoryProfileRecord);
-    store.delete(MEMORY_SNAPSHOT_ID);
-  });
-  publishChange("memory", "put");
-  return true;
-}
+// ── 撤销 ───────────────────────────────────────────────────────────────────
 
 /** 存一条可撤销记录（F13）。保留最近 1 小时、最多 20 条。 */
 async function pushUndo(rec: MemoryUndoRecord): Promise<void> {
@@ -573,6 +451,18 @@ export async function undoMemoryEvent(eventId: string): Promise<UndoOutcome> {
   return { ok: true, kind: rec.kind };
 }
 
+function newMemoryId(): string {
+  return `m_${crypto.randomUUID()}`;
+}
+
+/** 标题归一化（去标点 / 小写 / 压空格），用于同标题同类别去重更新。 */
+function normalizeKey(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[\s　]+/g, "")
+    .replace(/[，。、；：！？,.;:!?"'“”‘’()（）\[\]【】]/g, "");
+}
+
 /**
  * `remember` 工具用：写入一条显式记忆（同标题同类别视为更新），
  * 并留下可撤销记录。返回事件行要展示的摘要。
@@ -600,34 +490,42 @@ export async function rememberEntry(input: {
   );
   if (!admitted.ok) return { ok: false, reason: admitted.reason };
   const current = await listMemoryEntries({ includeExpired: true });
-  const plan = planMemoryOps(
-    current,
-    [
-      {
-        op: "add",
-        kind: input.kind,
-        title: input.title,
-        body: input.body,
-        ...(input.tags ? { tags: input.tags } : {}),
-        ...(input.sourceSessionId ? { source_session: input.sourceSessionId } : {}),
-      },
-    ],
-    { now, origin: "explicit" },
+  const key = normalizeKey(admitted.title);
+  const dup = current.find(
+    (e) => e.validTo === undefined && e.kind === input.kind && normalizeKey(e.title) === key,
   );
-  const changed = plan.entries.find((e) => plan.changedIds.includes(e.id));
-  if (!changed || plan.changedIds.length === 0) {
-    return { ok: false, reason: "not_admitted" };
-  }
-  const pinned: MemoryEntry = { ...changed, pinned: true, origin: "explicit" };
+  const pinned: MemoryEntry = dup
+    ? {
+        ...dup,
+        body: admitted.body,
+        tags: admitted.tags,
+        updatedAt: now,
+        pinned: true,
+        origin: "explicit",
+        ...(input.sourceSessionId ? { sourceSessionId: input.sourceSessionId } : {}),
+      }
+    : {
+        id: newMemoryId(),
+        kind: input.kind,
+        title: admitted.title,
+        body: admitted.body,
+        tags: admitted.tags,
+        createdAt: now,
+        updatedAt: now,
+        validFrom: now,
+        useCount: 0,
+        pinned: true,
+        origin: "explicit",
+        ...(input.sourceSessionId ? { sourceSessionId: input.sourceSessionId } : {}),
+      };
   // 覆盖前旧值（用于撤销）——存密文，避免 contact 条目的明文写回库。
-  const before = current.filter((e) => e.id === pinned.id);
+  const before = dup ? [dup] : [];
   const sealedBefore = await Promise.all(before.map(sealEntry));
   const eventId = `${UNDO_PREFIX}${crypto.randomUUID()}`;
-  const sealed = await Promise.all([pinned].map(sealEntry));
+  const sealed = await sealEntry(pinned);
   await txMulti([STORE], "readwrite", (m) => {
     const store = m[STORE];
-    for (const e of sealed) store.put(e);
-    for (const id of plan.deletedIds) store.delete(id);
+    store.put(sealed);
     store.put({
       id: eventId,
       at: now,
