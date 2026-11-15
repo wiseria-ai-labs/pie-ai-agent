@@ -73,9 +73,9 @@ export function websiteLocalePath(locale: Locale): string {
 }
 
 /**
- * Build the website changelog URL for the given UI locale and version range.
- * The page tolerates malformed/missing params itself, so we don't validate
- * them here — we only URL-encode the query.
+ * Build the website post-update URL for the given UI locale and version range.
+ * Updates landing on 2.0.x open the dedicated `/v2` showcase page; other
+ * minor/major releases open `/changelog` with `from` and `to` query params.
  */
 export function buildChangelogUrl(
   locale: Locale,
@@ -83,6 +83,10 @@ export function buildChangelogUrl(
   toVersion: string,
 ): string {
   const localePath = websiteLocalePath(locale);
+  const to = parseVersion(toVersion);
+  if (to && to.major === 2 && to.minor === 0) {
+    return `https://www.pie.chat/${localePath}v2`;
+  }
   const params = new URLSearchParams({ from: fromVersion, to: toVersion });
   return `https://www.pie.chat/${localePath}changelog?${params.toString()}`;
 }
