@@ -9,8 +9,11 @@
 //
 // 月度精简跟同一次心跳走（isNewMonth / 容量 90%）。
 
+import { getMemoryAccessState } from "./access";
 import { runMonthlyCompaction } from "./compact";
 import { runDailyConsolidation } from "./consolidate";
+import { flushMemoryDigests } from "./digest-sync";
+import { syncMemoryFromCloud } from "./sync";
 
 export const MEMORY_ALARM = "memory:tick";
 const PERIOD_MINUTES = 60;
@@ -39,6 +42,25 @@ export async function handleMemoryAlarm(name: string, deps: MemoryTickDeps = {})
   if (name !== MEMORY_ALARM) return;
   if (deps.isBusy?.()) return;
   const now = deps.now?.() ?? Date.now();
+
+  if (!deps.runConsolidation && !deps.runCompaction) {
+    const access = await getMemoryAccessState();
+    if (access.mode === "cloud_active") {
+      try {
+        await flushMemoryDigests({ now });
+      } catch (e) {
+        console.warn("[memory] cloud digest push failed:", e);
+      }
+      try {
+        await syncMemoryFromCloud({ force: true, now });
+      } catch (e) {
+        console.warn("[memory] cloud mirror pull failed:", e);
+      }
+      return;
+    }
+    if (access.mode !== "local_dev") return;
+  }
+
   const consolidate = deps.runConsolidation ?? runDailyConsolidation;
   const compact = deps.runCompaction ?? runMonthlyCompaction;
   try {

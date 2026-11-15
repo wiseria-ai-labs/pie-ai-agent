@@ -490,6 +490,7 @@ export default function App() {
           <Chat
             providerLabel={providerLabel}
             onOpenSettings={() => openSettings()}
+            onOpenMemorySettings={() => openSettings("memory")}
             prefillInput={chatPrefill}
             onPrefillConsumed={() => setChatPrefill(undefined)}
             session={session}
@@ -555,7 +556,13 @@ export default function App() {
             ) : settingsPage === "search" ? (
               <SearchProviderSection />
             ) : settingsPage === "memory" ? (
-              <MemoryPage onOpenSession={(id) => void handleOpenSessionFromSchedule(id)} />
+              <MemoryPage
+                onOpenSession={(id) => void handleOpenSessionFromSchedule(id)}
+                onOpenSubscribe={() => {
+                  openSettings("models");
+                  setSubscribeNonce((n) => n + 1);
+                }}
+              />
             ) : settingsPage === "uiLanguage" ? (
               <UiLanguagePage />
             ) : settingsPage === "assistantLanguage" ? (

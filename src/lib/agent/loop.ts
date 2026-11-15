@@ -78,7 +78,9 @@ import { buildLoadToolsTool } from "./tools/disclosure";
 // Pie 2.0 记忆层（spec §5.5）：画像在任务开始时随首条 user 消息注入；挑选层与
 // 第一轮并行，结果在 step 2 之前作为 <system_notice> 补一次。
 import { MEMORY_TOOLS } from "./tools/memory";
+import { getMemoryAccessState, isMemoryWritableAccess } from "@/lib/memory/access";
 import { getMemoryProfile, getMemorySettings } from "@/lib/memory/store";
+import { syncMemoryFromCloud } from "@/lib/memory/sync";
 import { buildUserMemoryBlock } from "@/lib/memory/prompt";
 import { startMemoryPrefetch, type MemoryPrefetch } from "@/lib/memory/selector";
 import { MEMORY_PICK_SOFT_TIMEOUT_MS } from "@/lib/memory/types";
@@ -1662,9 +1664,17 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   let memoryOn = false;
   let memoryBlock = "";
   try {
-    const memorySettings = await getMemorySettings();
-    memoryToolsOn = memorySettings.enabled;
-    memoryOn = memoryToolsOn;
+    const [memoryAccess, memorySettings] = await Promise.all([
+      getMemoryAccessState(),
+      getMemorySettings(),
+    ]);
+    if (isMemoryWritableAccess(memoryAccess)) {
+      memoryToolsOn = memorySettings.enabled;
+      memoryOn = memoryToolsOn;
+      if (memoryAccess.mode === "cloud_active" && memorySettings.enabled) {
+        void syncMemoryFromCloud().catch(() => {});
+      }
+    }
   } catch (e) {
     console.warn(`[agent] memory settings load failed for session=${sessionId}:`, e);
   }

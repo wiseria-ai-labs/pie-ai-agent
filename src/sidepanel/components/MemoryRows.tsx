@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Brain, Check } from "lucide-react";
 import { useT } from "@/lib/i18n";
-import { undoMemoryEvent } from "@/lib/memory/store";
+import { syncUndoMemoryEvent } from "@/lib/memory/sync";
 import type { DisplayMessage } from "@/types";
 
 /**
@@ -78,7 +78,7 @@ export function MemoryEventRow({
     if (state !== "idle") return;
     setState("busy");
     try {
-      const res = await undoMemoryEvent(msg.eventId);
+      const res = await syncUndoMemoryEvent(msg.eventId);
       setState(res.ok ? "done" : "expired");
     } catch {
       setState("expired");

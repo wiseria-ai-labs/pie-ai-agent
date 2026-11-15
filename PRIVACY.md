@@ -1,7 +1,7 @@
 # Pie — Privacy Policy
 
-Last updated: 2026-08-07
-Extension version: 1.1.0
+Last updated: 2026-11-15
+Extension version: 2.0.0
 Contact: xiewkevo66@gmail.com
 
 Pie is, by default, a BYOK (Bring Your Own Key) Chrome extension: it runs
@@ -14,12 +14,17 @@ analytics, telemetry, or track you.
 ## What we never do
 
 - We don't collect analytics, telemetry, or usage tracking of any kind.
-- We don't read `chrome.history`, sync your data across devices, or sell or
-  share your data with third parties for their own purposes.
-- We don't track you across sites.
-- We never send your conversations anywhere on our own initiative. The one
-  path that transmits a conversation to Pie is **Report a problem**, and it
-  only ever runs when you click Send on it — see below.
+- We don't sell or share your data with third parties for their own purposes.
+- We don't track you across sites. Your browsing history (`chrome.history`) and
+  bookmarks (`chrome.bookmarks`) are **optional permissions** that stay off
+  unless you explicitly grant them for search, cleanup, or memory enrichment.
+- We don't sync your data across devices unless you opt in to the official
+  Pie Pro subscription and keep **Memory** enabled — BYOK users remain 100%
+  local-only.
+- We never send full web pages or tool outputs to Pie's servers in the
+  background. Aside from **Report a problem** (which only sends when you click
+  Send) and the **Deep Research** / **Memory** features inside the optional
+  official subscription described below, conversations stay on your device.
 
 ## Reporting a problem (you choose, every time)
 
@@ -112,12 +117,40 @@ data passes through Pie's own service:
   gateway (`api.pie.chat`) to the model provider. **Pie does not retain or log
   the content of your prompts or the model's responses — the gateway only
   passes them through.**
+- **Deep Research** (optional Pie Pro feature) — when you start a Deep Research
+  task, your question is queued on `account.pie.chat` and processed using Pie's
+  research pipeline and Tavily web search. Completed research reports are
+  retained for a limited window and purged automatically.
+- **Memory & multi-device sync** (optional Pie Pro feature, on by default for
+  active subscribers and configurable in Settings → Memory):
+  - **What is sent:** after conversations finish on a non-incognito,
+    non-excluded site, the extension prepares a sanitized excerpt containing
+    **only your messages and Pie's final conclusions** (web page contents, tool
+    outputs, and detected passwords/payment cards/IDs are stripped before upload).
+    If you also opt in to the device-local **Browsing history** source, only
+    frequent domain names and page titles are summarized.
+  - **Transient consolidation:** sanitized excerpts are encrypted at rest on
+    Pie's server while queued for daily consolidation, processed by Pie's
+    memory consolidator to update your concise user profile and structured
+    memory entries, and **deleted from the digest queue immediately once
+    consolidated** (or purged after at most 7 days if unconsolidated).
+  - **Synced memories & encryption:** your structured memories are synced across
+    devices where you sign in with the same Pie account. Sensitive **"Address &
+    contact"** entries are encrypted at rest both on Pie's server (per-user
+    HKDF-SHA256 + AES-256-GCM) and in each device's local IndexedDB (`AES-GCM`).
+  - **Controls & expiration:** you can turn off automatic memory, add excluded
+    domains, inspect/edit/delete individual entries, export everything to JSON,
+    or click **Clear all memory** (which deletes both local and cloud copies) at
+    any time. If your subscription expires, your existing memories remain
+    viewable in read-only mode (for browsing, exporting, or deleting) and no new
+    excerpts are uploaded or synced.
 
-So the data Pie's service stores for a subscriber is your email, subscription
-status, and a quota usage count. Chat content is never retained from ordinary
-use — the only way a conversation reaches Pie's storage is if you explicitly
-send it via **Report a problem** (see above). Stripe's handling of payment
-data is governed by <https://stripe.com/privacy>; Google sign-in by
+So for ordinary Chat use without Memory, Pie's service stores only your email,
+subscription status, and quota usage count; when Memory is active, Pie also
+holds your consolidated memory entries for multi-device sync until you delete
+them. The only way full page tool outputs reach Pie's storage is if you
+explicitly send a **Report a problem** submission (see above). Stripe's handling
+of payment data is governed by <https://stripe.com/privacy>; Google sign-in by
 <https://policies.google.com/privacy>.
 
 ## Permissions, and why each one is needed
@@ -135,11 +168,15 @@ data is governed by <https://stripe.com/privacy>; Google sign-in by
 | `alarms` | Wake the extension to run scheduled tasks |
 | `notifications` | Notify you when a scheduled task finishes |
 | `sidePanel` | Render the Pie UI |
-| `storage` | Persist sessions, encrypted API keys, and preferences |
+| `storage` | Persist sessions, encrypted API keys, memories, and preferences |
 | `activeTab` | Required by some Chrome APIs even when `<all_urls>` is granted |
+| `nativeMessaging` *(optional)* | Connect to the optional local Pie Bridge companion app |
+| `bookmarks` *(optional)* | Requested on demand if you ask Pie to search or organize your bookmarks |
+| `history` *(optional)* | Requested on demand if you search/clean history or enable the Browsing history memory source |
 
-Pie deliberately does **not** request `incognito` access, `chrome.history`,
-or any cross-device sync permission.
+Pie deliberately does **not** request `incognito` window recording, Chrome's
+built-in `chrome.storage.sync`, or automatic access to optional permissions at
+install time.
 
 ## Removing your data
 
@@ -159,8 +196,10 @@ portal; to delete the remaining account data, contact us at the address below.
 - **Pie's gateway (subscription only):** does **not** retain the content of
   your prompts or responses — it forwards them and keeps nothing.
 - **Pie's account service (subscription only):** keeps your email,
-  subscription status, and quota usage count for as long as your account
-  exists.
+  subscription status, quota usage count, and (for subscribers who use
+  Memory) your synced memory entries until you clear them from Settings → Memory
+  or request account deletion. Raw unconsolidated session excerpts are deleted
+  upon daily consolidation (and auto-purged within 7 days).
 
 ## Children's privacy
 

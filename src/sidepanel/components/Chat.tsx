@@ -40,6 +40,10 @@ import { useCelebrate } from "@/sidepanel/hooks/useCelebrate";
 import { useT } from "@/lib/i18n";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import {
+  dismissFirstConsolidationNotice,
+  getMemoryState,
+} from "@/lib/memory/store";
+import {
   getSessionMeta,
   updateSessionMeta,
 } from "@/lib/sessions/storage";
@@ -111,6 +115,7 @@ import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 interface ChatProps {
   providerLabel: string | null;
   onOpenSettings: () => void;
+  onOpenMemorySettings?: () => void;
   prefillInput?: string;
   onPrefillConsumed?: () => void;
   /** Session state owned by App so port + onMessage listener survive
@@ -166,6 +171,7 @@ function filterAndSortSkillsForSlash(
 export default function Chat({
   providerLabel,
   onOpenSettings,
+  onOpenMemorySettings,
   prefillInput,
   onPrefillConsumed,
   session,
@@ -214,6 +220,21 @@ export default function Chat({
   // (usePinDisplay hook); Chat only keeps the pageChanged detection below.
   const [pageChanged, setPageChanged] = useState(false);
   const t = useT();
+  const [showFirstMemoryNotice, setShowFirstMemoryNotice] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void getMemoryState().then((s) => {
+      if (alive) setShowFirstMemoryNotice(s.firstConsolidationPendingBanner === true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  useStoreChange("memory", () => {
+    void getMemoryState().then((s) => {
+      setShowFirstMemoryNotice(s.firstConsolidationPendingBanner === true);
+    });
+  });
   const [pickerActive, setPickerActive] = useState(false);
   const [enabledSkills, setEnabledSkills] = useState<SkillEntry[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
@@ -1213,6 +1234,41 @@ After the skill completes, briefly summarize what was created (the user will see
       {/* Pinned-tab display moved to the contextual TopBar sub-row
           (usePinDisplay + PinnedTabDropdown). Chat no longer renders a pin
           bar of its own — single-top-bar invariant. */}
+
+      {showFirstMemoryNotice && (
+        <div
+          data-testid="memory-first-notice"
+          className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-4 py-2 text-[12px]"
+        >
+          <span className="min-w-0 flex-1 text-fg-2">{t("chat.memory.firstNotice")}</span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              data-testid="memory-first-notice-manage"
+              onClick={() => {
+                setShowFirstMemoryNotice(false);
+                void dismissFirstConsolidationNotice();
+                onOpenMemorySettings?.();
+              }}
+              className="font-medium text-accent hover:underline"
+            >
+              {t("chat.memory.manage")}
+            </button>
+            <button
+              type="button"
+              data-testid="memory-first-notice-dismiss"
+              onClick={() => {
+                setShowFirstMemoryNotice(false);
+                void dismissFirstConsolidationNotice();
+              }}
+              aria-label={t("common.close")}
+              className="text-fg-3 hover:text-fg-1"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* M1-U5 — paused-task affordance. Sticky bar appears whenever
           the SW has marked this session paused (cold-start detected an

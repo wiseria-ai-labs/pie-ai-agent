@@ -4,18 +4,23 @@ import { useT, type DictKey } from "@/lib/i18n";
 import { onStoreChange } from "@/lib/store-bus";
 import { Switch } from "@/sidepanel/components/ui/Switch";
 import {
-  clearAllMemory,
-  deleteMemoryEntries,
   exportMemory,
   getMemoryProfile,
   getMemorySettings,
   getMemorySnapshot,
   getMemoryState,
   listMemoryEntries,
-  restoreMemorySnapshot,
-  setMemorySettings,
-  updateMemoryEntry,
 } from "@/lib/memory/store";
+import { getMemoryAccessState, type MemoryAccessState } from "@/lib/memory/access";
+import {
+  syncClearAllMemory,
+  syncDeleteMemoryEntries,
+  syncMemoryFromCloud,
+  syncRestoreMemorySnapshot,
+  syncSetMemorySettings,
+  syncUpdateMemoryEntry,
+} from "@/lib/memory/sync";
+import MemoryPaywall from "./MemoryPaywall";
 import { nextCompactionAt } from "@/lib/memory/compact";
 import {
   grantBrowserDataPermission,
@@ -76,10 +81,13 @@ const KIND_TITLE_KEY: Record<MemoryKind, DictKey> = {
  *  `onOpenSession` 由 App 注入：F15 条目来源点回原对话（切到那个 session）。 */
 export default function MemoryPage({
   onOpenSession,
+  onOpenSubscribe,
 }: {
   onOpenSession?: (sessionId: string) => void;
+  onOpenSubscribe?: () => void;
 }) {
   const t = useT();
+  const [access, setAccess] = useState<MemoryAccessState | null>(null);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [enabled, setEnabled] = useState(true);
   const [excluded, setExcluded] = useState<string[]>([]);
@@ -96,16 +104,19 @@ export default function MemoryPage({
   const [view, setView] = useState<MemoryKind | "root">("root");
   const [domainDraft, setDomainDraft] = useState("");
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const reload = useMemo(
     () => async () => {
-      const [es, settings, state, snap, profile] = await Promise.all([
+      const [accessState, es, settings, state, snap, profile] = await Promise.all([
+        getMemoryAccessState({ fetchIfUncached: false }),
         listMemoryEntries({ includeExpired: true }),
         getMemorySettings(),
         getMemoryState(),
         getMemorySnapshot(),
         getMemoryProfile(),
       ]);
+      setAccess(accessState);
       setEntries(es);
       setEnabled(settings.enabled);
       setExcluded(settings.excludedDomains);
@@ -113,7 +124,7 @@ export default function MemoryPage({
       setHistoryPerm(await hasBrowserDataPermission("history"));
       setLastSummary(state.lastSummary);
       setLastCompactedAt(state.lastCompactedAt);
-      setHasSnapshot(!!snap);
+      setHasSnapshot(!!snap || state.hasCloudSnapshot === true);
       setProfileText(profile.text);
       setLoaded(true);
     },
@@ -121,11 +132,51 @@ export default function MemoryPage({
   );
 
   useEffect(() => {
+    let alive = true;
     void reload();
     // 另一侧（SW 的整理 / 对话里的 remember）改库时刷新。
-    return onStoreChange("memory", () => void reload());
+    const off = onStoreChange("memory", () => {
+      if (alive) void reload();
+    });
+
+    // 打开记忆页时强制刷新订阅态，并将本机镜像与云端最新版对齐。
+    void (async () => {
+      try {
+        const fresh = await getMemoryAccessState({ refresh: true });
+        if (!alive) return;
+        if (fresh.mode !== "local_dev" && fresh.apiKey) {
+          await syncMemoryFromCloud({ force: true }).catch(() => null);
+        }
+        if (alive) await reload();
+      } catch {
+        // 离线或服务端暂不可用：回退保留本地镜像
+      }
+    })();
+
+    return () => {
+      alive = false;
+      off();
+    };
   }, [reload]);
 
+  if (!loaded && access === null) {
+    return (
+      <div className="py-6 text-center text-[12px] text-fg-3" data-testid="memory-page-loading">
+        {t("common.loading")}
+      </div>
+    );
+  }
+
+  if (access?.mode === "locked") {
+    return (
+      <MemoryPaywall
+        entitlement={access.entitlement}
+        {...(onOpenSubscribe ? { onOpenSubscribe } : {})}
+      />
+    );
+  }
+
+  const isReadOnly = access?.mode === "readonly_expired";
   const live = entries.filter((e) => e.validTo === undefined);
   const byKind = (k: MemoryKind) => live.filter((e) => e.kind === k);
   const longCount = live.filter((e) => LONG_TERM_KINDS.includes(e.kind)).length;
@@ -133,8 +184,16 @@ export default function MemoryPage({
   const usedChars = live.reduce((n, e) => n + e.title.length + e.body.length, 0);
 
   const toggle = async (next: boolean) => {
+    if (isReadOnly) return;
+    setActionError(null);
     setEnabled(next);
-    await setMemorySettings({ enabled: next });
+    try {
+      const saved = await syncSetMemorySettings({ enabled: next });
+      setEnabled(saved.enabled);
+    } catch (err) {
+      setEnabled(!next);
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   /**
@@ -143,31 +202,49 @@ export default function MemoryPage({
    * 关掉只是停止使用历史，不回收权限（search_history 等还在用它）。
    */
   const toggleHistorySource = async (next: boolean) => {
+    if (isReadOnly) return;
+    setActionError(null);
     if (!next) {
       setHistorySource(false);
-      await setMemorySettings({ historySource: false });
+      await syncSetMemorySettings({ historySource: false });
       return;
     }
     const granted = await grantBrowserDataPermission("history");
     setHistoryPerm(granted);
     if (!granted) return; // 用户拒绝 → 开关保持关
     setHistorySource(true);
-    await setMemorySettings({ historySource: true });
+    await syncSetMemorySettings({ historySource: true });
   };
 
   const addDomain = async () => {
+    if (isReadOnly) return;
     const d = domainDraft.trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0] ?? "";
     if (!d || excluded.includes(d)) return;
+    const prev = excluded;
     const next = [...excluded, d];
+    setActionError(null);
     setExcluded(next);
     setDomainDraft("");
-    await setMemorySettings({ excludedDomains: next });
+    try {
+      await syncSetMemorySettings({ excludedDomains: next });
+    } catch (err) {
+      setExcluded(prev);
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const removeDomain = async (d: string) => {
+    if (isReadOnly) return;
+    const prev = excluded;
     const next = excluded.filter((x) => x !== d);
+    setActionError(null);
     setExcluded(next);
-    await setMemorySettings({ excludedDomains: next });
+    try {
+      await syncSetMemorySettings({ excludedDomains: next });
+    } catch (err) {
+      setExcluded(prev);
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const doExport = async () => {
@@ -182,14 +259,25 @@ export default function MemoryPage({
   };
 
   const doClear = async () => {
-    await clearAllMemory();
-    setConfirmingClear(false);
-    await reload();
+    setActionError(null);
+    try {
+      await syncClearAllMemory();
+      setConfirmingClear(false);
+      await reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const doRestore = async () => {
-    await restoreMemorySnapshot();
-    await reload();
+    if (isReadOnly) return;
+    setActionError(null);
+    try {
+      await syncRestoreMemorySnapshot();
+      await reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   if (view !== "root") {
@@ -197,6 +285,7 @@ export default function MemoryPage({
       <MemoryList
         kind={view}
         entries={byKind(view)}
+        readOnly={isReadOnly}
         onBack={() => setView("root")}
         onChanged={reload}
         {...(onOpenSession ? { onOpenSession } : {})}
@@ -206,6 +295,34 @@ export default function MemoryPage({
 
   return (
     <section className="flex flex-col gap-5" data-testid="memory-page">
+      {isReadOnly && (
+        <div
+          data-testid="memory-readonly-banner"
+          className="flex flex-col gap-2 rounded-card border border-warning-line bg-warning-tint p-3.5"
+        >
+          <div className="text-[13px] font-semibold text-fg-1">
+            {t("settings.memory.readonly.title")}
+          </div>
+          <p className="text-[12px] leading-[18px] text-fg-2">
+            {t("settings.memory.readonly.desc")}
+          </p>
+          {onOpenSubscribe && (
+            <button
+              type="button"
+              data-testid="memory-readonly-resubscribe"
+              onClick={onOpenSubscribe}
+              className="w-fit rounded-control bg-fg-1 px-3 py-1.5 text-[12px] font-medium text-canvas hover:opacity-90"
+            >
+              {t("settings.memory.readonly.resubscribe")}
+            </button>
+          )}
+        </div>
+      )}
+      {actionError && (
+        <div className="rounded-control border border-warning-line bg-warning-tint px-3 py-2 text-[11.5px] text-warning">
+          {actionError}
+        </div>
+      )}
       {/* 顶部卡：开着吗 / 用了多少 / 最近一次整理做了什么 */}
       <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5">
         <div className="flex items-center gap-2.5">
@@ -213,7 +330,12 @@ export default function MemoryPage({
           <span className="flex-1 text-[13.5px] font-semibold text-fg-1">
             {t("settings.memory.heroTitle")}
           </span>
-          <Switch testId="memory-switch" checked={enabled} onChange={(v) => void toggle(v)} />
+          <Switch
+            testId="memory-switch"
+            checked={enabled}
+            disabled={isReadOnly}
+            onChange={(v) => void toggle(v)}
+          />
         </div>
         <p className="text-[12px] leading-[18px] text-fg-2">{t("settings.memory.heroDesc")}</p>
 
@@ -313,7 +435,12 @@ export default function MemoryPage({
                 {t("settings.memory.sourceChatDesc")}
               </small>
             </span>
-            <Switch testId="memory-source-chat" checked={enabled} onChange={() => void toggle(!enabled)} />
+            <Switch
+              testId="memory-source-chat"
+              checked={enabled}
+              disabled={isReadOnly}
+              onChange={() => void toggle(!enabled)}
+            />
           </div>
           <div className="flex min-h-[46px] items-center gap-3 border-t border-line px-3.5 py-2">
             <span className="flex-1 text-[13px] font-medium text-fg-1">
@@ -330,6 +457,7 @@ export default function MemoryPage({
             <Switch
               testId="memory-source-history"
               checked={historySource}
+              disabled={isReadOnly}
               onChange={(v) => void toggleHistorySource(v)}
             />
           </div>
@@ -355,8 +483,9 @@ export default function MemoryPage({
                   <button
                     key={d}
                     type="button"
+                    disabled={isReadOnly}
                     onClick={() => void removeDomain(d)}
-                    className="flex h-[22px] items-center gap-1.5 rounded-chip bg-field px-2 text-[11.5px] text-fg-2 hover:text-fg-1"
+                    className="flex h-[22px] items-center gap-1.5 rounded-chip bg-field px-2 text-[11.5px] text-fg-2 hover:text-fg-1 disabled:cursor-not-allowed disabled:opacity-50"
                     title={t("settings.memory.excludedRemove")}
                   >
                     {d} ×
@@ -368,18 +497,19 @@ export default function MemoryPage({
               <input
                 data-testid="memory-domain-input"
                 value={domainDraft}
+                disabled={isReadOnly}
                 onChange={(e) => setDomainDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void addDomain();
                 }}
                 placeholder={t("settings.memory.excludedPlaceholder")}
-                className="h-[30px] flex-1 rounded-control border border-line bg-field px-2.5 text-[12.5px] text-fg-1 placeholder:text-fg-3 focus:outline-none"
+                className="h-[30px] flex-1 rounded-control border border-line bg-field px-2.5 text-[12.5px] text-fg-1 placeholder:text-fg-3 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               />
               <button
                 type="button"
                 data-testid="memory-domain-add"
                 onClick={() => void addDomain()}
-                disabled={!domainDraft.trim()}
+                disabled={isReadOnly || !domainDraft.trim()}
                 className="shrink-0 rounded-control bg-accent px-2.5 py-1.5 text-[12px] font-medium text-canvas disabled:opacity-50"
               >
                 {t("settings.memory.add")}
@@ -403,7 +533,7 @@ export default function MemoryPage({
         <button type="button" data-testid="memory-export" onClick={() => void doExport()} className="text-fg-2 hover:text-fg-1">
           {t("settings.memory.export")}
         </button>
-        {hasSnapshot && (
+        {!isReadOnly && hasSnapshot && (
           <button
             type="button"
             data-testid="memory-restore"
@@ -448,12 +578,14 @@ export default function MemoryPage({
 function MemoryList({
   kind,
   entries,
+  readOnly = false,
   onBack,
   onChanged,
   onOpenSession,
 }: {
   kind: MemoryKind;
   entries: MemoryEntry[];
+  readOnly?: boolean;
   onBack: () => void;
   onChanged: () => Promise<void>;
   onOpenSession?: (sessionId: string) => void;
@@ -473,20 +605,23 @@ function MemoryList({
     });
 
   const startEdit = (e: MemoryEntry) => {
+    if (readOnly) return;
     setEditing(e.id);
     setDraft(e.body || e.title);
   };
 
   const save = async (id: string) => {
+    if (readOnly) return;
     const cur = entries.find((e) => e.id === id);
     if (!cur) return;
-    await updateMemoryEntry(id, { title: cur.title, body: draft.trim() || cur.title });
+    await syncUpdateMemoryEntry(id, { title: cur.title, body: draft.trim() || cur.title });
     setEditing(null);
     await onChanged();
   };
 
   const remove = async (id: string) => {
-    await deleteMemoryEntries([id]);
+    if (readOnly) return;
+    await syncDeleteMemoryEntries([id]);
     if (editing === id) setEditing(null);
     await onChanged();
   };
@@ -567,7 +702,7 @@ function MemoryList({
                       <span>{t("settings.memory.sourceFrom")}</span>
                     ))}
                   <span className="flex-1" />
-                  {isEditing ? (
+                  {!readOnly && (isEditing ? (
                     <>
                       <button
                         type="button"
@@ -595,7 +730,7 @@ function MemoryList({
                     >
                       {t("common.edit")}
                     </button>
-                  )}
+                  ))}
                 </div>
               </div>
             );

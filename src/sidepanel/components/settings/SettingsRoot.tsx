@@ -27,6 +27,7 @@ import { getPanelMode, setPanelMode, PANEL_MODE_KEY } from "@/lib/panel-host/pan
 import { onStoreChange } from "@/lib/store-bus";
 import { setConfig } from "@/lib/idb/config-store";
 import { getMemorySettings, listMemoryEntries } from "@/lib/memory/store";
+import { getMemoryAccessState } from "@/lib/memory/access";
 import { Switch } from "@/sidepanel/components/ui/Switch";
 import { IconButton } from "@/sidepanel/components/ui/IconButton";
 import { Popover } from "@/sidepanel/components/ui/Popover";
@@ -372,11 +373,25 @@ export default function SettingsRoot({
   useEffect(() => {
     let alive = true;
     const refresh = () => {
-      void Promise.all([getMemorySettings(), listMemoryEntries()]).then(([s, es]) => {
+      void Promise.all([
+        getMemoryAccessState({ fetchIfUncached: false }),
+        getMemorySettings(),
+        listMemoryEntries(),
+      ]).then(([access, s, es]) => {
         if (!alive) return;
-        setMemoryBadge(
-          s.enabled ? t("settings.nav.memoryOnCount", { count: String(es.length) }) : t("settings.nav.memoryOff"),
-        );
+        if (access.mode === "locked") {
+          setMemoryBadge(t("settings.memory.proBadge"));
+        } else if (access.mode === "readonly_expired") {
+          setMemoryBadge(
+            t("settings.memory.readonly.badge", { count: String(es.length) }),
+          );
+        } else {
+          setMemoryBadge(
+            s.enabled
+              ? t("settings.nav.memoryOnCount", { count: String(es.length) })
+              : t("settings.nav.memoryOff"),
+          );
+        }
       });
     };
     refresh();

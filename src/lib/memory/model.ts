@@ -16,28 +16,33 @@ import { streamChat, type ModelConfig } from "@/lib/model-router";
 import type { AgentMessage } from "@/lib/model-router/types";
 import { MEMORY_PICK_HARD_TIMEOUT_MS } from "./types";
 
-/** 上线前翻成 true（spec §5.5「模型与开放范围」）。 */
-export const MEMORY_REQUIRES_SUBSCRIPTION = false;
+/** 记忆功能仅对 Pie Pro 官方订阅用户开放（spec §5.5）。 */
+export const MEMORY_REQUIRES_SUBSCRIPTION = true;
+
+let requiresSubscriptionOverride: boolean | null = null;
+
+/** Test-only：覆盖订阅门控开关，供纯本地记忆单测使用。传 null 恢复默认。 */
+export function _setMemoryRequiresSubscriptionForTests(v: boolean | null): void {
+  requiresSubscriptionOverride = v;
+}
 
 const DEV_PROVIDER = "deepseek";
 const DEV_MODEL = "deepseek-flash";
 const MANAGED_MODEL = "default";
 
-/** 记忆模型是否可用（无 instance 时记忆退化为「画像 + remember/forget」）。 */
+/** 记忆模型是否可用（仅当 MEMORY_REQUIRES_SUBSCRIPTION 被关闭的纯本地测试模式使用）。 */
 export async function resolveMemoryModel(): Promise<ModelConfig | null> {
+  const gated = memoryRequiresSubscription();
   const all = await listInstances();
-  const provider = MEMORY_REQUIRES_SUBSCRIPTION ? "managed" : DEV_PROVIDER;
+  const provider = gated ? "managed" : DEV_PROVIDER;
   const inst = all.find((i) => i.provider === provider);
   if (!inst) return null;
-  return resolveModelConfig(
-    inst.id,
-    MEMORY_REQUIRES_SUBSCRIPTION ? MANAGED_MODEL : DEV_MODEL,
-  );
+  return resolveModelConfig(inst.id, gated ? MANAGED_MODEL : DEV_MODEL);
 }
 
-/** 订阅门控开关是否已生效（未订阅用户不显示任何记忆 UI）。 */
+/** 订阅门控开关是否已生效（未订阅用户显示开通引导，到期用户切换只读保留）。 */
 export function memoryRequiresSubscription(): boolean {
-  return MEMORY_REQUIRES_SUBSCRIPTION;
+  return requiresSubscriptionOverride ?? MEMORY_REQUIRES_SUBSCRIPTION;
 }
 
 export interface CallMemoryModelOptions {

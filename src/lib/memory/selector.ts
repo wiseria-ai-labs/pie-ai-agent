@@ -10,6 +10,8 @@
 // 与第一轮并行：`startMemoryPrefetch()` 是唯一入口（浮层预取将来也复用它）。
 
 import type { ModelConfig } from "@/lib/model-router";
+import { getMemoryAccessState } from "./access";
+import { pickCloudMemory } from "./cloud";
 import { callMemoryModel, resolveMemoryModel } from "./model";
 import {
   buildMemoryIndexLines,
@@ -17,6 +19,7 @@ import {
   MEMORY_SELECTOR_SYSTEM_PROMPT,
 } from "./prompt";
 import { listMemoryEntries, getMemoryProfile, getMemorySettings, getMemoryState, recordMemoryUsage, setMemoryState } from "./store";
+import { syncMemoryFromCloud } from "./sync";
 import {
   LONG_TERM_KINDS,
   MEMORY_INDEX_MAX,
@@ -35,6 +38,7 @@ export interface MemoryPickInput {
   now?: number;
   model?: ModelConfig | null;
   callModel?: typeof callMemoryModel;
+  fetchFn?: typeof fetch;
 }
 
 export interface MemoryPrefetch {
@@ -108,6 +112,35 @@ export async function pickMemory(input: MemoryPickInput): Promise<MemoryEntry[]>
   const now = input.now ?? Date.now();
   const settings = await getMemorySettings();
   if (!settings.enabled) return [];
+
+  // 云端模式（Pie Pro 默认）：未注入测试替身时走 POST /memory/pick，
+  // 由服务端读取权威全量索引并用独立 MEMORY_LITELLM_KEY 调用（不扣用户周聊天额度）。
+  if (input.model === undefined && input.callModel === undefined) {
+    const access = await getMemoryAccessState();
+    if (access.mode === "cloud_active") {
+      const res = await pickCloudMemory(
+        access.apiKey,
+        {
+          task: input.task,
+          ...(input.pageTitle !== undefined ? { pageTitle: input.pageTitle } : {}),
+          ...(input.pageUrl !== undefined ? { pageUrl: input.pageUrl } : {}),
+        },
+        {
+          signal: input.signal,
+          timeoutMs: MEMORY_PICK_HARD_TIMEOUT_MS,
+          ...(input.fetchFn ? { fetchFn: input.fetchFn } : {}),
+        },
+      );
+      const localRev = (await getMemoryState()).cloudRevision ?? 0;
+      if (res.revision > localRev) {
+        void syncMemoryFromCloud({ deps: input.fetchFn ? { fetchFn: input.fetchFn } : undefined }).catch(
+          () => {},
+        );
+      }
+      return res.entries;
+    }
+    if (access.mode !== "local_dev") return [];
+  }
 
   const model = input.model !== undefined ? input.model : await resolveMemoryModel();
   if (!model) return [];

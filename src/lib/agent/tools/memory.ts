@@ -10,12 +10,9 @@
 
 import type { ActionResult } from "../../dom-actions/types";
 import type { Tool, ToolHandlerContext } from "../types";
-import {
-  deleteMemoryEntries,
-  getMemorySettings,
-  listMemoryEntries,
-  rememberEntry,
-} from "@/lib/memory/store";
+import { getMemoryAccessState, isMemoryWritableAccess } from "@/lib/memory/access";
+import { getMemorySettings } from "@/lib/memory/store";
+import { syncForgetMemory, syncRememberEntry } from "@/lib/memory/sync";
 import { recallMemory } from "@/lib/memory/selector";
 import { buildUserMemoryBlock } from "@/lib/memory/prompt";
 import { isDomainExcluded, hostOf } from "@/lib/memory/admission";
@@ -77,6 +74,10 @@ const rememberTool: Tool = {
     },
   },
   handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const access = await getMemoryAccessState();
+    if (!isMemoryWritableAccess(access)) {
+      return err("Memory requires an active Pie Pro subscription.");
+    }
     const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
     if (typeof a.kind !== "string" || !(MEMORY_KINDS as readonly string[]).includes(a.kind)) {
       return err(`kind must be one of: ${MEMORY_KINDS.join(", ")}`);
@@ -100,7 +101,7 @@ const rememberTool: Tool = {
       return err("This site is on the user's \"don't remember\" list — nothing was saved.");
     }
 
-    const res = await rememberEntry({
+    const res = await syncRememberEntry({
       kind: a.kind as MemoryKind,
       title: a.title,
       body,
@@ -111,7 +112,9 @@ const rememberTool: Tool = {
       return err(
         res.reason === "secret"
           ? "Not saved: that looks like a credential (password / ID / bank card), which Pie never stores."
-          : "Not saved: the entry was empty or could not be admitted.",
+          : res.reason === "subscription_required"
+            ? "Memory requires an active Pie Pro subscription."
+            : "Not saved: the entry was empty or could not be admitted.",
       );
     }
     return {
@@ -138,29 +141,25 @@ const forgetTool: Tool = {
     },
   },
   handler: async (args: unknown): Promise<ActionResult> => {
+    const access = await getMemoryAccessState();
+    if (!isMemoryWritableAccess(access)) {
+      return err("Memory requires an active Pie Pro subscription.");
+    }
     const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
     const id = typeof a.id === "string" ? a.id.trim() : "";
-    const query = typeof a.query === "string" ? a.query.trim().toLowerCase() : "";
+    const query = typeof a.query === "string" ? a.query.trim() : "";
     if (!id && !query) return err("provide either id or query");
 
-    const entries = await listMemoryEntries({ includeExpired: true });
-    const matches = id
-      ? entries.filter((e) => e.id === id)
-      : entries.filter((e) => {
-          const hay = `${e.title} ${e.body} ${e.tags.join(" ")}`.toLowerCase();
-          return hay.includes(query);
-        });
-    if (matches.length === 0) {
+    const { count, eventId, label } = await syncForgetMemory({
+      ...(id ? { id } : {}),
+      ...(query ? { query } : {}),
+    });
+    if (count === 0) {
       return {
         success: true,
         observation: "no matching memory found — nothing was deleted.",
       };
     }
-    const { count, eventId } = await deleteMemoryEntries(matches.map((e) => e.id));
-    // 单条删除时事件行可以显示标题（面板按语言拼文案）；加密条目与批量删除
-    // 都不外露标题，面板只按 count 渲染。
-    const label =
-      matches.length === 1 && !matches[0]!.encrypted ? matches[0]!.title : "";
     return {
       success: true,
       observation: `deleted ${count} memory entr${count === 1 ? "y" : "ies"}.`,
@@ -187,6 +186,10 @@ const recallMemoryTool: Tool = {
     },
   },
   handler: async (args: unknown, ctx: ToolHandlerContext): Promise<ActionResult> => {
+    const access = await getMemoryAccessState();
+    if (!isMemoryWritableAccess(access)) {
+      return err("Memory requires an active Pie Pro subscription.");
+    }
     const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
     const query = typeof a.query === "string" ? a.query.trim() : "";
     if (!query) return err("query is required");

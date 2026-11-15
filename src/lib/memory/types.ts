@@ -113,13 +113,31 @@ export interface ConsolidationSummary {
 
 export interface MemoryStateRecord {
   id: "state";
-  /** 上次整理处理到哪（会话 lastAccessedAt 水位线）。 */
+  /** 上次整理处理到哪（会话 lastAccessedAt 水位线，纯本地模式使用）。 */
   watermark: number;
   lastConsolidatedAt?: number;
   lastCompactedAt?: number;
   lastSummary?: ConsolidationSummary;
   /** 当日挑选调用计数（每日上限）。 */
   pick?: { date: string; count: number };
+  /** 云端同步版本号（单调递增）。 */
+  cloudRevision?: number;
+  /** 云端返回只读态标记（订阅到期保留）。 */
+  cloudReadOnly?: boolean;
+  /** 云端是否存在月度精简前可撤销快照。 */
+  hasCloudSnapshot?: boolean;
+  /** 是否已完成过一次性「本地存量记忆 → 云端」导入。 */
+  cloudImported?: boolean;
+  /** 本设备稳定 ID（digest 去重与历史来源标识用）。 */
+  deviceId?: string;
+  /** 本机已推送到云端 digest 的会话 lastAccessedAt 水位线。 */
+  digestWatermark?: number;
+  /** 本机上一次推送浏览历史 digest 的时间戳。 */
+  lastHistoryDigestAt?: number;
+  /** 首次整理完成后对话顶部提示是否待展示（spec §10 #2）。 */
+  firstConsolidationPendingBanner?: boolean;
+  /** 首次整理顶部提示是否已展示或关闭过。 */
+  firstConsolidationNoticeShown?: boolean;
 }
 
 export interface MemoryProfileRecord {

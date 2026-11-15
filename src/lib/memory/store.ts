@@ -219,14 +219,165 @@ export async function deleteMemoryEntries(
   return { count: before.length, eventId };
 }
 
-/** 清空全部记忆（含快照 / 撤销记录），保留「不记住的网站」与开关。 */
-export async function clearAllMemory(): Promise<void> {
-  const settings = await getMemorySettings();
+/** 清空全部记忆（含快照 / 撤销记录），保留「不记住的网站」、开关与设备 sync 元信息。 */
+export async function clearAllMemory(opts?: { cloudRevision?: number }): Promise<void> {
+  const [settings, prevState] = await Promise.all([getMemorySettings(), getMemoryState()]);
   await txMulti([STORE], "readwrite", (m) => {
     m[STORE].clear();
     m[STORE].put(settings);
+    const nextState: MemoryStateRecord = {
+      id: MEMORY_STATE_ID,
+      watermark: prevState.watermark,
+      ...(prevState.deviceId ? { deviceId: prevState.deviceId } : {}),
+      ...(prevState.digestWatermark !== undefined ? { digestWatermark: prevState.digestWatermark } : {}),
+      ...(prevState.lastHistoryDigestAt !== undefined
+        ? { lastHistoryDigestAt: prevState.lastHistoryDigestAt }
+        : {}),
+      ...(prevState.cloudImported !== undefined ? { cloudImported: prevState.cloudImported } : {}),
+      ...(prevState.firstConsolidationNoticeShown !== undefined
+        ? { firstConsolidationNoticeShown: prevState.firstConsolidationNoticeShown }
+        : {}),
+      ...(opts?.cloudRevision !== undefined
+        ? { cloudRevision: opts.cloudRevision }
+        : prevState.cloudRevision !== undefined
+          ? { cloudRevision: prevState.cloudRevision }
+          : {}),
+      hasCloudSnapshot: false,
+    };
+    m[STORE].put(nextState);
   });
   publishChange("memory", "clear");
+}
+
+export interface MirrorCloudSnapshotInput {
+  revision: number;
+  readOnly: boolean;
+  settings: { enabled: boolean; excludedDomains: string[] };
+  profile: { text: string; updatedAt: number };
+  state: {
+    lastConsolidatedAt?: number;
+    lastCompactedAt?: number;
+    lastSummary?: MemoryStateRecord["lastSummary"];
+    hasSnapshot?: boolean;
+  };
+  entries: MemoryEntry[];
+}
+
+/**
+ * 将云端下发的权威快照原子写入本地 IDB 镜像（`contact` 重新用本机密钥加密，
+ * 保留设备本地的 `historySource` / `deviceId` / `digestWatermark`）。
+ */
+export async function replaceLocalMemoryMirror(
+  snapshot: MirrorCloudSnapshotInput,
+): Promise<void> {
+  const [allRaw, prevSettings, prevState] = await Promise.all([
+    readAllRaw(),
+    getMemorySettings(),
+    getMemoryState(),
+  ]);
+  const existingIds = allRaw
+    .filter((r) => isEntryRecord(r as { id: string }))
+    .map((r) => String(r.id));
+  const incomingIds = new Set(snapshot.entries.map((e) => e.id));
+  const deleteIds = existingIds.filter((id) => !incomingIds.has(id));
+  const sealed = await Promise.all(snapshot.entries.map(sealEntry));
+
+  const nextSettings: MemorySettingsRecord = {
+    id: MEMORY_SETTINGS_ID,
+    enabled: snapshot.settings.enabled,
+    excludedDomains: snapshot.settings.excludedDomains,
+    historySource: prevSettings.historySource === true,
+  };
+
+  const hasContent =
+    snapshot.entries.length > 0 || snapshot.profile.text.trim().length > 0;
+  const shouldTriggerBanner =
+    !snapshot.readOnly &&
+    !prevState.firstConsolidationNoticeShown &&
+    snapshot.state.lastConsolidatedAt !== undefined &&
+    hasContent;
+
+  const nextState: MemoryStateRecord = {
+    ...prevState,
+    id: MEMORY_STATE_ID,
+    cloudRevision: snapshot.revision,
+    cloudReadOnly: snapshot.readOnly,
+    hasCloudSnapshot: snapshot.state.hasSnapshot === true,
+    ...(snapshot.state.lastConsolidatedAt !== undefined
+      ? { lastConsolidatedAt: snapshot.state.lastConsolidatedAt }
+      : { lastConsolidatedAt: undefined }),
+    ...(snapshot.state.lastCompactedAt !== undefined
+      ? { lastCompactedAt: snapshot.state.lastCompactedAt }
+      : { lastCompactedAt: undefined }),
+    ...(snapshot.state.lastSummary !== undefined
+      ? { lastSummary: snapshot.state.lastSummary }
+      : { lastSummary: undefined }),
+    ...(shouldTriggerBanner ? { firstConsolidationPendingBanner: true } : {}),
+  };
+
+  await txMulti([STORE], "readwrite", (m) => {
+    const store = m[STORE];
+    for (const id of deleteIds) store.delete(id);
+    for (const e of sealed) store.put(e);
+    store.put(nextSettings);
+    store.put({
+      id: MEMORY_PROFILE_ID,
+      text: snapshot.profile.text,
+      updatedAt: snapshot.profile.updatedAt,
+    } satisfies MemoryProfileRecord);
+    store.put(nextState);
+  });
+  publishChange("memory", "put");
+}
+
+/** Write-through：云端 remember / edit 返回新条目后即时更新本地镜像。 */
+export async function upsertLocalMirroredEntry(
+  entry: MemoryEntry,
+  cloudRevision?: number,
+): Promise<void> {
+  const sealed = await sealEntry(entry);
+  const prevState = await getMemoryState();
+  await txMulti([STORE], "readwrite", (m) => {
+    const store = m[STORE];
+    store.put(sealed);
+    if (cloudRevision !== undefined) {
+      store.put({
+        ...prevState,
+        id: MEMORY_STATE_ID,
+        cloudRevision,
+      } satisfies MemoryStateRecord);
+    }
+  });
+  publishChange("memory", "put", entry.id);
+}
+
+/** Write-through：云端 forget / delete 返回删除 ID 后即时更新本地镜像。 */
+export async function removeLocalMirroredEntries(
+  ids: string[],
+  cloudRevision?: number,
+): Promise<void> {
+  if (ids.length === 0 && cloudRevision === undefined) return;
+  const prevState = await getMemoryState();
+  await txMulti([STORE], "readwrite", (m) => {
+    const store = m[STORE];
+    for (const id of ids) store.delete(id);
+    if (cloudRevision !== undefined) {
+      store.put({
+        ...prevState,
+        id: MEMORY_STATE_ID,
+        cloudRevision,
+      } satisfies MemoryStateRecord);
+    }
+  });
+  publishChange("memory", "put");
+}
+
+/** 关闭或跳转后标记首次整理顶部提示已消费，避免再弹出。 */
+export async function dismissFirstConsolidationNotice(): Promise<void> {
+  await setMemoryState({
+    firstConsolidationPendingBanner: false,
+    firstConsolidationNoticeShown: true,
+  });
 }
 
 export interface MemoryExport {
