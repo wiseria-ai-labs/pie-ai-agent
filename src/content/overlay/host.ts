@@ -171,17 +171,21 @@ function maxHeight(): number {
 function place(anchor: DOMRect | null, position: "anchor" | "bottom"): void {
   if (!host) return;
   const width = Math.min(OVERLAY_WIDTH, window.innerWidth - EDGE * 2);
-  // The frame's transparent margin sits between the anchor and the card.
-  const anchored =
-    anchor && position === "anchor" ? anchor.bottom + BELOW_SELECTION_GAP - OVERLAY_CARD_PAD : null;
-  if (anchored !== null && window.innerHeight - anchored >= MIN_SPACE_BELOW) {
-    // Under the selection.
-    host.style.top = `${Math.round(Math.max(0, anchored))}px`;
-    host.style.bottom = "";
-  } else if (anchored !== null) {
-    // No room under the selection, which is therefore low on the screen: top.
-    host.style.top = "0px";
-    host.style.bottom = "";
+  const vh = window.innerHeight;
+  if (anchor && position === "anchor") {
+    // The frame's transparent margin sits between the selection and the card.
+    const spaceBelow = vh - anchor.bottom - BELOW_SELECTION_GAP;
+    const spaceAbove = anchor.top - BELOW_SELECTION_GAP;
+    if (spaceBelow >= MIN_SPACE_BELOW || spaceBelow >= spaceAbove) {
+      // Under the selection, growing downwards.
+      host.style.top = `${Math.round(Math.max(0, anchor.bottom + BELOW_SELECTION_GAP - OVERLAY_CARD_PAD))}px`;
+      host.style.bottom = "";
+    } else {
+      // Low on the screen: just above the selection, growing upwards, so the
+      // card stays next to the text instead of jumping to the top.
+      host.style.top = "auto";
+      host.style.bottom = `${Math.round(Math.max(0, vh - anchor.top + BELOW_SELECTION_GAP - OVERLAY_CARD_PAD))}px`;
+    }
   } else {
     // Shortcut / no selection / fixed setting: bottom-center, growing upwards.
     host.style.top = "auto";
