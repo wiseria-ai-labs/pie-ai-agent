@@ -488,6 +488,7 @@ export default function App() {
             providerLabel={providerLabel}
             onOpenSettings={() => openSettings()}
             onOpenMemorySettings={() => openSettings("memory")}
+            onOpenAccountSettings={() => openSettings("account")}
             prefillInput={chatPrefill}
             onPrefillConsumed={() => setChatPrefill(undefined)}
             session={session}

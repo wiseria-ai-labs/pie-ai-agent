@@ -116,6 +116,8 @@ interface ChatProps {
   providerLabel: string | null;
   onOpenSettings: () => void;
   onOpenMemorySettings?: () => void;
+  /** 零配置空态的次入口：去「账号」页登录 / 订阅官方模型。 */
+  onOpenAccountSettings?: () => void;
   prefillInput?: string;
   onPrefillConsumed?: () => void;
   /** Session state owned by App so port + onMessage listener survive
@@ -172,6 +174,7 @@ export default function Chat({
   providerLabel,
   onOpenSettings,
   onOpenMemorySettings,
+  onOpenAccountSettings,
   prefillInput,
   onPrefillConsumed,
   session,
@@ -1214,6 +1217,15 @@ After the skill completes, briefly summarize what was created (the user will see
           >
             {t("chat.openSettings")}
           </button>
+          {onOpenAccountSettings && (
+            <button
+              data-testid="chat-open-account"
+              onClick={onOpenAccountSettings}
+              className="text-[12px] text-accent hover:underline"
+            >
+              {t("chat.openAccount")}
+            </button>
+          )}
         </div>
       </div>
     );

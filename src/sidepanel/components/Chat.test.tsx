@@ -1530,3 +1530,22 @@ describe("Chat — deep research shortcut", () => {
     expect(screen.queryByTestId("chat-deep-research")).toBeNull();
   });
 });
+
+describe("Chat — 零配置空态", () => {
+  it("没有可选配置时给出去「账号」页的次入口", async () => {
+    vi.mocked(listInstances).mockResolvedValue([]);
+    vi.mocked(resolveSelection).mockResolvedValue(null);
+    const onOpenAccountSettings = vi.fn();
+    render(
+      <Chat
+        providerLabel={null}
+        onOpenSettings={vi.fn()}
+        onOpenAccountSettings={onOpenAccountSettings}
+        session={makeSession()}
+      />,
+    );
+    const cta = await screen.findByTestId("chat-open-account");
+    fireEvent.click(cta);
+    expect(onOpenAccountSettings).toHaveBeenCalledTimes(1);
+  });
+});

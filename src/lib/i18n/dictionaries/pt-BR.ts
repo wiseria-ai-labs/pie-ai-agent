@@ -401,6 +401,7 @@ export const ptBRDict = {
     noApiKey: "SEM API KEY",
     noApiKeyDescription: "Adicione uma chave API de qualquer provedor compatível para começar a usar o agente.",
     openSettings: "Abrir configurações",
+    openAccount: "Ou use o Pie Official",
     loading: "CARREGANDO",
     pinnedTabSelector: "Abrir seletor de aba fixada",
     pinned: "FIXADA",

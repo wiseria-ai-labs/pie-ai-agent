@@ -401,6 +401,7 @@ export const es419Dict = {
     noApiKey: "SIN API KEY",
     noApiKeyDescription: "Agrega una clave API de cualquier proveedor compatible para empezar a usar el agente.",
     openSettings: "Abrir configuración",
+    openAccount: "O usa Pie Official",
     loading: "CARGANDO",
     pinnedTabSelector: "Abrir selector de pestaña fijada",
     pinned: "FIJADA",

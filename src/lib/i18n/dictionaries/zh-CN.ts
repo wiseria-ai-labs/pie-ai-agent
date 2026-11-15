@@ -396,6 +396,7 @@ export const zhCNDict = {
     noApiKey: "没有 API Key",
     noApiKeyDescription: "从任一支持的 provider 添加 API key 即可开始使用 Agent。",
     openSettings: "打开设置",
+    openAccount: "或使用 Pie 官方",
     loading: "加载中",
     pinnedTabSelector: "打开固定标签页选择器",
     pinned: "已固定",

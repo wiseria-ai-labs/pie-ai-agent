@@ -409,6 +409,7 @@ export const enDict = {
     noApiKey: "NO API KEY",
     noApiKeyDescription: "Add an API key from any supported provider to start using the agent.",
     openSettings: "Open Settings",
+    openAccount: "Or use Pie Official",
     loading: "LOADING",
     pinnedTabSelector: "Open pinned tab selector",
     pinned: "PINNED",

@@ -3,6 +3,7 @@ import { chromeMock } from "@/test/setup";
 import { resolveSelection } from "./model-selection-resolver";
 import { createInstance } from "./instances";
 import { setLastModelSelection } from "./last-model-selection";
+import { cacheEntitlement, _clearEntitlementCacheForTests } from "./managed-account";
 import { _resetForTests } from "./idb/db";
 import { _resetKeyForTests } from "./crypto";
 
@@ -13,7 +14,11 @@ beforeEach(async () => {
   chromeMock.storage.local.__store = {};
   await _resetForTests();
   _resetKeyForTests();
+  _clearEntitlementCacheForTests();
 });
+
+const ent = (plan: "none" | "active" | "blocked", apiKey: string) =>
+  cacheEntitlement(apiKey, { plan, email: "a@b.com", subscription: null, quota: null, models: [] });
 
 describe("resolveSelection", () => {
   it("prefers session's own instanceId + model", async () => {
@@ -56,5 +61,56 @@ describe("resolveSelection", () => {
     await setLastModelSelection({ instanceId: id, model: "gpt-4o" });
     const sel = await resolveSelection({ instanceId: "ghost", model: "x" });
     expect(sel).toEqual({ instanceId: id, model: "gpt-4o" });
+  });
+});
+
+describe("resolveSelection — 已登录未订阅的官方账号不可选", () => {
+  it("plan none 的 managed 且没有其它配置 → null（零配置空态）", async () => {
+    await createInstance({ provider: "managed", nickname: "a@b.com", apiKey: "sk-none" });
+    await ent("none", "sk-none");
+    expect(await resolveSelection({})).toBeNull();
+  });
+
+  it("plan none 的 managed + 一条 BYOK → 落到 BYOK", async () => {
+    await createInstance({ provider: "managed", nickname: "a@b.com", apiKey: "sk-none" });
+    const byok = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
+    await ent("none", "sk-none");
+    expect(await resolveSelection({})).toEqual({ instanceId: byok, model: "claude-opus-5" });
+  });
+
+  it("session 绑了 plan none 的 managed → 继续落到 BYOK", async () => {
+    const managed = await createInstance({ provider: "managed", nickname: "a@b.com", apiKey: "sk-none" });
+    const byok = await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
+    await ent("none", "sk-none");
+    expect(await resolveSelection({ instanceId: managed, model: "default" })).toEqual({
+      instanceId: byok,
+      model: "claude-opus-5",
+    });
+  });
+
+  it("last_model_selection 指向 plan none 的 managed → 继续落到 BYOK", async () => {
+    const managed = await createInstance({ provider: "managed", nickname: "a@b.com", apiKey: "sk-none" });
+    const byok = await createInstance({ provider: "moonshot", nickname: "K", apiKey: "k" });
+    await ent("none", "sk-none");
+    await setLastModelSelection({ instanceId: managed, model: "default" });
+    expect(await resolveSelection({})).toEqual({ instanceId: byok, model: "kimi-for-coding" });
+  });
+
+  it("缓存未水合（null）→ 仍选 managed（旧行为）", async () => {
+    const managed = await createInstance({ provider: "managed", nickname: "a@b.com", apiKey: "sk-cold" });
+    expect(await resolveSelection({})).toEqual({ instanceId: managed, model: "default" });
+  });
+
+  it("plan active → managed 照常可选", async () => {
+    const managed = await createInstance({ provider: "managed", nickname: "a@b.com", apiKey: "sk-active" });
+    await createInstance({ provider: "anthropic", nickname: "A", apiKey: "k" });
+    await ent("active", "sk-active");
+    expect(await resolveSelection({})).toEqual({ instanceId: managed, model: "default" });
+  });
+
+  it("plan blocked 同样跳过", async () => {
+    await createInstance({ provider: "managed", nickname: "a@b.com", apiKey: "sk-blocked" });
+    await ent("blocked", "sk-blocked");
+    expect(await resolveSelection({})).toBeNull();
   });
 });

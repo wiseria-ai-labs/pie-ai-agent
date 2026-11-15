@@ -396,6 +396,7 @@ export const zhTWDict = {
     noApiKey: "沒有 API Key",
     noApiKeyDescription: "從任一支援的 provider 新增 API key 即可開始使用 Agent。",
     openSettings: "開啟設定",
+    openAccount: "或使用 Pie 官方",
     loading: "載入中",
     pinnedTabSelector: "開啟釘選分頁選擇器",
     pinned: "已釘選",

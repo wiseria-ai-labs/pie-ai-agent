@@ -400,6 +400,7 @@ export const jaDict = {
     noApiKey: "API KEY なし",
     noApiKeyDescription: "エージェントの利用を開始するには、対応プロバイダーの API キーを追加してください。",
     openSettings: "設定を開く",
+    openAccount: "Pie 公式を使う",
     loading: "読み込み中",
     pinnedTabSelector: "固定タブセレクターを開く",
     pinned: "固定済み",
