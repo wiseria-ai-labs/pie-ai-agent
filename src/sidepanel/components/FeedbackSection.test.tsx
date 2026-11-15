@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FeedbackSection } from "./settings/pages/FeedbackPage";
 
@@ -9,6 +9,8 @@ vi.mock("../../lib/managed-account", async (orig) => ({
   ...(await orig<typeof import("../../lib/managed-account")>()),
   submitFeedback: (...a: unknown[]) => submitFeedback(...a),
 }));
+const getPieAccount = vi.fn();
+vi.mock("../../lib/pie-account", () => ({ getPieAccount: (...a: unknown[]) => getPieAccount(...a) }));
 const readRecentLogs = vi.fn();
 vi.mock("../../lib/log-buffer", () => ({ readRecentLogs: (...a: unknown[]) => readRecentLogs(...a) }));
 
@@ -17,13 +19,18 @@ beforeEach(() => {
   submitFeedback.mockResolvedValue(undefined);
   readRecentLogs.mockReset();
   readRecentLogs.mockResolvedValue("recent-log-blob");
+  getPieAccount.mockReset();
+  getPieAccount.mockResolvedValue(null);
   (globalThis as unknown as { chrome: { runtime: { getManifest: () => { version: string } } } }).chrome.runtime.getManifest = () => ({ version: "9.9.9" });
 });
 
 describe("FeedbackSection", () => {
   it("sends trimmed message, no logs when unchecked, with managed apiKey", async () => {
+    // 账号已从模型配置里独立：反馈页的 apiKey 来自 getPieAccount。
+    getPieAccount.mockResolvedValue({ instanceId: "m", apiKey: "sk-v", email: "a@b.com" });
     const managed = { provider: "managed", apiKey: "sk-v" } as never;
     render(<FeedbackSection instances={[managed]} />);
+    await act(async () => {}); // 等账号 apiKey 异步落地
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "  hello  " } });
     fireEvent.click(screen.getByText("Send"));
     await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));

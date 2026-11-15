@@ -6,7 +6,7 @@
 //   - 未激活/已过期，但本地或历史镜像存在存量记忆 → "readonly_expired"（只读查看/导出/清空）
 //   - 未激活且无存量记忆 → "locked"（展示 Pie Pro 开通引导）
 
-import { listInstances } from "@/lib/instances";
+import { getPieAccount } from "@/lib/pie-account";
 import {
   getCachedEntitlement,
   getEntitlement,
@@ -36,8 +36,7 @@ export interface AccessStateOptions {
 
 export async function getManagedMemoryApiKey(): Promise<string | null> {
   try {
-    const insts = await listInstances();
-    return insts.find((i) => i.provider === "managed" && Boolean(i.apiKey))?.apiKey ?? null;
+    return (await getPieAccount())?.apiKey ?? null;
   } catch {
     return null;
   }

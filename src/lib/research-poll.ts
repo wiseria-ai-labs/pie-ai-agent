@@ -1,5 +1,5 @@
 import { getResearch, type ResearchRun } from "./managed-research";
-import { listInstances } from "./instances";
+import { getPieAccount } from "./pie-account";
 import { getConfig, setConfig } from "./idb/config-store";
 import { RESEARCH_NOTIF_PREFIX } from "./research-notif";
 import { makeT, resolveLocale } from "./i18n";
@@ -30,8 +30,7 @@ async function writeTrackedIds(ids: string[]): Promise<void> {
 
 async function defaultGetApiKey(): Promise<string | null> {
   try {
-    const inst = (await listInstances()).find((i) => i.provider === "managed");
-    return inst?.apiKey ?? null;
+    return (await getPieAccount())?.apiKey ?? null;
   } catch {
     return null;
   }

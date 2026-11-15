@@ -2,7 +2,7 @@ import { ACCOUNT_BASE } from "./managed-config";
 import type { Entitlement, ModelInfo, PricingInfo, ResearchQuotaWindow } from "./managed-auth";
 import type { FeedbackEnv } from "./feedback";
 import { getLocale } from "./i18n";
-import { setConfig, getAllConfig } from "./idb/config-store";
+import { setConfig, getAllConfig, removeConfig } from "./idb/config-store";
 
 export interface ManagedAccountDeps {
   fetchFn?: typeof fetch;
@@ -48,6 +48,16 @@ export async function hydrateEntitlementCache(): Promise<void> {
 /** Test-only：清空内存 entitlement 缓存，使水合测试能验证「内存空 → 水合 → 命中」。 */
 export function _clearEntitlementCacheForTests(): void {
   entitlementCache.clear();
+}
+
+/** 退出登录：抹掉某把 key 的 entitlement（内存 + IDB），下次登录重新拉。 */
+export async function forgetEntitlement(apiKey: string): Promise<void> {
+  entitlementCache.delete(apiKey);
+  try {
+    await removeConfig(ENTITLEMENT_KEY_PREFIX + apiKey);
+  } catch {
+    /* best-effort，与 cacheEntitlement 对称 */
+  }
 }
 
 /** 读上次成功拉取的 entitlement（无则 null）。 */

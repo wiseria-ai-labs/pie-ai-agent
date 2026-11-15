@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { useT, getLocale } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
+import { getPieAccount } from "@/lib/pie-account";
 import { buildTranscript, type FeedbackEnv } from "@/lib/feedback";
 import { submitFeedback } from "@/lib/managed-account";
 import type { DisplayMessage } from "@/types/messages";
@@ -46,8 +47,8 @@ export function ReportProblemDrawer({
     if (status === "sending") return;
     setStatus("sending");
     try {
-      const instances = await listInstances();
-      const active = instances[0];
+      const [instances, account] = await Promise.all([listInstances(), getPieAccount()]);
+      const active = instances.find((i) => i.provider !== "managed");
       const env: FeedbackEnv = {
         version: chrome.runtime.getManifest().version,
         userAgent: navigator.userAgent,
@@ -62,9 +63,7 @@ export function ReportProblemDrawer({
         transcript: buildTranscript(messages, messageIndex ?? undefined),
         ...(sessionId ? { sessionId } : {}),
         ...(messageIndex !== null ? { messageIndex } : {}),
-        ...(instances.find((i) => i.provider === "managed")?.apiKey
-          ? { apiKey: instances.find((i) => i.provider === "managed")!.apiKey }
-          : {}),
+        ...(account?.apiKey ? { apiKey: account.apiKey } : {}),
       });
       setStatus("sent");
       window.setTimeout(onClose, 1200);

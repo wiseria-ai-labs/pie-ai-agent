@@ -3,6 +3,7 @@ import { listInstances, type DecryptedInstance } from "@/lib/instances";
 import { useT, getLocale } from "@/lib/i18n";
 import { buildGithubNewIssueUrl, buildFeedbackMailto, type FeedbackEnv } from "@/lib/feedback";
 import { submitFeedback } from "@/lib/managed-account";
+import { getPieAccount } from "@/lib/pie-account";
 import { readRecentLogs } from "@/lib/log-buffer";
 import { capLogBytes } from "@/lib/log-cap";
 
@@ -16,14 +17,20 @@ export function FeedbackSection({ instances }: { instances: DecryptedInstance[] 
   const [includeLogs, setIncludeLogs] = useState(false);
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
 
-  const active = instances[0];
+  const active = instances.find((i) => i.provider !== "managed");
   const env: FeedbackEnv = {
     version: chrome.runtime.getManifest().version,
     userAgent: navigator.userAgent,
     providerModel: active ? active.provider : "(no config)",
     locale: getLocale(),
   };
-  const managedApiKey = instances.find((i) => i.provider === "managed")?.apiKey;
+  // 账号可能不在 props.instances 里（账号已从模型配置中独立），统一问账号层。
+  const [managedApiKey, setManagedApiKey] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    void getPieAccount()
+      .then((a) => setManagedApiKey(a?.apiKey))
+      .catch(() => setManagedApiKey(undefined));
+  }, []);
 
   async function onSend() {
     const trimmed = message.trim();

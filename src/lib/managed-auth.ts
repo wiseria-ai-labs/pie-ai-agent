@@ -1,5 +1,6 @@
 import { ACCOUNT_BASE } from "./managed-config";
 import { normalizeEntitlement, cacheEntitlement } from "./managed-account";
+import { savePieAccount } from "./pie-account";
 import { getLocale } from "./i18n";
 
 export interface QuotaWindow {
@@ -93,10 +94,77 @@ export async function startManagedLogin(deps: ManagedAuthDeps = {}): Promise<Log
     body: JSON.stringify({ code, redirectUri }),
   });
   if (!resp.ok) throw new Error(`Login exchange failed (${resp.status})`);
+  return finishLogin(await resp.json());
+}
+
+/** 登录成功收尾：归一化 entitlement → 回填缓存 → 落盘账号（登录即登录，不等订阅）。 */
+async function finishLogin(raw: unknown): Promise<LoginResult> {
   // 归一化 entitlement：与 getEntitlement 同一道防线，护住喂 UI（含首月半价徽标）的主路径，
   // 不让 /auth/exchange 的畸形字段（如 introOffer.percentOff）裸穿到渲染层。
-  const json = (await resp.json()) as { apiKey?: unknown; entitlement?: unknown };
-  const result = { apiKey: String(json.apiKey ?? ""), entitlement: normalizeEntitlement(json.entitlement) };
-  if (result.apiKey) await cacheEntitlement(result.apiKey, result.entitlement);
+  const json = (raw ?? {}) as { apiKey?: unknown; entitlement?: unknown };
+  const result: LoginResult = {
+    apiKey: String(json.apiKey ?? ""),
+    entitlement: normalizeEntitlement(json.entitlement),
+  };
+  if (result.apiKey) {
+    await cacheEntitlement(result.apiKey, result.entitlement);
+    await savePieAccount(result);
+  }
   return result;
+}
+
+/** 邮箱验证码流程的失败：携带后端 error code（invalid_email / invalid_code /
+ *  code_expired / too_many_attempts / mail_send_failed）。 */
+export class EmailCodeError extends Error {
+  constructor(
+    public code: string,
+    public status: number,
+    /** 429 时的建议等待秒数（后端 retryAfter）。 */
+    public retryAfter?: number,
+  ) {
+    super(code);
+    this.name = "EmailCodeError";
+  }
+}
+
+async function postEmailAuth(
+  path: "/auth/email/start" | "/auth/email/verify",
+  body: Record<string, string>,
+  deps: ManagedAuthDeps,
+  fallbackCode: string,
+): Promise<unknown> {
+  const fetchFn = deps.fetchFn ?? fetch;
+  const locale = deps.locale ?? getLocale();
+  const resp = await fetchFn(`${ACCOUNT_BASE}${path}?locale=${encodeURIComponent(locale)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let code = fallbackCode;
+    let retryAfter: number | undefined;
+    try {
+      const b = (await resp.json()) as { error?: unknown; retryAfter?: unknown };
+      if (typeof b?.error === "string") code = b.error;
+      if (typeof b?.retryAfter === "number") retryAfter = b.retryAfter;
+    } catch {
+      /* 非 JSON 错误体：保留 fallbackCode */
+    }
+    throw new EmailCodeError(code, resp.status, retryAfter);
+  }
+  return resp.json();
+}
+
+/** 发送 6 位邮箱验证码（新老邮箱响应一致，不泄露是否已注册）。 */
+export async function sendEmailCode(email: string, deps: ManagedAuthDeps = {}): Promise<void> {
+  await postEmailAuth("/auth/email/start", { email }, deps, "mail_send_failed");
+}
+
+/** 校验邮箱验证码 → 与 Google 登录同型的 LoginResult（同一账号同一把 key）。 */
+export async function verifyEmailCode(
+  email: string,
+  code: string,
+  deps: ManagedAuthDeps = {},
+): Promise<LoginResult> {
+  return finishLogin(await postEmailAuth("/auth/email/verify", { email, code }, deps, "invalid_code"));
 }

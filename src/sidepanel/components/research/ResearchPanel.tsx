@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { listInstances } from "@/lib/instances";
+import { getPieAccount } from "@/lib/pie-account";
 import { getCachedEntitlement, getEntitlement } from "@/lib/managed-account";
 import {
   listResearch,
@@ -87,8 +87,7 @@ function startErrorMessage(
 
 async function resolveManagedApiKey(): Promise<string | null> {
   try {
-    const insts = await listInstances();
-    return insts.find((i) => i.provider === "managed" && i.apiKey)?.apiKey ?? null;
+    return (await getPieAccount())?.apiKey ?? null;
   } catch {
     return null;
   }
