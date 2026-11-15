@@ -231,14 +231,14 @@ export function useOverlaySession(args: {
         persist(next);
         return;
       }
-      // 2.0 overlay — the run needs a HITL card the page surface can't show;
-      // the SW opened the side panel on this session.
+      // 2.0 overlay — a HITL card arrived while this document had no port
+      // (detached run); the SW opened the side panel on this session instead.
       if (msg.type === "overlay-notice") {
         setPanelNotice(msg.notice);
         return;
       }
-      // Everything else (quotes, usage, instructions, HITL cards, file output)
-      // belongs to the side panel — the overlay stays a conversation.
+      // HITL cards come through usePanelRequest. Everything else (quotes,
+      // usage, instructions, file output) belongs to the side panel.
     },
     [flushAssistant, patchMessages, persist, reload],
   );

@@ -125,7 +125,7 @@ export const es419Dict = {
       groupOverlay: "Superposición",
       positionLabel: "Posición",
       positionAnchor: "Junto a la selección",
-      positionBottom: "Abajo al centro",
+      positionTop: "Arriba al centro",
       retentionLabel: "Conservar la conversación al cerrar",
       retentionHint: "Misma pestaña y sitio, contando desde tu último mensaje; al seleccionar texto empieza una nueva",
       retention10: "10 min",

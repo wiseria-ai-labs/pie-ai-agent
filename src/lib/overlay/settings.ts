@@ -7,7 +7,7 @@ import { getConfig, setConfig } from "@/lib/idb/config-store";
 
 export const OVERLAY_SETTINGS_KEY = "overlay_settings";
 
-export type OverlayPosition = "anchor" | "bottom";
+export type OverlayPosition = "anchor" | "top";
 export type OverlayRetentionMinutes = 10 | 30 | 60;
 
 export interface OverlaySettings {
@@ -15,7 +15,8 @@ export interface OverlaySettings {
   barEnabled: boolean;
   /** Hosts where the bar never appears ("在此网站不显示"). */
   excludedHosts: string[];
-  /** anchor = under the selection (bottom-center without one), bottom = always bottom-center. */
+  /** anchor = under the selection, top = always top-center (more room below for
+   *  dropdowns; without a selection the overlay opens top-center). */
   position: OverlayPosition;
   /** How long a closed overlay remembers its conversation on the same tab. */
   retentionMinutes: OverlayRetentionMinutes;
@@ -44,8 +45,8 @@ export function normalizeOverlaySettings(raw: unknown): OverlaySettings {
     excludedHosts: Array.isArray(r.excludedHosts)
       ? r.excludedHosts.filter((h): h is string => typeof h === "string" && h.length > 0)
       : [],
-    // "top" is the pre-2.0 name of the fixed position, now bottom-center.
-    position: r.position === "bottom" || (r.position as string) === "top" ? "bottom" : "anchor",
+    // Fixed placement is top-center now; "bottom" is that value's old name.
+    position: r.position === "top" || (r.position as string) === "bottom" ? "top" : "anchor",
     retentionMinutes: retention === 10 || retention === 60 ? retention : 30,
     ...(typeof r.lastTranslateLang === "string" && r.lastTranslateLang.length > 0
       ? { lastTranslateLang: r.lastTranslateLang }

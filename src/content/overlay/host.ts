@@ -14,14 +14,16 @@ import { markOwned } from "@/content/instance-guard";
 import { OVERLAY_CARD_PAD, type OverlayOpenPayload } from "@/lib/overlay/protocol";
 
 const HOST_ATTR = "data-pie-overlay-host";
-/** Wrapper width: the ~420px card plus that margin on both sides. */
-const OVERLAY_WIDTH = 420 + OVERLAY_CARD_PAD * 2;
+/** Card width, and the wrapper carrying it plus the margin on both sides. */
+const OVERLAY_CARD_WIDTH = 500;
+const OVERLAY_WIDTH = OVERLAY_CARD_WIDTH + OVERLAY_CARD_PAD * 2;
 const EDGE = 12;
 const BELOW_SELECTION_GAP = 14;
 const MIN_SPACE_BELOW = 280;
 const MAX_HEIGHT_EDGE = 16;
 /** Visible gap between the card and the viewport bottom (bottom placement). */
-const BOTTOM_GAP = 28;
+/** Visible gap between the card and the viewport top (fixed placement). */
+const TOP_GAP = 28;
 const MIN_HEIGHT = 120;
 /** Cap on the overlay's height, as a share of the page viewport. */
 const MAX_HEIGHT_RATIO = 0.7;
@@ -171,7 +173,7 @@ function maxHeight(): number {
   );
 }
 
-function place(anchor: DOMRect | null, position: "anchor" | "bottom"): void {
+function place(anchor: DOMRect | null, position: "anchor" | "top"): void {
   if (!host) return;
   const width = Math.min(OVERLAY_WIDTH, window.innerWidth - EDGE * 2);
   const vh = window.innerHeight;
@@ -190,9 +192,10 @@ function place(anchor: DOMRect | null, position: "anchor" | "bottom"): void {
       host.style.bottom = `${Math.round(Math.max(0, vh - anchor.top + BELOW_SELECTION_GAP - OVERLAY_CARD_PAD))}px`;
     }
   } else {
-    // Shortcut / no selection / fixed setting: bottom-center, growing upwards.
-    host.style.top = "auto";
-    host.style.bottom = `${Math.max(0, BOTTOM_GAP - OVERLAY_CARD_PAD)}px`;
+    // Shortcut / no selection / fixed setting: top-center, growing downwards so
+    // dropdowns inside the card always have room below.
+    host.style.top = `${Math.max(0, TOP_GAP - OVERLAY_CARD_PAD)}px`;
+    host.style.bottom = "";
   }
   host.style.left = `${Math.round(Math.max(0, (window.innerWidth - width) / 2))}px`;
   if (iframe) {
@@ -239,6 +242,12 @@ export function openOverlaySurface(payload: OverlayOpenPayload, anchor: DOMRect 
   place(anchor, payload.position);
   show();
   pushOpened();
+}
+
+/** The document needs the user (a HITL card): show a merely-hidden surface. */
+export function revealOverlaySurface(): void {
+  if (!host || !hidden) return;
+  show();
 }
 
 /** Hide without tearing down (keeps the overlay document — and its task — alive). */
@@ -288,10 +297,11 @@ export function destroyOverlaySurface(): void {
 }
 
 /** Only our own frame may ask the host to close (page scripts can't). */
-export function attachOverlayMessageBridge(onClose: () => void): void {
+export function attachOverlayMessageBridge(onClose: () => void, onReveal: () => void): void {
   window.addEventListener("message", (e) => {
     if (!iframe || e.source !== iframe.contentWindow) return;
     const data = e.data as { type?: string } | null;
     if (data?.type === "pie-overlay:close") onClose();
+    else if (data?.type === "pie-overlay:reveal") onReveal();
   });
 }

@@ -612,9 +612,11 @@ async function stashDeeplink(value: string): Promise<void> {
 }
 
 /**
- * HITL handoff: an overlay run needs a panel-request card, and the in-page
- * surface cannot render one. Open the side panel on this session (the live
- * attach then carries the stream over) and tell the in-page overlay why.
+ * HITL handoff: an overlay run needs a panel-request card and no port can
+ * render it — the overlay document normally does (it registers as the
+ * session's panel-request port), so this is the detached case (navigated away,
+ * document torn down). Open the side panel on this session (the live attach
+ * then carries the stream over) and tell the in-page overlay why.
  *
  * Returns false when this session has no overlay run — the caller keeps the
  * original "no sidepanel port" error for every other path.

@@ -2124,9 +2124,10 @@ chrome.runtime.onConnect.addListener((port) => {
   }
 
   // 2.0 overlay — the overlay document is a second kind of client on the same
-  // port name. It must not register as "the panel" (quote dispatch and
-  // panel-request would target a document that can't answer them), and it may
-  // adopt a run that kept going after a navigation. Everything else is the
+  // port name. It is not "the panel" for quote dispatch, but it does render
+  // panel-request cards in its own thread, so HITL questions are answered in
+  // place instead of handing the run to the side panel. It may also adopt a
+  // run that kept going after a navigation. Everything else is the
   // side panel: a live client for quote dispatch, panel requests, and — when a
   // task is already running — for the agent stream itself.
   const overlayDocumentPort = isOverlayDocumentPort(port);
@@ -2134,6 +2135,7 @@ chrome.runtime.onConnect.addListener((port) => {
     // Adopt THIS port as the emit sink so the rebuilt overlay UI starts
     // receiving the rest of the stream.
     rebindOverlayRunPort(portSessionId, port);
+    registerPanelPort(portSessionId, port);
   } else {
     // quote-bridge dispatch (issue #38) needs sessionId→port mapping the moment
     // the panel connects, not when a recording starts. Without this, quote-added
@@ -2426,10 +2428,11 @@ chrome.runtime.onConnect.addListener((port) => {
       // deleting them here would evict the real side panel of the same session.
       detachPanelFromRun(portSessionId, port);
       portsBySession.delete(portSessionId);
-      // Only clears the mapping when this really is the registered port;
-      // pending cards survive and are re-delivered on reconnect.
-      unregisterPanelPort(portSessionId, port);
     }
+    // Both kinds: only clears the mapping when this really is the registered
+    // port (a side panel that took over keeps it); pending cards survive and
+    // are re-delivered on reconnect.
+    unregisterPanelPort(portSessionId, port);
 
     // 2.0 overlay — an overlay task's port lives in the page document, so a
     // navigation (or a closed overlay tab) drops it while the agent is still

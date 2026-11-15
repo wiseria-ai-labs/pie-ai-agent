@@ -16,6 +16,7 @@ import OverlayApp from "./OverlayApp";
 import "./overlay.css";
 import { I18nProvider } from "@/lib/i18n";
 import { runStartupMigrations } from "@/lib/startup-migrations";
+import { MotionProvider } from "@/sidepanel/components/ui/motion";
 
 async function boot() {
   // Same idempotent pipeline the side panel runs: read IDB only after it
@@ -25,7 +26,10 @@ async function boot() {
   });
   createRoot(document.getElementById("root")!).render(
     <I18nProvider>
-      <OverlayApp />
+      {/* The side panel's HITL cards are m.* components (no provider = stuck at opacity 0). */}
+      <MotionProvider>
+        <OverlayApp />
+      </MotionProvider>
     </I18nProvider>,
   );
 }

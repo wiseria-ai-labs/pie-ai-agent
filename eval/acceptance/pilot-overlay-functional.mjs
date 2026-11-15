@@ -165,7 +165,7 @@ try {
   });
   rec("A3 resize bridge", h > 130 ? "PASS" : "FAIL", `iframe height=${Math.round(h)}`);
 
-  // 卡片几何：iframe 456（卡片 420 + 两侧 18px 透明留白），阴影不被裁、圆角外透明
+  // 卡片几何：iframe 564（卡片 500 + 两侧 32px 透明留白），阴影不被裁、圆角外透明
   const ovFrame = page.frames().find((f) => f.url().includes("src/overlay/index.html"));
   const layout = await ovFrame.evaluate(() => {
     const root = document.getElementById("overlay-root");
@@ -182,7 +182,7 @@ try {
   });
   rec(
     "A4 card geometry inside a transparent iframe",
-    host.hostWidth === 484 && layout.pad === "32px" && layout.cardW === 420 && layout.bodyBg === "rgba(0, 0, 0, 0)"
+    host.hostWidth === 564 && layout.pad === "32px" && layout.cardW === 500 && layout.bodyBg === "rgba(0, 0, 0, 0)"
       ? "PASS"
       : "FAIL",
     JSON.stringify({ host: host.hostWidth, ...layout }),

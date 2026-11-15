@@ -124,7 +124,7 @@ export const jaDict = {
       groupOverlay: "オーバーレイ",
       positionLabel: "位置",
       positionAnchor: "選択範囲の近く",
-      positionBottom: "下部中央",
+      positionTop: "上部中央",
       retentionLabel: "閉じた後も会話を保持",
       retentionHint: "同じタブ・同じサイトでショートカットから開くと続きから。最後のやり取りから計算。テキスト選択からは常に新しい会話",
       retention10: "10 分",

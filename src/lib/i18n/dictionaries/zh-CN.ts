@@ -123,7 +123,7 @@ export const zhCNDict = {
       groupOverlay: "浮层",
       positionLabel: "位置",
       positionAnchor: "贴近选区",
-      positionBottom: "底部居中",
+      positionTop: "顶部居中",
       retentionLabel: "关闭后保留对话",
       retentionHint: "同一标签页、同一网站内用快捷键唤起可继续，从最后一次对话算起；划词操作总是新对话",
       retention10: "10 分钟",

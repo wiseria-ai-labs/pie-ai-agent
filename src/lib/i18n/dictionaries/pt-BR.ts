@@ -125,7 +125,7 @@ export const ptBRDict = {
       groupOverlay: "Sobreposição",
       positionLabel: "Posição",
       positionAnchor: "Perto da seleção",
-      positionBottom: "Embaixo, centralizado",
+      positionTop: "Em cima, centralizado",
       retentionLabel: "Manter a conversa após fechar",
       retentionHint: "Mesma aba e site, contando a partir da última mensagem; ao selecionar texto começa uma nova",
       retention10: "10 min",

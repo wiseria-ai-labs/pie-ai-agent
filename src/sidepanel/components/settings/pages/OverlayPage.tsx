@@ -195,7 +195,7 @@ export default function OverlayPage() {
                 value={settings?.position ?? "anchor"}
                 options={[
                   { value: "anchor", label: t("settings.overlay.positionAnchor") },
-                  { value: "bottom", label: t("settings.overlay.positionBottom") },
+                  { value: "top", label: t("settings.overlay.positionTop") },
                 ]}
                 onChange={(v) => update({ position: v })}
               />

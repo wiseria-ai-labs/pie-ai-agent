@@ -27,6 +27,9 @@ import { MemoryEventRow, MemoryUsedChip } from "@/sidepanel/components/MemoryRow
 import { useStickToBottom } from "@/sidepanel/hooks/useStickToBottom";
 import { useOverlaySession } from "./useOverlaySession";
 import { useModelSelection } from "./useModelSelection";
+import { usePanelRequest } from "@/sidepanel/hooks/usePanelRequest";
+import { HitlInlineCards } from "@/sidepanel/components/hitl/HitlInlineCards";
+import { processPickedFile } from "@/lib/files/process-picked-file";
 
 /** Below this the composer never collapses — matches the host's min height. */
 const MAX_TEXTAREA_LINES = 3;
@@ -145,6 +148,35 @@ export default function OverlayApp() {
 
   const session = useOverlaySession({ sessionId, tabId, runningElsewhere });
   const model = useModelSelection(sessionId);
+  // HITL cards (permissions, confirmations, pickers) render in this thread —
+  // the SW registers the overlay document as the session's panel-request port.
+  const { active: panelRequest, respond: respondPanel } = usePanelRequest(sessionId || null);
+  const localFileInputRef = useRef<HTMLInputElement>(null);
+  // A card arriving while the surface is hidden (Esc during a run) brings it back.
+  useEffect(() => {
+    if (panelRequest) window.parent.postMessage({ type: "pie-overlay:reveal" }, "*");
+  }, [panelRequest]);
+  const onLocalFilePicked = useCallback(
+    async (file: File | undefined) => {
+      if (!panelRequest) return;
+      const id = panelRequest.requestId;
+      if (!file) return respondPanel(id, { ok: false, reason: "cancelled by user" });
+      try {
+        const r = await processPickedFile(file, { supportsVision: false });
+        if (r.ok && r.kind === "file") {
+          const a = r.attachment;
+          return respondPanel(id, { ok: true, data: { name: a.name, mime: a.mime, text: a.text, truncated: a.truncated } });
+        }
+        respondPanel(id, {
+          ok: false,
+          reason: "image_or_unsupported: that file type can't be returned here; for images use the + menu",
+        });
+      } catch {
+        respondPanel(id, { ok: false, reason: "processing failed" });
+      }
+    },
+    [panelRequest, respondPanel],
+  );
   const { messages, streaming, streamingText, streamingThinking } = session;
 
   // ── Memory prefetch (spec §5.5) ───────────────────────────────────────────
@@ -372,7 +404,7 @@ export default function OverlayApp() {
   // is at the bottom, stop following as soon as they scroll up.
   useEffect(() => {
     stickIfNeeded();
-  }, [messages, streamingText, streamingThinking, session.panelNotice, stickIfNeeded]);
+  }, [messages, streamingText, streamingThinking, session.panelNotice, panelRequest, stickIfNeeded]);
 
   // ── Focus on open ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -738,9 +770,14 @@ export default function OverlayApp() {
       id="overlay-root"
       data-mode={chat ? "chat" : "spot"}
       className="flex w-full flex-col"
+      // Both paddings always present: React clears a key that disappears from
+      // the object, and removing one longhand resets the `padding` shorthand
+      // (the card lost its top margin on the first host message).
       style={{
-        padding: CARD_PAD,
-        [growsUp ? "paddingTop" : "paddingBottom"]: CARD_PAD + popoverExtra,
+        paddingLeft: CARD_PAD,
+        paddingRight: CARD_PAD,
+        paddingTop: CARD_PAD + (growsUp ? popoverExtra : 0),
+        paddingBottom: CARD_PAD + (growsUp ? 0 : popoverExtra),
       }}
     >
       <div className="relative w-full">
@@ -788,7 +825,7 @@ export default function OverlayApp() {
                 onMemoryWrong={openMemorySettings}
               />
             ))}
-            {session.panelNotice === "panel-request" && (
+            {session.panelNotice === "panel-request" && !panelRequest && (
               <div className="text-[11.5px] text-fg-3" data-testid="overlay-panel-notice">
                 {t("overlay.ui.needsPanelConfirm")}
               </div>
@@ -817,6 +854,21 @@ export default function OverlayApp() {
                 )}
               </div>
             )}
+            <HitlInlineCards
+              request={panelRequest}
+              respond={respondPanel}
+              instances={model.instances}
+              onChooseLocalFile={() => localFileInputRef.current?.click()}
+            />
+            <input
+              ref={localFileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                void onLocalFilePicked(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
             {session.error && (
               <div className="rounded-[10px] border border-warning-line bg-warning-tint px-2.5 py-2 text-[12px] text-warning">
                 {t("overlay.ui.error", { error: session.error })}

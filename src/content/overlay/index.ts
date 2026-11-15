@@ -33,6 +33,7 @@ import {
   attachOverlayMessageBridge,
   destroyOverlaySurface,
   hideOverlaySurface,
+  revealOverlaySurface,
   isOverlayMounted,
   isOverlayVisible,
   openOverlaySurface,
@@ -119,7 +120,11 @@ function installPageListeners(): void {
     }
   }, true);
 
-  attachOverlayMessageBridge(closeFromUser);
+  attachOverlayMessageBridge(closeFromUser, () => {
+    if (isOverlayVisible()) return;
+    revealOverlaySurface();
+    if (isOverlayVisible()) hideCapsule(); // one surface at a time
+  });
 }
 
 /** Ask the SW whether this tab has a live capsule to re-attach (page reload,

@@ -123,7 +123,7 @@ export const enDict = {
       groupOverlay: "Overlay",
       positionLabel: "Position",
       positionAnchor: "Near selection",
-      positionBottom: "Bottom center",
+      positionTop: "Top center",
       retentionLabel: "Keep the conversation after closing",
       retentionHint: "Same tab and site, counted from your last message; selecting text starts a new one",
       retention10: "10 min",
