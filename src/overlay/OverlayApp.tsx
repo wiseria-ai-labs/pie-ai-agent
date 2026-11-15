@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import Markdown from "@/sidepanel/components/Markdown";
+import { ModelPickerBody, ModelPickerTrigger } from "@/sidepanel/components/ModelPicker";
 import { getLocale, useI18n, useT } from "@/lib/i18n";
 import type { DictKey } from "@/lib/i18n";
 import { getConfig } from "@/lib/idb/config-store";
@@ -25,6 +26,7 @@ import { MEMORY_SEND_WAIT_MS, shouldReuseMemoryPick } from "@/lib/overlay/memory
 import { MemoryEventRow, MemoryUsedChip } from "@/sidepanel/components/MemoryRows";
 import { useStickToBottom } from "@/sidepanel/hooks/useStickToBottom";
 import { useOverlaySession } from "./useOverlaySession";
+import { useModelSelection } from "./useModelSelection";
 
 /** Below this the composer never collapses — matches the host's min height. */
 const MAX_TEXTAREA_LINES = 3;
@@ -91,6 +93,7 @@ export default function OverlayApp() {
   const [translateTarget, setTranslateTarget] = useState("en");
   const [langOpen, setLangOpen] = useState(false);
   const [recentStyles, setRecentStyles] = useState<string[]>([]);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendRef = useRef<() => void>(() => {});
@@ -101,6 +104,7 @@ export default function OverlayApp() {
   const intent: OverlayIntent = openState?.intent ?? urlIntent;
 
   const session = useOverlaySession({ sessionId, tabId, runningElsewhere });
+  const model = useModelSelection(sessionId);
   const { messages, streaming, streamingText, streamingThinking } = session;
 
   // ── Memory prefetch (spec §5.5) ───────────────────────────────────────────
@@ -361,6 +365,7 @@ export default function OverlayApp() {
       setInput("");
       setSelectionConsumed(true);
       setNotice(null);
+      setModelPickerOpen(false);
     }
   }, [input, rewriteMode, translateMode, selection, selectionConsumed, dispatch]);
 
@@ -412,6 +417,10 @@ export default function OverlayApp() {
 
   const openMemorySettings = useCallback(() => {
     void chrome.runtime.sendMessage({ type: "overlay:open-memory-settings", tabId });
+  }, [tabId]);
+
+  const openModelSettings = useCallback(() => {
+    void chrome.runtime.sendMessage({ type: "overlay:open-model-settings", tabId });
   }, [tabId]);
 
   const newChat = useCallback(() => {
@@ -560,6 +569,37 @@ export default function OverlayApp() {
       >
         ×
       </button>
+    </div>
+  ) : null;
+
+  // Provider · model — same selection the side panel's composer shows. Rendered
+  // in flow (not as a popover) because the card clips whatever leaves it.
+  const modelRow = (
+    <div className="flex items-center gap-1" data-model-row>
+      <ModelPickerTrigger
+        instances={model.instances}
+        currentInstanceId={model.currentInstanceId}
+        currentModel={model.currentModel}
+        locked={busy}
+        open={modelPickerOpen}
+        onToggle={() => setModelPickerOpen((v) => !v)}
+        className="rounded-chip hover:bg-field"
+      />
+    </div>
+  );
+
+  const modelPanel = modelPickerOpen ? (
+    <div className="flex flex-col overflow-hidden rounded-[10px] border border-line bg-surface" data-model-panel>
+      <ModelPickerBody
+        instances={model.instances}
+        currentInstanceId={model.currentInstanceId}
+        currentModel={model.currentModel}
+        onSelect={(id, m) => void model.select(id, m)}
+        onManage={openModelSettings}
+        onRefreshModels={(id) => void model.refreshModels(id)}
+        isOpen={modelPickerOpen}
+        onClose={() => setModelPickerOpen(false)}
+      />
     </div>
   ) : null;
 
@@ -724,6 +764,7 @@ export default function OverlayApp() {
         )}
 
         <div className={`flex shrink-0 flex-col gap-2 px-3 pb-2 pt-2.5 ${chat ? "border-t border-line" : ""}`}>
+          {modelPanel}
           {selectionRow}
           {actionRow}
           <div className="flex items-end gap-2 rounded-[12px] border border-line bg-field py-[5px] pl-2.5 pr-[5px] focus-within:border-fg-3">
@@ -764,6 +805,7 @@ export default function OverlayApp() {
             </button>
           </div>
           <div className="flex items-center gap-2 px-1 text-[11px] text-fg-3">
+            {modelRow}
             {notice && <span className="truncate text-warning">{notice}</span>}
             <span className="flex-1" />
             <span className="shrink-0">{chat ? t("overlay.ui.hintsChat") : t("overlay.ui.hints")}</span>

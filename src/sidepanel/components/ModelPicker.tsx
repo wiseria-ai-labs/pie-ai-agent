@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type RefObject } from "react";
 import { Popover } from "./ui/Popover";
 import { useAnchorRect, viewportSize } from "./ui/useAnchorRect";
 import { useT, providerDisplayName } from "@/lib/i18n";
@@ -13,16 +13,21 @@ import { consumptionDots } from "@/lib/managed-format";
 import type { ModelInfo } from "@/lib/managed-auth";
 import { onStoreChange } from "@/lib/store-bus";
 
-interface Props {
+/** Everything the picker needs except where it renders. Shared by the side
+ *  panel's popover picker and the overlay's in-flow one. */
+export interface ModelPickerSelectionProps {
   instances: DecryptedInstance[];
   currentInstanceId: string | null;
   currentModel: string | null;
-  /** task in flight — picker is locked */
-  locked: boolean;
   onSelect: (instanceId: string, model: string) => void;
   onManage?: () => void;
   /** lazy provider (openrouter) first-expand fetch of /v1/models */
   onRefreshModels?: (instanceId: string) => void;
+}
+
+interface Props extends ModelPickerSelectionProps {
+  /** task in flight — picker is locked */
+  locked: boolean;
 }
 
 function shortModel(modelId: string): string {
@@ -99,11 +104,73 @@ export function computePopoverCoords(
   return { left, top: rect.bottom + GAP };
 }
 
-export default function ModelPicker(props: Props) {
+/** The chip that shows the current provider · model and toggles the list. */
+export function ModelPickerTrigger({
+  instances,
+  currentInstanceId,
+  currentModel,
+  locked,
+  open,
+  onToggle,
+  triggerRef,
+  className = "",
+}: Pick<ModelPickerSelectionProps, "instances" | "currentInstanceId" | "currentModel"> & {
+  locked: boolean;
+  open: boolean;
+  onToggle: () => void;
+  triggerRef?: RefObject<HTMLButtonElement | null>;
+  className?: string;
+}) {
   const t = useT();
-  const [open, setOpen] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(props.currentInstanceId);
+  const current = instances.find((i) => i.id === currentInstanceId) ?? null;
+  return (
+    <button
+      ref={triggerRef}
+      data-testid="model-picker"
+      onClick={() => !locked && onToggle()}
+      disabled={locked}
+      className={`flex max-w-full items-center gap-1.5 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50 ${className}`}
+      aria-label={current ? `${providerName(current, t)} ${currentModel ?? ""}` : t("modelPicker.none")}
+      aria-expanded={open}
+      title={current ? `${providerName(current, t)} · ${displayModel(current, currentModel)}` : undefined}
+    >
+      {current && <ProviderIcon provider={current.provider} size={16} className="shrink-0 text-accent" name={providerName(current, t)} />}
+      <span className="min-w-0 truncate font-mono">
+        {current ? `${providerName(current, t)} · ${displayModel(current, currentModel)}` : t("modelPicker.none")}
+      </span>
+      {locked ? (
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden className="text-fg-3">
+          <path d="M3 5V3.5C3 2.4 3.9 1.5 5 1.5C6.1 1.5 7 2.4 7 3.5V5M2.5 5H7.5V8.5H2.5V5Z" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden className="text-fg-3" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s ease" }}>
+          <path d="M3.5 5.5L7 9L10.5 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+/** The provider list itself. `isOpen` drives the managed SWR refresh; the
+ *  accordion/search state lives here so both renderers behave the same. */
+export function ModelPickerBody({
+  instances,
+  currentInstanceId,
+  currentModel,
+  onSelect,
+  onManage,
+  onRefreshModels,
+  isOpen,
+  onClose = () => {},
+}: ModelPickerSelectionProps & { isOpen: boolean; onClose?: () => void }) {
+  const t = useT();
+  const [expandedId, setExpandedId] = useState<string | null>(currentInstanceId);
   const [query, setQuery] = useState("");
+  // The list may arrive after this body mounts (the overlay loads instances
+  // async): expand the current provider once it is known.
+  useEffect(() => {
+    if (expandedId === null && currentInstanceId) setExpandedId(currentInstanceId);
+  }, [currentInstanceId, expandedId]);
   // managed entitlement 缓存（进程内 Map）更新不会自动触发重渲染；订阅 store-bus
   // 的 config 变更（key 前缀 managed_entitlement_）→ bump 版本号触发重读内存。
   const [, bumpEntVersion] = useState(0);
@@ -117,11 +184,93 @@ export default function ModelPicker(props: Props) {
   // 覆盖初始展开（当前 instance 即 managed）与 toggle 展开两种入口；后端阵容变更
   // 下次打开/展开自动同步。
   useEffect(() => {
-    if (!open || !expandedId) return;
-    const inst = props.instances.find((i) => i.id === expandedId);
-    if (inst?.provider === "managed") props.onRefreshModels?.(expandedId);
+    if (!isOpen || !expandedId) return;
+    const inst = instances.find((i) => i.id === expandedId);
+    if (inst?.provider === "managed") onRefreshModels?.(expandedId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, expandedId]);
+  }, [isOpen, expandedId]);
+  // Reset the in-provider search when switching the expanded provider or closing.
+  useEffect(() => {
+    setQuery("");
+  }, [expandedId, isOpen]);
+
+  function toggleProvider(inst: DecryptedInstance) {
+    const next = expandedId === inst.id ? null : inst.id;
+    setExpandedId(next);
+    if (next) {
+      // 仅内置「懒加载」provider（清单只在 /v1/models 后面）在首次展开时自动拉一次；
+      // 自定义 provider 的刷新入口在向导/设置页，不在 picker 里自动发请求。
+      // managed 的 SWR 刷新由上方 useEffect 统一管（覆盖初始展开），不走这里。
+      if (isLazyModelProvider(inst.provider) && (inst.fetchedModels?.length ?? 0) === 0) {
+        onRefreshModels?.(inst.id);
+      }
+    }
+  }
+
+  return (
+    <>
+      <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
+        <span className="font-mono text-[10px] text-fg-3">{instances.length} {t("modelPicker.providersSuffix")}</span>
+      </div>
+      <div className="flex max-h-[360px] flex-col overflow-y-auto">
+        {instances.map((inst) => {
+          const isExpanded = expandedId === inst.id;
+          const isCurrentProvider = inst.id === currentInstanceId;
+          return (
+            <div key={inst.id} className={isExpanded ? "bg-field" : ""}>
+              <button
+                data-testid={`model-picker-row-${inst.id}`}
+                onClick={() => toggleProvider(inst)}
+                className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-field"
+              >
+                <ProviderIcon provider={inst.provider} size={22} className={isCurrentProvider ? "text-accent" : "text-fg-2"} name={providerName(inst, t)} />
+                <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-fg-1">{providerName(inst, t)}</span>
+                {!isExpanded && isCurrentProvider && currentModel && (
+                  <span className="font-mono text-[10px] text-accent">{displayModel(inst, currentModel)}</span>
+                )}
+                <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden style={{ transform: isExpanded ? "rotate(90deg)" : "none", flexShrink: 0, transition: "transform 0.2s ease" }}>
+                  <path d="M3 2L5 4L3 6" fill="none" stroke="#8A929E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateRows: isExpanded ? "1fr" : "0fr",
+                  transition: "grid-template-rows 0.22s ease",
+                }}
+              >
+                <div style={{ overflow: "hidden" }}>
+                  <ExpandedModels
+                    inst={inst}
+                    isExpanded={isExpanded}
+                    query={query}
+                    setQuery={setQuery}
+                    currentModel={isCurrentProvider ? currentModel : null}
+                    onPick={(model) => { onSelect(inst.id, model); onClose(); }}
+                    placeholder={`${providerName(inst, t)} ${t("modelPicker.searchSuffix")}`}
+                    emptyText={t("modelPicker.noModels")}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {onManage && (
+        <button
+          onClick={() => { onClose(); onManage?.(); }}
+          className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 transition-colors hover:bg-field"
+        >
+          <span>{t("modelPicker.manage")}</span>
+        </button>
+      )}
+    </>
+  );
+}
+
+export default function ModelPicker(props: Props) {
+  const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -148,54 +297,19 @@ export default function ModelPicker(props: Props) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  // Reset the in-provider search when switching the expanded provider or closing.
-  useEffect(() => {
-    setQuery("");
-  }, [expandedId, open]);
-
-  const current = props.instances.find((i) => i.id === props.currentInstanceId) ?? null;
-
-  function toggleProvider(inst: DecryptedInstance) {
-    const next = expandedId === inst.id ? null : inst.id;
-    setExpandedId(next);
-    if (next) {
-      // 仅内置「懒加载」provider（清单只在 /v1/models 后面）在首次展开时自动拉一次；
-      // 自定义 provider 的刷新入口在向导/设置页，不在 picker 里自动发请求。
-      // managed 的 SWR 刷新由上方 useEffect 统一管（覆盖初始展开），不走这里。
-      if (isLazyModelProvider(inst.provider) && (inst.fetchedModels?.length ?? 0) === 0) {
-        props.onRefreshModels?.(inst.id);
-      }
-    }
-  }
-
   return (
     // min-w-0 + truncate: in a narrow composer (small panel / large interface
     // scale) the label ellipsizes on one line instead of wrapping the toolbar.
     <div ref={wrapRef} className="relative min-w-0">
-      <button
-        ref={triggerRef}
-        data-testid="model-picker"
-        onClick={() => !props.locked && setOpen(!open)}
-        disabled={props.locked}
-        className="flex max-w-full items-center gap-1.5 px-1.5 py-1 text-[12px] text-fg-2 disabled:opacity-50"
-        aria-label={current ? `${providerName(current, t)} ${props.currentModel ?? ""}` : t("modelPicker.none")}
-        title={current ? `${providerName(current, t)} · ${displayModel(current, props.currentModel)}` : undefined}
-      >
-        {current && <ProviderIcon provider={current.provider} size={16} className="shrink-0 text-accent" name={providerName(current, t)} />}
-        <span className="min-w-0 truncate font-mono">
-          {current ? `${providerName(current, t)} · ${displayModel(current, props.currentModel)}` : t("modelPicker.none")}
-        </span>
-        {props.locked ? (
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden className="text-fg-3">
-            <path d="M3 5V3.5C3 2.4 3.9 1.5 5 1.5C6.1 1.5 7 2.4 7 3.5V5M2.5 5H7.5V8.5H2.5V5Z" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" />
-          </svg>
-        ) : (
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden className="text-fg-3" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s ease" }}>
-            <path d="M3.5 5.5L7 9L10.5 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </button>
-
+      <ModelPickerTrigger
+        instances={props.instances}
+        currentInstanceId={props.currentInstanceId}
+        currentModel={props.currentModel}
+        locked={props.locked}
+        open={open}
+        onToggle={() => setOpen(!open)}
+        triggerRef={triggerRef}
+      />
       <Popover
         open={open && !!coords}
         popoverRef={popoverRef}
@@ -204,62 +318,16 @@ export default function ModelPicker(props: Props) {
         style={{ left: coords?.left, top: coords?.top, bottom: coords?.bottom }}
         className="fixed z-[100] w-[300px] max-w-[calc(100%-1.5rem)] rounded-card border border-line bg-surface shadow-pop"
       >
-          <div className="flex items-baseline justify-between px-3.5 pt-2.5 pb-1.5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-3">{t("modelPicker.title")}</span>
-            <span className="font-mono text-[10px] text-fg-3">{props.instances.length} {t("modelPicker.providersSuffix")}</span>
-          </div>
-          <div className="flex max-h-[360px] flex-col overflow-y-auto">
-            {props.instances.map((inst) => {
-              const isExpanded = expandedId === inst.id;
-              const isCurrentProvider = inst.id === props.currentInstanceId;
-              return (
-                <div key={inst.id} className={isExpanded ? "bg-field" : ""}>
-                  <button
-                    data-testid={`model-picker-row-${inst.id}`}
-                    onClick={() => toggleProvider(inst)}
-                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-field"
-                  >
-                    <ProviderIcon provider={inst.provider} size={22} className={isCurrentProvider ? "text-accent" : "text-fg-2"} name={providerName(inst, t)} />
-                    <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-fg-1">{providerName(inst, t)}</span>
-                    {!isExpanded && isCurrentProvider && props.currentModel && (
-                      <span className="font-mono text-[10px] text-accent">{displayModel(inst, props.currentModel)}</span>
-                    )}
-                    <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden style={{ transform: isExpanded ? "rotate(90deg)" : "none", flexShrink: 0, transition: "transform 0.2s ease" }}>
-                      <path d="M3 2L5 4L3 6" fill="none" stroke="#8A929E" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </button>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateRows: isExpanded ? "1fr" : "0fr",
-                      transition: "grid-template-rows 0.22s ease",
-                    }}
-                  >
-                    <div style={{ overflow: "hidden" }}>
-                      <ExpandedModels
-                        inst={inst}
-                        isExpanded={isExpanded}
-                        query={query}
-                        setQuery={setQuery}
-                        currentModel={isCurrentProvider ? props.currentModel : null}
-                        onPick={(model) => { props.onSelect(inst.id, model); setOpen(false); }}
-                        placeholder={`${providerName(inst, t)} ${t("modelPicker.searchSuffix")}`}
-                        emptyText={t("modelPicker.noModels")}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {props.onManage && (
-            <button
-              onClick={() => { setOpen(false); props.onManage?.(); }}
-              className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2 text-left text-[11px] text-fg-2 transition-colors hover:bg-field"
-            >
-              <span>{t("modelPicker.manage")}</span>
-            </button>
-          )}
+        <ModelPickerBody
+          instances={props.instances}
+          currentInstanceId={props.currentInstanceId}
+          currentModel={props.currentModel}
+          onSelect={props.onSelect}
+          onManage={props.onManage}
+          onRefreshModels={props.onRefreshModels}
+          isOpen={open}
+          onClose={() => setOpen(false)}
+        />
       </Popover>
     </div>
   );

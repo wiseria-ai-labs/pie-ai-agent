@@ -209,11 +209,12 @@ export default function App() {
         setView("agent");
         return;
       }
-      // 2.0 overlay → settings page ("不对" on a memory row).
+      // 2.0 overlay → settings page ("不对" on a memory row, "管理模型" in the
+      // model picker).
       const deeplinkPage = parseSettingsDeeplink(val);
-      if (deeplinkPage === "memory") {
+      if (deeplinkPage === "memory" || deeplinkPage === "models") {
         void chrome.storage.session.remove(DEEPLINK_KEY);
-        openSettings("memory");
+        openSettings(deeplinkPage);
         return;
       }
     };

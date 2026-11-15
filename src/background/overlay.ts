@@ -633,8 +633,8 @@ export async function ensurePanelForOverlayRequest(sessionId: string): Promise<b
   return true;
 }
 
-/** Overlay "不对" → the side panel's memory settings page. */
-export async function openSettingsPageInPanel(page: "memory"): Promise<void> {
+/** Overlay "不对" / "管理模型" → that settings page in the side panel. */
+export async function openSettingsPageInPanel(page: "memory" | "models"): Promise<void> {
   await stashDeeplink(settingsDeeplink(page));
   const tab = await queryActiveHostTab().catch(() => undefined);
   if (typeof tab?.id === "number") openPanel({ tabId: tab.id }, "overlay-settings");

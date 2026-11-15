@@ -1157,6 +1157,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
+  if (message?.type === "overlay:open-model-settings") {
+    void openSettingsPageInPanel("models").catch((e) => {
+      console.warn("[sw] overlay open model settings failed:", e);
+    });
+    return;
+  }
+
   if (message?.type === "overlay:to-panel") {
     const m = message as { sessionId?: string; tabId?: number };
     const tabId = typeof m.tabId === "number" ? m.tabId : sender.tab?.id;
