@@ -40,12 +40,20 @@ export interface PanelRequestMap {
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 
+export interface PanelRequestOptions {
+  timeoutMs?: number;
+  /** Abort the wait (user pressed Stop): drop the pending request and dismiss the card. */
+  signal?: AbortSignal;
+}
+
 interface PendingRequest {
   sessionId: string;
   kind: PanelRequestKind;
   resolve: (data: unknown) => void;
   reject: (e: Error) => void;
   timer?: ReturnType<typeof setTimeout>;
+  /** Detach the abort listener once settled (any path). */
+  cleanup?: () => void;
 }
 
 const portsBySession = new Map<string, chrome.runtime.Port>();
@@ -54,7 +62,10 @@ const pendingByRequestId = new Map<string, PendingRequest>();
 /** Test-only：清空模块状态。 */
 export function __resetPanelRequestState(): void {
   portsBySession.clear();
-  for (const p of pendingByRequestId.values()) if (p.timer) clearTimeout(p.timer);
+  for (const p of pendingByRequestId.values()) {
+    if (p.timer) clearTimeout(p.timer);
+    p.cleanup?.();
+  }
   pendingByRequestId.clear();
 }
 
@@ -68,17 +79,27 @@ export function unregisterPanelPort(sessionId: string): void {
   for (const [reqId, p] of pendingByRequestId.entries()) {
     if (p.sessionId !== sessionId) continue;
     if (p.timer) clearTimeout(p.timer);
+    p.cleanup?.();
     pendingByRequestId.delete(reqId);
     p.reject(new Error(`panel-request cancelled (panel closed) for session ${sessionId}`));
   }
+}
+
+function abortError(kind: PanelRequestKind): Error {
+  const err = new Error(`panel-request "${kind}" aborted`);
+  err.name = "AbortError";
+  return err;
 }
 
 export async function requestFromPanel<K extends PanelRequestKind>(
   sessionId: string,
   kind: K,
   payload: PanelRequestMap[K]["req"],
-  opts?: { timeoutMs?: number },
+  opts?: PanelRequestOptions,
 ): Promise<PanelRequestMap[K]["res"]> {
+  const signal = opts?.signal;
+  if (signal?.aborted) throw abortError(kind);
+
   const port = portsBySession.get(sessionId);
   if (!port) {
     throw new Error(`Cannot send panel-request "${kind}": no sidepanel port for session ${sessionId}`);
@@ -88,18 +109,33 @@ export async function requestFromPanel<K extends PanelRequestKind>(
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (opts?.timeoutMs != null) {
       timer = setTimeout(() => {
-        pendingByRequestId.delete(requestId);
+        if (!pendingByRequestId.delete(requestId)) return;
+        cleanup();
         const p = portsBySession.get(sessionId);
         if (p) p.postMessage({ type: "panel-request-timeout", sessionId, requestId });
         reject(new Error(`panel-request "${kind}" timed out`));
       }, opts.timeoutMs);
     }
+
+    const onAbort = () => {
+      if (!pendingByRequestId.delete(requestId)) return;
+      if (timer) clearTimeout(timer);
+      cleanup();
+      // Dismiss the card — the turn is over, nobody should answer it.
+      const p = portsBySession.get(sessionId);
+      if (p) p.postMessage({ type: "panel-request-resolved", sessionId, requestId });
+      reject(abortError(kind));
+    };
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+
     pendingByRequestId.set(requestId, {
       sessionId,
       kind,
       resolve: resolve as (data: unknown) => void,
       reject,
       timer,
+      cleanup,
     });
     port.postMessage({ type: "panel-request", sessionId, requestId, kind, payload });
   });
@@ -113,6 +149,7 @@ export function handlePanelResponse(
   const pending = pendingByRequestId.get(requestId);
   if (!pending) return;
   if (pending.timer) clearTimeout(pending.timer);
+  pending.cleanup?.();
   pendingByRequestId.delete(requestId);
   if (response.ok) pending.resolve(response.data);
   else pending.reject(new Error(response.reason));
@@ -130,6 +167,7 @@ export function resolvePendingByKind<K extends PanelRequestKind>(
   for (const [reqId, p] of pendingByRequestId.entries()) {
     if (p.kind !== kind) continue;
     if (p.timer) clearTimeout(p.timer);
+    p.cleanup?.();
     pendingByRequestId.delete(reqId);
     const port = portsBySession.get(p.sessionId);
     if (port) port.postMessage({ type: "panel-request-resolved", sessionId: p.sessionId, requestId: reqId });

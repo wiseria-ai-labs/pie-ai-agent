@@ -557,4 +557,49 @@ describe("run_skill_script abort", () => {
     expect(r.success).toBe(false);
     expect(r.error).toMatch(/aborted/);
   });
+
+  it("abort while waiting on skill-run-confirm returns aborted semantics (not no-user-present) and skips run/record", async () => {
+    const ac = new AbortController();
+    const record = vi.fn(async () => {});
+    const runOnDaemon = vi.fn(async (): Promise<RunSkillScriptOutcome> => ({
+      ok: true,
+      result: { output: "should not run" },
+    }));
+    const confirmSkillRun = makeSessionSkillConfirm({
+      isApproved: async () => false,
+      requestConfirm: async () => {
+        ac.abort();
+        const err = new Error('panel-request "skill-run-confirm" aborted');
+        err.name = "AbortError";
+        throw err;
+      },
+      record,
+    });
+    const { tool } = makeTool({
+      getSource: () =>
+        fakeSource([
+          {
+            id: "disk-tool",
+            name: "disk-tool",
+            description: "d",
+            builtIn: false,
+            origin: "disk",
+            files: ["SKILL.md", "scripts/run.sh"],
+            runnableScripts: ["scripts/run.sh"],
+            createdAt: 0,
+          },
+        ]),
+      runOnDaemon,
+      confirmSkillRun,
+    });
+    const r = await tool.handler({ skillId: "disk-tool", entry: "scripts/run.sh" }, {
+      sessionId: SID,
+      signal: ac.signal,
+    } as never);
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/aborted/i);
+    expect(r.error).not.toMatch(/no user present/i);
+    expect(runOnDaemon).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+  });
 });

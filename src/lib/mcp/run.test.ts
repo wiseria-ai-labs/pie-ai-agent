@@ -1,5 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMcpRun, type McpRunDeps } from "./run";
+import { buildMcpTools } from "./agent-tools";
+import {
+  __resetPanelRequestState,
+  handlePanelResponse,
+  registerPanelPort,
+} from "../panel-request";
+import { _resetForTests } from "../idb/db";
 import type { Tool } from "../agent/types";
 import type { McpServerConfig } from "./types";
 
@@ -147,5 +154,59 @@ describe("createMcpRun", () => {
     // Activation registers the tools; the load_tools handler separately adds
     // the group id to the active set.
     expect(run.tools().map((t) => t.name)).toEqual(["mcp_docs_read"]);
+  });
+
+  describe("mcp-tool-confirm abort wiring", () => {
+    beforeEach(async () => {
+      await _resetForTests();
+      __resetPanelRequestState();
+    });
+
+    it("abort while mcp-tool-confirm card is pending rejects with AbortError and dismisses the card", async () => {
+      const controller = new AbortController();
+      const port = { sent: [] as any[], postMessage(m: any) { this.sent.push(m); } };
+      registerPanelPort("s-mcp", port as unknown as chrome.runtime.Port);
+      const callTool = vi.fn(async () => ({ content: [{ type: "text" as const, text: "ran" }] }));
+      const liveServer = {
+        serverId: "id-docs",
+        name: "Server docs",
+        slug: "docs",
+        client: { callTool } as never,
+        tools: [{ name: "write_note", description: "write", inputSchema: { type: "object", properties: {} } }],
+      };
+
+      const run = await createMcpRun({
+        sessionId: "s-mcp",
+        signal: controller.signal,
+        isHeadless: false,
+        activeToolGroups: new Set(["core", "mcp:docs"]),
+        deps: {
+          listServers: async () => [cfg("docs")],
+          activate: async (_c, mcpDeps) => {
+            const built = buildMcpTools(liveServer, mcpDeps);
+            return { ok: true, tools: built.tools, skipped: built.skipped, message: "ok" };
+          },
+        },
+      });
+
+      const tool = run.tools()[0]!;
+      const pending = tool.handler({}, { sessionId: "s-mcp", tabId: 1 });
+
+      await vi.waitFor(() =>
+        expect(port.sent.some((m) => m.type === "panel-request" && m.kind === "mcp-tool-confirm")).toBe(true),
+      );
+      const reqId = port.sent.find((m) => m.type === "panel-request").requestId;
+
+      controller.abort();
+      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      expect(
+        port.sent.some((m) => m.type === "panel-request-resolved" && m.requestId === reqId),
+      ).toBe(true);
+      expect(callTool).not.toHaveBeenCalled();
+
+      // Late approval after abort is a no-op.
+      handlePanelResponse(reqId, { ok: true, data: true });
+      expect(callTool).not.toHaveBeenCalled();
+    });
   });
 });

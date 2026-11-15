@@ -226,7 +226,10 @@ export function buildRunSkillScriptTool(deps: SkillScriptDeps): Tool {
           entry,
           args: finalArgs,
         });
-      } catch {
+      } catch (e) {
+        if ((e instanceof Error && e.name === "AbortError") || ctx.signal?.aborted) {
+          return { success: false, error: "run_skill_script aborted." };
+        }
         return {
           success: false,
           error:

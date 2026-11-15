@@ -20,8 +20,19 @@ describe("local-file-request thin adapter", () => {
     const result = await requestLocalFileFromPanel("S1");
     expect(requestFromPanel).toHaveBeenCalledWith("S1", "local-file", {}, {
       timeoutMs: REQUEST_TIMEOUT_MS,
+      signal: undefined,
     });
     expect(result).toMatchObject({ name: "test.txt" });
+  });
+
+  it("forwards opts.signal to requestFromPanel", async () => {
+    const { requestFromPanel } = await import("./panel-request");
+    const controller = new AbortController();
+    await requestLocalFileFromPanel("S1", { signal: controller.signal });
+    expect(requestFromPanel).toHaveBeenCalledWith("S1", "local-file", {}, {
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      signal: controller.signal,
+    });
   });
 
   it("REQUEST_TIMEOUT_MS is 120 000 ms", () => {
