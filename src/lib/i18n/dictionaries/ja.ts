@@ -45,6 +45,14 @@ export const jaDict = {
     skills: "スキル",
   },
   settings: {
+    account: {
+      signIn: "Pie アカウントにサインイン",
+      signInCaption: "公式モデル · メモリ同期 · Deep Research",
+      signOut: "サインアウト",
+      signOutNote: "サインアウトするとこの端末のメモリのローカルミラーが消去され、このブラウザからアカウントが削除されます。チャット履歴は残ります。",
+      signOutConfirm: "Pie からサインアウトしますか？この端末のローカルメモリは消去されます。",
+      signOutFailed: "サインアウトに失敗しました",
+    },
     language: {
       sectionTitle: "言語",
       label: "UI 言語",
@@ -78,6 +86,7 @@ export const jaDict = {
     title: "設定",
     forgetConfirm: "この設定を削除しますか？",
     nav: {
+      account: "アカウント",
       models: "モデル設定",
       bridge: "ローカル連携",
       search: "スマート検索",
@@ -980,6 +989,24 @@ export const jaDict = {
     },
   },
   managed: {
+    login: {
+      or: "または",
+      emailLabel: "メールアドレス",
+      emailPlaceholder: "you@example.com",
+      sendCode: "コードを送信",
+      codeSentTo: "コードを {email} に送信しました",
+      changeEmail: "メールを変更",
+      codeLabel: "6桁のコード",
+      verify: "確認",
+      resend: "コードを再送",
+      resendIn: "{seconds}秒後に再送",
+      errInvalidEmail: "有効なメールアドレスを入力してください。",
+      errInvalidCode: "コードが正しくありません。もう一度お試しください。",
+      errCodeExpired: "コードの有効期限が切れました。再送してください。",
+      errTooManyAttempts: "試行回数が多すぎます。{seconds}秒後にお試しください。",
+      errMailSendFailed: "メールを送信できませんでした。もう一度お試しください。",
+      errGeneric: "問題が発生しました。もう一度お試しください。",
+    },
     models: {
       consumption: "消費",
     },
@@ -1059,7 +1086,7 @@ export const jaDict = {
       dunningTitle: "支払い失敗",
       dunningBody: "続けるには支払い方法を更新してください。",
       dunningAction: "支払いを更新",
-      sessionExpired: "セッションの有効期限が切れました。設定 → 構成 から再度ログインしてください。",
+      sessionExpired: "セッションの有効期限が切れました。設定 → アカウント から再度ログインしてください。",
     },
   },
   browserData: {

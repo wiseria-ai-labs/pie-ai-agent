@@ -45,6 +45,14 @@ export const es419Dict = {
     skills: "Habilidades",
   },
   settings: {
+    account: {
+      signIn: "Inicia sesión en Pie",
+      signInCaption: "Modelos oficiales · sincronización de memoria · Deep Research",
+      signOut: "Cerrar sesión",
+      signOutNote: "Al cerrar sesión se borra la copia local de la memoria y se quita la cuenta de este navegador. El historial de chats se conserva.",
+      signOutConfirm: "¿Cerrar sesión en Pie? Se borrará la memoria local de este dispositivo.",
+      signOutFailed: "No se pudo cerrar sesión",
+    },
     language: {
       sectionTitle: "Idioma",
       label: "Idioma de la interfaz",
@@ -78,6 +86,7 @@ export const es419Dict = {
     title: "Configuración",
     forgetConfirm: "¿Olvidar esta configuración?",
     nav: {
+      account: "Cuenta",
       models: "Configuración de modelos",
       bridge: "Puente local",
       search: "Búsqueda inteligente",
@@ -982,6 +991,24 @@ export const es419Dict = {
     },
   },
   managed: {
+    login: {
+      or: "o",
+      emailLabel: "Correo electrónico",
+      emailPlaceholder: "tu@ejemplo.com",
+      sendCode: "Enviar código",
+      codeSentTo: "Código enviado a {email}",
+      changeEmail: "Cambiar correo",
+      codeLabel: "Código de 6 dígitos",
+      verify: "Verificar",
+      resend: "Reenviar código",
+      resendIn: "Reenviar en {seconds} s",
+      errInvalidEmail: "Introduce un correo válido.",
+      errInvalidCode: "El código no es correcto. Inténtalo de nuevo.",
+      errCodeExpired: "El código ha caducado. Envía uno nuevo.",
+      errTooManyAttempts: "Demasiados intentos. Inténtalo en {seconds} s.",
+      errMailSendFailed: "No se pudo enviar el correo. Inténtalo de nuevo.",
+      errGeneric: "Algo salió mal. Inténtalo de nuevo.",
+    },
     models: {
       consumption: "Uso",
     },
@@ -1061,7 +1088,7 @@ export const es419Dict = {
       dunningTitle: "Pago rechazado",
       dunningBody: "Actualiza tu método de pago para continuar.",
       dunningAction: "Actualizar pago",
-      sessionExpired: "Tu sesión expiró: vuelve a iniciar sesión en Ajustes → Configuraciones.",
+      sessionExpired: "Tu sesión expiró: vuelve a iniciar sesión en Ajustes → Cuenta.",
     },
   },
   browserData: {

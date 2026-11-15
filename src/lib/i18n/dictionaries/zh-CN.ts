@@ -45,6 +45,14 @@ export const zhCNDict = {
     skills: "技能",
   },
   settings: {
+    account: {
+      signIn: "登录 Pie 账号",
+      signInCaption: "官方模型 · 记忆同步 · Deep Research",
+      signOut: "退出登录",
+      signOutNote: "退出会清空本机记忆镜像并从此浏览器移除账号，会话历史保留。",
+      signOutConfirm: "退出 Pie 账号？本机记忆会被清空。",
+      signOutFailed: "退出失败",
+    },
     language: {
       sectionTitle: "语言",
       label: "界面语言",
@@ -77,6 +85,7 @@ export const zhCNDict = {
     title: "设置",
     forgetConfirm: "确认删除此配置？",
     nav: {
+      account: "账号",
       models: "模型配置",
       bridge: "本地打通",
       search: "智能搜索",
@@ -980,6 +989,24 @@ export const zhCNDict = {
     },
   },
   managed: {
+    login: {
+      or: "或",
+      emailLabel: "邮箱地址",
+      emailPlaceholder: "you@example.com",
+      sendCode: "发送验证码",
+      codeSentTo: "验证码已发送至 {email}",
+      changeEmail: "换邮箱",
+      codeLabel: "6 位验证码",
+      verify: "验证",
+      resend: "重新发送",
+      resendIn: "{seconds} 秒后可重发",
+      errInvalidEmail: "请输入有效的邮箱地址。",
+      errInvalidCode: "验证码不正确，请重试。",
+      errCodeExpired: "验证码已过期，请重新发送。",
+      errTooManyAttempts: "尝试过于频繁，请 {seconds} 秒后再试。",
+      errMailSendFailed: "邮件发送失败，请重试。",
+      errGeneric: "出错了，请重试。",
+    },
     models: {
       consumption: "消耗",
     },
@@ -1059,7 +1086,7 @@ export const zhCNDict = {
       dunningTitle: "支付失败",
       dunningBody: "请更新支付方式以继续。",
       dunningAction: "更新支付",
-      sessionExpired: "登录已过期——请在 设置 → 配置 重新登录。",
+      sessionExpired: "登录已过期——请在 设置 → 账号 重新登录。",
     },
   },
   browserData: {

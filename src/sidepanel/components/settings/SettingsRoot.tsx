@@ -18,9 +18,14 @@ import {
   Bookmark,
   Brain,
   PanelsTopLeft,
+  CircleUserRound,
 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
+import { getPieAccount, type PieAccount } from "@/lib/pie-account";
+import { getCachedEntitlement, getEntitlement } from "@/lib/managed-account";
+import type { Entitlement } from "@/lib/managed-auth";
+import { ManagedStatusPill } from "@/sidepanel/components/ManagedStatusPill";
 import { getSearchProviderStatus, ACTIVE_SEARCH_PROVIDER } from "@/lib/search-provider";
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import { getPanelMode, setPanelMode, PANEL_MODE_KEY } from "@/lib/panel-host/panel-mode";
@@ -244,6 +249,88 @@ function GroupLabel({ children }: { children: ReactNode }) {
   );
 }
 
+// Pie 账号卡（设置根页顶部独立一行，类似系统设置的 Apple ID 卡）。
+// 账号已从模型配置里独立，这里是它的入口：未登录 = 登录引导，已登录 = 邮箱 +
+// 订阅状态，点进二级页 account。
+function AccountCard({ onOpen }: { onOpen: () => void }) {
+  const t = useT();
+  const [account, setAccount] = useState<PieAccount | null | undefined>(undefined);
+  const [plan, setPlan] = useState<Entitlement["plan"] | null>(null);
+  // 每次实例/entitlement 缓存变更 bump 一次重读（store-bus 驱动跨上下文同步）。
+  const [nonce, setNonce] = useState(0);
+  // getEntitlement 自己会写 entitlement 缓存 → 又发一次 store-bus 配置事件。
+  // 记下已拉过的 apiKey，保证同一账号只向服务端拉一次，避免自激循环。
+  const fetchedFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const acct = await getPieAccount().catch(() => null);
+      if (!alive) return;
+      setAccount(acct);
+      if (!acct) {
+        setPlan(null);
+        fetchedFor.current = null;
+        return;
+      }
+      setPlan(getCachedEntitlement(acct.apiKey)?.plan ?? null);
+      if (fetchedFor.current === acct.apiKey) return;
+      fetchedFor.current = acct.apiKey;
+      try {
+        const ent = await getEntitlement(acct.apiKey);
+        if (alive) setPlan(ent.plan);
+      } catch {
+        /* 离线 / 接口失败：保留缓存态 */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [nonce]);
+
+  useEffect(() => {
+    const bump = () => setNonce((n) => n + 1);
+    const offs = [
+      onStoreChange("instances", bump),
+      onStoreChange("config", (c) => {
+        if (c.id?.startsWith("managed_entitlement_")) bump();
+      }),
+    ];
+    return () => offs.forEach((off) => off());
+  }, []);
+
+  const pill =
+    plan === "active" ? (
+      <ManagedStatusPill tone="success" label={t("managed.account.active")} />
+    ) : plan === "blocked" ? (
+      <ManagedStatusPill tone="warning" label={t("managed.account.paymentFailed")} />
+    ) : plan === "none" ? (
+      <ManagedStatusPill tone="neutral" label={t("managed.account.inactive")} />
+    ) : null;
+
+  return (
+    <button
+      type="button"
+      data-testid="settings-account-card"
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-3 text-left transition-colors hover:bg-field"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-field text-fg-2">
+        <CircleUserRound size={19} strokeWidth={1.75} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-[13px] font-medium text-fg-1">
+          {account ? account.email : t("settings.account.signIn")}
+        </span>
+        <span className="flex items-center gap-1.5 truncate text-[11px] text-fg-2">
+          {account ? pill : t("settings.account.signInCaption")}
+        </span>
+      </span>
+      <ChevronRight size={14} strokeWidth={1.75} className="shrink-0 text-fg-3" />
+    </button>
+  );
+}
+
 function ThemeSegmented({
   themeMode,
   onThemeModeChange,
@@ -359,8 +446,9 @@ export default function SettingsRoot({
 
   useEffect(() => {
     let alive = true;
+    // 账号已从模型配置里独立 —— 配置计数与列表都不算它。
     void listInstances().then((l) => {
-      if (alive) setConfigCount(l.length);
+      if (alive) setConfigCount(l.filter((i) => i.provider !== "managed").length);
     });
     void getSearchProviderStatus(ACTIVE_SEARCH_PROVIDER).then((s) => {
       if (alive) setSearchConfigured(s.configured);
@@ -414,6 +502,8 @@ export default function SettingsRoot({
 
   return (
     <div className="flex flex-col gap-5">
+      <AccountCard onOpen={() => onOpenPage("account")} />
+
       {/* Group 1 — basics (core subsystems + CDP) */}
       <div>
         <GroupLabel>{t("settings.nav.basics")}</GroupLabel>

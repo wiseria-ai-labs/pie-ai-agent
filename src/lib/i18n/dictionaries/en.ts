@@ -44,6 +44,14 @@ export const enDict = {
     skills: "Skills",
   },
   settings: {
+    account: {
+      signIn: "Sign in to Pie",
+      signInCaption: "Official models · memory sync · Deep Research",
+      signOut: "Sign out",
+      signOutNote: "Signing out clears this device's local memory mirror and removes the account from this browser. Chat history is kept.",
+      signOutConfirm: "Sign out of Pie? Local memory on this device will be cleared.",
+      signOutFailed: "Couldn't sign out",
+    },
     language: {
       sectionTitle: "Language",
       label: "UI language",
@@ -77,6 +85,7 @@ export const enDict = {
     title: "Settings",
     forgetConfirm: "Forget this config?",
     nav: {
+      account: "Account",
       models: "Model Configs",
       bridge: "Local Bridge",
       search: "Smart search",
@@ -991,6 +1000,24 @@ export const enDict = {
     },
   },
   managed: {
+    login: {
+      or: "or",
+      emailLabel: "Email address",
+      emailPlaceholder: "you@example.com",
+      sendCode: "Send code",
+      codeSentTo: "Code sent to {email}",
+      changeEmail: "Change email",
+      codeLabel: "6-digit code",
+      verify: "Verify",
+      resend: "Resend code",
+      resendIn: "Resend in {seconds}s",
+      errInvalidEmail: "Enter a valid email address.",
+      errInvalidCode: "That code isn't right — try again.",
+      errCodeExpired: "That code has expired. Send a new one.",
+      errTooManyAttempts: "Too many attempts. Try again in {seconds}s.",
+      errMailSendFailed: "Couldn't send the email. Please try again.",
+      errGeneric: "Something went wrong. Please try again.",
+    },
     models: {
       consumption: "Usage",
     },
@@ -1070,7 +1097,7 @@ export const enDict = {
       dunningTitle: "Payment failed",
       dunningBody: "Update your payment method to continue.",
       dunningAction: "Update payment",
-      sessionExpired: "Your session expired — sign in again from Settings → Configs.",
+      sessionExpired: "Your session expired — sign in again from Settings → Account.",
     },
   },
   browserData: {

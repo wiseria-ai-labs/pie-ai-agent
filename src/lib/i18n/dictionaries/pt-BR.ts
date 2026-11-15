@@ -45,6 +45,14 @@ export const ptBRDict = {
     skills: "Habilidades",
   },
   settings: {
+    account: {
+      signIn: "Entrar na conta Pie",
+      signInCaption: "Modelos oficiais · sincronização de memória · Deep Research",
+      signOut: "Sair",
+      signOutNote: "Sair apaga a cópia local da memória neste dispositivo e remove a conta deste navegador. O histórico de conversas é mantido.",
+      signOutConfirm: "Sair da conta Pie? A memória local deste dispositivo será apagada.",
+      signOutFailed: "Não foi possível sair",
+    },
     language: {
       sectionTitle: "Idioma",
       label: "Idioma da interface",
@@ -78,6 +86,7 @@ export const ptBRDict = {
     title: "Configurações",
     forgetConfirm: "Esquecer esta configuração?",
     nav: {
+      account: "Conta",
       models: "Configurações de modelo",
       bridge: "Ponte local",
       search: "Busca inteligente",
@@ -982,6 +991,24 @@ export const ptBRDict = {
     },
   },
   managed: {
+    login: {
+      or: "ou",
+      emailLabel: "Endereço de e-mail",
+      emailPlaceholder: "voce@exemplo.com",
+      sendCode: "Enviar código",
+      codeSentTo: "Código enviado para {email}",
+      changeEmail: "Trocar e-mail",
+      codeLabel: "Código de 6 dígitos",
+      verify: "Verificar",
+      resend: "Reenviar código",
+      resendIn: "Reenviar em {seconds}s",
+      errInvalidEmail: "Informe um e-mail válido.",
+      errInvalidCode: "Código incorreto. Tente de novo.",
+      errCodeExpired: "O código expirou. Envie um novo.",
+      errTooManyAttempts: "Tentativas demais. Tente em {seconds}s.",
+      errMailSendFailed: "Não foi possível enviar o e-mail. Tente de novo.",
+      errGeneric: "Algo deu errado. Tente de novo.",
+    },
     models: {
       consumption: "Uso",
     },
@@ -1061,7 +1088,7 @@ export const ptBRDict = {
       dunningTitle: "Pagamento recusado",
       dunningBody: "Atualize sua forma de pagamento para continuar.",
       dunningAction: "Atualizar pagamento",
-      sessionExpired: "Sua sessão expirou — entre novamente em Configurações → Configurações.",
+      sessionExpired: "Sua sessão expirou — entre novamente em Configurações → Conta.",
     },
   },
   browserData: {

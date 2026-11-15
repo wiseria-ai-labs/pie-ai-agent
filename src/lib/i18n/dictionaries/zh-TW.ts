@@ -45,6 +45,14 @@ export const zhTWDict = {
     skills: "技能",
   },
   settings: {
+    account: {
+      signIn: "登入 Pie 帳號",
+      signInCaption: "官方模型 · 記憶同步 · Deep Research",
+      signOut: "登出",
+      signOutNote: "登出會清空本機記憶鏡像並從此瀏覽器移除帳號，對話紀錄保留。",
+      signOutConfirm: "登出 Pie 帳號？本機記憶會被清空。",
+      signOutFailed: "登出失敗",
+    },
     language: {
       sectionTitle: "語言",
       label: "介面語言",
@@ -77,6 +85,7 @@ export const zhTWDict = {
     title: "設定",
     forgetConfirm: "確認刪除此設定檔？",
     nav: {
+      account: "帳號",
       models: "模型配置",
       bridge: "本地打通",
       search: "智慧搜尋",
@@ -980,6 +989,24 @@ export const zhTWDict = {
     },
   },
   managed: {
+    login: {
+      or: "或",
+      emailLabel: "電子郵件地址",
+      emailPlaceholder: "you@example.com",
+      sendCode: "傳送驗證碼",
+      codeSentTo: "驗證碼已寄至 {email}",
+      changeEmail: "換信箱",
+      codeLabel: "6 位數驗證碼",
+      verify: "驗證",
+      resend: "重新傳送",
+      resendIn: "{seconds} 秒後可重新傳送",
+      errInvalidEmail: "請輸入有效的電子郵件地址。",
+      errInvalidCode: "驗證碼不正確，請重試。",
+      errCodeExpired: "驗證碼已過期，請重新傳送。",
+      errTooManyAttempts: "嘗試過於頻繁，請 {seconds} 秒後再試。",
+      errMailSendFailed: "郵件傳送失敗，請重試。",
+      errGeneric: "發生錯誤，請重試。",
+    },
     models: {
       consumption: "消耗",
     },
@@ -1059,7 +1086,7 @@ export const zhTWDict = {
       dunningTitle: "付款失敗",
       dunningBody: "請更新付款方式以繼續。",
       dunningAction: "更新付款",
-      sessionExpired: "登入已過期——請至「設定 → 配置」重新登入。",
+      sessionExpired: "登入已過期——請至「設定 → 帳號」重新登入。",
     },
   },
   browserData: {

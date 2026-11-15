@@ -5,6 +5,7 @@ import SkillsList from "@/sidepanel/components/SkillsList";
 import SearchProviderSection from "@/sidepanel/components/SearchProviderSection";
 import SettingsRoot from "@/sidepanel/components/settings/SettingsRoot";
 import ModelsPage from "@/sidepanel/components/settings/pages/ModelsPage";
+import AccountPage from "@/sidepanel/components/settings/pages/AccountPage";
 import BridgePage from "@/sidepanel/components/settings/pages/BridgePage";
 import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
 import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
@@ -18,7 +19,8 @@ import { type ThemeMode, UI_SCALE_KEY, applyUiScale, parseUiScale } from "@/side
 import AutomationPanel from "@/sidepanel/components/automation/AutomationPanel";
 import { unreadInboxCount } from "@/lib/inbox/store";
 import ResearchPanel from "@/sidepanel/components/research/ResearchPanel";
-import { getInstance, listInstances } from "@/lib/instances";
+import { getInstance } from "@/lib/instances";
+import { getPieAccount } from "@/lib/pie-account";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
@@ -58,9 +60,6 @@ export default function App() {
   const [researchOpenId, setResearchOpenId] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
-  // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
-  // Settings → NewConfigWizard to open the managed-subscribe screen.
-  const [subscribeNonce, setSubscribeNonce] = useState(0);
   // Pie 2.0 §1 / F3 — unread automation entries drive the top-bar dot.
   const [unreadAutomation, setUnreadAutomation] = useState(0);
   // 2.0 overlay — one-line explanation shown when the overlay's shortcut had to
@@ -136,8 +135,7 @@ export default function App() {
   // visible so BYOK users can reach the paywall and the sample reports.
   const refreshResearchGate = useCallback(async () => {
     try {
-      const insts = await listInstances();
-      setHasManagedKey(insts.some((i) => i.provider === "managed" && Boolean(i.apiKey)));
+      setHasManagedKey(Boolean((await getPieAccount())?.apiKey));
     } catch {
       setHasManagedKey(false);
     }
@@ -176,8 +174,7 @@ export default function App() {
     const consume = (val: unknown) => {
       if (val === DEEPLINK_MANAGED_SUBSCRIBE) {
         void chrome.storage.session.remove(DEEPLINK_KEY);
-        openSettings("models");
-        setSubscribeNonce((n) => n + 1);
+        openSettings("account");
         return;
       }
       const researchId = parseResearchDetailDeeplink(val);
@@ -212,7 +209,7 @@ export default function App() {
       // 2.0 overlay → settings page ("不对" on a memory row, "管理模型" in the
       // model picker).
       const deeplinkPage = parseSettingsDeeplink(val);
-      if (deeplinkPage === "memory" || deeplinkPage === "models") {
+      if (deeplinkPage === "memory" || deeplinkPage === "models" || deeplinkPage === "account") {
         void chrome.storage.session.remove(DEEPLINK_KEY);
         openSettings(deeplinkPage);
         return;
@@ -525,10 +522,7 @@ export default function App() {
               setChatPrefill(markdown);
               setView("agent");
             }}
-            onOpenSubscribe={() => {
-              openSettings("models");
-              setSubscribeNonce((n) => n + 1);
-            }}
+            onOpenSubscribe={() => openSettings("account")}
           />
         ) : view === "skills" ? (
           <div className="flex-1 overflow-y-auto px-4 py-6" data-testid="skills-page">
@@ -549,8 +543,10 @@ export default function App() {
                   setSettingsPage(p);
                 }}
               />
+            ) : settingsPage === "account" ? (
+              <AccountPage />
             ) : settingsPage === "models" ? (
-              <ModelsPage openSubscribeNonce={subscribeNonce} />
+              <ModelsPage />
             ) : settingsPage === "bridge" ? (
               <BridgePage />
             ) : settingsPage === "search" ? (
@@ -558,10 +554,7 @@ export default function App() {
             ) : settingsPage === "memory" ? (
               <MemoryPage
                 onOpenSession={(id) => void handleOpenSessionFromSchedule(id)}
-                onOpenSubscribe={() => {
-                  openSettings("models");
-                  setSubscribeNonce((n) => n + 1);
-                }}
+                onOpenSubscribe={() => openSettings("account")}
               />
             ) : settingsPage === "uiLanguage" ? (
               <UiLanguagePage />

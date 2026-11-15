@@ -10,6 +10,7 @@ import { useT } from "@/lib/i18n";
 export type AppView = "agent" | "schedules" | "research" | "skills" | "settings";
 export type SettingsPage =
   | "root"
+  | "account"
   | "models"
   | "bridge"
   | "search"
@@ -25,6 +26,7 @@ export type SettingsPage =
 // Sub-page → top-bar title key. The language pages reuse their feature keys
 // instead of minting settings.nav.* duplicates.
 const SETTINGS_PAGE_TITLE_KEY = {
+  account: "settings.nav.account",
   models: "settings.nav.models",
   bridge: "settings.nav.bridge",
   search: "settings.nav.search",

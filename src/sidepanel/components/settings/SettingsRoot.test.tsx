@@ -64,6 +64,13 @@ describe("SettingsRoot", () => {
     expect(p.onOpenPage).toHaveBeenCalledWith("models");
   });
 
+  it("account card opens the account page", () => {
+    const p = make();
+    render(<SettingsRoot {...p} />);
+    fireEvent.click(screen.getByTestId("settings-account-card"));
+    expect(p.onOpenPage).toHaveBeenCalledWith("account");
+  });
+
   // CDP lives inline in the root page (no sub-page): a switch + a "?" popover.
   it("CDP row is an inline switch, not a drill-down", async () => {
     render(<SettingsRoot {...make()} />);
