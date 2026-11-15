@@ -1532,20 +1532,29 @@ describe("Chat — deep research shortcut", () => {
 });
 
 describe("Chat — 零配置空态", () => {
-  it("没有可选配置时给出去「账号」页的次入口", async () => {
-    vi.mocked(listInstances).mockResolvedValue([]);
+  // 登录即落盘后，「有 instance」不再等于「有可用配置」：plan none 的官方
+  // instance 会被 resolver 跳过（见 model-selection-resolver 的单测），所以
+  // hasConfig 必须由 resolveSelection 的返回值决定，而不是 instances 长度。
+  it("只有 plan none 的官方账号（无 BYOK）→ 零配置空态 + 账号入口", async () => {
+    const managed = { id: "inst-m", provider: "managed", nickname: "a@b.com", apiKey: "sk-none", createdAt: 0 };
+    vi.mocked(listInstances).mockResolvedValue([managed] as import("@/lib/instances").DecryptedInstance[]);
     vi.mocked(resolveSelection).mockResolvedValue(null);
+    const onOpenSettings = vi.fn();
     const onOpenAccountSettings = vi.fn();
     render(
       <Chat
         providerLabel={null}
-        onOpenSettings={vi.fn()}
+        onOpenSettings={onOpenSettings}
         onOpenAccountSettings={onOpenAccountSettings}
         session={makeSession()}
       />,
     );
-    const cta = await screen.findByTestId("chat-open-account");
-    fireEvent.click(cta);
+    const accountCta = await screen.findByTestId("chat-open-account");
+    expect(screen.queryByTestId("model-picker")).toBeNull(); // 不进 composer
+
+    fireEvent.click(accountCta);
     expect(onOpenAccountSettings).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId("chat-open-settings"));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 });

@@ -494,37 +494,36 @@ export default function Chat({
 
   async function checkConfig() {
     try {
-      const all = await listInstances();
-      if (all.length === 0) {
+      // 「有可用配置」= resolveSelection 解得出东西，而不是 instances 非空：
+      // 登录即落盘的 managed instance 在 plan none 时仍然存在，但没有任何可选
+      // 模型（resolver 会跳过它）。按数量判断会让这种账号进不了零配置空态，
+      // composer 反而显示一个必然 401 的官方模型。
+      const cfgMeta = sessionId ? await getSessionMeta(sessionId) : null;
+      const sel = await resolveSelection({ instanceId: cfgMeta?.instanceId, model: cfgMeta?.model });
+      if (!sel) {
         setHasConfig(false);
         setSupportsVision(false);
         setMaxContextTokens(undefined);
         return;
       }
       setHasConfig(true);
-      // Vision support is per-(instance, model), resolved from the current
-      // selection (session pin → last_model_selection → first instance).
-      const cfgMeta = sessionId ? await getSessionMeta(sessionId) : null;
-      const sel = await resolveSelection({ instanceId: cfgMeta?.instanceId, model: cfgMeta?.model });
-      if (sel) {
-        const inst = await getInstance(sel.instanceId);
-        if (inst) {
-          // managed：vision/上下文按所选模型取自缓存 entitlement（registry 只有兜底单条）。
-          if (inst.provider === "managed") {
-            const mm = cachedManagedModel(inst.apiKey, sel.model);
-            setSupportsVision(mm?.vision ?? false);
-            setMaxContextTokens(mm?.maxContextTokens);
-            return;
-          }
-          // Vision lookup consults registry first, then instance.fetchedModels
-          // (OpenRouter lazy catalog). Fail-closed for unknown ids — the disabled
-          // attach button is a visible UX cue (a different policy from the loop's
-          // screenshot guard, which fail-opens).
-          setSupportsVision(await resolveSupportsVision(inst.provider, sel.model, inst.fetchedModels));
-          const mm = await resolveModelMeta(inst.provider, sel.model);
+      const inst = await getInstance(sel.instanceId);
+      if (inst) {
+        // managed：vision/上下文按所选模型取自缓存 entitlement（registry 只有兜底单条）。
+        if (inst.provider === "managed") {
+          const mm = cachedManagedModel(inst.apiKey, sel.model);
+          setSupportsVision(mm?.vision ?? false);
           setMaxContextTokens(mm?.maxContextTokens);
           return;
         }
+        // Vision lookup consults registry first, then instance.fetchedModels
+        // (OpenRouter lazy catalog). Fail-closed for unknown ids — the disabled
+        // attach button is a visible UX cue (a different policy from the loop's
+        // screenshot guard, which fail-opens).
+        setSupportsVision(await resolveSupportsVision(inst.provider, sel.model, inst.fetchedModels));
+        const mm = await resolveModelMeta(inst.provider, sel.model);
+        setMaxContextTokens(mm?.maxContextTokens);
+        return;
       }
       setSupportsVision(false);
       setMaxContextTokens(undefined);
