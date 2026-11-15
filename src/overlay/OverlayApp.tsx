@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import Markdown from "@/sidepanel/components/Markdown";
 import { ModelPickerBody, ModelPickerTrigger } from "@/sidepanel/components/ModelPicker";
 import { getLocale, useI18n, useT } from "@/lib/i18n";
@@ -30,6 +30,9 @@ import { useModelSelection } from "./useModelSelection";
 
 /** Below this the composer never collapses — matches the host's min height. */
 const MAX_TEXTAREA_LINES = 3;
+/** Trigger row → popover edge, and popover → frame edge (room for its shadow). */
+const POPOVER_FOOTER_OFFSET = 34;
+const POPOVER_EDGE = 32; // shadow-pop: 0 8px 24px → 32px below the box
 /** Fallback cap until the host reports the real viewport-derived one. */
 const FALLBACK_MAX_HEIGHT = 620;
 
@@ -94,6 +97,43 @@ export default function OverlayApp() {
   const [langOpen, setLangOpen] = useState(false);
   const [recentStyles, setRecentStyles] = useState<string[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const modelRowRef = useRef<HTMLDivElement>(null);
+  const modelPopoverRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  /** The frame grows upwards (bottom-anchored) — the popover opens upwards too. */
+  const [growsUp, setGrowsUp] = useState(true);
+  /** Extra frame margin the popover needs beyond the card's own. */
+  const [popoverExtra, setPopoverExtra] = useState(0);
+  useLayoutEffect(() => {
+    const pop = modelPopoverRef.current;
+    const card = cardRef.current;
+    if (!modelPickerOpen || !pop || !card) {
+      setPopoverExtra(0);
+      return;
+    }
+    const measure = () => {
+      const need = growsUp
+        ? POPOVER_FOOTER_OFFSET + pop.offsetHeight + POPOVER_EDGE - card.offsetHeight
+        : pop.offsetHeight + POPOVER_EDGE;
+      setPopoverExtra(Math.max(0, need - CARD_PAD));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(pop);
+    observer.observe(card);
+    measure();
+    return () => observer.disconnect();
+  }, [modelPickerOpen, growsUp]);
+  useEffect(() => {
+    if (!modelPickerOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!modelRowRef.current?.contains(target) && !modelPopoverRef.current?.contains(target)) {
+        setModelPickerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [modelPickerOpen]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendRef = useRef<() => void>(() => {});
@@ -209,7 +249,7 @@ export default function OverlayApp() {
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.source !== window.parent) return;
-      const data = e.data as { type?: string; height?: number } | null;
+      const data = e.data as { type?: string; height?: number; growsUp?: boolean } | null;
       if (data?.type === "pie-overlay:opened") {
         void fetchOpenState();
         return;
@@ -217,6 +257,7 @@ export default function OverlayApp() {
       if (data?.type !== "pie-overlay:max-height" || typeof data.height !== "number") return;
       if (!Number.isFinite(data.height)) return;
       setMaxHeight(Math.max(120, Math.round(data.height)));
+      if (typeof data.growsUp === "boolean") setGrowsUp(data.growsUp);
     }
     window.addEventListener("message", onMessage);
     // Ask the host for the cap + open state once our listeners are attached;
@@ -317,7 +358,8 @@ export default function OverlayApp() {
     const root = document.getElementById("overlay-root");
     if (!root) return;
     const observer = new ResizeObserver(() => reportHeight());
-    observer.observe(root);
+    // border-box: the popover margin is padding, invisible to content-box.
+    observer.observe(root, { box: "border-box" });
     reportHeight();
     return () => observer.disconnect();
   }, []);
@@ -432,6 +474,11 @@ export default function OverlayApp() {
     function onKeyDown(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
       if (e.key === "Escape") {
+        if (modelPickerOpen) {
+          e.preventDefault();
+          setModelPickerOpen(false);
+          return;
+        }
         if (langOpen) {
           e.preventDefault();
           setLangOpen(false);
@@ -453,7 +500,7 @@ export default function OverlayApp() {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [newChat, toPanel, langOpen]);
+  }, [newChat, toPanel, langOpen, modelPickerOpen]);
 
   const onTextareaKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== "Enter" || e.shiftKey) return;
@@ -575,7 +622,7 @@ export default function OverlayApp() {
   // Provider · model — same selection the side panel's composer shows. Rendered
   // in flow (not as a popover) because the card clips whatever leaves it.
   const modelRow = (
-    <div className="flex items-center gap-1" data-model-row>
+    <div ref={modelRowRef} className="flex items-center gap-1" data-model-row>
       <ModelPickerTrigger
         instances={model.instances}
         currentInstanceId={model.currentInstanceId}
@@ -588,8 +635,21 @@ export default function OverlayApp() {
     </div>
   );
 
-  const modelPanel = modelPickerOpen ? (
-    <div className="flex flex-col overflow-hidden rounded-[10px] border border-line bg-surface" data-model-panel>
+  // The side panel composer's popover, floated off the trigger into the
+  // frame's transparent margin (the frame grows to fit, in the direction it
+  // already grows, so the card itself never moves or stretches).
+  const modelPopover = modelPickerOpen ? (
+    <div
+      ref={modelPopoverRef}
+      role="dialog"
+      data-model-panel
+      className="absolute left-2 z-10 flex w-[300px] max-w-[calc(100%-1rem)] flex-col overflow-y-auto rounded-card border border-line bg-surface shadow-pop"
+      style={
+        growsUp
+          ? { bottom: POPOVER_FOOTER_OFFSET, maxHeight: Math.max(160, maxHeight - CARD_PAD - POPOVER_FOOTER_OFFSET - POPOVER_EDGE) }
+          : { top: "calc(100% + 6px)", maxHeight: Math.max(160, maxHeight - CARD_PAD * 2 - (cardRef.current?.offsetHeight ?? 0) - POPOVER_EDGE) }
+      }
+    >
       <ModelPickerBody
         instances={model.instances}
         currentInstanceId={model.currentInstanceId}
@@ -678,9 +738,14 @@ export default function OverlayApp() {
       id="overlay-root"
       data-mode={chat ? "chat" : "spot"}
       className="flex w-full flex-col"
-      style={{ padding: CARD_PAD }}
+      style={{
+        padding: CARD_PAD,
+        [growsUp ? "paddingTop" : "paddingBottom"]: CARD_PAD + popoverExtra,
+      }}
     >
+      <div className="relative w-full">
       <div
+        ref={cardRef}
         data-card
         className="flex w-full flex-col overflow-hidden rounded-[16px] border border-line bg-surface font-sans text-fg-1 shadow-[0_10px_28px_-6px_rgba(20,24,29,0.22),0_1px_4px_rgba(20,24,29,0.08)]"
         style={{ maxHeight: cardMaxHeight }}
@@ -764,7 +829,6 @@ export default function OverlayApp() {
         )}
 
         <div className={`flex shrink-0 flex-col gap-2 px-3 pb-2 pt-2.5 ${chat ? "border-t border-line" : ""}`}>
-          {modelPanel}
           {selectionRow}
           {actionRow}
           <div className="flex items-end gap-2 rounded-[12px] border border-line bg-field py-[5px] pl-2.5 pr-[5px] focus-within:border-fg-3">
@@ -811,6 +875,8 @@ export default function OverlayApp() {
             <span className="shrink-0">{chat ? t("overlay.ui.hintsChat") : t("overlay.ui.hints")}</span>
           </div>
         </div>
+      </div>
+      {modelPopover}
       </div>
     </div>
   );

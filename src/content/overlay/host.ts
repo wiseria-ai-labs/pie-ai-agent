@@ -151,7 +151,10 @@ function pushOpened(): void {
  *  instead of pushing the iframe past the cap. */
 function pushMaxHeight(): void {
   if (!iframe?.contentWindow) return;
-  iframe.contentWindow.postMessage({ type: "pie-overlay:max-height", height: maxHeight() }, "*");
+  iframe.contentWindow.postMessage(
+    { type: "pie-overlay:max-height", height: maxHeight(), growsUp: !!host?.style.bottom },
+    "*",
+  );
 }
 
 function maxHeight(): number {
