@@ -451,7 +451,8 @@ export async function planBookmarkOps(rawOps: unknown): Promise<
         kind: "move",
         text: target.node.title,
         count: 0,
-        note: `${target.path} → ${dest.ok ? folderLabel(index, dest.id) : op.parentId}`,
+        // A folder created in this plan only has a provisional `new:N` id — show its title.
+        note: `${target.path} → ${dest.ok ? (dest.id.startsWith("new:") ? createdTitles[Number(dest.id.slice(4))] : folderLabel(index, dest.id)) : op.parentId}`,
       });
     } else {
       counts.renames += 1;

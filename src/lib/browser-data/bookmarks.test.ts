@@ -147,6 +147,8 @@ describe("planBookmarkOps", () => {
     expect(res.request.counts).toEqual({ folders: 1, moves: 2, renames: 1 });
     // The created folder's line carries how many bookmarks move into it.
     expect(res.request.lines[0]).toMatchObject({ kind: "add", text: "工作", count: 2 });
+    // Moves into it name the folder, never the provisional `new:0` id.
+    expect(res.request.lines[1].note).toMatch(/→ 工作$/);
     expect(res.request.totalAffected).toBe(4);
   });
 });
