@@ -14,7 +14,7 @@ try {
 import { createRoot } from "react-dom/client";
 import OverlayApp from "./OverlayApp";
 import "./overlay.css";
-import { I18nProvider } from "@/lib/i18n";
+import { I18nProvider, resolveLocale } from "@/lib/i18n";
 import { runStartupMigrations } from "@/lib/startup-migrations";
 import { MotionProvider } from "@/sidepanel/components/ui/motion";
 
@@ -24,8 +24,11 @@ async function boot() {
   await runStartupMigrations().catch((e) => {
     console.warn("[overlay] startup migrations failed (mounting anyway):", e);
   });
+  // Resolve the UI language before the first render: the explain intent
+  // auto-sends a localized message on mount.
+  const locale = await resolveLocale().catch(() => undefined);
   createRoot(document.getElementById("root")!).render(
-    <I18nProvider>
+    <I18nProvider initialLocale={locale}>
       {/* The side panel's HITL cards are m.* components (no provider = stuck at opacity 0). */}
       <MotionProvider>
         <OverlayApp />
