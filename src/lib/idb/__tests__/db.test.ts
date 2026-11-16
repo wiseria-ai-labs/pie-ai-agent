@@ -38,3 +38,30 @@ describe("txMulti", () => {
     expect(meta?.value.title).toBe("x");
   });
 });
+
+// 线上用户全是 main 的 v3 库：升 v4 必须补建新表且不动已有数据。
+describe("v3 → v4 upgrade (released users)", () => {
+  it("adds the v4 stores and keeps existing v3 records", async () => {
+    const V3_STORES: [string, string][] = [
+      ["sessions", "id"], ["session_index", "id"], ["instances", "id"],
+      ["config", "key"], ["scratchpads", "id"], ["schedules", "id"],
+    ];
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open("pie", 3);
+      req.onupgradeneeded = () => {
+        for (const [name, keyPath] of V3_STORES) req.result.createObjectStore(name, { keyPath });
+        req.transaction!.objectStore("instances").put({ id: "inst-1", provider: "managed" });
+      };
+      req.onsuccess = () => { req.result.close(); resolve(); };
+      req.onerror = () => reject(req.error);
+    });
+
+    const db = await openDb();
+    expect(db.version).toBe(4);
+    for (const name of Object.values(STORES)) expect(db.objectStoreNames.contains(name)).toBe(true);
+    const inst = await tx<{ id: string; provider: string } | undefined>(
+      STORES.instances, "readonly", (s) => s.get("inst-1"),
+    );
+    expect(inst?.provider).toBe("managed");
+  });
+});
