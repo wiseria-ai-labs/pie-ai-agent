@@ -419,6 +419,7 @@ export function buildAgentSystemPrompt(
   startActiveGroups: ReadonlySet<string> = new Set(["core"]),
   bridgeReady = true,
   customRules?: string,
+  mcpCatalogLines: readonly string[] = [],
 ): string {
   const keyboardGuidance = hasKeyboardTools ? KEYBOARD_SIM_GUIDANCE : "";
   const editorGuidance = hasKeyboardTools ? EDITOR_TOOLS_GUIDANCE : "";
@@ -431,7 +432,7 @@ export function buildAgentSystemPrompt(
   const responseLanguageBlock = buildResponseLanguageBlock(responseLanguage);
   const customRulesBlock = buildCustomRulesBlock(customRules);
   const activeGuidance = buildActiveGuidanceBlock(startActiveGroups);
-  const catalogBlock = buildToolCatalogBlock(startActiveGroups);
+  const catalogBlock = buildToolCatalogBlock(startActiveGroups, mcpCatalogLines);
   const pieLinkGuidance = buildPieLinkGuidanceBlock(bridgeReady);
   return (
     `${STATIC_AGENT_SYSTEM_PROMPT}${READ_PAGE_GUIDANCE}${FRAME_AWARENESS_GUIDANCE}${keyboardGuidance}${editorGuidance}${skillCatalogBlock}${tabGuidance}${SEARCH_TOOL_GUIDANCE}${pinnedContext}${responseLanguageBlock}${customRulesBlock}${activeGuidance}${catalogBlock}${pieLinkGuidance}\n\n${R15_IMAGE_UNTRUSTED}`

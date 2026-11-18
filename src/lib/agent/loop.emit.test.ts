@@ -669,3 +669,139 @@ describe("#473 — anchor tab (panel-captured send-time tab id)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Issue #492 — batch [W, X (aborts on pending panel-request), Y]
+// ---------------------------------------------------------------------------
+describe("Issue #492 — abort during panel-request skips trailing tools in batch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    const blocks = await import("./assistant-blocks");
+    const { streamChat } = await import("../model-router");
+    const { __resetPanelRequestState } = await import("../panel-request");
+    __resetPanelRequestState();
+    vi.mocked(blocks.assembleAssistantBlocks).mockImplementation(() => []);
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: "text-delta", text: "Hello world" };
+      yield { type: "done", stopReason: "end" };
+    });
+  });
+
+  it("W executes, X aborts on card, Y handler is never called, and snapshot keeps all 3 paired tool_results", async () => {
+    const { runAgentLoop } = await import("./loop");
+    const { streamChat } = await import("../model-router");
+    const blocks = await import("./assistant-blocks");
+    const tools = await import("./tools");
+    const { registerPanelPort, requestFromPanel } = await import("../panel-request");
+
+    vi.mocked(blocks.assembleAssistantBlocks).mockImplementation(
+      (_thinking, _text, turnBlocks) => turnBlocks as never,
+    );
+
+    const controller = new AbortController();
+    const portSent: any[] = [];
+    const port = {
+      sent: portSent,
+      postMessage: (m: any) => {
+        portSent.push(m);
+        if (m.type === "panel-request") {
+          controller.abort();
+        }
+      },
+    } as unknown as chrome.runtime.Port;
+    registerPanelPort("s-492-batch", port);
+
+    const wHandler = vi.fn(async () => ({ success: true, observation: "W ok" }));
+    const yHandler = vi.fn(async () => ({ success: true, observation: "Y should not run" }));
+    const testTools = [
+      {
+        name: "tool_w",
+        description: "",
+        parameters: { type: "object", properties: {} },
+        handler: wHandler,
+      },
+      {
+        name: "tool_x",
+        description: "",
+        parameters: { type: "object", properties: {} },
+        handler: async (_args: unknown, toolCtx: { sessionId?: string; signal?: AbortSignal }) => {
+          await requestFromPanel(toolCtx.sessionId!, "cdp-consent", {}, { signal: toolCtx.signal });
+          return { success: true, observation: "X unreachable" };
+        },
+      },
+      {
+        name: "tool_y",
+        description: "",
+        parameters: { type: "object", properties: {} },
+        handler: yHandler,
+      },
+    ];
+    (tools.BUILT_IN_TOOLS as unknown[]).push(...testTools);
+
+    try {
+      vi.mocked(streamChat).mockImplementation(async function* () {
+        yield { type: "tool-call-start", id: "id_w", index: 0, name: "tool_w" } as const;
+        yield { type: "tool-call-end", index: 0 } as const;
+        yield { type: "tool-call-start", id: "id_x", index: 1, name: "tool_x" } as const;
+        yield { type: "tool-call-end", index: 1 } as const;
+        yield { type: "tool-call-start", id: "id_y", index: 2, name: "tool_y" } as const;
+        yield { type: "tool-call-end", index: 2 } as const;
+        yield { type: "done", stopReason: "tool_calls" } as const;
+      });
+
+      const snapshots: Array<{ agentMessages: Array<{ role: string; content: unknown }> }> = [];
+      const emitted: Array<{ type: string }> = [];
+
+      await runAgentLoop({
+        emit: (m) => { emitted.push(m); },
+        onStepSnapshot: async (snap) => { snapshots.push(snap as never); },
+        task: "run batch",
+        modelConfig: { provider: "openai", model: "gpt-4o", apiKey: "sk", vision: false },
+        signal: controller.signal,
+        sessionId: "s-492-batch",
+        pinnedTabs: [{ tabId: 1, origin: "https://example.com" }],
+        initialFocusTabId: 1,
+      });
+
+      expect(wHandler).toHaveBeenCalledTimes(1);
+      expect(yHandler).not.toHaveBeenCalled();
+
+      // Card was dismissed via panel-request-resolved.
+      const reqMsg = portSent.find((m) => m.type === "panel-request");
+      expect(reqMsg).toBeDefined();
+      expect(
+        portSent.some((m) => m.type === "panel-request-resolved" && m.requestId === reqMsg.requestId),
+      ).toBe(true);
+
+      // Step snapshot was recorded and contains paired tool_results for W, X, and Y.
+      expect(snapshots.length).toBeGreaterThanOrEqual(1);
+      const stepMsgs = snapshots[0]!.agentMessages;
+      const assistantMsg = stepMsgs.find((m) => m.role === "assistant");
+      const resultMsg = stepMsgs.at(-1)!;
+      expect(assistantMsg?.content).toHaveLength(3);
+      expect(resultMsg.role).toBe("user");
+      const results = resultMsg.content as Array<{
+        type: string;
+        toolUseId: string;
+        content: string;
+        isError?: boolean;
+      }>;
+      expect(results).toHaveLength(3);
+      expect(results[0]).toMatchObject({ type: "tool_result", toolUseId: "id_w", isError: false, content: "W ok" });
+      expect(results[1]).toMatchObject({ type: "tool_result", toolUseId: "id_x", isError: true });
+      expect(results[1]!.content).toMatch(/aborted/i);
+      expect(results[2]).toMatchObject({
+        type: "tool_result",
+        toolUseId: "id_y",
+        isError: true,
+        content: "Not executed: the user stopped the task.",
+      });
+      expect(emitted.some((m) => m.type === "agent-done-task")).toBe(true);
+    } finally {
+      (tools.BUILT_IN_TOOLS as unknown[]).splice(-testTools.length, testTools.length);
+    }
+  });
+});

@@ -244,4 +244,96 @@ describe("panel-request", () => {
       ).rejects.toThrow(/did not attach/i);
     });
   });
+
+  // ── Abort: Stop must reject pending, clean pendingByRequestId, and dismiss card ──
+  it("abort rejects pending with AbortError, cleans pendingByRequestId, and posts panel-request-resolved", async () => {
+    const controller = new AbortController();
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestFromPanel<"cdp-consent">("S1", "cdp-consent", {}, { signal: controller.signal });
+    expect(port.sent).toHaveLength(1);
+    const requestId = port.sent[0].requestId;
+
+    controller.abort();
+    await expect(p).rejects.toMatchObject({ name: "AbortError" });
+    expect(
+      port.sent.some((m) => m.type === "panel-request-resolved" && m.sessionId === "S1" && m.requestId === requestId),
+    ).toBe(true);
+
+    // Cleaned from pendingByRequestId: late handlePanelResponse and resolvePendingByKind do not touch it.
+    const countBefore = port.sent.length;
+    handlePanelResponse(requestId, { ok: true, data: true });
+    resolvePendingByKind("cdp-consent", true);
+    expect(port.sent).toHaveLength(countBefore);
+  });
+
+  it("rejects immediately with AbortError and posts nothing when signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    await expect(
+      requestFromPanel("S1", "cdp-consent", {}, { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(port.sent).toHaveLength(0);
+  });
+
+  it("abort after panel response is a no-op (no duplicate post, no throw)", async () => {
+    const controller = new AbortController();
+    const port = fakePort();
+    registerPanelPort("S1", port);
+    const p = requestFromPanel<"cdp-consent">("S1", "cdp-consent", {}, { signal: controller.signal });
+    const requestId = port.sent[0].requestId;
+    handlePanelResponse(requestId, { ok: true, data: true });
+    await expect(p).resolves.toBe(true);
+
+    expect(() => controller.abort()).not.toThrow();
+    expect(port.sent.some((m) => m.type === "panel-request-resolved")).toBe(false);
+    expect(port.sent).toHaveLength(1);
+  });
+
+  it("timeout vs abort race: timeout first settles once, subsequent abort is a no-op", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const port = fakePort();
+      registerPanelPort("S1", port);
+      const p = requestFromPanel<"local-file">("S1", "local-file", {}, {
+        timeoutMs: 1000,
+        signal: controller.signal,
+      });
+      const reqId = port.sent[0].requestId;
+      const assertion = expect(p).rejects.toThrow(/timed out/i);
+      vi.advanceTimersByTime(1001);
+      await assertion;
+
+      expect(() => controller.abort()).not.toThrow();
+      expect(port.sent.filter((m) => m.requestId === reqId && m.type === "panel-request-timeout")).toHaveLength(1);
+      expect(port.sent.some((m) => m.type === "panel-request-resolved")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("timeout vs abort race: abort first settles once, subsequent timeout advance is a no-op", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const port = fakePort();
+      registerPanelPort("S1", port);
+      const p = requestFromPanel<"local-file">("S1", "local-file", {}, {
+        timeoutMs: 1000,
+        signal: controller.signal,
+      });
+      const reqId = port.sent[0].requestId;
+      controller.abort();
+      await expect(p).rejects.toMatchObject({ name: "AbortError" });
+
+      vi.advanceTimersByTime(2000);
+      expect(port.sent.filter((m) => m.requestId === reqId && m.type === "panel-request-resolved")).toHaveLength(1);
+      expect(port.sent.some((m) => m.type === "panel-request-timeout")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

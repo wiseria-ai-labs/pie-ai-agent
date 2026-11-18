@@ -141,7 +141,7 @@ jobs:
           echo "daemon version $PREV_V → $CUR_V — gate passed"
 
   build-daemon-pkg:
-    runs-on: macos-14
+    runs-on: macos-latest
     needs: daemon-version-gate
     # #403：把版本号 + macOS 自更新物 zip 的 sha256 暴露给 daemon-latest-json 汇总 job。
     # #419：再加 app_sha（pie-link-app.zip），写进 latest.json 的 app.sha256。

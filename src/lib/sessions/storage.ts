@@ -578,6 +578,23 @@ export function emptySessionAgent(): SessionAgentState {
   return { agentMessages: [], pendingInstructions: [], stepIndex: 0, hasImageContent: false };
 }
 
+/** #481 — has the user approved this remote MCP server for THIS session? */
+export async function isMcpServerApprovedInSession(id: string, serverId: string): Promise<boolean> {
+  const agent = await getSessionAgent(id);
+  return agent?.approvedMcpServerIds?.includes(serverId) ?? false;
+}
+
+/** #481 — record a per-session MCP-server approval (idempotent, same RMW
+ *  pattern as recordSkillApproval). */
+export async function recordMcpServerApproval(id: string, serverId: string): Promise<void> {
+  await updateSessionAgent(id, (agent) => {
+    const existing = agent?.approvedMcpServerIds ?? [];
+    if (existing.includes(serverId)) return null;
+    const approvedMcpServerIds = [...existing, serverId];
+    return agent ? { ...agent, approvedMcpServerIds } : { ...emptySessionAgent(), approvedMcpServerIds };
+  });
+}
+
 /**
  * List sessions in `lastAccessedAt` desc order. Reads only the session index
  * store entry — does not touch per-session meta/agent records.

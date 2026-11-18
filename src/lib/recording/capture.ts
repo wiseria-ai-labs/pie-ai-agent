@@ -97,6 +97,7 @@ export function installCaptureListener(): () => void {
     "user_memory",
     "untrusted_monitor_value",
     "untrusted_monitor_list",
+    "untrusted_mcp_result",
   ];
   const WRAPPER_TAGS_RE = new RegExp(
     `<\\/?(?:${WRAPPER_TAGS_LIST.join("|")})[^>]*>`,

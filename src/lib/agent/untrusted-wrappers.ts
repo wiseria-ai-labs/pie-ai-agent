@@ -68,6 +68,7 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   // third-party page text and must never reach the LLM unwrapped.
   "untrusted_monitor_value",
   "untrusted_monitor_list",
+  "untrusted_mcp_result",
 ] as const;
 
 // Zero-width / invisible chars that an attacker might hide inside a tag literal.

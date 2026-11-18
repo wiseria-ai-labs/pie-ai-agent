@@ -72,6 +72,14 @@ _Avoid_: pinned tab session
 daemon 持有的持久授权（`~/.pie/grants.json`），只记 `skill:<id>:<permsHash>` 和 `mcp:<server>[:<tool>]` 两类；批准发生在扩展 HITL 卡，强制与持久在 daemon（ADR 0006）。
 _Avoid_: permission, consent（"cdp-consent" 等 panel-request kind 是 UI 层，grant 是 daemon 持久层）
 
+**remote MCP server（远程 MCP 服务器）**:
+用户在设置里自配的 Streamable HTTP MCP server,由扩展 SW 直接连(不经 daemon),工具按
+`mcp:<slug>` 懒加载组披露、名字空间 `mcp_<slug>_<tool>`,每个会话首次调用按 server 确认
+一次(ADR 0014)。与 daemon 侧尚未实现的 stdio MCP 代理(`~/.pie/mcp.json`)不是一回事;
+两者将来要不要合并配置另议。
+_Avoid_: 用「MCP」同时指 daemon 的本地进程代理和远程 server;把 server 名当可信文本塞进
+system prompt
+
 ## Skills & Kits
 
 **Skill**:

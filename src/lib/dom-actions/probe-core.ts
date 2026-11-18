@@ -210,6 +210,7 @@ export function probePageInjected(params: ProbeParams): ProbeResult {
     "user_memory",
     "untrusted_monitor_value",
     "untrusted_monitor_list",
+    "untrusted_mcp_result",
   ];
   const WRAPPER_TAGS = new Set(WRAPPER_TAGS_LIST);
 

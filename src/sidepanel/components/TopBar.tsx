@@ -20,6 +20,7 @@ export type SettingsPage =
   | "customRules"
   | "browserData"
   | "overlay"
+  | "mcp"
   | "feedback"
   | "about";
 
@@ -36,6 +37,7 @@ const SETTINGS_PAGE_TITLE_KEY = {
   customRules: "settings.nav.customRules",
   browserData: "settings.nav.browserData",
   overlay: "settings.overlay.title",
+  mcp: "settings.nav.mcp",
   feedback: "settings.nav.feedback",
   about: "settings.nav.about",
 } as const;

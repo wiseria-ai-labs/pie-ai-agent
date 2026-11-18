@@ -25,6 +25,7 @@ import type {
   HistoryDeletionRequest,
 } from "./browser-data/types";
 import type { MonitorDraftPayload, MonitorDraftResponse } from "./agent/tools/monitor-meta";
+import type { McpToolConfirmRequest } from "./mcp/agent-tools";
 
 /** kind 注册表：加一种人机交互 = 加一行，编译期校验 payload/返回。 */
 export interface PanelRequestMap {
@@ -59,6 +60,8 @@ export interface PanelRequestMap {
   /** 加密记忆授权：把（地址/联系方式类）条目的正文发给模型前问一次。
    *  res=true 只代表本次会话允许；拒绝 / 超时一律保持屏蔽。 */
   "memory-unlock": { req: { count: number; kinds: string[] }; res: boolean };
+  /** #481 — D1=A: first call of a remote MCP server's tools in this session. */
+  "mcp-tool-confirm": { req: McpToolConfirmRequest; res: boolean };
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 

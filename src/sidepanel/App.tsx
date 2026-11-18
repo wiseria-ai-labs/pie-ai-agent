@@ -14,6 +14,7 @@ import CustomRulesPage from "@/sidepanel/components/settings/pages/CustomRulesPa
 import BrowserDataPage from "@/sidepanel/components/settings/pages/BrowserDataPage";
 import MemoryPage from "@/sidepanel/components/settings/pages/MemoryPage";
 import OverlayPage from "@/sidepanel/components/settings/pages/OverlayPage";
+import McpServersPage from "@/sidepanel/components/settings/pages/McpServersPage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import { type ThemeMode, UI_SCALE_KEY, applyUiScale, parseUiScale } from "@/sidepanel/theme";
 import AutomationPanel from "@/sidepanel/components/automation/AutomationPanel";
@@ -642,6 +643,8 @@ export default function App() {
               <BrowserDataPage />
             ) : settingsPage === "overlay" ? (
               <OverlayPage />
+            ) : settingsPage === "mcp" ? (
+              <McpServersPage />
             ) : settingsPage === "about" ? (
               <AboutPage />
             ) : (

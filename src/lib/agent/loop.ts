@@ -84,6 +84,7 @@ import { syncMemoryFromCloud } from "@/lib/memory/sync";
 import { buildUserMemoryBlock } from "@/lib/memory/prompt";
 import { startMemoryPrefetch, type MemoryPrefetch } from "@/lib/memory/selector";
 import { MEMORY_PICK_SOFT_TIMEOUT_MS } from "@/lib/memory/types";
+import { createMcpRun } from "../mcp/run";
 // isRestrictedUrl is owned by the shared util (src/lib/url/restricted.ts).
 // Imported here for loop-internal use AND re-exported below so existing
 // `import { isRestrictedUrl } from "../agent/loop"` call sites keep working.
@@ -905,6 +906,11 @@ export function mergeSessionAgentSnapshot(
       ...snapshot,
       pendingInstructions: existing.pendingInstructions,
       ...(existing.approvedSkillIds ? { approvedSkillIds: existing.approvedSkillIds } : {}),
+      // #481 — MCP server approvals are session-scoped too (D1=A): a session
+      // outlives its tasks, so the confirm card must not re-pop next task.
+      ...(existing.approvedMcpServerIds
+        ? { approvedMcpServerIds: existing.approvedMcpServerIds }
+        : {}),
     };
   }
   return { ...existing, ...snapshot };
@@ -1735,8 +1741,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
   const announcedGroups = new Set<string>(activeToolGroups); // already-known → never re-announce
   // Headless (scheduled) run = no resumed history AND no multi-turn chat prefix
   // (case 3 in the history seed below). Constant per task. load_tools refuses to
-  // arm the `schedule` group in headless runs (recursive-scheduling guard).
+  // arm the `schedule` group in headless runs (recursive-scheduling guard), and
+  // remote MCP groups are not offered at all — their per-session confirm card
+  // has nobody to answer it.
   const isHeadless = !ctx.resumedAgentMessages && !(ctx.messages && ctx.messages.length > 0);
+
+  // ── Remote MCP servers (issue #481) ────────────────────────────────────────
+  // All snapshot / activation / resume / ordering logic lives in createMcpRun
+  // (src/lib/mcp/run.ts); this loop only consumes its four accessors.
+  const mcpRun = await createMcpRun({ sessionId, signal, isHeadless, activeToolGroups });
 
   const systemMsg: AgentMessage = {
     role: "system",
@@ -1767,6 +1780,8 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // #344 — user custom-rules snapshot (see above). Rendered as a trusted
       // user-preference block after response_language when non-empty.
       customRules,
+      // #481 — one catalog line per configured remote MCP server.
+      mcpRun.catalogLines,
     ),
   };
 
@@ -2122,6 +2137,10 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       // self-check checkpoint re-appears every BUDGET_NUDGE_INTERVAL steps past
       // the soft checkpoint. Picked memory rides OUTSIDE this block — see
       // composeObservationText.
+      // #481 — resumed MCP groups that could not be restored. Held back until
+      // an observation is actually merged into history: the resumed first
+      // iteration skips the merge, so draining there would lose the notice.
+      if (!isResumedFirstIteration) sysNotices.push(...mcpRun.drainStartupNotices());
       observationText = composeObservationText(observationText, sysNotices, userMemoryBlocks);
       // Scratchpad overview — bounded, rides the trailing observation so the
       // compaction/token-budget passes never trim it. Empty
@@ -2309,6 +2328,9 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
       const loadToolsTool = buildLoadToolsTool({
         getActiveGroups: () => activeToolGroups,
         headless: isHeadless,
+        // #481 — one extra loadable group per configured MCP server (task-start
+        // snapshot → the load_tools schema stays byte-stable for the task).
+        extraGroups: mcpRun.loadToolsExtraGroups,
       });
       // run_skill_script 需要 sessionId（运行确认卡走 panel-request）——
       // 与 mouse/keyboard 同模式 per-run 装配，不进 BUILT_IN_TOOLS 静态表。
@@ -2410,6 +2432,7 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
         // 2.0 overlay — only when this turn carries an EDITABLE selection:
         // a rewrite of read-only text could never be written back.
         ...(ctx.hasEditableSelection ? [buildProposeRewriteTool()] : []),
+        ...mcpRun.tools(), // #481 — only groups activated via load_tools / resume
       ];
       const disclosed = selectTools(fullToolList, activeToolGroups);
       const allToolsBeforeExclude = filterToolsByVision(disclosed, modelConfig.vision);
@@ -2879,6 +2902,15 @@ export async function runAgentLoop(ctx: AgentLoopContext): Promise<void> {
 
       // Process each tool call in order
       for (const tc of completedToolCalls) {
+        if (signal.aborted) {
+          toolResultBlocks.push({
+            type: "tool_result",
+            toolUseId: tc.id,
+            content: "Not executed: the user stopped the task.",
+            isError: true,
+          });
+          continue;
+        }
         const args = tc.args as Record<string, unknown>;
         const tool = allTools.find((t) => t.name === tc.name);
 
