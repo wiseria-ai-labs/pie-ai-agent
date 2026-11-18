@@ -4,7 +4,7 @@ import { resolveSelection } from "./model-selection-resolver";
 import { createInstance } from "./instances";
 import { setLastModelSelection } from "./last-model-selection";
 import { cacheEntitlement, _clearEntitlementCacheForTests } from "./managed-account";
-import { _resetForTests } from "./idb/db";
+import { _resetForTests, STORES, tx } from "./idb/db";
 import { _resetKeyForTests } from "./crypto";
 
 // Instances + last_model_selection now persist in IDB. Reset the `pie` db per
@@ -112,5 +112,31 @@ describe("resolveSelection — 已登录未订阅的官方账号不可选", () =
     await createInstance({ provider: "managed", nickname: "a@b.com", apiKey: "sk-blocked" });
     await ent("blocked", "sk-blocked");
     expect(await resolveSelection({})).toBeNull();
+  });
+
+  it("陈旧内存缓存（plan:none）但 IDB 已刷新为 active → 重新水合后命中 managed，不回落到 BYOK", async () => {
+    const byok = await createInstance({ provider: "moonshot-cn", nickname: "Kimi", apiKey: "k-bad" });
+    const managed = await createInstance({ provider: "managed", nickname: "a@b.com", apiKey: "sk-upg" });
+    // 1) 先在当前上下文（模拟 SW）缓存了订阅前的 plan:none
+    await ent("none", "sk-upg");
+    // 2) 模拟另一上下文（Panel）刷新 IDB 为 active，绕过同进程 BroadcastChannel
+    await tx(STORES.config, "readwrite", (s) =>
+      s.put({
+        key: "managed_entitlement_sk-upg",
+        value: {
+          plan: "active",
+          email: "a@b.com",
+          subscription: null,
+          quota: null,
+          models: [{ id: "default", name: "Standard", vision: false, maxContextTokens: 128000, costLevel: 1 }],
+        },
+      }),
+    );
+    await setLastModelSelection({ instanceId: managed, model: "default" });
+    expect(byok).not.toBe(managed);
+    expect(await resolveSelection({ instanceId: managed, model: "default" })).toEqual({
+      instanceId: managed,
+      model: "default",
+    });
   });
 });

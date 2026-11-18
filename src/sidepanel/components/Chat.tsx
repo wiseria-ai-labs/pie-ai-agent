@@ -1620,7 +1620,7 @@ After the skill completes, briefly summarize what was created (the user will see
           setCurrentInstanceId(id);
           setCurrentModel(model);
           if (sessionId) await persistSelection(sessionId, id, model);
-          void setLastModelSelection({ instanceId: id, model });
+          await setLastModelSelection({ instanceId: id, model });
         }}
         onManageInstances={onOpenSettings}
         onRefreshModels={async (id) => {

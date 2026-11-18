@@ -2,7 +2,8 @@ import { ACCOUNT_BASE } from "./managed-config";
 import type { Entitlement, ModelInfo, PricingInfo, ResearchQuotaWindow } from "./managed-auth";
 import type { FeedbackEnv } from "./feedback";
 import { getLocale } from "./i18n";
-import { setConfig, getAllConfig, removeConfig } from "./idb/config-store";
+import { setConfig, getConfig, getAllConfig, removeConfig } from "./idb/config-store";
+import { onStoreChange } from "./store-bus";
 import { acceptPrivacyPolicy, getPrivacyConsent } from "./privacy-consent";
 
 export interface ManagedAccountDeps {
@@ -16,19 +17,39 @@ export interface ManagedAccountDeps {
 /** 进程内 entitlement 缓存（按 apiKey）。供面板展开时立即回显上次状态、避免每次
  *  闪一个空 loading；用量等数值由后台刷新后更新上去。仅当前会话有效（扩展重载即清）。 */
 const entitlementCache = new Map<string, Entitlement>();
+const keyVersion = new Map<string, number>();
+const inFlightLocalWrites = new Map<string, number>();
 
 const ENTITLEMENT_KEY_PREFIX = "managed_entitlement_";
+
+function bumpKeyVersion(apiKey: string): number {
+  const next = (keyVersion.get(apiKey) ?? 0) + 1;
+  keyVersion.set(apiKey, next);
+  return next;
+}
+
+/** Wraps a best-effort IDB write so same-context `onStoreChange` echoes are
+ *  recognized and skipped while `setConfig`/`removeConfig` publish synchronously. */
+async function trackLocalWrite(apiKey: string, write: () => Promise<void>): Promise<void> {
+  inFlightLocalWrites.set(apiKey, (inFlightLocalWrites.get(apiKey) ?? 0) + 1);
+  try {
+    await write();
+  } catch {
+    /* 持久化是 best-effort：IDB 不可用 / 写失败时内存缓存仍生效 */
+  } finally {
+    const remaining = (inFlightLocalWrites.get(apiKey) ?? 1) - 1;
+    if (remaining <= 0) inFlightLocalWrites.delete(apiKey);
+    else inFlightLocalWrites.set(apiKey, remaining);
+  }
+}
 
 /** 双写 entitlement：同步写内存 Map（同步读取层用）+ best-effort 持久化到 IDB
  *  config store（key 按 apiKey）。IDB 写失败不影响内存缓存与调用方。供
  *  getEntitlement / redeem / startManagedLogin 三处写入点共用。 */
 export async function cacheEntitlement(apiKey: string, ent: Entitlement): Promise<void> {
+  bumpKeyVersion(apiKey);
   entitlementCache.set(apiKey, ent);
-  try {
-    await setConfig(ENTITLEMENT_KEY_PREFIX + apiKey, ent);
-  } catch {
-    /* 持久化是 best-effort：IDB 不可用 / 写失败时内存缓存仍生效 */
-  }
+  await trackLocalWrite(apiKey, () => setConfig(ENTITLEMENT_KEY_PREFIX + apiKey, ent));
   if (ent.plan === "active" && ent.privacyConsent === true) {
     try {
       if ((await getPrivacyConsent())?.status !== "accepted") {
@@ -55,19 +76,45 @@ export async function hydrateEntitlementCache(): Promise<void> {
   }
 }
 
+// 跨上下文同步（Panel ↔ SW ↔ Overlay）：任一上下文更新或清理 managed_entitlement_*
+// 时，仅按变更的单个 key 增量同步，避免全表扫描并发删掉其它尚未落盘的 key，并跳过同上下文回声。
+onStoreChange("config", (c) => {
+  if (c.op === "clear") {
+    entitlementCache.clear();
+    keyVersion.clear();
+    return;
+  }
+  if (typeof c.id !== "string") {
+    void hydrateEntitlementCache();
+    return;
+  }
+  if (!c.id.startsWith(ENTITLEMENT_KEY_PREFIX)) return;
+  const apiKey = c.id.slice(ENTITLEMENT_KEY_PREFIX.length);
+  if ((inFlightLocalWrites.get(apiKey) ?? 0) > 0) return;
+  const ver = bumpKeyVersion(apiKey);
+  if (c.op === "remove") {
+    entitlementCache.delete(apiKey);
+    return;
+  }
+  void getConfig(c.id)
+    .then((raw) => {
+      if (keyVersion.get(apiKey) !== ver) return;
+      if (raw !== undefined) entitlementCache.set(apiKey, normalizeEntitlement(raw));
+    })
+    .catch(() => {});
+});
+
 /** Test-only：清空内存 entitlement 缓存，使水合测试能验证「内存空 → 水合 → 命中」。 */
 export function _clearEntitlementCacheForTests(): void {
   entitlementCache.clear();
+  keyVersion.clear();
 }
 
 /** 退出登录：抹掉某把 key 的 entitlement（内存 + IDB），下次登录重新拉。 */
 export async function forgetEntitlement(apiKey: string): Promise<void> {
+  bumpKeyVersion(apiKey);
   entitlementCache.delete(apiKey);
-  try {
-    await removeConfig(ENTITLEMENT_KEY_PREFIX + apiKey);
-  } catch {
-    /* best-effort，与 cacheEntitlement 对称 */
-  }
+  await trackLocalWrite(apiKey, () => removeConfig(ENTITLEMENT_KEY_PREFIX + apiKey));
 }
 
 /** 读上次成功拉取的 entitlement（无则 null）。 */

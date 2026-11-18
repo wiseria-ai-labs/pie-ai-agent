@@ -1,6 +1,6 @@
 import { getInstance, listInstances, firstModelForProvider, type DecryptedInstance } from "./instances";
 import { getLastModelSelection } from "./last-model-selection";
-import { getCachedEntitlement } from "./managed-account";
+import { getCachedEntitlement, hydrateEntitlementCache } from "./managed-account";
 
 export interface Selection {
   instanceId: string;
@@ -19,6 +19,20 @@ function selectable(inst: DecryptedInstance | null): inst is DecryptedInstance {
   return ent === null || ent.plan === "active";
 }
 
+/** SW 等独立上下文可能仍持有登录前/订阅前的陈旧内存 entitlement 缓存；遇 managed
+ *  候选未水合或非 active 时，先从共享 IDB 刷新一次，避免误判为未订阅而回落到 BYOK。 */
+async function hydrateManagedIfNeeded(
+  inst: DecryptedInstance | null,
+  state: { hydrated: boolean },
+): Promise<void> {
+  if (!inst || inst.provider !== "managed" || state.hydrated) return;
+  const ent = getCachedEntitlement(inst.apiKey);
+  if (ent === null || ent.plan !== "active") {
+    state.hydrated = true;
+    await hydrateEntitlementCache();
+  }
+}
+
 /**
  * 按 D3 优先级解析 (instanceId, model)：
  *   1) session 自带的 (instanceId, model)，且 instance 仍存在且可选
@@ -31,9 +45,11 @@ export async function resolveSelection(session: {
   instanceId?: string;
   model?: string;
 }): Promise<Selection | null> {
+  const hydrationState = { hydrated: false };
   // 1) session 自带且 instance 仍存在
   if (session.instanceId) {
     const inst = await getInstance(session.instanceId);
+    await hydrateManagedIfNeeded(inst, hydrationState);
     if (selectable(inst)) {
       const model = session.model ?? (await firstModelForProvider(inst.provider, inst.id));
       if (model) return { instanceId: inst.id, model };
@@ -43,11 +59,13 @@ export async function resolveSelection(session: {
   const last = await getLastModelSelection();
   if (last) {
     const inst = await getInstance(last.instanceId);
+    await hydrateManagedIfNeeded(inst, hydrationState);
     if (selectable(inst)) return { instanceId: inst.id, model: last.model };
   }
   // 3) 第一个可选的 instance 的 provider 第一个 model
   const all = await listInstances();
   for (const inst of all) {
+    await hydrateManagedIfNeeded(inst, hydrationState);
     if (!selectable(inst)) continue;
     const model = await firstModelForProvider(inst.provider, inst.id);
     if (model) return { instanceId: inst.id, model };

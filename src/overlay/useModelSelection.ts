@@ -48,7 +48,7 @@ export function useModelSelection(sessionId: string): OverlayModelSelection {
       setCurrentModel(model);
       // Session pin (the SW snapshots it at task start) + the global default.
       await updateSessionMeta(sessionId, (existing) => ({ ...existing, instanceId, model }));
-      void setLastModelSelection({ instanceId, model });
+      await setLastModelSelection({ instanceId, model });
     },
     [sessionId],
   );
