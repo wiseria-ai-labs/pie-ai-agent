@@ -12,6 +12,12 @@ import { getMemoryAccessState } from "@/lib/memory/access";
 import { normalizeCloudEntry } from "@/lib/memory/cloud";
 import { flushMemoryDigests } from "@/lib/memory/digest-sync";
 import { _setMemoryRequiresSubscriptionForTests } from "@/lib/memory/model";
+import {
+  _setMemoryCloudConsentForTests,
+  acceptPrivacyPolicy,
+  declineCloudMemoryConsent,
+  getPrivacyConsent,
+} from "@/lib/privacy-consent";
 import { pickMemory } from "@/lib/memory/selector";
 import {
   dismissFirstConsolidationNotice,
@@ -70,11 +76,13 @@ beforeEach(async () => {
   _clearEntitlementCacheForTests();
   _resetMemorySyncForTests();
   _setMemoryRequiresSubscriptionForTests(true);
+  _setMemoryCloudConsentForTests(true);
 });
 
 afterEach(() => {
   cleanup();
   _setMemoryRequiresSubscriptionForTests(null);
+  _setMemoryCloudConsentForTests(null);
   _clearEntitlementCacheForTests();
   _resetMemorySyncForTests();
   vi.unstubAllGlobals();
@@ -630,5 +638,167 @@ describe("MemoryPage UI gating & multi-device read-only retention", () => {
     await waitFor(() =>
       expect(screen.getByTestId("memory-paywall")).toBeTruthy(),
     );
+  });
+
+  it("blocks flushMemoryDigests and local cloud import without privacy consent", async () => {
+    _setMemoryCloudConsentForTests(null);
+    await createInstance({ provider: "managed", nickname: "Pie", apiKey: "mk_gate" });
+    await cacheEntitlement("mk_gate", activeEnt());
+    await rememberEntry({ kind: "about", title: "本地保留", body: "未同意前不上云" });
+
+    const fetchFn = vi.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes("/memory?") || u.endsWith("/memory")) {
+        return new Response(
+          JSON.stringify({
+            unchanged: false,
+            revision: 0,
+            readOnly: false,
+            settings: { enabled: true, excludedDomains: [] },
+            profile: { text: "", updatedAt: 0 },
+            state: { hasSnapshot: false },
+            entries: [],
+          }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected cloud upload ${u}`);
+    });
+
+    // Without consent, syncMemoryFromCloud does NOT call /memory/import
+    await syncMemoryFromCloud({ force: true, deps: { fetchFn } });
+    expect(fetchFn.mock.calls.some(([u]) => String(u).endsWith("/memory/import"))).toBe(false);
+
+    // Without consent, flushMemoryDigests uploads nothing
+    const digestFetch = vi.fn();
+    const out = await flushMemoryDigests({
+      now: 100_000_000,
+      listSessions: async () => [{ id: "s1", status: "active", title: "Chat", lastAccessedAt: 2000 }],
+      readSession: async () => ({
+        id: "s1",
+        title: "Chat",
+        status: "active",
+        createdAt: 1000,
+        lastAccessedAt: 2000,
+        messages: [{ role: "user", content: "remember this" }],
+      }),
+      fetchFn: digestFetch as unknown as typeof fetch,
+    });
+    expect(out.accepted).toBe(0);
+    expect(digestFetch).not.toHaveBeenCalled();
+
+    // Once consented, flushMemoryDigests proceeds normally
+    await acceptPrivacyPolicy("subscribe");
+    const okFetch = vi.fn(async () => new Response(JSON.stringify({ accepted: 1, queuedAt: 5000 }), { status: 200 }));
+    const okOut = await flushMemoryDigests({
+      now: 100_000_000,
+      listSessions: async () => [{ id: "s1", status: "active", title: "Chat", lastAccessedAt: 2000 }],
+      readSession: async () => ({
+        id: "s1",
+        title: "Chat",
+        status: "active",
+        createdAt: 1000,
+        lastAccessedAt: 2000,
+        messages: [{ role: "user", content: "remember this" }],
+      }),
+      fetchFn: okFetch as unknown as typeof fetch,
+    });
+    expect(okOut.accepted).toBe(1);
+    expect(okFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows privacy consent banner on MemoryPage when declined and records consent on agree", async () => {
+    _setMemoryCloudConsentForTests(null);
+    await declineCloudMemoryConsent();
+    await setMemorySettings({ enabled: false });
+    await createInstance({ provider: "managed", nickname: "Pie", apiKey: "mk_banner" });
+    await cacheEntitlement("mk_banner", activeEnt());
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: RequestInfo | URL) => {
+        const u = String(url);
+        if (u.includes("/me/entitlement")) {
+          return new Response(JSON.stringify(activeEnt()), { status: 200 });
+        }
+        if (u.endsWith("/memory/settings")) {
+          return new Response(
+            JSON.stringify({ revision: 2, settings: { enabled: true, excludedDomains: [] } }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            unchanged: false,
+            revision: 1,
+            readOnly: false,
+            settings: { enabled: false, excludedDomains: [] },
+            profile: { text: "", updatedAt: 0 },
+            state: { hasSnapshot: false },
+            entries: [],
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    render(<MemoryPage />);
+    expect(await screen.findByTestId("memory-privacy-consent-banner")).toBeTruthy();
+    expect(screen.getByTestId("memory-privacy-policy-link")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("memory-privacy-agree"));
+    await waitFor(async () => {
+      expect(await getPrivacyConsent()).toMatchObject({ status: "accepted", source: "memory_settings" });
+    });
+    await waitFor(() => expect(screen.queryByTestId("memory-privacy-consent-banner")).toBeNull());
+  });
+
+  it("syncs privacyConsent from cloud (Device B agreed) and resumes Device A digest uploads", async () => {
+    _setMemoryCloudConsentForTests(null);
+    await declineCloudMemoryConsent();
+    await setMemorySettings({ enabled: false });
+    await createInstance({ provider: "managed", nickname: "Pie", apiKey: "mk_multi" });
+    await cacheEntitlement("mk_multi", activeEnt());
+    await setMemoryState({ cloudImported: true, cloudRevision: 1 });
+
+    // Device B agreed & enabled memory on server -> server snapshot has privacyConsent=true, enabled=true, revision=2
+    const pullFetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          unchanged: false,
+          revision: 2,
+          readOnly: false,
+          settings: { enabled: true, excludedDomains: [], privacyConsent: true },
+          profile: { text: "", updatedAt: 0 },
+          state: { hasSnapshot: false },
+          entries: [],
+        }),
+        { status: 200 },
+      ),
+    );
+    await syncMemoryFromCloud({ force: true, deps: { fetchFn: pullFetch } });
+
+    expect(await getPrivacyConsent()).toMatchObject({ status: "accepted", source: "cloud_sync" });
+    expect((await getMemorySettings()).enabled).toBe(true);
+
+    // Device A can now flush digests
+    const digestFetch = vi.fn(
+      async () => new Response(JSON.stringify({ accepted: 1, queuedAt: 5000 }), { status: 200 }),
+    );
+    const out = await flushMemoryDigests({
+      now: 100_000_000,
+      listSessions: async () => [{ id: "s1", status: "active", title: "Chat", lastAccessedAt: 2000 }],
+      readSession: async () => ({
+        id: "s1",
+        title: "Chat",
+        status: "active",
+        createdAt: 1000,
+        lastAccessedAt: 2000,
+        messages: [{ role: "user", content: "remember multi device" }],
+      }),
+      fetchFn: digestFetch as unknown as typeof fetch,
+    });
+    expect(out.accepted).toBe(1);
+    expect(digestFetch).toHaveBeenCalledTimes(1);
   });
 });

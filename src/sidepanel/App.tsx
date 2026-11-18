@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Chat from "@/sidepanel/components/Chat";
 import SessionDrawer from "@/sidepanel/components/SessionDrawer";
 import SkillsList from "@/sidepanel/components/SkillsList";
@@ -21,6 +21,17 @@ import { unreadInboxCount } from "@/lib/inbox/store";
 import ResearchPanel from "@/sidepanel/components/research/ResearchPanel";
 import { getInstance } from "@/lib/instances";
 import { getPieAccount } from "@/lib/pie-account";
+import { getCachedEntitlement, getEntitlement } from "@/lib/managed-account";
+import {
+  acceptPrivacyPolicy,
+  declineCloudMemoryConsent,
+  getPrivacyConsent,
+  needsPrivacyUpdatePrompt,
+  PRIVACY_CONSENT_KEY,
+} from "@/lib/privacy-consent";
+import { setMemorySettings } from "@/lib/memory/store";
+import { syncMemoryFromCloud, syncSetMemorySettings } from "@/lib/memory/sync";
+import PrivacyUpdateModal from "@/sidepanel/components/PrivacyUpdateModal";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
@@ -65,6 +76,9 @@ export default function App() {
   // 2.0 overlay — one-line explanation shown when the overlay's shortcut had to
   // fall back to the panel (chrome:// / new tab / Web Store / PDF).
   const [overlayNotice, setOverlayNotice] = useState<string | null>(null);
+  // 2.0 privacy update modal for existing active subscribers on first launch.
+  const [showPrivacyUpdateModal, setShowPrivacyUpdateModal] = useState(false);
+  const checkedRemoteConsentForRef = useRef<string | null>(null);
   // M1: theme mode owned at App level so the button reflects state and we
   // can persist to localStorage. M2 will wire data-theme to actually switch.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -141,6 +155,58 @@ export default function App() {
     }
   }, []);
 
+  const checkPrivacyUpdatePrompt = useCallback(async () => {
+    try {
+      const acct = await getPieAccount();
+      if (!acct) {
+        checkedRemoteConsentForRef.current = null;
+        setShowPrivacyUpdateModal(false);
+        return;
+      }
+      let ent = getCachedEntitlement(acct.apiKey);
+      const consent = await getPrivacyConsent();
+      if (
+        (!ent ||
+          (ent.plan === "active" &&
+            consent?.status !== "accepted" &&
+            ent.privacyConsent !== true)) &&
+        checkedRemoteConsentForRef.current !== acct.apiKey
+      ) {
+        checkedRemoteConsentForRef.current = acct.apiKey;
+        const fresh = await getEntitlement(acct.apiKey).catch(() => null);
+        if (fresh) ent = fresh;
+      }
+      const needed = await needsPrivacyUpdatePrompt(ent);
+      setShowPrivacyUpdateModal(needed);
+      if (ent?.plan === "active" && ent.privacyConsent === true) {
+        void syncMemoryFromCloud({ force: true }).catch(() => {});
+      }
+    } catch {
+      /* best-effort; never block panel mount */
+    }
+  }, []);
+
+  const handleAgreePrivacyUpdate = useCallback(async () => {
+    await acceptPrivacyPolicy("upgrade_prompt");
+    setShowPrivacyUpdateModal(false);
+    try {
+      await syncSetMemorySettings({ enabled: true });
+    } catch {
+      await setMemorySettings({ enabled: true }).catch(() => {});
+    }
+    void syncMemoryFromCloud({ force: true }).catch(() => {});
+  }, []);
+
+  const handleDeclinePrivacyUpdate = useCallback(async () => {
+    await declineCloudMemoryConsent();
+    setShowPrivacyUpdateModal(false);
+    try {
+      await syncSetMemorySettings({ enabled: false });
+    } catch {
+      await setMemorySettings({ enabled: false }).catch(() => {});
+    }
+  }, []);
+
   useEffect(() => {
     // M2-U4: opportunistic 30-day hard-delete sweep on sidepanel mount.
     // Fire-and-forget — does not block mount or session loading.
@@ -161,8 +227,9 @@ export default function App() {
 
     loadProviderLabel();
     void refreshResearchGate();
+    void checkPrivacyUpdatePrompt();
     void unreadInboxCount().then(setUnreadAutomation);
-  }, [refreshSessionIndex, refreshResearchGate]);
+  }, [refreshSessionIndex, refreshResearchGate, checkPrivacyUpdatePrompt]);
 
   // ── Deep-link: website "Subscribe" → managed-subscribe screen ──────────────
   // The SW stashes a one-shot intent in chrome.storage.session when it opens the
@@ -261,6 +328,7 @@ export default function App() {
   useStoreChange("instances", () => {
     loadProviderLabel();
     void refreshResearchGate();
+    void checkPrivacyUpdatePrompt();
   });
   useStoreChange("config", (c) => {
     if (c.id === "theme-mode") {
@@ -276,6 +344,13 @@ export default function App() {
     if (c.id === UI_SCALE_KEY) {
       // Cross-window interface-scale sync (the writer already applied its own).
       void getConfig(UI_SCALE_KEY).then((v) => applyUiScale(parseUiScale(v)));
+      return;
+    }
+    if (
+      c.id === PRIVACY_CONSENT_KEY ||
+      (typeof c.id === "string" && c.id.startsWith("managed_entitlement_"))
+    ) {
+      void checkPrivacyUpdatePrompt();
       return;
     }
     // last_model_selection / active_instance_id (and any other config write)
@@ -586,6 +661,13 @@ export default function App() {
         onResumeSession={handleResumeSession}
         onOpenSettings={() => openSettings()}
       />
+
+      {showPrivacyUpdateModal && (
+        <PrivacyUpdateModal
+          onAgree={handleAgreePrivacyUpdate}
+          onDecline={handleDeclinePrivacyUpdate}
+        />
+      )}
     </div>
   );
 }

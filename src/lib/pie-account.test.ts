@@ -5,6 +5,7 @@ import { getConfig, setConfig } from "@/lib/idb/config-store";
 import { createInstance, listInstances, updateInstance } from "./instances";
 import { cacheEntitlement, _clearEntitlementCacheForTests, getCachedEntitlement } from "./managed-account";
 import { clearAllMemory, getMemoryState, listMemoryEntries, rememberEntry, setMemoryState } from "./memory/store";
+import { acceptPrivacyPolicy, getPrivacyConsent } from "./privacy-consent";
 import { getPieAccount, savePieAccount, signOutPieAccount } from "./pie-account";
 import type { LoginResult } from "./managed-auth";
 
@@ -71,11 +72,13 @@ describe("signOutPieAccount", () => {
     expect(await getConfig("managed_entitlement_sk-v")).toBeTruthy();
     await rememberEntry({ kind: "preference", title: "喜欢深色主题", body: "用户偏好深色" });
     await setMemoryState({ cloudRevision: 7, cloudImported: true, digestWatermark: 42 });
+    await acceptPrivacyPolicy("subscribe");
     expect((await listMemoryEntries()).length).toBeGreaterThan(0);
 
     await signOutPieAccount();
 
     expect(await getPieAccount()).toBeNull();
+    expect(await getPrivacyConsent()).toBeNull();
     const rest = await listInstances();
     expect(rest.map((i) => i.provider)).toEqual(["anthropic"]); // BYOK 留着
     expect(await getConfig(`managed_entitlement_${acct.apiKey}`)).toBeUndefined();

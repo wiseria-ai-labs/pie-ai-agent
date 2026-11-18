@@ -3,6 +3,7 @@ import type { Entitlement, ModelInfo, PricingInfo, ResearchQuotaWindow } from ".
 import type { FeedbackEnv } from "./feedback";
 import { getLocale } from "./i18n";
 import { setConfig, getAllConfig, removeConfig } from "./idb/config-store";
+import { acceptPrivacyPolicy, getPrivacyConsent } from "./privacy-consent";
 
 export interface ManagedAccountDeps {
   fetchFn?: typeof fetch;
@@ -27,6 +28,15 @@ export async function cacheEntitlement(apiKey: string, ent: Entitlement): Promis
     await setConfig(ENTITLEMENT_KEY_PREFIX + apiKey, ent);
   } catch {
     /* 持久化是 best-effort：IDB 不可用 / 写失败时内存缓存仍生效 */
+  }
+  if (ent.plan === "active" && ent.privacyConsent === true) {
+    try {
+      if ((await getPrivacyConsent())?.status !== "accepted") {
+        await acceptPrivacyPolicy("cloud_sync");
+      }
+    } catch {
+      /* best-effort：同步云端同意状态失败不影响缓存主路径 */
+    }
   }
 }
 
@@ -178,6 +188,7 @@ export function normalizeEntitlement(raw: unknown): Entitlement {
     models: Array.isArray(r.models) ? (r.models as unknown[]).map(normalizeModel) : [],
     ...(introOffer ? { introOffer } : {}),
     ...(pricing ? { pricing } : {}),
+    ...(typeof r.privacyConsent === "boolean" ? { privacyConsent: r.privacyConsent } : {}),
   };
 }
 
@@ -231,6 +242,13 @@ export async function redeem(apiKey: string, code: string, deps: ManagedAccountD
   }
   const ent = normalizeEntitlement(await resp.json());
   await cacheEntitlement(apiKey, ent);
+  if (ent.plan === "active") {
+    try {
+      await acceptPrivacyPolicy("redeem");
+    } catch {
+      /* best-effort，与 cacheEntitlement 对称 */
+    }
+  }
   return ent;
 }
 

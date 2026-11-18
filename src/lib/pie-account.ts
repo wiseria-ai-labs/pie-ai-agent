@@ -5,6 +5,7 @@ import { createInstance, deleteInstance, listInstances, updateInstance } from ".
 import { forgetEntitlement } from "./managed-account";
 import type { LoginResult } from "./managed-auth";
 import { clearAllMemory, setMemoryState } from "./memory/store";
+import { clearPrivacyConsent } from "./privacy-consent";
 
 export interface PieAccount {
   instanceId: string;
@@ -48,6 +49,7 @@ export async function signOutPieAccount(): Promise<void> {
     await forgetEntitlement(acct.apiKey);
   }
   await clearAllMemory();
+  await clearPrivacyConsent();
   // ponytail: 直接抹掉同步游标而不是新加一层 resetSync 选项；游标留在本地会让
   // 「退 A 登 B」用 A 的 revision 去 pull B 的增量。字段置 undefined 即可。
   await setMemoryState({

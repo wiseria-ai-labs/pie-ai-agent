@@ -94,8 +94,13 @@ Ollama están en el [roadmap](../ROADMAP.md).
   solo se envía al proveedor que elegiste — Pie no tiene ningún servidor de por
   medio y no recopila telemetría ni analíticas.
 - **La suscripción es la única excepción.** Si usas la suscripción oficial de Pie,
-  tus solicitudes de chat pasan por el servicio de Pie (así funciona el cobro) —
-  pero Pie sigue sin recopilar telemetría de producto.
+  tus solicitudes de chat pasan por el servicio de Pie (así funciona el cobro), sin
+  retención de mensajes ni telemetría de producto. Con tu consentimiento de privacidad
+  (al suscribirte o en el aviso de actualización v2.0), la función opcional de
+  **Memoria** entre dispositivos solo sube conclusiones depuradas de tus chats (nunca
+  páginas web completas ni sesiones de incógnito) de forma cifrada, borra los
+  extractos tras consolidarlos y puede desactivarse o limpiarse cuando quieras en
+  **Ajustes → Memoria**.
 - **Pie solo mira una página mientras ejecuta la tarea que le pediste** y trata
   todo lo que hay en la página como no confiable, de modo que una página maliciosa
   no pueda engañarlo para hacer algo que nunca pediste.

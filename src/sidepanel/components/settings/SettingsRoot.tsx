@@ -33,6 +33,7 @@ import { onStoreChange } from "@/lib/store-bus";
 import { setConfig } from "@/lib/idb/config-store";
 import { getMemorySettings, listMemoryEntries } from "@/lib/memory/store";
 import { getMemoryAccessState } from "@/lib/memory/access";
+import { hasMemoryCloudConsent, PRIVACY_CONSENT_KEY } from "@/lib/privacy-consent";
 import { Switch } from "@/sidepanel/components/ui/Switch";
 import { IconButton } from "@/sidepanel/components/ui/IconButton";
 import { Popover } from "@/sidepanel/components/ui/Popover";
@@ -256,7 +257,8 @@ function AccountCard({ onOpen }: { onOpen: () => void }) {
   const t = useT();
   const [account, setAccount] = useState<PieAccount | null | undefined>(undefined);
   const [plan, setPlan] = useState<Entitlement["plan"] | null>(null);
-  // 每次实例/entitlement 缓存变更 bump 一次重读（store-bus 驱动跨上下文同步）。
+  const [hasCloudConsent, setHasCloudConsent] = useState(true);
+  // 每次实例/entitlement/隐私同意变更 bump 一次重读（store-bus 驱动跨上下文同步）。
   const [nonce, setNonce] = useState(0);
   // getEntitlement 自己会写 entitlement 缓存 → 又发一次 store-bus 配置事件。
   // 记下已拉过的 apiKey，保证同一账号只向服务端拉一次，避免自激循环。
@@ -265,8 +267,12 @@ function AccountCard({ onOpen }: { onOpen: () => void }) {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const acct = await getPieAccount().catch(() => null);
+      const [acct, consent] = await Promise.all([
+        getPieAccount().catch(() => null),
+        hasMemoryCloudConsent().catch(() => true),
+      ]);
       if (!alive) return;
+      setHasCloudConsent(consent);
       setAccount(acct);
       if (!acct) {
         setPlan(null);
@@ -278,7 +284,9 @@ function AccountCard({ onOpen }: { onOpen: () => void }) {
       fetchedFor.current = acct.apiKey;
       try {
         const ent = await getEntitlement(acct.apiKey);
-        if (alive) setPlan(ent.plan);
+        if (!alive) return;
+        setPlan(ent.plan);
+        setHasCloudConsent(await hasMemoryCloudConsent().catch(() => consent));
       } catch {
         /* 离线 / 接口失败：保留缓存态 */
       }
@@ -293,7 +301,13 @@ function AccountCard({ onOpen }: { onOpen: () => void }) {
     const offs = [
       onStoreChange("instances", bump),
       onStoreChange("config", (c) => {
-        if (c.id?.startsWith("managed_entitlement_")) bump();
+        if (
+          c.id === undefined ||
+          c.id === PRIVACY_CONSENT_KEY ||
+          c.id.startsWith("managed_entitlement_")
+        ) {
+          bump();
+        }
       }),
     ];
     return () => offs.forEach((off) => off());
@@ -307,6 +321,8 @@ function AccountCard({ onOpen }: { onOpen: () => void }) {
     ) : plan === "none" ? (
       <ManagedStatusPill tone="neutral" label={t("managed.account.inactive")} />
     ) : null;
+
+  const needsConsentDot = Boolean(account && plan === "active" && !hasCloudConsent);
 
   return (
     <button
@@ -324,8 +340,20 @@ function AccountCard({ onOpen }: { onOpen: () => void }) {
         </span>
         <span className="flex items-center gap-1.5 truncate text-[11px] text-fg-2">
           {account ? pill : t("settings.account.signInCaption")}
+          {needsConsentDot && (
+            <span className="truncate text-pending">
+              · {t("settings.memory.privacyConsent.accountCardHint")}
+            </span>
+          )}
         </span>
       </span>
+      {needsConsentDot && (
+        <span
+          data-testid="settings-account-privacy-dot"
+          aria-label={t("settings.memory.privacyConsent.accountCardHint")}
+          className="h-2 w-2 shrink-0 rounded-full bg-pending"
+        />
+      )}
       <ChevronRight size={14} strokeWidth={1.75} className="shrink-0 text-fg-3" />
     </button>
   );
@@ -465,7 +493,8 @@ export default function SettingsRoot({
         getMemoryAccessState({ fetchIfUncached: false }),
         getMemorySettings(),
         listMemoryEntries(),
-      ]).then(([access, s, es]) => {
+        hasMemoryCloudConsent(),
+      ]).then(([access, s, es, consent]) => {
         if (!alive) return;
         if (access.mode === "locked") {
           setMemoryBadge(t("settings.memory.proBadge"));
@@ -475,7 +504,7 @@ export default function SettingsRoot({
           );
         } else {
           setMemoryBadge(
-            s.enabled
+            s.enabled && consent
               ? t("settings.nav.memoryOnCount", { count: String(es.length) })
               : t("settings.nav.memoryOff"),
           );
@@ -483,10 +512,15 @@ export default function SettingsRoot({
       });
     };
     refresh();
-    const off = onStoreChange("memory", refresh);
+    const offs = [
+      onStoreChange("memory", refresh),
+      onStoreChange("config", (c) => {
+        if (c.id === undefined || c.id === PRIVACY_CONSENT_KEY) refresh();
+      }),
+    ];
     return () => {
       alive = false;
-      off();
+      offs.forEach((off) => off());
     };
   }, [t]);
 

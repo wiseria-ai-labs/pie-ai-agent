@@ -38,13 +38,13 @@ export async function handleMemoryAlarm(name: string, deps: MemoryTickDeps = {})
   if (access.mode !== "cloud_active") return;
 
   try {
-    await flushMemoryDigests({ now });
-  } catch (e) {
-    console.warn("[memory] cloud digest push failed:", e);
-  }
-  try {
     await syncMemoryFromCloud({ force: true, now });
   } catch (e) {
     console.warn("[memory] cloud mirror pull failed:", e);
+  }
+  try {
+    await flushMemoryDigests({ now });
+  } catch (e) {
+    console.warn("[memory] cloud digest push failed:", e);
   }
 }

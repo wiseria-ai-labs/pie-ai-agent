@@ -1,9 +1,19 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
+import { _resetForTests } from "@/lib/idb/db";
+import { acceptPrivacyPolicy, clearPrivacyConsent, getPrivacyConsent } from "@/lib/privacy-consent";
 import ManagedAccountPanel from "./ManagedAccountPanel";
 import type { Entitlement } from "@/lib/managed-auth";
 
-afterEach(() => cleanup());
+beforeEach(async () => {
+  await _resetForTests();
+  await acceptPrivacyPolicy("subscribe");
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const active: Entitlement = {
   plan: "active", email: "u@x.com",
@@ -141,5 +151,23 @@ describe("ManagedAccountPanel", () => {
     render(<ManagedAccountPanel apiKey="sk-acc-r" deps={{ refresh }} />);
     await screen.findByText(/active via code/i); // 等渲染完成（redeemedUntil 文案）
     expect(screen.queryByText(/billed/i)).toBeNull();
+  });
+
+  it("active 且未同意隐私条款 → 显示官网条款链接与同意按钮，点击同意后隐藏卡片", async () => {
+    await clearPrivacyConsent();
+    const refresh = vi.fn(async (): Promise<Entitlement> => active);
+    render(<ManagedAccountPanel apiKey="sk-acc-consent" deps={{ refresh }} />);
+
+    expect(await screen.findByTestId("account-privacy-consent-card")).toBeTruthy();
+    const link = screen.getByTestId("account-privacy-policy-link") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("https://www.pie.chat/privacy");
+
+    fireEvent.click(screen.getByTestId("account-privacy-agree"));
+    await waitFor(async () => {
+      expect(await getPrivacyConsent()).toMatchObject({ status: "accepted", source: "account_page" });
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-privacy-consent-card")).toBeNull(),
+    );
   });
 });

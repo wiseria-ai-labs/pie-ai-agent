@@ -11,6 +11,7 @@
 import { hasBrowserDataPermission } from "@/lib/browser-data/permissions";
 import { getSessionMeta, listSessionIndex } from "@/lib/sessions/storage";
 import type { SessionIndexEntry, SessionMeta } from "@/lib/sessions/types";
+import { acceptPrivacyPolicy, hasMemoryCloudConsent } from "@/lib/privacy-consent";
 import { getMemoryAccessState } from "./access";
 import { containsSecret, hostOf, isDomainExcluded } from "./admission";
 import {
@@ -100,6 +101,13 @@ export async function flushMemoryDigests(
 
   const settings = await getMemorySettings();
   if (!settings.enabled) return { accepted: 0 };
+  if (!(await hasMemoryCloudConsent())) {
+    if (access.entitlement.privacyConsent === true) {
+      await acceptPrivacyPolicy("cloud_sync");
+    } else {
+      return { accepted: 0 };
+    }
+  }
 
   const now = deps.now ?? Date.now();
   const state = await getMemoryState();

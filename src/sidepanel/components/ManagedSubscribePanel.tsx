@@ -3,6 +3,7 @@ import { startManagedLogin, type LoginResult } from "@/lib/managed-auth";
 import { getEntitlement, openCheckout } from "@/lib/managed-account";
 import { useI18n } from "@/lib/i18n";
 import { formatMoney } from "@/lib/managed-format";
+import { acceptPrivacyPolicy, getPrivacyPolicyUrl } from "@/lib/privacy-consent";
 import RedeemCodeForm from "./RedeemCodeForm";
 import { Button } from "./ui/Button";
 import { ManagedStatusPill } from "./ManagedStatusPill";
@@ -94,6 +95,7 @@ export default function ManagedSubscribePanel({
 
       if (ent.plan === "active") {
         stopPolling();
+        void acceptPrivacyPolicy("subscribe").catch(() => {});
         onCreatedRef.current(currentSession.apiKey, ent.email);
         return;
       }
@@ -164,6 +166,7 @@ export default function ManagedSubscribePanel({
     setErr(null);
     try {
       await checkout(session.apiKey, interval);
+      void acceptPrivacyPolicy("subscribe").catch(() => {});
       // Start auto-polling after checkout opens the Stripe tab
       startPolling();
     } catch (e) {
@@ -179,6 +182,7 @@ export default function ManagedSubscribePanel({
       const ent = await refresh(session.apiKey);
       if (ent.plan === "active") {
         stopPolling();
+        void acceptPrivacyPolicy("subscribe").catch(() => {});
         onCreated(session.apiKey, ent.email);
         return;
       }
@@ -332,6 +336,21 @@ export default function ManagedSubscribePanel({
             <Button variant="ghost" size="sm" fullWidth disabled={busy} onClick={handleRefresh}>
               {t("managed.subscribe.refreshStatus")}
             </Button>
+            <p
+              data-testid="subscribe-privacy-notice"
+              className="pt-1 text-center text-[11px] leading-[16px] text-fg-3"
+            >
+              {t("managed.subscribe.privacyAgreement")}
+              <a
+                href={getPrivacyPolicyUrl(locale)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-fg-2 underline underline-offset-2 hover:text-fg-1"
+              >
+                {t("managed.subscribe.privacyLink")}
+              </a>
+              {t("managed.subscribe.privacyAgreementSuffix")}
+            </p>
           </div>
           {session.entitlement.plan === "none" && (
             <div className="border-t border-line pt-3.5">
@@ -341,6 +360,7 @@ export default function ManagedSubscribePanel({
                 onRedeemed={(ent) => {
                   if (ent.plan === "active") {
                     stopPolling();
+                    void acceptPrivacyPolicy("redeem").catch(() => {});
                     onCreated(session.apiKey, ent.email);
                   } else {
                     setSession({ ...session, entitlement: ent });

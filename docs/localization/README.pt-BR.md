@@ -97,7 +97,12 @@ estão no [roadmap](../ROADMAP.md).
   servidor no meio do caminho e não coleta telemetria nem análises.
 - **A assinatura é a única exceção.** Se você usar a assinatura oficial do Pie, as
   suas solicitações de chat passam pelo serviço do Pie (é assim que a cobrança
-  funciona) — mas o Pie ainda assim não coleta telemetria de produto.
+  funciona), sem retenção de mensagens nem telemetria de produto. Com o seu
+  consentimento de privacidade (ao assinar ou no aviso da atualização v2.0), o recurso
+  opcional de **Memória** entre dispositivos envia apenas conclusões sanitizadas das
+  conversas (nunca páginas completas ou guias anônimas) de forma criptografada, apaga
+  os trechos após a consolidação e pode ser desativado ou limpo a qualquer momento em
+  **Configurações → Memória**.
 - **O Pie só olha para uma página enquanto executa a tarefa que você pediu** e
   trata tudo na página como não confiável, de modo que uma página maliciosa não
   consegue enganá-lo para fazer algo que você nunca pediu.

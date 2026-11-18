@@ -1,7 +1,13 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
+import { _resetForTests } from "@/lib/idb/db";
 import type { LoginResult, Entitlement } from "@/lib/managed-auth";
+import { getPrivacyConsent, PRIVACY_POLICY_URL } from "@/lib/privacy-consent";
 import ManagedSubscribePanel from "./ManagedSubscribePanel";
+
+beforeEach(async () => {
+  await _resetForTests();
+});
 
 afterEach(() => {
   cleanup();
@@ -156,6 +162,28 @@ describe("ManagedSubscribePanel", () => {
     expect(screen.queryByText(/first month/i)).toBeNull();
   });
 
+  it("订阅页展示隐私条款提示与外链，点击订阅或兑换成功自动记录同意", async () => {
+    const checkout = vi.fn(async () => {});
+    render(<ManagedSubscribePanel
+      onCreated={vi.fn()}
+      deps={{
+        login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] } })),
+        checkout,
+      }}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    const notice = await screen.findByTestId("subscribe-privacy-notice");
+    const link = notice.querySelector("a") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe(PRIVACY_POLICY_URL);
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(await getPrivacyConsent()).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^subscribe$/i }));
+    await waitFor(async () => {
+      expect(await getPrivacyConsent()).toMatchObject({ status: "accepted", source: "subscribe" });
+    });
+  });
+
   it("登录后（plan:none）显示兑换输入框；兑换成功转 active → onCreated", async () => {
     const login = vi.fn(async (): Promise<LoginResult> => ({
       apiKey: "sk-v",
@@ -171,6 +199,7 @@ describe("ManagedSubscribePanel", () => {
     fireEvent.change(screen.getByPlaceholderText(/PIE-/), { target: { value: "PIE-AAAAA-BBBBB-CCCCC" } });
     fireEvent.click(screen.getByRole("button", { name: /^redeem$/i }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("sk-v", "u@x.com"));
+    expect(await getPrivacyConsent()).toMatchObject({ status: "accepted", source: "redeem" });
   });
 
   const pricingEnt = (over: Record<string, unknown> = {}) => ({

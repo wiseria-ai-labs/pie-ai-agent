@@ -6,6 +6,7 @@ import {
 } from "./managed-account";
 import { getConfig, setConfig } from "./idb/config-store";
 import { _resetForTests } from "./idb/db";
+import { clearPrivacyConsent, getPrivacyConsent } from "./privacy-consent";
 
 describe("managed-account", () => {
   it("getEntitlement GETs /me/entitlement?locale= with Bearer and parses v2.1", async () => {
@@ -124,7 +125,24 @@ describe("managed-account", () => {
     expect(res.subscription).toMatchObject({ source: "redemption", cancelAtPeriodEnd: true });
   });
 
-  it("redeem POSTs /redeem?locale= with Bearer + {code}, 解析并缓存 entitlement", async () => {
+  it("normalizeEntitlement 透传 privacyConsent 并在 active + true 时同步本地同意", async () => {
+    await clearPrivacyConsent();
+    const raw = {
+      plan: "active",
+      email: "u@x.com",
+      subscription: null,
+      quota: null,
+      models: [],
+      privacyConsent: true,
+    };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => raw })) as unknown as typeof fetch;
+    const res = await getEntitlement("sk-pc1", { fetchFn, locale: "en" });
+    expect(res.privacyConsent).toBe(true);
+    expect(await getPrivacyConsent()).toMatchObject({ status: "accepted", source: "cloud_sync" });
+  });
+
+  it("redeem POSTs /redeem?locale= with Bearer + {code}, 解析并缓存 entitlement 且记录隐私同意", async () => {
+    await clearPrivacyConsent();
     const ent = { plan: "active", email: "u@x.com", subscription: { planName: "Pie Pro", currentPeriodEnd: 9, cancelAtPeriodEnd: true, source: "redemption" }, quota: null, models: [] };
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ent })) as unknown as typeof fetch;
     const res = await redeem("sk-r", "PIE-AAAAA-BBBBB-CCCCC", { fetchFn, locale: "en" });
@@ -135,6 +153,7 @@ describe("managed-account", () => {
     });
     expect(res.subscription?.source).toBe("redemption");
     expect(getCachedEntitlement("sk-r")).toEqual(res);
+    expect(await getPrivacyConsent()).toMatchObject({ status: "accepted", source: "redeem" });
   });
 
   it("redeem 非 2xx → 抛 RedeemError 带后端 error code 与 status", async () => {

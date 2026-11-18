@@ -8,6 +8,11 @@
 
 import { getMemoryAccessState, getManagedMemoryApiKey, isMemoryWritableAccess } from "./access";
 import {
+  acceptPrivacyPolicy,
+  getPrivacyConsent,
+  hasMemoryCloudConsent,
+} from "@/lib/privacy-consent";
+import {
   cloudClearAllMemory,
   cloudDeleteMemoryEntries,
   cloudForgetMemory,
@@ -19,6 +24,7 @@ import {
   patchCloudMemorySettings,
   pullCloudMemory,
   type CloudMemoryPullResult,
+  type CloudMemorySnapshot,
   type MemoryCloudDeps,
 } from "./cloud";
 import { memoryRequiresSubscription } from "./model";
@@ -59,6 +65,18 @@ export interface SyncMemoryOptions {
   now?: number;
 }
 
+async function syncCloudPrivacyConsent(snapshot: CloudMemorySnapshot): Promise<void> {
+  const cloudAgreed =
+    snapshot.settings.privacyConsent === true ||
+    (snapshot.settings.privacyConsent !== false &&
+      !snapshot.readOnly &&
+      snapshot.revision > 0 &&
+      snapshot.settings.enabled === true);
+  if (cloudAgreed && (await getPrivacyConsent())?.status !== "accepted") {
+    await acceptPrivacyPolicy("cloud_sync");
+  }
+}
+
 async function runSyncOnce(opts: SyncMemoryOptions): Promise<CloudMemoryPullResult | null> {
   if (!memoryRequiresSubscription()) return null;
 
@@ -78,6 +96,9 @@ async function runSyncOnce(opts: SyncMemoryOptions): Promise<CloudMemoryPullResu
   // 首次登录 Pro 自动将存量迁移上云，避免首次 pull 冲掉本地数据。
   if (access.mode === "cloud_active" && !prevState.cloudImported) {
     const firstPull = await pullCloudMemory(apiKey, undefined, deps);
+    if (!firstPull.unchanged) {
+      await syncCloudPrivacyConsent(firstPull);
+    }
     if (
       !firstPull.unchanged &&
       firstPull.revision === 0 &&
@@ -92,6 +113,9 @@ async function runSyncOnce(opts: SyncMemoryOptions): Promise<CloudMemoryPullResu
       const hasLocalData =
         localEntries.length > 0 || localProfile.text.trim().length > 0;
       if (hasLocalData) {
+        if (!(await hasMemoryCloudConsent())) {
+          return firstPull;
+        }
         const imported = await cloudImportMemory(
           apiKey,
           {
@@ -124,6 +148,8 @@ async function runSyncOnce(opts: SyncMemoryOptions): Promise<CloudMemoryPullResu
     }
     return res;
   }
+
+  await syncCloudPrivacyConsent(res);
 
   // 到期用户尚未向云端同步过数据时，不应用空的 revision=0 抹掉本地存量记忆（保留只读可见）。
   if (
@@ -178,8 +204,11 @@ export async function syncSetMemorySettings(
 
   const localOnlyPatch =
     patch.historySource !== undefined ? { historySource: patch.historySource } : {};
-  const cloudPatch: { enabled?: boolean; excludedDomains?: string[] } = {};
-  if (patch.enabled !== undefined) cloudPatch.enabled = patch.enabled;
+  const cloudPatch: { enabled?: boolean; excludedDomains?: string[]; privacyConsent?: boolean } = {};
+  if (patch.enabled !== undefined) {
+    cloudPatch.enabled = patch.enabled;
+    if (patch.enabled) cloudPatch.privacyConsent = true;
+  }
   if (patch.excludedDomains !== undefined) cloudPatch.excludedDomains = patch.excludedDomains;
 
   if (cloudPatch.enabled !== undefined || cloudPatch.excludedDomains !== undefined) {
@@ -190,6 +219,9 @@ export async function syncSetMemorySettings(
       excludedDomains: res.settings.excludedDomains,
     });
     await setMemoryState({ cloudRevision: res.revision });
+    if (patch.enabled === true) {
+      await acceptPrivacyPolicy("memory_settings");
+    }
     return saved;
   }
 

@@ -26,7 +26,7 @@ export interface CloudMemorySnapshot {
   unchanged: false;
   revision: number;
   readOnly: boolean;
-  settings: { enabled: boolean; excludedDomains: string[] };
+  settings: { enabled: boolean; excludedDomains: string[]; privacyConsent?: boolean };
   profile: { text: string; updatedAt: number };
   state: {
     lastConsolidatedAt?: number;
@@ -139,6 +139,9 @@ function normalizeSnapshot(raw: unknown): CloudMemorySnapshot {
       excludedDomains: Array.isArray(settingsRaw.excludedDomains)
         ? settingsRaw.excludedDomains.filter((d): d is string => typeof d === "string")
         : [],
+      ...(typeof settingsRaw.privacyConsent === "boolean"
+        ? { privacyConsent: settingsRaw.privacyConsent }
+        : {}),
     },
     profile: {
       text: typeof profileRaw.text === "string" ? profileRaw.text : "",
@@ -206,9 +209,12 @@ export async function pullCloudMemory(
 
 export async function patchCloudMemorySettings(
   apiKey: string,
-  patch: { enabled?: boolean; excludedDomains?: string[] },
+  patch: { enabled?: boolean; excludedDomains?: string[]; privacyConsent?: boolean },
   deps: MemoryCloudDeps = {},
-): Promise<{ revision: number; settings: { enabled: boolean; excludedDomains: string[] } }> {
+): Promise<{
+  revision: number;
+  settings: { enabled: boolean; excludedDomains: string[]; privacyConsent?: boolean };
+}> {
   return reqJson(`/memory/settings`, apiKey, {
     method: "PATCH",
     body: JSON.stringify(patch),

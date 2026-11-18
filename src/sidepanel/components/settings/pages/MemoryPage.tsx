@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Brain, Globe, Lock, Pin, Clock, User, Sliders, Target, Trash2 } from "lucide-react";
-import { useT, type DictKey } from "@/lib/i18n";
+import { ArrowLeft, ArrowUpRight, Brain, Globe, Lock, Pin, Clock, User, Sliders, Target, Trash2 } from "lucide-react";
+import { useI18n, type DictKey } from "@/lib/i18n";
 import { onStoreChange } from "@/lib/store-bus";
+import { getPrivacyPolicyUrl, hasMemoryCloudConsent, PRIVACY_CONSENT_KEY } from "@/lib/privacy-consent";
 import { Switch } from "@/sidepanel/components/ui/Switch";
 import {
   exportMemory,
@@ -90,10 +91,11 @@ export default function MemoryPage({
   onOpenSession?: (sessionId: string) => void;
   onOpenSubscribe?: () => void;
 }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const [access, setAccess] = useState<MemoryAccessState | null>(null);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [enabled, setEnabled] = useState(true);
+  const [hasCloudConsent, setHasCloudConsent] = useState(true);
   const [excluded, setExcluded] = useState<string[]>([]);
   const [historySource, setHistorySource] = useState(false);
   const [historyPerm, setHistoryPerm] = useState(false);
@@ -112,16 +114,18 @@ export default function MemoryPage({
 
   const reload = useMemo(
     () => async () => {
-      const [accessState, es, settings, state, profile] = await Promise.all([
+      const [accessState, es, settings, state, profile, cloudConsent] = await Promise.all([
         getMemoryAccessState({ fetchIfUncached: false }),
         listMemoryEntries({ includeExpired: true }),
         getMemorySettings(),
         getMemoryState(),
         getMemoryProfile(),
+        hasMemoryCloudConsent(),
       ]);
       setAccess(accessState);
       setEntries(es);
       setEnabled(settings.enabled);
+      setHasCloudConsent(cloudConsent);
       setExcluded(settings.excludedDomains);
       setHistorySource(settings.historySource === true);
       setHistoryPerm(await hasBrowserDataPermission("history"));
@@ -141,6 +145,11 @@ export default function MemoryPage({
     const off = onStoreChange("memory", () => {
       if (alive) void reload();
     });
+    const offConfig = onStoreChange("config", (c) => {
+      if (alive && (c.id === undefined || c.id === PRIVACY_CONSENT_KEY)) {
+        void reload();
+      }
+    });
 
     // 打开记忆页时强制刷新订阅态，并将本机镜像与云端最新版对齐。
     void (async () => {
@@ -159,6 +168,7 @@ export default function MemoryPage({
     return () => {
       alive = false;
       off();
+      offConfig();
     };
   }, [reload]);
 
@@ -186,6 +196,8 @@ export default function MemoryPage({
   const recentCount = live.length - longCount;
   const usedChars = live.reduce((n, e) => n + e.title.length + e.body.length, 0);
 
+  const effectiveEnabled = enabled && hasCloudConsent;
+
   const toggle = async (next: boolean) => {
     if (isReadOnly) return;
     setActionError(null);
@@ -193,6 +205,7 @@ export default function MemoryPage({
     try {
       const saved = await syncSetMemorySettings({ enabled: next });
       setEnabled(saved.enabled);
+      if (next) setHasCloudConsent(true);
     } catch (err) {
       setEnabled(!next);
       setActionError(err instanceof Error ? err.message : String(err));
@@ -321,6 +334,38 @@ export default function MemoryPage({
           )}
         </div>
       )}
+      {access?.mode === "cloud_active" && !hasCloudConsent && (
+        <div
+          data-testid="memory-privacy-consent-banner"
+          className="flex flex-col gap-2 rounded-card border border-accent-line bg-accent-tint p-3.5"
+        >
+          <div className="text-[13px] font-semibold text-fg-1">
+            {t("settings.memory.privacyConsent.settingsBannerTitle")}
+          </div>
+          <p className="text-[12px] leading-[18px] text-fg-2">
+            {t("settings.memory.privacyConsent.settingsBannerDesc")}
+          </p>
+          <div className="flex flex-wrap items-center gap-3 pt-0.5">
+            <button
+              type="button"
+              data-testid="memory-privacy-agree"
+              onClick={() => void toggle(true)}
+              className="rounded-control bg-fg-1 px-3 py-1.5 text-[12px] font-medium text-canvas hover:opacity-90"
+            >
+              {t("settings.memory.privacyConsent.settingsAgreeBtn")}
+            </button>
+            <a
+              href={getPrivacyPolicyUrl(locale)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[12px] text-fg-2 underline underline-offset-2 hover:text-fg-1"
+            >
+              {t("settings.memory.privacyConsent.readPolicy")}
+              <ArrowUpRight size={13} strokeWidth={1.75} />
+            </a>
+          </div>
+        </div>
+      )}
       {actionError && (
         <div className="rounded-control border border-warning-line bg-warning-tint px-3 py-2 text-[11.5px] text-warning">
           {actionError}
@@ -335,7 +380,7 @@ export default function MemoryPage({
           </span>
           <Switch
             testId="memory-switch"
-            checked={enabled}
+            checked={effectiveEnabled}
             disabled={isReadOnly}
             onChange={(v) => void toggle(v)}
           />
@@ -440,9 +485,9 @@ export default function MemoryPage({
             </span>
             <Switch
               testId="memory-source-chat"
-              checked={enabled}
+              checked={effectiveEnabled}
               disabled={isReadOnly}
-              onChange={() => void toggle(!enabled)}
+              onChange={() => void toggle(!effectiveEnabled)}
             />
           </div>
           <div className="flex min-h-[46px] items-center gap-3 border-t border-line px-3.5 py-2">
@@ -528,6 +573,21 @@ export default function MemoryPage({
             </span>
             <span className="text-[12px] text-fg-3">{t("settings.memory.modelValue")}</span>
           </div>
+          <a
+            href={getPrivacyPolicyUrl(locale)}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="memory-privacy-policy-link"
+            className="flex min-h-[46px] items-center gap-3 border-t border-line px-3.5 py-2 hover:bg-field"
+          >
+            <span className="flex-1 text-[13px] font-medium text-fg-1">
+              {t("settings.memory.privacyConsent.policyRowTitle")}
+              <small className="block text-[11px] font-normal text-fg-3">
+                {t("settings.memory.privacyConsent.policyRowDesc")}
+              </small>
+            </span>
+            <ArrowUpRight size={14} strokeWidth={1.75} className="shrink-0 text-fg-3" />
+          </a>
         </div>
       </div>
 
@@ -593,7 +653,7 @@ function MemoryList({
   onChanged: () => Promise<void>;
   onOpenSession?: (sessionId: string) => void;
 }) {
-  const t = useT();
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");

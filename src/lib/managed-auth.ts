@@ -53,6 +53,8 @@ export interface Entitlement {
   introOffer?: { percentOff: number };
   /** 仅 plan:none、后端年付开+价格拉取成功时下发；存在=渲染价格卡，缺=回退单订阅按钮。仅展示价、客户端不计算。 */
   pricing?: PricingInfo;
+  /** 云端持久化的 2.0 隐私条款（含云端记忆）同意状态，用于跨设备同步。 */
+  privacyConsent?: boolean;
 }
 export interface LoginResult {
   apiKey: string;
