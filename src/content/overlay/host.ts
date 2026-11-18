@@ -15,7 +15,7 @@ import { OVERLAY_CARD_PAD, type OverlayOpenPayload } from "@/lib/overlay/protoco
 
 const HOST_ATTR = "data-pie-overlay-host";
 /** Card width, and the wrapper carrying it plus the margin on both sides. */
-const OVERLAY_CARD_WIDTH = 500;
+const OVERLAY_CARD_WIDTH = 680;
 const OVERLAY_WIDTH = OVERLAY_CARD_WIDTH + OVERLAY_CARD_PAD * 2;
 const EDGE = 12;
 const BELOW_SELECTION_GAP = 14;

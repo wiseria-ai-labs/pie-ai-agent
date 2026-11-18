@@ -103,6 +103,29 @@ describe("prompt", () => {
   it("returns empty when there is nothing to inject", () => {
     expect(buildUserMemoryBlock({ profileText: "", entries: [], asOf: NOW })).toBe("");
   });
+
+  it("never renders the text of encrypted entries unless the user approved", () => {
+    const secret = entry({
+      kind: "contact",
+      title: "家庭地址",
+      body: "上海市黄浦区某某路 100 弄 3 号 501",
+      encrypted: true,
+    });
+    const normal = entry({ title: "偏好上午出发" });
+    const masked = buildUserMemoryBlock({ profileText: "", entries: [secret, normal], asOf: NOW });
+    expect(masked).not.toContain("某某路");
+    expect(masked).not.toContain("家庭地址");
+    expect(masked).toContain("- [contact] (encrypted");
+    expect(masked).toContain("偏好上午出发");
+
+    const revealed = buildUserMemoryBlock({
+      profileText: "",
+      entries: [secret],
+      asOf: NOW,
+      revealEncrypted: true,
+    });
+    expect(revealed).toContain("上海市黄浦区某某路 100 弄 3 号 501");
+  });
 });
 
 function sessionMeta(over: Partial<SessionMeta>): SessionMeta {

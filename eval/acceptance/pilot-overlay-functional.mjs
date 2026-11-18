@@ -165,7 +165,7 @@ try {
   });
   rec("A3 resize bridge", h > 130 ? "PASS" : "FAIL", `iframe height=${Math.round(h)}`);
 
-  // 卡片几何：iframe 564（卡片 500 + 两侧 32px 透明留白），阴影不被裁、圆角外透明
+  // 卡片几何：iframe 744（卡片 680 + 两侧 32px 透明留白），阴影不被裁、圆角外透明
   const ovFrame = page.frames().find((f) => f.url().includes("src/overlay/index.html"));
   const layout = await ovFrame.evaluate(() => {
     const root = document.getElementById("overlay-root");
@@ -182,7 +182,7 @@ try {
   });
   rec(
     "A4 card geometry inside a transparent iframe",
-    host.hostWidth === 564 && layout.pad === "32px" && layout.cardW === 500 && layout.bodyBg === "rgba(0, 0, 0, 0)"
+    host.hostWidth === 744 && layout.pad === "32px" && layout.cardW === 680 && layout.bodyBg === "rgba(0, 0, 0, 0)"
       ? "PASS"
       : "FAIL",
     JSON.stringify({ host: host.hostWidth, ...layout }),
@@ -441,11 +441,16 @@ try {
   const tFrame = page.frames().find((f) => f.url().includes("src/overlay/index.html"));
   const langs = await tFrame.locator("[data-action-row=translate] [data-lang]").allTextContents();
   const prefill = await tFrame.locator("#overlay-root textarea").inputValue();
-  const bubbles0 = await tFrame.locator("#overlay-root [data-thread]").count();
+  // Pre-conversation the thread is mounted but collapsed (it animates open with
+  // the first message), so assert "no space taken", not "absent".
+  const threadOpen0 = await tFrame.evaluate(() => {
+    const el = document.querySelector("[data-thread]");
+    return el ? Math.round(el.getBoundingClientRect().height) : 0;
+  });
   rec(
     "G1 translate opens with one-click language buttons, empty composer, no auto-send",
-    langs.length >= 2 && prefill === "" && bubbles0 === 0 ? "PASS" : "FAIL",
-    `langs=${JSON.stringify(langs)} prefill=${JSON.stringify(prefill)} thread=${bubbles0}`,
+    langs.length >= 2 && prefill === "" && threadOpen0 <= 30 ? "PASS" : "FAIL",
+    `langs=${JSON.stringify(langs)} prefill=${JSON.stringify(prefill)} threadH=${threadOpen0}`,
   );
   await snap(page, "translate-chip");
 

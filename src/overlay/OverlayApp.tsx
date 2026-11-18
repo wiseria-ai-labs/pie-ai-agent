@@ -178,6 +178,43 @@ export default function OverlayApp() {
     [panelRequest, respondPanel],
   );
   const { messages, streaming, streamingText, streamingThinking } = session;
+  /** The turn the user just sent, shown before the session has it: dispatch
+   *  first waits (≤ MEMORY_SEND_WAIT_MS) for the memory pick, and the card must
+   *  not sit frozen through that. */
+  const [pendingSend, setPendingSend] = useState<string | null>(null);
+  /** A conversation exists: header + thread are open, the input is multi-line. */
+  const chat = messages.length > 0 || streaming || pendingSend !== null;
+  const busy = streaming || pendingSend !== null;
+  // The brand mark is one object that moves: pre-conversation it sits outside
+  // the input, then it lands in the header. We keep the last rect of each slot
+  // and FLIP the incoming one from the other slot's position.
+  const markSpotRef = useRef<HTMLSpanElement>(null);
+  const markHeadRef = useRef<HTMLSpanElement>(null);
+  const markRects = useRef<{ spot: DOMRect | null; chat: DOMRect | null }>({ spot: null, chat: null });
+  const markWasChat = useRef(chat);
+  useLayoutEffect(() => {
+    const slot = chat ? "chat" : "spot";
+    const el = chat ? markHeadRef.current : markSpotRef.current;
+    const rect = el?.getBoundingClientRect();
+    if (rect && rect.width > 0) markRects.current[slot] = rect;
+    const from = markRects.current[chat ? "spot" : "chat"];
+    const switched = markWasChat.current !== chat;
+    markWasChat.current = chat;
+    if (!switched || !el || !from) return;
+    const to = el.getBoundingClientRect();
+    if (to.width <= 0) return;
+    el.animate(
+      [
+        {
+          transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width})`,
+          opacity: 0.6,
+        },
+        { transform: "none", opacity: 1 },
+      ],
+      { duration: 320, easing: "cubic-bezier(.32,.72,0,1)" },
+    );
+  }); // every render: the cached slot rects must stay fresh for the next switch
+
 
   // ── Memory prefetch (spec §5.5) ───────────────────────────────────────────
   // Started as soon as the overlay opens — the user's typing time is the
@@ -332,6 +369,7 @@ export default function OverlayApp() {
       const text = content.trim();
       if (!text || streaming || !session.ready || sendingRef.current) return false;
       sendingRef.current = true;
+      setPendingSend(text);
       // A structured turn is stored with the instruction + quote it stood for
       // (the SW rebuilds the live one). History that only said "翻译成日语"
       // without the text or target let the next turn copy the previous answer.
@@ -346,6 +384,9 @@ export default function OverlayApp() {
           : undefined);
       void (async () => {
         const mem = await takeMemoryPick(text);
+        // Same tick as session.send: the real user message replaces the
+        // optimistic one with no frame in between.
+        setPendingSend(null);
         session.send({
           content: text,
           ...(wireText !== undefined ? { expandedForLLM: wireText } : {}),
@@ -535,7 +576,12 @@ export default function OverlayApp() {
   }, [newChat, toPanel, langOpen, modelPickerOpen]);
 
   const onTextareaKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== "Enter" || e.shiftKey) return;
+    if (e.key !== "Enter") return;
+    if (e.shiftKey) {
+      // Pre-conversation the input is a single line; nothing to break.
+      if (!chat) e.preventDefault();
+      return;
+    }
     if (e.nativeEvent.isComposing) return; // IME candidate selection
     e.preventDefault();
     sendRef.current();
@@ -617,8 +663,6 @@ export default function OverlayApp() {
     }
   }, [t]);
 
-  const chat = messages.length > 0 || streaming;
-  const busy = streaming;
   const cardMaxHeight = Math.max(120, maxHeight - CARD_PAD * 2);
 
   // The selection the next send acts on. Translate / rewrite keep it for
@@ -787,24 +831,39 @@ export default function OverlayApp() {
         className="flex w-full flex-col overflow-hidden rounded-[16px] border border-line bg-surface font-sans text-fg-1 shadow-[0_10px_28px_-6px_rgba(20,24,29,0.22),0_1px_4px_rgba(20,24,29,0.08)]"
         style={{ maxHeight: cardMaxHeight }}
       >
-        {chat && (
-          <div className="flex h-[42px] shrink-0 items-center gap-2 border-b border-line px-3">
-            <PieMark className="h-[15px] w-[15px] shrink-0 text-fg-1" />
-            <span className="truncate text-[12.5px] font-medium">{sessionTitle(messages, t("overlay.ui.newChat"))}</span>
-            <span className="shrink-0 text-[11.5px] text-fg-3">· {t("overlay.ui.sameSession")}</span>
-            <span className="flex-1" />
-            <IconBtn label={t("overlay.ui.newChat")} onClick={newChat}>＋</IconBtn>
-            <IconBtn label={t("overlay.ui.toPanel")} onClick={toPanel} disabled={busy}>⤢</IconBtn>
-            <IconBtn label={t("common.close")} onClick={requestClose}>×</IconBtn>
-          </div>
-        )}
+        {/* Kept mounted and collapsed to 0 in the pre-conversation state, so the
+            switch animates instead of popping. `inert` keeps its buttons out of
+            the tab order while it is invisible. */}
+        <div
+          data-head
+          inert={!chat}
+          aria-hidden={!chat}
+          className={`flex shrink-0 items-center gap-2 overflow-hidden border-b px-3 transition-[height,opacity,border-color] duration-[260ms] ease-standard ${
+            chat ? "h-9 border-line opacity-100" : "h-0 border-transparent opacity-0"
+          }`}
+        >
+          <span ref={markHeadRef} className="flex h-4 shrink-0 items-center">
+            <PieMark className="h-[15px] w-[15px] text-fg-1" />
+          </span>
+          <span className="truncate text-[12.5px] font-medium">{sessionTitle(messages, t("overlay.ui.newChat"))}</span>
+          <span className="shrink-0 text-[11.5px] text-fg-3">· {t("overlay.ui.sameSession")}</span>
+          <span className="flex-1" />
+          <IconBtn label={t("overlay.ui.newChat")} onClick={newChat}>＋</IconBtn>
+          <IconBtn label={t("overlay.ui.toPanel")} onClick={toPanel} disabled={busy}>⤢</IconBtn>
+          <IconBtn label={t("common.close")} onClick={requestClose}>×</IconBtn>
+        </div>
 
-        {chat && (
+        <div
+          className={`grid min-h-0 transition-[grid-template-rows,opacity] duration-[260ms] ease-standard ${
+            chat ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+          }`}
+        >
+          <div className="flex min-h-0 flex-col overflow-hidden">
           <div
             ref={containerRef}
             onScroll={onScroll}
             data-thread
-            className="flex min-h-0 flex-col gap-3 overflow-y-auto px-4 py-3"
+            className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pb-3 pt-2.5"
           >
             {messages.map((m, i) => (
               <MessageRow
@@ -829,6 +888,24 @@ export default function OverlayApp() {
               <div className="text-[11.5px] text-fg-3" data-testid="overlay-panel-notice">
                 {t("overlay.ui.needsPanelConfirm")}
               </div>
+            )}
+            {pendingSend !== null && (
+              <>
+                <MessageRow
+                  m={{ role: "user", content: pendingSend }}
+                  replaceState={undefined}
+                  stale={false}
+                  canReplace={false}
+                  onReplace={() => {}}
+                  onUndo={() => {}}
+                  onCopy={copyText}
+                  onMemoryWrong={openMemorySettings}
+                />
+                <div className="flex items-center gap-2 text-[12px] text-fg-3">
+                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                  <span>{t("overlay.ui.thinking")}</span>
+                </div>
+              </>
             )}
             {streaming && (
               <div className="flex flex-col gap-1.5">
@@ -878,15 +955,20 @@ export default function OverlayApp() {
               <div className="text-[11px] text-fg-3">{t("overlay.ui.viewerNotice")}</div>
             )}
           </div>
-        )}
+          </div>
+        </div>
 
         <div className={`flex shrink-0 flex-col gap-2 px-3 pb-2 pt-2.5 ${chat ? "border-t border-line" : ""}`}>
           {selectionRow}
           {actionRow}
-          <div className="flex items-end gap-2 rounded-[12px] border border-line bg-field py-[5px] pl-2.5 pr-[5px] focus-within:border-fg-3">
-            <span className="flex h-[26px] shrink-0 items-center">
-              <PieMark className="h-[15px] w-[15px] text-fg-1" />
+          <div className="flex items-center gap-2">
+            {/* Pre-conversation: the brand mark sits outside the input, and the
+                input is a single line. It flies into the header when the first
+                message turns this card into a conversation. */}
+            <span ref={markSpotRef} className={chat ? "hidden" : "flex h-[26px] shrink-0 items-center pl-[3px]"}>
+              <PieMark className="h-[18px] w-[18px] text-fg-2" />
             </span>
+            <div className="flex min-w-0 flex-1 items-end gap-2 rounded-[12px] border border-line bg-field py-[5px] pl-2.5 pr-[5px] focus-within:border-fg-3">
             <textarea
               ref={textareaRef}
               rows={1}
@@ -902,9 +984,11 @@ export default function OverlayApp() {
                       ? t("overlay.ui.translatePlaceholder")
                       : t("overlay.ui.placeholder")
               }
+              wrap={chat ? "soft" : "off"}
               className="min-h-[26px] flex-1 resize-none bg-transparent py-[3px] text-[13.5px] leading-[20px] text-fg-1 outline-none placeholder:text-fg-3"
-              style={{ height: "auto", maxHeight: MAX_TEXTAREA_LINES * 20 + 6 }}
+              style={chat ? { height: "auto", maxHeight: MAX_TEXTAREA_LINES * 20 + 6 } : { height: 26, overflow: "hidden" }}
               onInput={(e) => {
+                if (!chat) return; // single line: the box never grows
                 const el = e.currentTarget;
                 el.style.height = "auto";
                 el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_LINES * 20 + 6)}px`;
@@ -919,6 +1003,7 @@ export default function OverlayApp() {
             >
               ↑
             </button>
+            </div>
           </div>
           <div className="flex items-center gap-2 px-1 text-[11px] text-fg-3">
             {modelRow}

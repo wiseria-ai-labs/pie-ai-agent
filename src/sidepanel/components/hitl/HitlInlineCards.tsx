@@ -10,6 +10,7 @@ import { CdpOnboardingCard } from "../CdpOnboardingCard";
 import { BrowserPermissionCard } from "./BrowserPermissionCard";
 import { BookmarkPlanCard } from "./BookmarkPlanCard";
 import { HistoryDeletionCard } from "./HistoryDeletionCard";
+import { MemoryUnlockCard } from "./MemoryUnlockCard";
 import { MonitorDraftCard } from "../MonitorDraftCard";
 
 export interface HitlInlineCardsProps {
@@ -109,6 +110,13 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
           key={request.requestId}
           payload={request.payload as import("@/lib/browser-data/types").BookmarkPlanRequest}
           onDecision={(apply) => respond(request.requestId, { ok: true, data: apply })}
+        />
+      )}
+      {request?.kind === "memory-unlock" && (
+        <MemoryUnlockCard
+          key={request.requestId}
+          payload={request.payload}
+          onDecision={(allowed) => respond(request.requestId, { ok: true, data: allowed })}
         />
       )}
       {request?.kind === "history-deletion" && (

@@ -56,6 +56,9 @@ export interface PanelRequestMap {
   "bookmark-plan": { req: BookmarkPlanRequest; res: boolean };
   /** 历史删除卡（不可逆）。res=用户点了「删除 N 条」。 */
   "history-deletion": { req: HistoryDeletionRequest; res: boolean };
+  /** 加密记忆授权：把（地址/联系方式类）条目的正文发给模型前问一次。
+   *  res=true 只代表本次会话允许；拒绝 / 超时一律保持屏蔽。 */
+  "memory-unlock": { req: { count: number; kinds: string[] }; res: boolean };
 }
 export type PanelRequestKind = keyof PanelRequestMap;
 
