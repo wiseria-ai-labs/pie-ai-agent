@@ -426,9 +426,11 @@ export async function runFunctional({ page, rec, snap, base, hasKey }) {
   await tryItem(rec, snap, page, "F20", async () => {
     await page.getByTestId("topbar-back").click();
     await page.getByTestId("topbar-schedules").click();
+    await page.getByTestId("automation-page").waitFor();
+    await page.getByTestId("automation-seg-schedules").click();
     await page.getByTestId("schedules-page").waitFor();
     await page.getByTestId("topbar-back").click();
-    rec("F20", "PASS", "SchedulesPanel mounted + back");
+    rec("F20", "PASS", "AutomationPanel → SchedulesPanel mounted + back");
   });
 
   await tryItem(rec, snap, page, "F21", async () => {
