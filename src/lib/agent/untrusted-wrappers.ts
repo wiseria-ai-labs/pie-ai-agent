@@ -59,6 +59,15 @@ export const UNTRUSTED_WRAPPER_TAGS = [
   "untrusted_scratchpad_preview",
   "untrusted_local_agent_output",
   "untrusted_skill_output_list",
+  // Pie 2.0 §3.2 — Chrome bookmark / history titles are external data.
+  "untrusted_bookmark",
+  "untrusted_history_entry",
+  // Pie 2.0 记忆层 — 画像 + 被选中的记忆条目（user role，不是指令）。
+  "user_memory",
+  // Pie 2.0 page monitors — extracted page values / monitor listings are
+  // third-party page text and must never reach the LLM unwrapped.
+  "untrusted_monitor_value",
+  "untrusted_monitor_list",
   "untrusted_mcp_result",
 ] as const;
 
@@ -128,8 +137,13 @@ export function escapeUntrustedWrappers(text: string): string {
  * embedding, so it cannot forge a `</user_custom_rules>` close and inject
  * "system text" after the block; (b) the page-content path already escapes
  * trusted wrapper tags, so untrusted page data can never fabricate this block.
+ *
+ * 2.0 overlay — `system_notice` is the other trusted runtime block the prompt
+ * tells the model to obey (runtime status / nav notices). Page text that rides
+ * into a user turn must not be able to fabricate one either, so it is escaped
+ * wherever user-authored content is escaped.
  */
-export const TRUSTED_WRAPPER_TAGS = ["user_task", "user_custom_rules"] as const;
+export const TRUSTED_WRAPPER_TAGS = ["user_task", "user_custom_rules", "system_notice"] as const;
 
 const TRUSTED_TAG_ALT = TRUSTED_WRAPPER_TAGS.join("|");
 

@@ -50,6 +50,21 @@ const SKILL_MEDIATION_TOOL_NAMES = [
   "read_skill_output",
 ] as const;
 
+// Pie 2.0 §4.2 — page-monitor meta tools.
+//   propose_monitor — read: it only produces the approval card; the record is
+//       created by the SW when the user taps 「开始监控」 (same reasoning as the
+//       other propose_* tools: 提议再由用户应用，不是工具自己写).
+//   list_monitors — read.
+//   update_monitor / delete_monitor — write (mutate persistent monitor state).
+//       propose/update/delete are excluded from headless runs (run.ts) so a
+//       monitor can never spawn or rewire monitors on its own.
+const MONITOR_META_TOOL_NAMES_FOR_REGISTRY = [
+  "propose_monitor",
+  "list_monitors",
+  "update_monitor",
+  "delete_monitor",
+] as const;
+
 // The progressive-disclosure mediator tool. Always core.
 export const DISCLOSURE_TOOL_NAMES = ["load_tools"] as const;
 
@@ -145,10 +160,38 @@ export const SCRATCHPAD_TOOL_NAMES = [
   "query_scratchpad",
 ] as const;
 
+// Pie 2.0 — bookmarks / history tools (optional permissions, spec §3.2).
+//
+//   search_bookmarks / get_bookmark_tree / propose_bookmark_plan — read
+//   create_bookmark / update_bookmark — write (mutate the user's bookmark tree)
+//   search_history / propose_history_deletion — read
+//
+// propose_* are read on purpose: they only produce a card; the mutation runs
+// after the user clicks Apply (spec §8). These tools never target a tab, so the
+// read/write class is a truthful mutation label, not an R7 input.
+export const BROWSER_DATA_TOOL_NAMES = [
+  "search_bookmarks",
+  "get_bookmark_tree",
+  "check_bookmark_links",
+  "create_bookmark",
+  "update_bookmark",
+  "propose_bookmark_plan",
+  "search_history",
+  "propose_history_deletion",
+] as const;
+// Pie 2.0 记忆层工具（spec §8）。
+//   remember / forget — write（只改记忆库，不碰 tab；立即生效 + 可撤销记录）
+//   recall_memory    — read（复用挑选流程查一次，纯文本产出）
+export const MEMORY_TOOL_NAMES = ["remember", "forget", "recall_memory"] as const;
+// 2.0 overlay — rewrite proposal (read class: it only produces the card; the
+// user's Replace click is what writes the page).
+export const REWRITE_TOOL_NAMES = ["propose_rewrite"] as const;
+
 export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PHASE_2_TOOL_NAMES,
   ...SKILL_META_TOOL_NAMES_FOR_REGISTRY,
   ...SCHEDULE_META_TOOL_NAMES_FOR_REGISTRY,
+  ...MONITOR_META_TOOL_NAMES_FOR_REGISTRY,
   ...SKILL_MEDIATION_TOOL_NAMES,
   ...TAB_TOOL_NAMES,
   ...SCREENSHOT_TOOL_NAMES,
@@ -158,6 +201,9 @@ export const KNOWN_BUILT_IN_TOOL_NAMES = [
   ...PDF_TOOL_NAMES,
   ...LOCAL_FILE_TOOL_NAMES,
   ...SCRATCHPAD_TOOL_NAMES,
+  ...BROWSER_DATA_TOOL_NAMES,
+  ...MEMORY_TOOL_NAMES,
+  ...REWRITE_TOOL_NAMES,
   ...DISCLOSURE_TOOL_NAMES,
 ] as const;
 
@@ -235,6 +281,12 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   update_schedule: "write",
   delete_schedule: "write",
   list_schedules: "read",
+  // Pie 2.0 page monitors — propose/list are read (the card is the write gate);
+  // update/delete mutate persistent monitor state.
+  propose_monitor: "read",
+  list_monitors: "read",
+  update_monitor: "write",
+  delete_monitor: "write",
   // Standard skill mediation tools — pure text producers, no tab/page side effects
   use_skill: "read",
   read_skill_file: "read",
@@ -302,6 +354,24 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   run_local_agent: "write",
   // hand-off：建目录 / 落盘 / 唤起本地交互式会话——本地写动作。
   handoff_to_agent: "write",
+  // Pie 2.0 — 书签 / 历史（可选权限）。propose_* 只产出方案卡，真正改动在用户
+  // 点击后由 SW 执行，故 classify 为 read；单条 create/update 直接执行 → write。
+  search_bookmarks: "read",
+  get_bookmark_tree: "read",
+  check_bookmark_links: "read",
+  propose_bookmark_plan: "read",
+  create_bookmark: "write",
+  update_bookmark: "write",
+  search_history: "read",
+  propose_history_deletion: "read",
+  // 记忆层 — remember / forget 只改记忆库（不碰 tab，故 R7 tab 锁不触发）；
+  // recall_memory 是纯文本查询。
+  remember: "write",
+  forget: "write",
+  recall_memory: "read",
+  // 2.0 overlay — propose_rewrite only renders a card; the write is the user's
+  // "替换原文" click, handled by the content script, not by a tool.
+  propose_rewrite: "read",
 };
 
 // Build-time exhaustive check — every known tool name MUST have a class
@@ -338,6 +408,119 @@ export function getToolClass(name: string): ToolClass {
   return TOOL_CLASSES[name] ?? "read";
 }
 
+// ── Surface classification (does the tool touch the page?) ──────────────────
+//
+// NOT the read/write class above. That one feeds the R7 cross-session tab
+// lock, where `create_bookmark` is a write — but a bookmark never touches a
+// page element, and hiding the overlay for it was the bug that collapsed the
+// overlay into a capsule mid-conversation.
+//
+//   page       — dispatches input/scroll at page DOM. The overlay hides for
+//                the call ONLY when its rectangle overlaps the target.
+//   screenshot — the capture must not contain Pie's own surfaces; the overlay
+//                is hidden for that frame (visibility only) and restored.
+//   none       — no effect on the overlay (bookmarks, history, memory,
+//                monitors, PDFs, cross-tab reads, skills, scratchpad, …).
+export type ToolSurface = "page" | "screenshot" | "none";
+
+export const TOOL_SURFACES: Readonly<Record<string, ToolSurface>> = {
+  // page DOM operations
+  click: "page",
+  hover: "page",
+  type: "page",
+  select: "page",
+  scroll: "page",
+  press_key: "page",
+  dispatch_keyboard_input: "page",
+  set_editor_value: "page",
+  // capture must never include the overlay/capsule
+  capture_visible_tab: "screenshot",
+  capture_fullpage_tab: "screenshot",
+  capture_video_frame: "screenshot",
+  // everything else
+  wait: "none",
+  done: "none",
+  fail: "none",
+  read_page: "none",
+  find_target: "none",
+  read_struct: "none",
+  read_target: "none",
+  extract_records: "none",
+  read_editor: "none",
+  search_web: "none",
+  load_tools: "none",
+  list_tabs: "none",
+  close_tabs: "none",
+  activate_tab: "none",
+  group_tabs: "none",
+  ungroup_tabs: "none",
+  move_tabs: "none",
+  focus_tab: "none",
+  open_url: "none",
+  unpin_tab: "none",
+  switch_to_new_tab: "none",
+  read_pdf: "none",
+  search_pdf: "none",
+  get_pdf_outline: "none",
+  output_file: "none",
+  read_local_file: "none",
+  request_local_file: "none",
+  save_scratchpad: "none",
+  update_scratchpad_notes: "none",
+  read_scratchpad: "none",
+  clear_scratchpad: "none",
+  query_scratchpad: "none",
+  create_skill: "none",
+  update_skill: "none",
+  delete_skill: "none",
+  list_skills: "none",
+  use_skill: "none",
+  read_skill_file: "none",
+  run_skill_script: "none",
+  read_skill_output: "none",
+  create_schedule: "none",
+  update_schedule: "none",
+  delete_schedule: "none",
+  list_schedules: "none",
+  propose_monitor: "none",
+  list_monitors: "none",
+  update_monitor: "none",
+  delete_monitor: "none",
+  search_bookmarks: "none",
+  get_bookmark_tree: "none",
+  check_bookmark_links: "none",
+  create_bookmark: "none",
+  update_bookmark: "none",
+  propose_bookmark_plan: "none",
+  search_history: "none",
+  propose_history_deletion: "none",
+  remember: "none",
+  forget: "none",
+  recall_memory: "none",
+  propose_rewrite: "none",
+  run_local_agent: "none",
+  handoff_to_agent: "none",
+};
+
+for (const name of [
+  ...KNOWN_BUILT_IN_TOOL_NAMES,
+  ...KNOWN_KEYBOARD_TOOL_NAMES,
+  ...KNOWN_EDITOR_TOOL_NAMES,
+  ...LOCAL_BRIDGE_TOOL_NAMES,
+]) {
+  if (!(name in TOOL_SURFACES)) {
+    throw new Error(
+      `[surface] tool "${name}" has no TOOL_SURFACES entry in ` +
+        `src/lib/agent/tool-names.ts. Classify it as page / screenshot / none — ` +
+        `otherwise the overlay may collapse for a tool that never touched the page.`,
+    );
+  }
+}
+
+export function getToolSurface(name: string): ToolSurface {
+  return TOOL_SURFACES[name] ?? "none";
+}
+
 // ── Progressive tool disclosure — disclosure group registry ──────────────────
 //
 // Every tool belongs to exactly one DisclosureGroup. The agent loop discloses
@@ -356,7 +539,9 @@ export type DisclosureGroup =
   | "local-file"
   | "scratchpad"
   | "schedule"
-  | "skill-authoring";
+  | "monitor"
+  | "skill-authoring"
+  | "browser-data";
 
 export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   // core — basic sense/act/control loop
@@ -385,12 +570,25 @@ export const TOOL_GROUPS: Readonly<Record<string, DisclosureGroup>> = {
   clear_scratchpad: "scratchpad", query_scratchpad: "scratchpad",
   create_schedule: "schedule", update_schedule: "schedule",
   delete_schedule: "schedule", list_schedules: "schedule",
+  propose_monitor: "monitor", list_monitors: "monitor",
+  update_monitor: "monitor", delete_monitor: "monitor",
   create_skill: "skill-authoring", update_skill: "skill-authoring",
   delete_skill: "skill-authoring", list_skills: "skill-authoring",
+  // Pie 2.0 — bookmarks / history (optional permissions; lazy, catalog-advertised)
+  search_bookmarks: "browser-data", get_bookmark_tree: "browser-data",
+  check_bookmark_links: "browser-data",
+  create_bookmark: "browser-data", update_bookmark: "browser-data",
+  propose_bookmark_plan: "browser-data",
+  search_history: "browser-data", propose_history_deletion: "browser-data",
   // Local Daemon Bridge — always core (existence gated by bridge connectivity,
   // not by disclosure).
   run_local_agent: "core",
   handoff_to_agent: "core",
+  // 记忆层 — core（存在性由 loop 按「自动记忆」开关装配，不靠 disclosure）。
+  remember: "core", forget: "core", recall_memory: "core",
+  // 2.0 overlay — present only on runs that carry an editable selection
+  // (existence gated by the chat-start payload, not by disclosure).
+  propose_rewrite: "core",
 };
 
 // Build-time exhaustive check — every known tool MUST declare a group.

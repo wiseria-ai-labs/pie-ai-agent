@@ -1,0 +1,73 @@
+/* Overlay document styles.
+ *
+ * The host iframe is transparent and sized by the content script (it follows
+ * the height this document reports), so the page background must not leak:
+ * everything visible comes from the rounded card in OverlayApp.
+ *
+ * Color scheme is declared here (not left to the UA): Chrome paints an OPAQUE
+ * base behind an iframe whose used color-scheme differs from the embedding
+ * element, which is what made the corners outside the card look tinted. The
+ * document reports its used scheme to the host, which copies it onto the
+ * iframe element — both sides must therefore be explicit. */
+
+@import "@/sidepanel/index.css";
+
+html {
+  color-scheme: light;
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    color-scheme: dark;
+  }
+}
+
+html,
+body {
+  height: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  overflow: hidden;
+}
+
+#root {
+  height: auto;
+  padding: 0;
+}
+
+/* Wrapper around the card: its padding is transparent, so the card's shadow
+ * renders inside the iframe instead of being clipped at the frame edge. */
+#overlay-root {
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+  animation: overlay-in 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Thin scrollbar inside the thread — the page's own scrollbar styles must not
+ * leak into the card. */
+#overlay-root ::-webkit-scrollbar {
+  width: 8px;
+}
+#overlay-root ::-webkit-scrollbar-thumb {
+  background: var(--c-line);
+  border-radius: 4px;
+}
+#overlay-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+

@@ -1,5 +1,16 @@
-import { showBubble, hideBubble } from "./floating-bubble";
+import { showSelectionBar, hideBubble, type SelectionBarAction } from "./floating-bubble";
 import { safeSendMessage } from "./safe-send-message";
+import {
+  captureSelectionSnapshot,
+  editableTargetFor,
+  selectionAnchorRect,
+} from "@/lib/overlay/selection";
+import { shouldShowSelectionBar } from "@/lib/overlay/settings";
+import { OVERLAY_EXCLUDE_SITE, OVERLAY_INTENT, type OverlayIntent } from "@/lib/overlay/protocol";
+import { getCachedOverlayConfig, loadOverlayConfig } from "@/content/overlay/config";
+import { rememberSelection } from "@/content/overlay/state";
+import { isOverlayVisible } from "@/content/overlay/host";
+import { isOrphaned } from "@/content/instance-guard";
 
 // Stale-listener handle: after extension reload + SW reinject, the OLD
 // content-script instance's event listeners are still attached to window.
@@ -14,30 +25,71 @@ interface PieQuoteWindow extends Window {
 
 let attached = false;
 
+const INTENT_BY_ACTION: Partial<Record<SelectionBarAction, OverlayIntent>> = {
+  ask: "ask",
+  explain: "explain",
+  translate: "translate",
+  rewrite: "rewrite",
+};
+
 function handleSelection(): void {
+  // Extension reloaded under us: a newer instance owns the page now.
+  if (isOrphaned()) {
+    detachSelectionListener();
+    return;
+  }
   const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) {
+  const config = getCachedOverlayConfig();
+  const host = location.host || location.origin;
+
+  // One surface at a time: the bar only appears while no overlay is open.
+  if (isOverlayVisible()) {
     hideBubble();
     return;
   }
-  const text = sel.toString().trim();
-  if (text.length === 0) {
+
+  const snapshot = captureSelectionSnapshot(sel, document.activeElement);
+  if (!snapshot || !config || !shouldShowSelectionBar(config.settings, host)) {
+    if (snapshot && !config) void loadOverlayConfig();
     hideBubble();
     return;
   }
-  const range = sel.getRangeAt(sel.rangeCount - 1);
-  // getBoundingClientRect 返回整个 range 的并集 bbox，多行/跨段时 right/top 会飘到最右上角
-  // 而不是结束 cursor 那行。用 getClientRects() 最后一个 rect = end cursor 所在行。
-  const rects = range.getClientRects();
-  const rect = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
-  showBubble({
+
+  const rect = selectionAnchorRect(sel);
+  if (!rect) {
+    hideBubble();
+    return;
+  }
+
+  showSelectionBar({
     anchorTop: rect.top,
-    anchorLeft: rect.right,
-    onClick: () => {
-      safeSendMessage({
-        type: "quote-text-captured",
-        payload: { text, sourceUrl: location.href },
-      });
+    anchorLeft: rect.left,
+    anchorRight: rect.right,
+    editable: snapshot.editable,
+    strings: config.strings,
+    onAction: (action) => {
+      if (action === "hide-site") {
+        safeSendMessage({ type: OVERLAY_EXCLUDE_SITE, host });
+        return;
+      }
+      // Remember the write-back target while the selection is still live.
+      const target = snapshot.editable ? editableTargetFor(sel, document.activeElement) : null;
+      rememberSelection(rect, target);
+
+      if (action === "quote") {
+        safeSendMessage({
+          type: "quote-text-captured",
+          payload: { text: snapshot.text, sourceUrl: location.href },
+        });
+        return;
+      }
+
+      const intent = INTENT_BY_ACTION[action];
+      if (!intent) return;
+      // No prompt text: the overlay renders the short display instruction from
+      // its own dictionary and the SW writes the model-facing instruction from
+      // the structured intent (translate target / rewrite style live there).
+      safeSendMessage({ type: OVERLAY_INTENT, intent, selection: snapshot, host });
     },
   });
 }

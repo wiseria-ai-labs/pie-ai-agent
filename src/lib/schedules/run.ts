@@ -51,10 +51,22 @@ import { deriveTitleFromMessages } from "@/lib/sessions/title";
 // schedule list is harmless and may be useful (e.g. "am I already scheduled for
 // X?"). One-shot self-cleanup needs no delete permission — a one-shot schedule
 // auto-completes via maxRuns.
+//
+// Pie 2.0 — the same reasoning applies to monitors: a headless run has no
+// panel to answer `propose_monitor`'s card, and update/delete could silently
+// rewire what the user is watching. `list_monitors` stays (read-class).
 export const HEADLESS_EXCLUDE_TOOL_NAMES = [
   "create_schedule",
   "update_schedule",
   "delete_schedule",
+  "propose_monitor",
+  "update_monitor",
+  "delete_monitor",
+  // remember / forget are for things the user says in person. A headless run
+  // has no user in the loop, only page text, and letting it write memory would
+  // turn page → memory into a persistent injection path (spec §11).
+  "remember",
+  "forget",
 ] as const;
 
 // ── Injectable deps ──────────────────────────────────────────────────────────
@@ -266,7 +278,7 @@ export async function runSchedule(
     await countOutcome(scheduleId, "failed");
     // Task 8 — early-fail is still a `failed` run; notify for consistency
     // (every success/failed run notifies). No sessionId on this path.
-    notifyRunDone({
+    await notifyRunDone({
       recordId,
       sessionId: "",
       status: "failed",
@@ -320,7 +332,7 @@ export async function runSchedule(
     await persistTranscript(sessionId, transcript);
     // Task 8 — restricted-startUrl is still a `failed` run; notify for
     // consistency (this path has a sessionId from the minted session above).
-    notifyRunDone({
+    await notifyRunDone({
       recordId,
       sessionId,
       status: "failed",
@@ -474,10 +486,13 @@ export async function runSchedule(
     // Task 5.2 — apply outcome counters to the schedule (atomic patchSchedule).
     await countOutcome(scheduleId, runOutcome);
 
-    // Task 8 — notify the user that the run completed. Fire-and-forget;
-    // notifyRunDone wraps chrome.notifications in try/catch so a broken
-    // notifications API never affects the run record's outcome counters.
-    notifyRunDone({
+    // Task 8 / Pie 2.0 — notify the user that the run completed and leave the
+    // 动态 entry. Awaited (not fire-and-forget): notifyRunDone resolves the UI
+    // locale and writes an IDB row before the toast, so returning early could
+    // drop the feed entry if the SW dies. It still never throws (internal
+    // try/catch + this .catch), so a broken notifications API cannot affect the
+    // run counters.
+    await notifyRunDone({
       recordId,
       sessionId,
       status: runOutcome,
@@ -500,7 +515,7 @@ export async function runSchedule(
     await countOutcome(scheduleId, "failed");
 
     // Task 8 — notify on backstop failure too.
-    notifyRunDone({
+    await notifyRunDone({
       recordId,
       sessionId,
       status: "failed",

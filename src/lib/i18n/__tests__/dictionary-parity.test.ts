@@ -58,6 +58,7 @@ describe("dictionary parity", () => {
     expect(enDict.managed.account.billedYearly).toBe("Billed yearly");
     expect(zhCNDict.managed.subscribe.annualSaveBadge).toBe("省 ~{percent}%");
     expect(zhCNDict.managed.subscribe.subscribeAnnual).toBe("订阅年付");
+    expect(zhCNDict.settings.memory.privacyConsent.agree).toBe("同意并开启云端记忆");
   });
 
   it("launch locales translate critical activation labels", () => {

@@ -6,7 +6,6 @@ import { CUSTOM_PREFIX } from "@/lib/custom-providers";
 import { useT, providerDisplayName } from "@/lib/i18n";
 import { type StoredCustomModelMeta } from "@/lib/provider-custom-model-meta";
 import ProviderModelList from "./ProviderModelList";
-import ManagedAccountPanel from "./ManagedAccountPanel";
 import { Button } from "./ui/Button";
 
 export interface InstanceFormPayload {
@@ -147,35 +146,6 @@ export default function InstanceForm(props: Props) {
     rpmLimit: parsedRpm,
     ...(props.fetchedModels?.length ? { fetchedModels: props.fetchedModels, fetchedAt: props.fetchedAt } : {}),
   };
-
-  // Managed provider: skip the BYOK form entirely — show account panel instead.
-  if (props.provider === "managed") {
-    return (
-      <div className="flex flex-col gap-3 px-3.5 py-3.5">
-        {props.existingApiKey
-          ? <ManagedAccountPanel apiKey={props.existingApiKey} />
-          : <div className="text-[12px] text-fg-3">{t("managed.account.setupHint")}</div>}
-        {/* Edit-mode parents (Settings) don't pass renderActions, so the only way to
-            remove a managed config is this delete button — visually/text aligned with
-            the BYOK "Forget config" button below. */}
-        {props.onDelete && (
-          <Button variant="danger" className="self-start" onClick={() => props.onDelete!()}>
-            {t("instanceForm.forgetConfig")}
-          </Button>
-        )}
-        {props.renderActions?.({
-          canSave: false,
-          replacing: false,
-          testing: false,
-          testStatus: "idle",
-          saveLabel: props.saveLabel ?? t("instanceForm.save"),
-          triggerSave: () => {},
-          triggerTest: () => {},
-          triggerDelete: props.onDelete,
-        })}
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col">

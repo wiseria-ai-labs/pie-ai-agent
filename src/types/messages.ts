@@ -4,6 +4,8 @@ import type { Attachment } from "@/lib/images";
 import type { FileAttachment } from "@/lib/files/types";
 import type { CapturedActionPayload, RecordedAction } from "@/lib/recording/types";
 import type { Quote, QuoteAddedMessage, PickerStartMessage, PickerStopMessage } from "./quotes";
+import type { MemoryEntry } from "@/lib/memory/types";
+import type { OverlayTask } from "@/lib/overlay/protocol";
 
 // --- Page Content ---
 
@@ -68,6 +70,39 @@ export interface ChatStartMessage {
    * active-tab capture.
    */
   anchorTabId?: number;
+  /**
+   * 2.0 overlay — the tab whose overlay document owns this task's port.
+   * The port dies when that page navigates, so the SW must NOT treat the
+   * disconnect as "user closed the panel" for these runs: it keeps the loop
+   * alive, drives the in-page capsule, and persists the messages the dead
+   * document would have persisted.
+   */
+  overlayTabId?: number;
+  /**
+   * 2.0 overlay — this turn carries an EDITABLE selection, so the run may
+   * offer `propose_rewrite` (write-back is only possible there). Absent for
+   * read-only selections and for the side panel.
+   */
+  editableSelection?: boolean;
+  /**
+   * Pie 2.0 memory — entries the overlay prefetched while the user was typing
+   * (spec §5.5). The SW turns them into ONE untrusted `<user_memory>` block on
+   * the live task turn (outside the trusted `<user_task>`) and emits the
+   * `memory-used` chip; the loop then skips its own pick for this task.
+   *
+   * Optional / additive: absent from the side panel (the loop picks on its
+   * own) and from older overlay builds.
+   */
+  memoryPick?: MemoryEntry[];
+  /** When the pick ran (the block's `as_of` timestamp). */
+  memoryPickAsOf?: number;
+  /**
+   * 2.0 overlay — structured selection task (explain / translate / rewrite).
+   * The overlay sends the DISPLAY text as the user message; the SW turns this
+   * into the English model-facing instruction and the wire content. Absent
+   * for plain chat.
+   */
+  overlayTask?: OverlayTask;
 }
 
 export interface ChatAbortMessage {
@@ -123,6 +158,17 @@ export interface PanelResponseMessage {
   ok: boolean;
   data?: unknown;
   reason?: string;
+}
+
+/**
+ * HITL — panel → SW: "re-post every panel-request still pending for this
+ * session". Sent when usePanelRequest mounts, when the user switches back to a
+ * session, and on port reconnect; the SW re-sends with the same requestId so
+ * the panel's single-active-slot state never duplicates a card.
+ */
+export interface PanelRequestSyncMessage {
+  type: "panel-request-sync";
+  sessionId: string;
 }
 
 /**
@@ -201,6 +247,30 @@ export interface ChatRatelimitWaitMessage {
   type: "chat-ratelimit-wait";
   /** 预计恢复时刻（epoch ms）。waiter 竞争下实际可能更晚，panel 钳 ≥0 显示。 */
   resumeAt: number;
+  sessionId: string;
+}
+
+/**
+ * 2.0 overlay — SW → the overlay DOCUMENT only: the run needs the side panel
+ * for something the in-page surface cannot do (a HITL card). The panel is
+ * being opened with the same session attached; the overlay shows a one-line
+ * explanation instead of a dead card.
+ */
+export interface OverlayNoticeMessage {
+  type: "overlay-notice";
+  sessionId: string;
+  notice: "panel-request";
+}
+
+/**
+ * 2.0 overlay — SW → Panel: this port was just attached to a task that is
+ * already running (started by the overlay document, or by the panel before a
+ * reconnect). Sent BEFORE the replay of the run's emits, so the slot enters
+ * streaming mode before chunks arrive. The panel does not own this task's
+ * persistence while attached; the SW does when the port goes away.
+ */
+export interface ChatAttachMessage {
+  type: "chat-attach";
   sessionId: string;
 }
 
@@ -346,6 +416,33 @@ export type DisplayMessage =
       /** 头部内容预览（前几行，已截断） */
       preview?: string;
       totalLines?: number;
+    }
+  | {
+      /** Pie 2.0 — inline undo row for an applied bookmark change (F7). The
+       *  record itself lives in IDB (`bookmark_snapshots`); the panel re-reads
+       *  it so restore state survives reloads. */
+      role: "browser-change";
+      recordId: string;
+    }
+  | {
+      /** Pie 2.0 记忆层 — 「用到 N 条记忆」chip（F4 / F13）。回答下方一行小字，
+       *  默认折叠；点开显示标题列表。`items` 是持久化快照（加密条目标题在
+       *  SW 侧已替换成占位文案）。 */
+      role: "memory-used";
+      items: Array<{ id: string; title: string; encrypted?: boolean }>;
+    }
+  | {
+      /** Pie 2.0 记忆层 — remember / forget 的事件行（F13）。用户点「撤销」
+       *  清掉记忆库里那一次写入；`undone` 只在当前面板会话内标记。 */
+      role: "memory-event";
+      eventId: string;
+      kind: "updated" | "deleted";
+      /** 条目标题；加密条目为空串（面板按语言渲染占位文案）。 */
+      label: string;
+      /** 事件涉及「地址与联系方式」类加密条目。 */
+      encrypted?: boolean;
+      count: number;
+      undone?: boolean;
     };
 
 // --- Agent: resolved element info (from snapshot, not LLM) ---
@@ -409,6 +506,9 @@ export interface AgentStepMessage {
   image?: AgentStepImageExtras;
   /** Long-running skill script poll snapshot. Wire-only; same as DisplayMessage.progress. */
   progress?: AgentStepProgress;
+  /** 2.0 overlay — the tab the loop is currently focused on (pinnedTabId at
+   *  emit time). The in-page capsule follows it across tab switches. */
+  focusTabId?: number;
   /** M2-U2 — session routing. See ChatChunkMessage.sessionId. */
   sessionId: string;
 }
@@ -637,6 +737,14 @@ export interface FileOutputMessage {
   sessionId: string;
 }
 
+/** Pie 2.0 — SW tells the panel an applied bookmark change is undoable (F7).
+ *  Only the record id travels; the panel reads the row from IDB. */
+export interface BrowserChangeMessage {
+  type: "browser-change";
+  recordId: string;
+  sessionId: string;
+}
+
 /** output_file — SW replies to a panel download-output request so the panel
  *  can resolve its pending promise (ok = chrome.downloads started; expired =
  *  artifact evicted from cache; error = chrome.downloads threw). */
@@ -644,6 +752,30 @@ export interface FileOutputResultMessage {
   type: "file-output-result";
   artifactId: string;
   status: "ok" | "expired" | "error";
+  sessionId: string;
+}
+
+/**
+ * Pie 2.0 记忆层 — 挑选层在 step 2 之前注入了一次记忆（>F4/F13 的
+ * 「用到 N 条记忆」chip）。`items` 只带标题（加密条目已被 SW 侧替换成
+ * 占位文案），点开 chip 就能看到用了哪几条。
+ */
+export interface MemoryUsedMessage {
+  type: "memory-used";
+  items: Array<{ id: string; title: string; encrypted?: boolean }>;
+  sessionId: string;
+}
+
+/** 记忆层 — remember / forget 的立即生效事件行（F13「已更新 / 已删除 · 撤销」）。
+ *  eventId 指向 memory store 里的一条 undo 记录；面板点「撤销」直接回调。
+ *  label 为空串表示条目标题不可外露（加密条目 / 批量删除），面板按字典渲染。 */
+export interface MemoryEventMessage {
+  type: "memory-event";
+  eventId: string;
+  kind: "updated" | "deleted";
+  label: string;
+  encrypted?: boolean;
+  count: number;
   sessionId: string;
 }
 
@@ -662,6 +794,7 @@ export type PortMessageToWorker =
   | ChatInstructionCancelMessage   // Issue #34
   | DownloadOutputMessage          // output_file
   | PanelResponseMessage           // HITL panel-request
+  | PanelRequestSyncMessage        // HITL panel-request re-delivery
   | PickerStartMessage             // issue #38 element picker
   | PickerStopMessage;             // issue #38 element picker
 
@@ -685,5 +818,10 @@ export type PortMessageToPanel =
   | ChatInstructionRejectedMessage    // Issue #34
   | NeedsFileAccessMessage            // local file access card
   | FileOutputMessage                 // output_file download card
+  | BrowserChangeMessage              // Pie 2.0 inline undo row (F7)
   | FileOutputResultMessage           // output_file download result
-  | ChatRatelimitWaitMessage;         // Provider RPM 限流排队等待
+  | MemoryUsedMessage                 // Pie 2.0 — 用到 N 条记忆 chip
+  | MemoryEventMessage                // Pie 2.0 — 记忆事件行（可撤销）
+  | ChatRatelimitWaitMessage         // Provider RPM 限流排队等待
+  | ChatAttachMessage                // 2.0 overlay — live-run handoff attach
+  | OverlayNoticeMessage;            // 2.0 overlay — overlay document only

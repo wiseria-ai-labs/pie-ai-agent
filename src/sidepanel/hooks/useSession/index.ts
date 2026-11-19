@@ -792,6 +792,10 @@ export function useSession(): UseSession {
       if (!id) return;
       const slot = slotsRef.current.get(id);
       if (!slot?.streaming) return; // safety: only during streaming
+      // 2.0 overlay — a run attached via handoff is drained by the SW on the
+      // port that started it; queuing here would be rejected and fall back to
+      // a second chat-start for the same session.
+      if (slot.attachedRun) return;
       const chatMessageId = crypto.randomUUID();
       const userMessage: DisplayMessage = {
         role: "user",

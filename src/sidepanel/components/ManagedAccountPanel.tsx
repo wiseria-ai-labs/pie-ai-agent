@@ -1,8 +1,19 @@
 import { useEffect, useState } from "react";
+import { ArrowUpRight } from "lucide-react";
 import { getCachedEntitlement, getEntitlement, openCheckout, openPortal } from "@/lib/managed-account";
 import type { Entitlement } from "@/lib/managed-auth";
 import { formatDate } from "@/lib/managed-format";
 import { useI18n } from "@/lib/i18n";
+import { setMemorySettings } from "@/lib/memory/store";
+import { syncMemoryFromCloud, syncSetMemorySettings } from "@/lib/memory/sync";
+import {
+  acceptPrivacyPolicy,
+  getPrivacyConsent,
+  getPrivacyPolicyUrl,
+  hasMemoryCloudConsent,
+  PRIVACY_CONSENT_KEY,
+} from "@/lib/privacy-consent";
+import { onStoreChange } from "@/lib/store-bus";
 import QuotaBar from "./QuotaBar";
 import RedeemCodeForm from "./RedeemCodeForm";
 import ManagedSubscribePanel from "./ManagedSubscribePanel";
@@ -25,15 +36,63 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
   // 初始用进程内缓存回显（上次展开拿到的状态），避免每次展开都闪空 loading；
   // useEffect 仍会后台拉一次刷新用量等数值。
   const [ent, setEnt] = useState<Entitlement | null>(() => getCachedEntitlement(apiKey));
+  const [hasCloudConsent, setHasCloudConsent] = useState(true);
+  const [agreeingPrivacy, setAgreeingPrivacy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
     setErr(null);
-    try { setEnt(await refresh(apiKey)); }
-    catch (e) { setErr(e instanceof Error ? e.message : t("managed.account.loadFailed")); }
+    try {
+      const fresh = await refresh(apiKey);
+      if (fresh.plan === "active" && fresh.privacyConsent === true) {
+        if ((await getPrivacyConsent())?.status !== "accepted") {
+          await acceptPrivacyPolicy("cloud_sync").catch(() => {});
+        }
+      }
+      setEnt(fresh);
+      setHasCloudConsent(await hasMemoryCloudConsent().catch(() => true));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : t("managed.account.loadFailed"));
+    }
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [apiKey]);
+
+  useEffect(() => {
+    let alive = true;
+    void hasMemoryCloudConsent().then((ok) => {
+      if (alive) setHasCloudConsent(ok);
+    });
+    const off = onStoreChange("config", (c) => {
+      if (alive && (c.id === undefined || c.id === PRIVACY_CONSENT_KEY)) {
+        void hasMemoryCloudConsent().then((ok) => {
+          if (alive) setHasCloudConsent(ok);
+        });
+      }
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, []);
+
+  async function handleAgreePrivacy() {
+    if (agreeingPrivacy) return;
+    setAgreeingPrivacy(true);
+    setErr(null);
+    try {
+      await acceptPrivacyPolicy("account_page");
+      setHasCloudConsent(true);
+      try {
+        await syncSetMemorySettings({ enabled: true });
+      } catch {
+        await setMemorySettings({ enabled: true }).catch(() => {});
+      }
+      void syncMemoryFromCloud({ force: true }).catch(() => {});
+    } finally {
+      setAgreeingPrivacy(false);
+    }
+  }
 
   async function handlePortal() {
     setErr(null);
@@ -116,6 +175,41 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
       {isBlocked && (
         <div className="text-[12px] leading-[17px] text-fg-2">
           {t("managed.account.blockedBody")}
+        </div>
+      )}
+      {isActive && !hasCloudConsent && (
+        <div
+          data-testid="account-privacy-consent-card"
+          className="flex flex-col gap-2 rounded-card border border-accent-line bg-accent-tint p-3"
+        >
+          <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-fg-1">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-pending" aria-hidden />
+            {t("settings.memory.privacyConsent.accountBannerTitle")}
+          </div>
+          <p className="text-[12px] leading-[17px] text-fg-2">
+            {t("settings.memory.privacyConsent.accountBannerDesc")}
+          </p>
+          <div className="flex flex-wrap items-center gap-3 pt-0.5">
+            <button
+              type="button"
+              data-testid="account-privacy-agree"
+              disabled={agreeingPrivacy}
+              onClick={() => void handleAgreePrivacy()}
+              className="rounded-control bg-fg-1 px-3 py-1.5 text-[12px] font-medium text-canvas hover:opacity-90 disabled:opacity-50"
+            >
+              {t("settings.memory.privacyConsent.accountAgreeBtn")}
+            </button>
+            <a
+              href={getPrivacyPolicyUrl(locale)}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="account-privacy-policy-link"
+              className="inline-flex items-center gap-1 text-[12px] text-fg-2 underline underline-offset-2 hover:text-fg-1"
+            >
+              {t("settings.memory.privacyConsent.readPolicy")}
+              <ArrowUpRight size={13} strokeWidth={1.75} />
+            </a>
+          </div>
         </div>
       )}
       {isActive && ent.quota?.weekly && (

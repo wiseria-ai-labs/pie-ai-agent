@@ -4,11 +4,13 @@ export function Switch({
   checked,
   onChange,
   testId,
+  disabled,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   /** Distinguishes switches when a settings group holds more than one. */
   testId?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -16,10 +18,13 @@ export function Switch({
       role="switch"
       data-testid={testId}
       aria-checked={checked}
-      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) onChange(!checked);
+      }}
       className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors ${
         checked ? "border-accent-line bg-accent-tint" : "border-line bg-field"
-      }`}
+      }${disabled ? " cursor-not-allowed opacity-50" : ""}`}
     >
       <span
         className={`inline-block h-3.5 w-3.5 transform rounded-full transition-transform ${

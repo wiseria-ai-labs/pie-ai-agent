@@ -44,6 +44,16 @@ describe("TopBar 六态", () => {
     expect(screen.queryByTestId("topbar-new")).toBeNull();
   });
 
+  it("automation 有未读时，自动化按钮右上角出现黄铜点（F3）", () => {
+    const p = make({ unreadAutomation: 3 });
+    render(<TopBar {...p} />);
+    expect(screen.getByTestId("topbar-schedules-unread")).toBeTruthy();
+    expect(screen.getByTestId("topbar-schedules").getAttribute("aria-label")).toContain("3");
+    cleanup();
+    render(<TopBar {...make({ unreadAutomation: 0 })} />);
+    expect(screen.queryByTestId("topbar-schedules-unread")).toBeNull();
+  });
+
   it("skills：skills 按钮 aria-pressed；点 schedules 触发 onNavigate 互切", () => {
     const p = make({ view: "skills" });
     render(<TopBar {...p} />);

@@ -9,7 +9,7 @@ export const DB_NAME = "pie";
 // Bump DB_VERSION and add a new `if (!db.objectStoreNames.contains(...))` branch
 // in onupgradeneeded whenever a new store is added (onupgradeneeded only runs
 // when the version increases).
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 export const STORES = {
   sessions: "sessions",
@@ -18,6 +18,16 @@ export const STORES = {
   config: "config",
   scratchpads: "scratchpads",
   schedules: "schedules",
+  bookmarkSnapshots: "bookmark_snapshots",
+  // Pie 2.0 记忆层（spec §5）：一个 store 里放多种记录形状，按 `id` 前缀区分
+  //   - MemoryEntry        id = "m_<uuid>"
+  //   - settings / state / profile / snapshot（单例，id 即字面量）
+  //   - MemoryUndoRecord   id = "undo_<uuid>"
+  memory: "memory",
+  // Pie 2.0 (v4) — background substrate: the automation activity feed entries
+  // and the page-monitor records. One store each, both keyPath:"id".
+  inbox: "inbox",
+  monitors: "monitors",
 } as const;
 
 export type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -31,8 +41,9 @@ export function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
+      const oldVersion = (event as IDBVersionChangeEvent).oldVersion;
       if (!db.objectStoreNames.contains(STORES.sessions))
         db.createObjectStore(STORES.sessions, { keyPath: "id" });
       if (!db.objectStoreNames.contains(STORES.sessionIndex))
@@ -49,6 +60,20 @@ export function openDb(): Promise<IDBDatabase> {
       //     injected on write and stripped on read by schedules/store.ts.
       if (!db.objectStoreNames.contains(STORES.schedules))
         db.createObjectStore(STORES.schedules, { keyPath: "id" });
+      // bookmark_snapshots holds BrowserChangeRecord rows: Pie's bookmark
+      // mutations (with their inverse ops, for restore) plus history-deletion
+      // log rows (never restorable). 30-day retention, pruned lazily on read.
+      if (!db.objectStoreNames.contains(STORES.bookmarkSnapshots))
+        db.createObjectStore(STORES.bookmarkSnapshots, { keyPath: "id" });
+      // v4 — memory layer (Pie 2.0 spec §5.6). Mixed record shapes, keyed by id
+      // (see STORES.memory comment above).
+      if (oldVersion < 4 && !db.objectStoreNames.contains(STORES.memory))
+        db.createObjectStore(STORES.memory, { keyPath: "id" });
+      // Pie 2.0 (v4) — this feature line's stores only.
+      if (!db.objectStoreNames.contains(STORES.inbox))
+        db.createObjectStore(STORES.inbox, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(STORES.monitors))
+        db.createObjectStore(STORES.monitors, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => { dbPromise = null; reject(req.error); };
@@ -110,7 +135,7 @@ export function txMulti(
  *  Production use (e.g. eval harness reset between runs). */
 export async function clearAllStores(): Promise<void> {
   await txMulti(
-    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads, STORES.schedules],
+    [STORES.sessions, STORES.sessionIndex, STORES.instances, STORES.config, STORES.scratchpads, STORES.schedules, STORES.bookmarkSnapshots, STORES.memory, STORES.inbox, STORES.monitors],
     "readwrite",
     (m) => {
       m[STORES.sessions].clear();
@@ -119,6 +144,10 @@ export async function clearAllStores(): Promise<void> {
       m[STORES.config].clear();
       m[STORES.scratchpads].clear();
       m[STORES.schedules].clear();
+      m[STORES.bookmarkSnapshots].clear();
+      m[STORES.memory].clear();
+      m[STORES.inbox].clear();
+      m[STORES.monitors].clear();
     },
   );
 }

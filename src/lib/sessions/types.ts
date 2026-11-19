@@ -107,6 +107,10 @@ export interface SessionMeta {
    *    (user intent is fixed; if origin changes, that's the user's call).
    */
   pinMode?: "auto" | "task" | "user";
+  /** Pie 2.0 记忆层 — 任务起始标签页在无痕窗口（spec §5.3「从不记住」）。
+   *  置位后该会话永不进入记忆整理批次、不注入记忆。只由 agent loop 在任务
+   *  开始时写入，一旦为 true 不再清除。 */
+  incognito?: boolean;
   /** Set when the session is moved to archived storage. M2-U4 also reads
    *  this to drive the 30-day hard-delete sweep. Absence = not archived. */
   archivedAt?: number;

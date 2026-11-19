@@ -1,9 +1,11 @@
 import type { ReactNode, ButtonHTMLAttributes } from "react";
 import { m, DURATION, EASE_STANDARD } from "../ui/motion";
 
-export type HitlRegister = "local" | "browser";
+export type HitlRegister = "local" | "browser" | "danger";
 
 // 双色语义分档（spec §2）：local=触及本机执行(warning 珊瑚)，browser=浏览器域(accent 冷蓝灰)。
+// danger=不可逆的浏览器域操作（历史删除，F8 用珊瑚色主按钮）；色值与 local 相同，
+// 分开只为在调用点说清"为什么是红的"。
 // 主按钮是整卡唯一浓色块；卡体保持中性 surface。
 const REGISTER: Record<HitlRegister, { caps: string; primary: string }> = {
   local: {
@@ -13,6 +15,10 @@ const REGISTER: Record<HitlRegister, { caps: string; primary: string }> = {
   browser: {
     caps: "text-accent",
     primary: "bg-accent-strong text-surface border border-accent-line",
+  },
+  danger: {
+    caps: "text-warning",
+    primary: "bg-warning text-surface border border-warning-line",
   },
 };
 

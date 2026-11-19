@@ -2,6 +2,10 @@ import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-libra
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import SettingsRoot, { helpCoords } from "./SettingsRoot";
 import { setCdpInputEnabled } from "@/lib/cdp-input-enabled";
+import { listInstances } from "@/lib/instances";
+import { _resetForTests } from "@/lib/idb/db";
+import { cacheEntitlement, _clearEntitlementCacheForTests } from "@/lib/managed-account";
+import { acceptPrivacyPolicy, clearPrivacyConsent } from "@/lib/privacy-consent";
 import type { BridgeStatus } from "./bridge-status";
 
 vi.mock("@/lib/cdp-input-enabled", () => ({
@@ -62,6 +66,13 @@ describe("SettingsRoot", () => {
     }
     fireEvent.click(screen.getByTestId("settings-row-models"));
     expect(p.onOpenPage).toHaveBeenCalledWith("models");
+  });
+
+  it("account card opens the account page", () => {
+    const p = make();
+    render(<SettingsRoot {...p} />);
+    fireEvent.click(screen.getByTestId("settings-account-card"));
+    expect(p.onOpenPage).toHaveBeenCalledWith("account");
   });
 
   // CDP lives inline in the root page (no sub-page): a switch + a "?" popover.
@@ -211,5 +222,64 @@ describe("helpCoords", () => {
     expect(screen.getByTestId("settings-badge-about").textContent).toContain("9.9.9");
     fireEvent.click(screen.getByTestId("settings-row-about"));
     expect(p.onOpenPage).toHaveBeenCalledWith("about");
+  });
+
+  it("AccountCard shows pending dot when active subscriber has not consented, and clears on accept", async () => {
+    await _resetForTests();
+    _clearEntitlementCacheForTests();
+    await clearPrivacyConsent();
+
+    vi.mocked(listInstances).mockResolvedValueOnce([
+      { id: "m1", provider: "managed", nickname: "pro@pie.chat", apiKey: "sk-pro", createdAt: 0 },
+    ]);
+    // Second call (from memoryBadge effect or bump) also sees the managed instance
+    vi.mocked(listInstances).mockResolvedValue([
+      { id: "m1", provider: "managed", nickname: "pro@pie.chat", apiKey: "sk-pro", createdAt: 0 },
+    ]);
+    await cacheEntitlement("sk-pro", {
+      plan: "active",
+      email: "pro@pie.chat",
+      subscription: {
+        planName: "Pie Pro",
+        currentPeriodEnd: 1750000000,
+        cancelAtPeriodEnd: false,
+        source: "stripe",
+      },
+      quota: null,
+      models: [],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            plan: "active",
+            email: "pro@pie.chat",
+            subscription: {
+              planName: "Pie Pro",
+              currentPeriodEnd: 1750000000,
+              cancelAtPeriodEnd: false,
+              source: "stripe",
+            },
+            quota: null,
+            models: [],
+            privacyConsent: false,
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    render(<SettingsRoot {...make()} />);
+    expect(await screen.findByTestId("settings-account-privacy-dot")).toBeTruthy();
+
+    await act(async () => {
+      await acceptPrivacyPolicy("account_page");
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("settings-account-privacy-dot")).toBeNull(),
+    );
+    vi.unstubAllGlobals();
   });
 });

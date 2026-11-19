@@ -21,4 +21,24 @@ export interface ActionResult {
     byteLength: number;
     id?: string;
   };
+  /**
+   * Pie 2.0 — an applied bookmark change recorded under `bookmark_snapshots`.
+   * loop.ts turns this into a `browser-change` port message so the conversation
+   * keeps an inline undo row (F7 "已整理 … · 还原"). The panel reads the record
+   * from IDB by id — nothing else travels on the wire.
+   */
+  browserChange?: { recordId: string };
+  /**
+   * 记忆工具（remember / forget）—— 对话里留一条可撤销事件行（F13）。
+   * loop.ts 转成 `memory-event` port 消息；eventId 供面板的「撤销」按钮回调。
+   */
+  memoryEvent?: {
+    eventId: string;
+    kind: "updated" | "deleted";
+    /** 事件行展示的标题；加密条目 / 批量删除为空串（面板按语言渲染文案）。 */
+    label: string;
+    /** 事件涉及加密条目（「地址与联系方式」）。 */
+    encrypted?: boolean;
+    count: number;
+  };
 }

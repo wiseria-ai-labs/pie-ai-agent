@@ -77,8 +77,15 @@ interface I18nContextValue {
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("en");
+/** `initialLocale`: pass an already-resolved locale when the first render
+ *  must be in the user's language (the overlay auto-sends a translated
+ *  message on mount — without this it races the async resolve and goes out
+ *  in English). */
+export function I18nProvider({ children, initialLocale }: { children: ReactNode; initialLocale?: Locale }) {
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    if (initialLocale) _currentLocale = initialLocale;
+    return initialLocale ?? "en";
+  });
 
   useEffect(() => {
     let cancelled = false;

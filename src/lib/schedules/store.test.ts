@@ -1,6 +1,6 @@
 // src/lib/schedules/store.test.ts
 //
-// TDD tests for the schedules IDB store (DB_VERSION 3).
+// TDD tests for the schedules IDB store (DB_VERSION 4).
 
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { _resetForTests } from "@/lib/idb/db";
@@ -45,12 +45,15 @@ beforeEach(async () => {
 
 // ── Step 2: DB version + store existence ─────────────────────────────────────
 
-describe("DB_VERSION 3 + schedules store", () => {
-  it("DB_VERSION 升到 3 且 schedules store 存在", async () => {
+describe("DB_VERSION 4 + schedules store", () => {
+  it("DB_VERSION 升到 4 且 v4 新 store 都存在", async () => {
     const { openDb, STORES } = await import("@/lib/idb/db");
     const db = await openDb();
-    expect(db.version).toBe(3);
+    expect(db.version).toBe(4);
     expect(db.objectStoreNames.contains(STORES.schedules)).toBe(true);
+    for (const s of [STORES.memory, STORES.bookmarkSnapshots, STORES.inbox, STORES.monitors]) {
+      expect(db.objectStoreNames.contains(s)).toBe(true);
+    }
   });
 });
 

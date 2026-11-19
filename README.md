@@ -96,7 +96,12 @@ A2Agent is an OpenAI- and Anthropic-compatible API gateway giving overseas users
   the loop and collects no telemetry or analytics.
 - **The subscription is the one exception.** If you use the official Pie
   subscription, your chat requests pass through Pie's service (that's how
-  billing works) — but Pie still collects no product telemetry.
+  billing works) — without prompt/response retention or product telemetry. With
+  your privacy consent (confirmed when subscribing or via the v2.0 update
+  prompt), optional cross-device **Memory** syncs only sanitized conversation
+  conclusions (never full web pages or incognito sessions) using server-side
+  encryption, deletes queued excerpts immediately after consolidation, and can
+  be disabled or cleared anytime in **Settings → Memory**.
 - **Pie only looks at a page while it's working on your task,** and treats
   everything on a page as untrusted, so a malicious page can't trick it into
   doing something you never asked for.

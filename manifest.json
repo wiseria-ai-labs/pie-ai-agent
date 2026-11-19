@@ -7,7 +7,7 @@
   "description": "__MSG_extension_description__",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAj91/+vFO2eXy8JdSlzcag00O+Nmcjqb6i+S4saClf6ZfW38xTgkU4kGIGm8KZOvrz7UcY/f0KofqYohDnyrSjmsORYWMIzGtbp7Q3wgOfs3cmzHUJxtB3NDZgJSLGFgOZKCoK9LOV2eKGC0r24yVDoqWKphRZFeq1iandGJxSUcvrbyx3QZ6vIXql4eyD5m018eXel2rmQYBRrM1UlonUec69ulrxC2Om0SXDEjbxe3vHWhTd8egKD27uHoR1s5YfQ/zVO2dIJLlarSGjlJWNLZ6n5tD6KEu0r8M2iwN2XQ5lDiPPOrIzBtLHx7tNMV5eNGdTG2vPRbmh6L9M1J7TQIDAQAB",
   "permissions": ["activeTab", "sidePanel", "storage", "tabs", "tabGroups", "scripting", "debugger", "webNavigation", "offscreen", "downloads", "identity", "alarms", "notifications", "contextMenus"],
-  "optional_permissions": ["nativeMessaging"],
+  "optional_permissions": ["nativeMessaging", "bookmarks", "history"],
   "host_permissions": [
     "<all_urls>",
     "https://account.pie.chat/*",
@@ -36,6 +36,11 @@
     {
       "resources": ["liteparse.wasm", "sql-wasm.wasm", "src/offscreen/pdf-parser.html"],
       "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["src/overlay/index.html"],
+      "matches": ["<all_urls>"],
+      "use_dynamic_url": false
     }
   ],
   "background": {
@@ -64,11 +69,21 @@
     "128": "public/icons/icon-128.png"
   },
   "commands": {
+    "open-overlay": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+K",
+        "mac": "Command+Shift+K"
+      },
+      "description": "Open Pie's overlay on the current page (falls back to the side panel on pages that can't host it)"
+    },
     "quote-selection": {
       "description": "Add current text selection as a Pie quote (set hotkey at chrome://extensions/shortcuts)"
     },
     "open-panel-window": {
       "description": "Open Pie in a separate window — for browsers without working side-panel support (set hotkey at chrome://extensions/shortcuts)"
     }
+  },
+  "omnibox": {
+    "keyword": "pie"
   }
 }

@@ -1,21 +1,38 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Chat from "@/sidepanel/components/Chat";
 import SessionDrawer from "@/sidepanel/components/SessionDrawer";
 import SkillsList from "@/sidepanel/components/SkillsList";
 import SearchProviderSection from "@/sidepanel/components/SearchProviderSection";
 import SettingsRoot from "@/sidepanel/components/settings/SettingsRoot";
 import ModelsPage from "@/sidepanel/components/settings/pages/ModelsPage";
+import AccountPage from "@/sidepanel/components/settings/pages/AccountPage";
 import BridgePage from "@/sidepanel/components/settings/pages/BridgePage";
 import FeedbackPage from "@/sidepanel/components/settings/pages/FeedbackPage";
 import AboutPage from "@/sidepanel/components/settings/pages/AboutPage";
 import { UiLanguagePage, AssistantLanguagePage } from "@/sidepanel/components/settings/pages/LanguagePage";
 import CustomRulesPage from "@/sidepanel/components/settings/pages/CustomRulesPage";
+import BrowserDataPage from "@/sidepanel/components/settings/pages/BrowserDataPage";
+import MemoryPage from "@/sidepanel/components/settings/pages/MemoryPage";
+import OverlayPage from "@/sidepanel/components/settings/pages/OverlayPage";
 import McpServersPage from "@/sidepanel/components/settings/pages/McpServersPage";
 import TopBar, { type AppView, type SettingsPage } from "@/sidepanel/components/TopBar";
 import { type ThemeMode, UI_SCALE_KEY, applyUiScale, parseUiScale } from "@/sidepanel/theme";
-import SchedulesPanel from "@/sidepanel/components/Schedules/SchedulesPanel";
+import AutomationPanel from "@/sidepanel/components/automation/AutomationPanel";
+import { unreadInboxCount } from "@/lib/inbox/store";
 import ResearchPanel from "@/sidepanel/components/research/ResearchPanel";
-import { getInstance, listInstances } from "@/lib/instances";
+import { getInstance } from "@/lib/instances";
+import { getPieAccount } from "@/lib/pie-account";
+import { getCachedEntitlement, getEntitlement } from "@/lib/managed-account";
+import {
+  acceptPrivacyPolicy,
+  declineCloudMemoryConsent,
+  getPrivacyConsent,
+  needsPrivacyUpdatePrompt,
+  PRIVACY_CONSENT_KEY,
+} from "@/lib/privacy-consent";
+import { setMemorySettings } from "@/lib/memory/store";
+import { syncMemoryFromCloud, syncSetMemorySettings } from "@/lib/memory/sync";
+import PrivacyUpdateModal from "@/sidepanel/components/PrivacyUpdateModal";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 import { normalizeSkillSlashKey } from "@/lib/skills";
 import { useSession } from "@/sidepanel/hooks/useSession";
@@ -24,9 +41,10 @@ import RecordingMode from "@/sidepanel/components/RecordingMode";
 import { listSessionIndex } from "@/lib/sessions/storage";
 import { hardDeleteExpired } from "@/lib/sessions/lifecycle";
 import { getConfig, setConfig, removeConfig } from "@/lib/idb/config-store";
-import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE, parseResearchDetailDeeplink } from "@/lib/deeplink";
+import { DEEPLINK_KEY, DEEPLINK_MANAGED_SUBSCRIBE, parseResearchDetailDeeplink, DEEPLINK_OVERLAY_RESTRICTED, parseOverlayPanelDeeplink, parseOverlayPrefillDeeplink, parseSettingsDeeplink } from "@/lib/deeplink";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
 import type { SessionIndexEntry } from "@/lib/sessions/types";
+import { useT } from "@/lib/i18n";
 
 /**
  * App — root component.
@@ -41,6 +59,7 @@ import type { SessionIndexEntry } from "@/lib/sessions/types";
  * Chat unmounts (Settings sub-view swap). Plan M1-U2 root-cause #1 fix.
  */
 export default function App() {
+  const t = useT();
   const [view, setView] = useState<AppView>("agent");
   const [hasManagedKey, setHasManagedKey] = useState(false);
   const [settingsPage, setSettingsPage] = useState<SettingsPage>("root");
@@ -53,9 +72,14 @@ export default function App() {
   const [researchOpenId, setResearchOpenId] = useState<string | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sessions, setSessions] = useState<SessionIndexEntry[]>([]);
-  // Bumped each time a website "Subscribe" deep-link is consumed; threaded into
-  // Settings → NewConfigWizard to open the managed-subscribe screen.
-  const [subscribeNonce, setSubscribeNonce] = useState(0);
+  // Pie 2.0 §1 / F3 — unread automation entries drive the top-bar dot.
+  const [unreadAutomation, setUnreadAutomation] = useState(0);
+  // 2.0 overlay — one-line explanation shown when the overlay's shortcut had to
+  // fall back to the panel (chrome:// / new tab / Web Store / PDF).
+  const [overlayNotice, setOverlayNotice] = useState<string | null>(null);
+  // 2.0 privacy update modal for existing active subscribers on first launch.
+  const [showPrivacyUpdateModal, setShowPrivacyUpdateModal] = useState(false);
+  const checkedRemoteConsentForRef = useRef<string | null>(null);
   // M1: theme mode owned at App level so the button reflects state and we
   // can persist to localStorage. M2 will wire data-theme to actually switch.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -126,10 +150,61 @@ export default function App() {
   // visible so BYOK users can reach the paywall and the sample reports.
   const refreshResearchGate = useCallback(async () => {
     try {
-      const insts = await listInstances();
-      setHasManagedKey(insts.some((i) => i.provider === "managed" && Boolean(i.apiKey)));
+      setHasManagedKey(Boolean((await getPieAccount())?.apiKey));
     } catch {
       setHasManagedKey(false);
+    }
+  }, []);
+
+  const checkPrivacyUpdatePrompt = useCallback(async () => {
+    try {
+      const acct = await getPieAccount();
+      if (!acct) {
+        checkedRemoteConsentForRef.current = null;
+        setShowPrivacyUpdateModal(false);
+        return;
+      }
+      let ent = getCachedEntitlement(acct.apiKey);
+      const consent = await getPrivacyConsent();
+      if (
+        (!ent ||
+          (ent.plan === "active" &&
+            consent?.status !== "accepted" &&
+            ent.privacyConsent !== true)) &&
+        checkedRemoteConsentForRef.current !== acct.apiKey
+      ) {
+        checkedRemoteConsentForRef.current = acct.apiKey;
+        const fresh = await getEntitlement(acct.apiKey).catch(() => null);
+        if (fresh) ent = fresh;
+      }
+      const needed = await needsPrivacyUpdatePrompt(ent);
+      setShowPrivacyUpdateModal(needed);
+      if (ent?.plan === "active" && ent.privacyConsent === true) {
+        void syncMemoryFromCloud({ force: true }).catch(() => {});
+      }
+    } catch {
+      /* best-effort; never block panel mount */
+    }
+  }, []);
+
+  const handleAgreePrivacyUpdate = useCallback(async () => {
+    await acceptPrivacyPolicy("upgrade_prompt");
+    setShowPrivacyUpdateModal(false);
+    try {
+      await syncSetMemorySettings({ enabled: true });
+    } catch {
+      await setMemorySettings({ enabled: true }).catch(() => {});
+    }
+    void syncMemoryFromCloud({ force: true }).catch(() => {});
+  }, []);
+
+  const handleDeclinePrivacyUpdate = useCallback(async () => {
+    await declineCloudMemoryConsent();
+    setShowPrivacyUpdateModal(false);
+    try {
+      await syncSetMemorySettings({ enabled: false });
+    } catch {
+      await setMemorySettings({ enabled: false }).catch(() => {});
     }
   }, []);
 
@@ -153,7 +228,9 @@ export default function App() {
 
     loadProviderLabel();
     void refreshResearchGate();
-  }, [refreshSessionIndex, refreshResearchGate]);
+    void checkPrivacyUpdatePrompt();
+    void unreadInboxCount().then(setUnreadAutomation);
+  }, [refreshSessionIndex, refreshResearchGate, checkPrivacyUpdatePrompt]);
 
   // ── Deep-link: website "Subscribe" → managed-subscribe screen ──────────────
   // The SW stashes a one-shot intent in chrome.storage.session when it opens the
@@ -165,15 +242,46 @@ export default function App() {
     const consume = (val: unknown) => {
       if (val === DEEPLINK_MANAGED_SUBSCRIBE) {
         void chrome.storage.session.remove(DEEPLINK_KEY);
-        openSettings("models");
-        setSubscribeNonce((n) => n + 1);
+        openSettings("account");
         return;
       }
       const researchId = parseResearchDetailDeeplink(val);
-      if (!researchId) return;
-      void chrome.storage.session.remove(DEEPLINK_KEY);
-      setResearchOpenId(researchId);
-      setView("research");
+      if (researchId) {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        setResearchOpenId(researchId);
+        setView("research");
+        return;
+      }
+      // 2.0 overlay — handoff to the side panel.
+      const overlaySession = parseOverlayPanelDeeplink(val);
+      if (overlaySession) {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        setOverlayNotice(null);
+        void session.setActive(overlaySession);
+        setView("agent");
+        return;
+      }
+      if (val === DEEPLINK_OVERLAY_RESTRICTED) {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        setOverlayNotice(t("overlay.panelRestrictedNotice"));
+        setView("agent");
+        return;
+      }
+      const prefill = parseOverlayPrefillDeeplink(val);
+      if (prefill !== null) {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        setChatPrefill(prefill);
+        setView("agent");
+        return;
+      }
+      // 2.0 overlay → settings page ("不对" on a memory row, "管理模型" in the
+      // model picker).
+      const deeplinkPage = parseSettingsDeeplink(val);
+      if (deeplinkPage === "memory" || deeplinkPage === "models" || deeplinkPage === "account") {
+        void chrome.storage.session.remove(DEEPLINK_KEY);
+        openSettings(deeplinkPage);
+        return;
+      }
     };
     void chrome.storage.session
       .get(DEEPLINK_KEY)
@@ -211,11 +319,17 @@ export default function App() {
     }
   });
 
+  // Automation dot — refreshed on every inbox write (trigger / run done / pause).
+  useStoreChange("inbox", () => {
+    void unreadInboxCount().then(setUnreadAutomation);
+  });
+
   // Provider label depends on the active selection (config: last_model_selection
   // / active_instance_id) and instance config (instances: instance_*).
   useStoreChange("instances", () => {
     loadProviderLabel();
     void refreshResearchGate();
+    void checkPrivacyUpdatePrompt();
   });
   useStoreChange("config", (c) => {
     if (c.id === "theme-mode") {
@@ -231,6 +345,13 @@ export default function App() {
     if (c.id === UI_SCALE_KEY) {
       // Cross-window interface-scale sync (the writer already applied its own).
       void getConfig(UI_SCALE_KEY).then((v) => applyUiScale(parseUiScale(v)));
+      return;
+    }
+    if (
+      c.id === PRIVACY_CONSENT_KEY ||
+      (typeof c.id === "string" && c.id.startsWith("managed_entitlement_"))
+    ) {
+      void checkPrivacyUpdatePrompt();
       return;
     }
     // last_model_selection / active_instance_id (and any other config write)
@@ -399,7 +520,28 @@ export default function App() {
         streaming={session.streaming}
         onTogglePinTab={(tabId, origin) => void session.togglePinTab(tabId, origin)}
         onClearUserPin={() => void session.clearUserPin()}
+        unreadAutomation={unreadAutomation}
       />
+
+      {/* 2.0 overlay — restricted-page fallback notice (prototype state ⑪:
+          explained, not an error). */}
+      {overlayNotice && view === "agent" && (
+        <div
+          data-testid="overlay-restricted-notice"
+          className="flex items-start gap-2 border-b border-line bg-field px-3 py-2 text-[11.5px] leading-[16px] text-fg-2"
+        >
+          <span className="mt-[1px] text-accent">ⓘ</span>
+          <span className="flex-1">{overlayNotice}</span>
+          <button
+            type="button"
+            aria-label={t("common.dismiss")}
+            className="text-fg-3 hover:text-fg-1"
+            onClick={() => setOverlayNotice(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* ── Main content area ─────────────────────────────────────────────── */}
       {/* key={view} forces remount on switch so .view-enter keyframe replays.
@@ -421,6 +563,8 @@ export default function App() {
           <Chat
             providerLabel={providerLabel}
             onOpenSettings={() => openSettings()}
+            onOpenMemorySettings={() => openSettings("memory")}
+            onOpenAccountSettings={() => openSettings("account")}
             prefillInput={chatPrefill}
             onPrefillConsumed={() => setChatPrefill(undefined)}
             session={session}
@@ -441,7 +585,7 @@ export default function App() {
             }
           />
         ) : view === "schedules" ? (
-          <SchedulesPanel
+          <AutomationPanel
             onOpenSession={(id) => void handleOpenSessionFromSchedule(id)}
             onCreateViaChat={(template) => void handleCreateScheduleViaChat(template)}
           />
@@ -455,10 +599,7 @@ export default function App() {
               setChatPrefill(markdown);
               setView("agent");
             }}
-            onOpenSubscribe={() => {
-              openSettings("models");
-              setSubscribeNonce((n) => n + 1);
-            }}
+            onOpenSubscribe={() => openSettings("account")}
           />
         ) : view === "skills" ? (
           <div className="flex-1 overflow-y-auto px-4 py-6" data-testid="skills-page">
@@ -479,18 +620,29 @@ export default function App() {
                   setSettingsPage(p);
                 }}
               />
+            ) : settingsPage === "account" ? (
+              <AccountPage />
             ) : settingsPage === "models" ? (
-              <ModelsPage openSubscribeNonce={subscribeNonce} />
+              <ModelsPage />
             ) : settingsPage === "bridge" ? (
               <BridgePage />
             ) : settingsPage === "search" ? (
               <SearchProviderSection />
+            ) : settingsPage === "memory" ? (
+              <MemoryPage
+                onOpenSession={(id) => void handleOpenSessionFromSchedule(id)}
+                onOpenSubscribe={() => openSettings("account")}
+              />
             ) : settingsPage === "uiLanguage" ? (
               <UiLanguagePage />
             ) : settingsPage === "assistantLanguage" ? (
               <AssistantLanguagePage />
             ) : settingsPage === "customRules" ? (
               <CustomRulesPage />
+            ) : settingsPage === "browserData" ? (
+              <BrowserDataPage />
+            ) : settingsPage === "overlay" ? (
+              <OverlayPage />
             ) : settingsPage === "mcp" ? (
               <McpServersPage />
             ) : settingsPage === "about" ? (
@@ -512,6 +664,13 @@ export default function App() {
         onResumeSession={handleResumeSession}
         onOpenSettings={() => openSettings()}
       />
+
+      {showPrivacyUpdateModal && (
+        <PrivacyUpdateModal
+          onAgree={handleAgreePrivacyUpdate}
+          onDecline={handleDeclinePrivacyUpdate}
+        />
+      )}
     </div>
   );
 }

@@ -1,0 +1,150 @@
+// src/lib/memory/types.ts
+//
+// Pie 2.0 记忆层（spec §5）的数据模型与容量常量。
+//
+// 三层结构（spec §5.2）：
+//   Profile  常驻短文（≤ ~1000 token），每个任务都带；
+//   Index    每条记忆一行，只给挑选模型看；
+//   Entry    正文，被选中的才注入。
+//
+// 「近期片段」（kind="recent"）是每日整理出的碎片，月度精简时合并进长期或清除。
+
+export const MEMORY_KINDS = [
+  "about", // 关于你
+  "preference", // 偏好与习惯
+  "contact", // 地址与联系方式（落盘加密）
+  "site", // 常用网站与账号
+  "ongoing", // 进行中的事
+  "recent", // 近期片段
+] as const;
+
+export type MemoryKind = (typeof MEMORY_KINDS)[number];
+
+/** 长期记忆类别（其余为「近期片段」）。 */
+export const LONG_TERM_KINDS: readonly MemoryKind[] = [
+  "about",
+  "preference",
+  "contact",
+  "site",
+  "ongoing",
+];
+
+// ── 容量 ─────────────────────────────────────────────────────────────────────
+/** 全部记忆正文总字数上限（约 25k token）。 */
+export const MEMORY_MAX_CHARS = 20_000;
+/** 单条正文上限（约 200 token）。 */
+export const MEMORY_BODY_MAX_CHARS = 400;
+/** 单条标题上限。 */
+export const MEMORY_TITLE_MAX_CHARS = 60;
+/** 每日整理的最小间隔（水位线之外的第二道闸）。 */
+export const MEMORY_CONSOLIDATE_MIN_INTERVAL_MS = 20 * 60 * 60 * 1000;
+/** 筛选软超时 / 硬超时。 */
+export const MEMORY_PICK_SOFT_TIMEOUT_MS = 2_500;
+export const MEMORY_PICK_HARD_TIMEOUT_MS = 4_000;
+
+export type MemoryEntryOrigin = "explicit" | "consolidated" | "user";
+
+export interface MemoryEntry {
+  /** "m_<uuid>" */
+  id: string;
+  kind: MemoryKind;
+  title: string;
+  body: string;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+  /** 事实有效期起点。 */
+  validFrom: number;
+  /** 被新事实取代时置位；置位条目不再注入 / 不再进索引。 */
+  validTo?: number;
+  useCount: number;
+  lastUsedAt?: number;
+  sourceSessionId?: string;
+  sourceTitle?: string;
+  /** 用户在记忆页手动编辑 / 显式 remember 的条目，不自动淘汰。 */
+  pinned?: boolean;
+  origin: MemoryEntryOrigin;
+  /** true = title/body 是 AES-GCM 密文（「地址与联系方式」类）。 */
+  encrypted?: boolean;
+  /** 运行时标记：密文解不开（密钥变了）。这类条目不写回，避免把密文覆盖成空。 */
+  decryptFailed?: boolean;
+}
+
+/** 落盘记录（未知字段被忽略；`id` 是 store 的 keyPath）。 */
+export interface MemorySettingsRecord {
+  id: "settings";
+  /** 自动记忆总开关（F14 顶部）。 */
+  enabled: boolean;
+  /** 不记住的网站（域名列表）。 */
+  excludedDomains: string[];
+  /**
+   * 来源：浏览历史（spec §5.3）。默认关；打开需要 history 可选权限
+   * （与书签/历史线共用 `browser-data/permissions.ts` 的授权）。
+   * 只读「网站 + 标题」，推断常用网站与兴趣，产出只进「近期片段 / 常用网站与账号」。
+   */
+  historySource?: boolean;
+}
+
+export interface ConsolidationSummary {
+  at: number;
+  added: number;
+  updated: number;
+  merged: number;
+  expired: number;
+  deleted: number;
+  profileRewritten: boolean;
+}
+
+export interface MemoryStateRecord {
+  id: "state";
+  /** 上次整理处理到哪（会话 lastAccessedAt 水位线，纯本地模式使用）。 */
+  watermark: number;
+  lastConsolidatedAt?: number;
+  lastCompactedAt?: number;
+  lastSummary?: ConsolidationSummary;
+  /** 当日挑选调用计数（每日上限）。 */
+  pick?: { date: string; count: number };
+  /** 云端同步版本号（单调递增）。 */
+  cloudRevision?: number;
+  /** 云端返回只读态标记（订阅到期保留）。 */
+  cloudReadOnly?: boolean;
+  /** 云端是否存在月度精简前可撤销快照。 */
+  hasCloudSnapshot?: boolean;
+  /** 是否已完成过一次性「本地存量记忆 → 云端」导入。 */
+  cloudImported?: boolean;
+  /** 本设备稳定 ID（digest 去重与历史来源标识用）。 */
+  deviceId?: string;
+  /** 本机已推送到云端 digest 的会话 lastAccessedAt 水位线。 */
+  digestWatermark?: number;
+  /** 本机上一次推送浏览历史 digest 的时间戳。 */
+  lastHistoryDigestAt?: number;
+  /** 首次整理完成后对话顶部提示是否待展示（spec §10 #2）。 */
+  firstConsolidationPendingBanner?: boolean;
+  /** 首次整理顶部提示是否已展示或关闭过。 */
+  firstConsolidationNoticeShown?: boolean;
+}
+
+export interface MemoryProfileRecord {
+  id: "profile";
+  text: string;
+  updatedAt: number;
+}
+
+/** 可撤销记录（F13「撤销」）。值在删除 / 覆盖前抓取，撤销即写回。 */
+export interface MemoryUndoRecord {
+  /** "undo_<uuid>" */
+  id: string;
+  at: number;
+  kind: "updated" | "deleted";
+  /** 覆盖前的旧值（restore 用）。 */
+  before: MemoryEntry[];
+  /** 新建出来的 id（undo `remember` 时删掉）。 */
+  created: string[];
+}
+
+export type MemoryRecord =
+  | MemoryEntry
+  | MemorySettingsRecord
+  | MemoryStateRecord
+  | MemoryProfileRecord
+  | MemoryUndoRecord;

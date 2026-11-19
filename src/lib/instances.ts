@@ -1,5 +1,5 @@
 import type { ProviderRef, BuiltinProvider, ModelConfig } from "@/lib/model-router";
-import { getCachedEntitlement, cachedManagedModel } from "@/lib/managed-account";
+import { getCachedEntitlement, cachedManagedModel, hydrateEntitlementCache } from "@/lib/managed-account";
 import { resolveProviderMeta, getProviderMeta, resolveModelVision, resolveModelMeta, resolveEndpointVariant } from "@/lib/model-router/providers/registry";
 import { getOrCreateEncryptionKey, encrypt, decrypt } from "@/lib/crypto";
 import { getCustomProvider, providerRefToId } from "@/lib/custom-providers";
@@ -143,9 +143,9 @@ export async function cascadeInstanceDelete(instanceId: string): Promise<void> {
     await patchSchedule(sched.id, { status: "paused" });
     await disarmSchedule(sched.id);
     // Task 8 — notify the user that the schedule was auto-paused because its
-    // bound instance was deleted. Fire-and-forget; notifySchedulePaused wraps
-    // chrome.notifications in try/catch so a broken API is non-fatal.
-    notifySchedulePaused({
+    // bound instance was deleted. Awaited: notifySchedulePaused resolves the UI
+    // locale first, and it still never throws (internal try/catch + this .catch).
+    await notifySchedulePaused({
       scheduleId: sched.id,
       scheduleTitle: sched.title,
       reason: "instance_deleted",
@@ -211,6 +211,10 @@ export async function resolveModelConfig(instanceId: string, model: string): Pro
   // managed：失效 alias（缓存里没有且缓存非空）回退到 models[0]，保证送出的 model 合法。
   let effectiveModel = model;
   if (inst.provider === "managed") {
+    const cached = getCachedEntitlement(inst.apiKey);
+    if (!cached || cached.models.length === 0 || !cached.models.some((m) => m.id === model)) {
+      await hydrateEntitlementCache();
+    }
     const ms = getCachedEntitlement(inst.apiKey)?.models ?? [];
     if (ms.length > 0 && !ms.some((m) => m.id === model)) effectiveModel = ms[0]!.id;
   }
@@ -269,6 +273,9 @@ export async function firstModelForProvider(provider: ProviderRef, instanceId?: 
     : (await listInstances()).find((i) => i.provider === provider);
   if (inst?.customModels && inst.customModels.length > 0) return inst.customModels[0]!;
   if (provider === "managed" && inst) {
+    if (!getCachedEntitlement(inst.apiKey)?.models.length) {
+      await hydrateEntitlementCache();
+    }
     const first = getCachedEntitlement(inst.apiKey)?.models[0]?.id;
     if (first) return first;
     // 缓存空 → 落到下方 registry 单条兜底

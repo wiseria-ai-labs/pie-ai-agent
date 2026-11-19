@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ErrorKind } from "@/lib/model-router/types";
 import type { Entitlement } from "@/lib/managed-auth";
-import { listInstances } from "@/lib/instances";
+import { getPieAccount } from "@/lib/pie-account";
 import { getEntitlement, openCheckout, openPortal } from "@/lib/managed-account";
 import { formatResetDate } from "@/lib/managed-format";
 import { useI18n } from "@/lib/i18n";
@@ -14,8 +14,7 @@ export interface ManagedErrorCtaDeps {
 }
 
 async function defaultGetManagedKey(): Promise<string | null> {
-  const insts = await listInstances();
-  return insts.find((i) => i.provider === "managed")?.apiKey ?? null;
+  return (await getPieAccount())?.apiKey ?? null;
 }
 
 function CtaCard({ tone, title, body, action }: {

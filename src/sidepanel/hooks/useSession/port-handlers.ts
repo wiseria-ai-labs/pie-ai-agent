@@ -108,6 +108,23 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    // 2.0 overlay — this port was attached to a task that is already running
+    // (handoff mid-stream). Enter streaming BEFORE the replay that follows:
+    // the slot keeps the persisted history, the replay appends the live turn.
+    if (msg.type === "chat-attach") {
+      patchSlot(id, {
+        streaming: true,
+        streamFinished: false,
+        attachedRun: true,
+        accumulated: "",
+        streamingText: "",
+        streamingThinking: "",
+        error: null,
+        errorKind: null,
+      });
+      return;
+    }
+
     if (msg.type === "chat-chunk") {
       patchSlot(id, (prev) => {
         const accumulated = prev.accumulated + msg.text;
@@ -138,6 +155,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streaming: false,
         streamFinished: true,
         ratelimitResumeAt: null,
+        attachedRun: false,
       });
       void persistMessages(id, next);
       return;
@@ -161,6 +179,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streaming: false,
         streamFinished: true,
         ratelimitResumeAt: null,
+        attachedRun: false,
       });
       void persistMessages(id, next);
       return;
@@ -257,6 +276,7 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
         streaming: false,
         streamFinished: true,
         ratelimitResumeAt: null,
+        attachedRun: false,
       });
       void persistMessages(id, next);
       return;
@@ -456,6 +476,66 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
       return;
     }
 
+    // Pie 2.0 — inline undo row (F7). De-duped by recordId.
+    if (msg.type === "browser-change") {
+      const prev = slotsRef.current.get(msg.sessionId);
+      const baseMessages = prev?.messages ?? [];
+      if (baseMessages.some((m) => m.role === "browser-change" && m.recordId === msg.recordId)) {
+        return;
+      }
+      const entry: DisplayMessage = { role: "browser-change", recordId: msg.recordId };
+      patchSlot(msg.sessionId, { messages: [...baseMessages, entry] });
+      return;
+    }
+
+    // Pie 2.0 记忆层 — 「用到 N 条记忆」chip。紧跟在当前回答后，随会话持久化。
+    if (msg.type === "memory-used") {
+      if (msg.items.length === 0) return;
+      const prev = slotsRef.current.get(msg.sessionId);
+      const baseMessages = prev?.messages ?? [];
+      const entry: DisplayMessage = { role: "memory-used", items: msg.items };
+      const flushed = buildAssistant(
+        baseMessages,
+        prev?.accumulated ?? "",
+        prev?.streamingThinking ?? "",
+        prev?.unconsumedInstructionIds ?? EMPTY_SLOT.unconsumedInstructionIds,
+      );
+      const next = [...flushed.next, entry];
+      patchSlot(msg.sessionId, {
+        messages: next,
+        ...(flushed.flushed ? { accumulated: "", streamingText: "", streamingThinking: "" } : {}),
+      });
+      void persistMessages(msg.sessionId, next);
+      return;
+    }
+
+    // Pie 2.0 记忆层 — remember / forget 的事件行（可撤销）。
+    if (msg.type === "memory-event") {
+      const prev = slotsRef.current.get(msg.sessionId);
+      const baseMessages = prev?.messages ?? [];
+      const entry: DisplayMessage = {
+        role: "memory-event",
+        eventId: msg.eventId,
+        kind: msg.kind,
+        label: msg.label,
+        ...(msg.encrypted ? { encrypted: true } : {}),
+        count: msg.count,
+      };
+      const flushed = buildAssistant(
+        baseMessages,
+        prev?.accumulated ?? "",
+        prev?.streamingThinking ?? "",
+        prev?.unconsumedInstructionIds ?? EMPTY_SLOT.unconsumedInstructionIds,
+      );
+      const next = [...flushed.next, entry];
+      patchSlot(msg.sessionId, {
+        messages: next,
+        ...(flushed.flushed ? { accumulated: "", streamingText: "", streamingThinking: "" } : {}),
+      });
+      void persistMessages(msg.sessionId, next);
+      return;
+    }
+
     // Subsequent branches added in Tasks 2c–2g.
   };
 
@@ -463,6 +543,20 @@ export function createPortHandlers(deps: CreatePortHandlersDeps): PortHandlers {
     return () => {
       const slot = slotsRef.current.get(sessionId);
       if (!slot || slot.streamFinished) return;
+      if (slot.attachedRun) {
+        // 2.0 overlay — attached to a run the SW owns: it persists the
+        // terminal turn. Flushing here would write a partial copy that the
+        // replay on the next attach duplicates.
+        patchSlot(sessionId, {
+          accumulated: "",
+          streamingThinking: "",
+          streamingText: "",
+          streaming: false,
+          streamFinished: true,
+          attachedRun: false,
+        });
+        return;
+      }
       const { next } = buildAssistant(
         slot.messages, slot.accumulated, slot.streamingThinking, slot.unconsumedInstructionIds,
       );

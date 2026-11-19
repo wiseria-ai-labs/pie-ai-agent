@@ -1,5 +1,52 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { showBubble, hideBubble, __test__isVisible } from "./floating-bubble";
+import { showSelectionBar, hideBubble, __test__isVisible } from "./floating-bubble";
+import type { OverlayUiStrings } from "@/lib/overlay/protocol";
+
+const strings: OverlayUiStrings = {
+  barAsk: "Ask Pie",
+  activityReadPage: "Reading the page",
+  activityActPage: "Working on the page",
+  activityOpenPage: "Opening a page",
+  activityReadPdf: "Reading the PDF",
+  activitySearchBookmarks: "Searching bookmarks",
+  activitySearchHistory: "Searching history",
+  activityBookmarks: "Updating bookmarks",
+  activityMemory: "Updating memory",
+  activityMonitor: "Setting up a monitor",
+  activityOther: "Working…",
+  barExplain: "Explain",
+  barTranslate: "Translate",
+  barQuote: "Quote",
+  barRewrite: "Rewrite",
+  barMore: "More",
+  barHideSite: "Don't show on this site",
+  capsuleStop: "Stop",
+  capsuleExpand: "Open panel",
+  capsuleView: "View",
+  capsuleRetry: "Retry",
+  capsulePanel: "Handle in panel",
+  capsuleDone: "Done",
+  capsuleStopped: "Stopped",
+  capsuleFailed: "Something went wrong",
+};
+
+function show(editable: boolean, onAction = vi.fn(), anchorLeft = 200) {
+  showSelectionBar({
+    anchorTop: 100,
+    anchorLeft,
+    anchorRight: anchorLeft + 100,
+    editable,
+    strings,
+    onAction,
+  });
+  return document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
+}
+
+function labels(host: HTMLElement): string[] {
+  return [...host.shadowRoot!.querySelectorAll("[data-act]")].map(
+    (b) => (b as HTMLElement).dataset.act!,
+  );
+}
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -9,69 +56,69 @@ beforeEach(() => {
   Object.defineProperty(window, "innerWidth", { value: 1280, writable: true });
 });
 
-describe("floating bubble", () => {
-  it("renders a host element in Shadow DOM", () => {
-    showBubble({ anchorTop: 100, anchorLeft: 200, onClick: vi.fn() });
-    const host = document.documentElement.querySelector("[data-pie-quote-bubble]");
+describe("selection bar", () => {
+  it("renders a shadow host", () => {
+    const host = show(false);
     expect(host).not.toBeNull();
-    expect(host?.shadowRoot).not.toBeNull();
+    expect(host.shadowRoot).not.toBeNull();
   });
 
-  it("places bubble ABOVE selection when room above", () => {
-    showBubble({ anchorTop: 500, anchorLeft: 200, onClick: vi.fn() });
+  it("read-only selection shows explain / translate / quote — no rewrite", () => {
+    const host = show(false);
+    expect(labels(host)).toEqual(["ask", "explain", "translate", "quote", "more"]);
+  });
+
+  it("editable selection shows ask / rewrite / translate / more — no quote", () => {
+    const host = show(true);
+    expect(labels(host)).toEqual(["ask", "rewrite", "translate", "more"]);
+  });
+
+  it("places the bar above the selection when there is room", () => {
+    const host = show(false);
+    expect(parseInt(host.style.top, 10)).toBeLessThan(100);
+  });
+
+  it("falls back below when the selection is near the top edge", () => {
+    showSelectionBar({
+      anchorTop: 5,
+      anchorLeft: 200,
+      anchorRight: 300,
+      editable: false,
+      strings,
+      onAction: vi.fn(),
+    });
     const host = document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
-    const styleTop = parseInt(host.style.top, 10);
-    expect(styleTop).toBeLessThan(500);
+    expect(parseInt(host.style.top, 10)).toBeGreaterThan(5);
   });
 
-  it("falls back BELOW when no room above", () => {
-    showBubble({ anchorTop: 5, anchorLeft: 200, onClick: vi.fn() });
-    const host = document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
-    const styleTop = parseInt(host.style.top, 10);
-    expect(styleTop).toBeGreaterThan(5);
+  it("centres over the selection and clamps to the viewport", () => {
+    const host = show(false, vi.fn(), 1270);
+    const left = parseInt(host.style.left, 10);
+    expect(left).toBeLessThanOrEqual(1280 - 8);
+    expect(left).toBeGreaterThanOrEqual(8);
   });
 
-  it("idempotent: show twice → still one host", () => {
-    showBubble({ anchorTop: 100, anchorLeft: 200, onClick: vi.fn() });
-    showBubble({ anchorTop: 110, anchorLeft: 210, onClick: vi.fn() });
-    expect(document.documentElement.querySelectorAll("[data-pie-quote-bubble]").length).toBe(1);
-  });
-
-  it("hide removes the host", () => {
-    showBubble({ anchorTop: 100, anchorLeft: 200, onClick: vi.fn() });
-    hideBubble();
+  it("clicking a button fires the action and hides the bar", () => {
+    const onAction = vi.fn();
+    const host = show(true, onAction);
+    host.shadowRoot!.querySelector<HTMLButtonElement>('[data-act="rewrite"]')!.click();
+    expect(onAction).toHaveBeenCalledWith("rewrite");
     expect(__test__isVisible()).toBe(false);
   });
 
-  it("clamps left when selection touches viewport right edge", () => {
-    showBubble({ anchorTop: 100, anchorLeft: 1278, onClick: vi.fn() });
-    const host = document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
-    const styleLeft = parseInt(host.style.left, 10);
-    expect(styleLeft).toBeLessThanOrEqual(1280 - 24 - 6);
-    expect(styleLeft).toBeGreaterThanOrEqual(1280 - 24 - 6);
+  it("⋯ opens a menu whose only item hides the site", () => {
+    const onAction = vi.fn();
+    const host = show(false, onAction);
+    host.shadowRoot!.querySelector<HTMLButtonElement>('[data-act="more"]')!.click();
+    const hide = host.shadowRoot!.querySelector<HTMLButtonElement>('[data-act="hide-site"]')!;
+    expect(hide.textContent).toContain("Don't show");
+    hide.click();
+    expect(onAction).toHaveBeenCalledWith("hide-site");
   });
 
-  it("clamps left when selection touches viewport left edge", () => {
-    showBubble({ anchorTop: 100, anchorLeft: -50, onClick: vi.fn() });
-    const host = document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
-    const styleLeft = parseInt(host.style.left, 10);
-    expect(styleLeft).toBe(6);
-  });
-
-  it("respects anchorLeft when within viewport bounds", () => {
-    showBubble({ anchorTop: 100, anchorLeft: 600, onClick: vi.fn() });
-    const host = document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
-    const styleLeft = parseInt(host.style.left, 10);
-    expect(styleLeft).toBe(600);
-  });
-
-  it("click in shadow root invokes callback then hides", () => {
-    const onClick = vi.fn();
-    showBubble({ anchorTop: 100, anchorLeft: 200, onClick });
-    const host = document.documentElement.querySelector<HTMLElement>("[data-pie-quote-bubble]")!;
-    const btn = host.shadowRoot!.querySelector<HTMLButtonElement>("button")!;
-    btn.click();
-    expect(onClick).toHaveBeenCalledTimes(1);
+  it("hide removes the host", () => {
+    show(false);
+    hideBubble();
     expect(__test__isVisible()).toBe(false);
   });
 });

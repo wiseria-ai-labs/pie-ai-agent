@@ -43,7 +43,7 @@ describe("GROUP_META / LOADABLE_GROUPS", () => {
     expect(LOADABLE_GROUPS).not.toContain("skill-mediation");
   });
   it("pdf / scratchpad / schedule / skill-authoring / local-file ARE loadable", () => {
-    for (const g of ["pdf", "scratchpad", "schedule", "skill-authoring", "local-file"]) {
+    for (const g of ["pdf", "scratchpad", "schedule", "monitor", "skill-authoring", "local-file"]) {
       expect(LOADABLE_GROUPS).toContain(g);
     }
   });
@@ -69,7 +69,7 @@ describe("buildToolCatalogBlock", () => {
     expect(block).toContain("scratchpad —");
   });
   it("returns empty string when every loadable group is active", () => {
-    const all = new Set<string>(["core", "pdf", "local-file", "scratchpad", "schedule", "skill-authoring"]);
+    const all = new Set<string>(["core", "pdf", "local-file", "scratchpad", "schedule", "skill-authoring", "browser-data", "monitor"]);
     expect(buildToolCatalogBlock(all)).toBe("");
   });
 });

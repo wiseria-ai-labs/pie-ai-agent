@@ -129,10 +129,8 @@ describe("modelsFor managed", () => {
     expect(rows[1]!.managed).toMatchObject({ id: "pro", name: "进阶", vision: true, costLevel: 3 });
   });
 
-  it("无缓存时回退 registry 单条 default", () => {
-    const rows = modelsFor(inst({ provider: "managed", apiKey: "sk-cold" }));
-    expect(rows.map((r) => r.id)).toEqual(["default"]);
-    expect(rows[0]!.managed).toBeUndefined();
+  it("无缓存时不回退 registry 兜底（未订阅的官方分组由列表层过滤掉）", () => {
+    expect(modelsFor(inst({ provider: "managed", apiKey: "sk-cold" }))).toEqual([]);
   });
 });
 
@@ -177,17 +175,33 @@ describe("ModelPicker managed rendering", () => {
 
   it("entitlement 缓存更新后经 store-bus 触发重渲染，列表刷新", async () => {
     const cold: DecryptedInstance[] = [{ id: "m2", provider: "managed", nickname: "Pie", apiKey: "sk-rerender", createdAt: 1 }];
+    // 先播种一份只有 default 的 active 快照（官方分组仅在 active 时出现）。
+    const onlyDefault = { plan: "active", email: "e", subscription: null, quota: null, models: [
+      { id: "default", name: "标准", vision: false, maxContextTokens: 128000, costLevel: 1 },
+    ] };
+    const fetchFn1 = vi.fn(async () => ({ ok: true, status: 200, json: async () => onlyDefault })) as unknown as typeof fetch;
+    await getEntitlement("sk-rerender", { fetchFn: fetchFn1, locale: "en" });
     render(<ModelPicker instances={cold} currentInstanceId="m2" currentModel="default" locked={false} onSelect={() => {}} onManage={() => {}} />);
     fireEvent.click(screen.getAllByRole("button")[0]!);
     fireEvent.click(screen.getByText("Pie Official"));
-    expect(screen.queryByText("进阶")).toBeNull(); // 冷启动只有兜底 default
+    expect(screen.queryByText("进阶")).toBeNull();
     const ent = { plan: "active", email: "e", subscription: null, quota: null, models: [
       { id: "default", name: "标准", vision: false, maxContextTokens: 128000, costLevel: 1 },
       { id: "pro", name: "进阶", description: "更强", vision: true, maxContextTokens: 200000, costLevel: 3 },
     ] };
-    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => ent })) as unknown as typeof fetch;
-    await getEntitlement("sk-rerender", { fetchFn, locale: "en" }); // 双写 + store-bus publish
+    const fetchFn2 = vi.fn(async () => ({ ok: true, status: 200, json: async () => ent })) as unknown as typeof fetch;
+    await getEntitlement("sk-rerender", { fetchFn: fetchFn2, locale: "en" }); // 双写 + store-bus publish
     await waitFor(() => expect(screen.getByText("进阶")).toBeTruthy());
+  });
+
+  it("plan 不是 active 时官方分组不出现在列表里", async () => {
+    const noneEnt = { plan: "none", email: "e", subscription: null, quota: null, models: [] };
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 200, json: async () => noneEnt })) as unknown as typeof fetch;
+    await getEntitlement("sk-none", { fetchFn, locale: "en" });
+    const insts: DecryptedInstance[] = [{ id: "n", provider: "managed", nickname: "Pie", apiKey: "sk-none", createdAt: 1 }];
+    render(<ModelPicker instances={insts} currentInstanceId={null} currentModel={null} locked={false} onSelect={() => {}} onManage={() => {}} />);
+    fireEvent.click(screen.getAllByRole("button")[0]!);
+    expect(screen.queryByText("Pie Official")).toBeNull();
   });
 });
 

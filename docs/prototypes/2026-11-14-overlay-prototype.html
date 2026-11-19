@@ -1,0 +1,1844 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pie 浮层 · 设计原型 v0.3</title>
+<link rel="icon" href="data:,">
+<style>
+/* ============================================================
+   1. Tokens（对齐 src/sidepanel/index.css）
+   ============================================================ */
+:root{
+  color-scheme: light;
+  --canvas:#F6F8FA;
+  --surface:#FFFFFF;
+  --raised:#FFFFFF;
+  --field:#F2F5F8;
+  --line:#E3E8ED;
+  --line-soft:#EDF1F5;
+  --ink:#12171C;
+  --ink-2:#3A4652;
+  --mute:#61707F;
+  --mute-3:#8C99A6;
+  --placeholder:#A3AFBB;
+  --accent:#3F5568;
+  --accent-strong:#2C3E4E;
+  --accent-tint:rgba(63,85,104,.08);
+  --accent-line:rgba(63,85,104,.30);
+  --success:#35825A;
+  --success-tint:rgba(53,130,90,.10);
+  --danger:#B14A3C;
+  --danger-tint:rgba(177,74,60,.09);
+  --shadow-win:0 30px 80px rgba(18,23,28,.14),0 4px 14px rgba(18,23,28,.06);
+  --shadow-pop:0 22px 56px rgba(18,23,28,.20),0 2px 10px rgba(18,23,28,.08);
+  --dot:rgba(18,23,28,.045);
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,"PingFang SC","Hiragino Sans GB",sans-serif;
+  --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+html[data-theme=dark]{
+  color-scheme: dark;
+  --canvas:#0A0C0F;
+  --surface:#121519;
+  --raised:#181D24;
+  --field:#1A1F26;
+  --line:#242B33;
+  --line-soft:#1E242B;
+  --ink:#E9EDF2;
+  --ink-2:#C4CDD7;
+  --mute:#93A0AE;
+  --mute-3:#6B7785;
+  --placeholder:#5A6674;
+  --accent:#B9C9D8;
+  --accent-strong:#D8E4EE;
+  --accent-tint:rgba(185,201,216,.08);
+  --accent-line:rgba(185,201,216,.32);
+  --success:#63A981;
+  --success-tint:rgba(99,169,129,.14);
+  --danger:#C9675A;
+  --danger-tint:rgba(201,103,90,.14);
+  --shadow-win:0 30px 80px rgba(0,0,0,.55),0 4px 14px rgba(0,0,0,.35);
+  --shadow-pop:0 22px 56px rgba(0,0,0,.6),0 2px 10px rgba(0,0,0,.4);
+  --dot:rgba(233,237,242,.05);
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;font-family:var(--sans);color:var(--ink);
+  background-color:var(--canvas);
+  background-image:radial-gradient(var(--dot) 1px,transparent 1px);
+  background-size:20px 20px;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit}
+a{color:inherit}
+code,.mono{font-family:var(--mono)}
+:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;border-radius:4px}
+::selection{background:var(--accent-line)}
+
+/* ============================================================
+   2. 文档外壳
+   ============================================================ */
+.topbar{
+  position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:16px;
+  height:54px;padding:0 22px;border-bottom:1px solid var(--line);
+  background:color-mix(in srgb,var(--canvas) 88%,transparent);
+  backdrop-filter:blur(12px) saturate(1.1);
+}
+.brand{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+.mark{
+  width:19px;height:19px;border-radius:50%;flex:none;
+  background:conic-gradient(from 205deg,var(--accent) 0 76%,var(--accent-strong) 76% 100%);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ink) 10%,transparent);
+}
+.tag{font:10px var(--mono);color:var(--mute);border:1px solid var(--line);border-radius:999px;padding:2px 7px;letter-spacing:.02em}
+.topbar .grow{flex:1}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;height:29px;padding:0 12px;
+  border:1px solid var(--line);border-radius:8px;background:var(--surface);
+  color:var(--ink);font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;
+  transition:background .13s,border-color .13s,color .13s,box-shadow .13s,filter .13s;
+}
+.btn:hover{background:var(--field)}
+.btn.primary{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff}
+html[data-theme=dark] .btn.primary{color:#0B0D10}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--mute)}
+.btn.ghost:hover{background:var(--field);color:var(--ink)}
+.btn.sm{height:27px;padding:0 11px;font-size:12px;border-radius:7px}
+.btn.tiny{height:25px;padding:0 10px;font-size:12px;border-radius:7px}
+.icon-btn{width:29px;height:29px;display:grid;place-items:center;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--mute);cursor:pointer;font-size:13px}
+.icon-btn:hover{color:var(--ink);background:var(--field)}
+.link{border:0;background:none;padding:0;color:var(--mute);font-size:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.link:hover{color:var(--ink)}
+kbd{
+  display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;
+  border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:var(--surface);
+  font-family:var(--sans);font-size:11.5px;line-height:1;color:var(--mute);
+}
+
+.layout{display:flex;gap:36px;max-width:1400px;margin:0 auto;padding:26px 26px 80px}
+.rail{position:sticky;top:80px;align-self:flex-start;width:150px;flex:none;padding-top:4px}
+.rail nav{display:flex;flex-direction:column;gap:1px}
+.rail a{
+  display:block;padding:6px 10px;border-left:2px solid transparent;border-radius:0 6px 6px 0;
+  font-size:12.5px;color:var(--mute);text-decoration:none;transition:.13s;
+}
+.rail a:hover{color:var(--ink);background:var(--field)}
+.rail a.on{color:var(--ink);border-left-color:var(--accent);background:var(--accent-tint);font-weight:500}
+.rail .rail-note{margin-top:22px;padding:0 10px;font-size:11px;line-height:1.8;color:var(--mute-3)}
+main{flex:1;min-width:0;max-width:1060px}
+
+section{scroll-margin-top:78px}
+section + section{margin-top:54px;padding-top:30px;border-top:1px solid var(--line)}
+.kicker{font:10.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--mute-3);margin:0 0 9px}
+h2{margin:0 0 10px;font-size:16px;font-weight:600;letter-spacing:-.01em}
+h3{margin:26px 0 10px;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.lede{margin:0 0 20px;max-width:740px;font-size:13px;line-height:1.75;color:var(--mute)}
+.lede b{color:var(--ink-2);font-weight:500}
+
+/* ============================================================
+   3. 演示舞台
+   ============================================================ */
+.stage-head{display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap}
+.seg{display:flex;gap:2px;padding:2px;border:1px solid var(--line);border-radius:10px;background:var(--field);overflow-x:auto;max-width:100%}
+.seg button{
+  border:0;background:transparent;color:var(--mute);font-size:12px;font-weight:500;
+  padding:5px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;transition:.13s;
+}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(18,23,28,.10)}
+.stage-now{margin-left:auto;min-width:0;flex:1;text-align:right;font:11px var(--mono);color:var(--mute-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.win{
+  position:relative;display:flex;flex-direction:column;width:100%;height:760px;overflow:hidden;
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-win);
+}
+.chrome{flex:none;background:var(--canvas);border-bottom:1px solid var(--line);padding-top:7px}
+.tabstrip{display:flex;align-items:flex-end;gap:5px;padding:0 10px}
+.tab{
+  display:flex;align-items:center;gap:8px;height:31px;max-width:260px;padding:0 11px;
+  border:1px solid var(--line);border-bottom:0;border-radius:8px 8px 0 0;background:var(--surface);
+  font-size:12px;color:var(--ink);
+}
+.tab .fav{width:12px;height:12px;border-radius:3px;background:var(--accent-tint);border:1px solid var(--accent-line);flex:none}
+.tab .ttl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab .x{margin-left:2px;color:var(--mute-3);font-size:13px}
+.tab.new{background:transparent;border-color:transparent;color:var(--mute);height:29px}
+.toolbar{display:flex;align-items:center;gap:10px;padding:6px 11px 7px}
+.navs{display:flex;gap:9px;padding:0 2px;font-size:14px;color:var(--mute-3)}
+.url{
+  flex:1;height:27px;display:flex;align-items:center;gap:7px;padding:0 13px;overflow:hidden;
+  border-radius:999px;background:var(--field);font-size:12px;color:var(--mute);white-space:nowrap;
+}
+.url svg{flex:none;opacity:.6}
+.exts{display:flex;align-items:center;gap:7px}
+.ext{width:17px;height:17px;border-radius:4px;background:var(--field);border:1px solid var(--line);padding:0}
+.ext.pie{background:radial-gradient(circle at 32% 28%,var(--accent) 0 38%,var(--accent-strong) 100%);border-color:transparent;cursor:pointer}
+
+.viewport{position:relative;flex:1;overflow:hidden;background:var(--surface)}
+.scrim{
+  position:absolute;inset:0;z-index:5;pointer-events:none;opacity:0;transition:opacity .18s;
+  background:rgba(18,23,28,.08);
+}
+html[data-theme=dark] .scrim{background:rgba(0,0,0,.24)}
+.win[data-ov=open] .scrim{opacity:1;pointer-events:auto}
+
+/* ============================================================
+   4. 模拟网页
+   ============================================================ */
+.page{position:absolute;inset:0;overflow:hidden;transition:margin-right .22s ease}
+.appbar{display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--line);font-size:12px;color:var(--mute)}
+.app-logo{width:20px;height:20px;border-radius:6px;background:var(--accent-tint);border:1px solid var(--accent-line);display:grid;place-items:center;font-size:10px;font-weight:600;color:var(--accent)}
+.app-search{flex:1;max-width:400px;height:26px;display:flex;align-items:center;padding:0 12px;border-radius:999px;background:var(--field);color:var(--placeholder);font-size:11.5px}
+.avatar{width:22px;height:22px;margin-left:auto;display:grid;place-items:center;border-radius:50%;background:var(--accent-tint);border:1px solid var(--accent-line);color:var(--accent);font-size:10.5px;font-weight:600}
+.mailwrap{display:flex;height:calc(100% - 45px)}
+.folders{width:136px;flex:none;padding:12px 8px;border-right:1px solid var(--line-soft);font-size:12px;color:var(--mute)}
+.f{display:flex;align-items:center;gap:8px;height:30px;padding:0 9px;border-radius:7px;transition:background .2s,color .2s}
+.f .fi{width:12px;height:12px;border-radius:3px;border:1px solid var(--line);background:var(--surface)}
+.f .count{margin-left:auto;font:10.5px var(--mono);color:var(--mute-3)}
+.win[data-page=compose] #fDrafts,.win[data-page=read] #fInbox{background:var(--field);color:var(--ink);font-weight:500}
+.win[data-arch=on] #fArchive,.win[data-cap=run][data-step="3"] #fArchive{background:var(--success-tint);color:var(--success)}
+.mailarea{flex:1;min-width:0;overflow:hidden}
+.mail{
+  position:relative;width:min(540px,88%);margin:36px auto 0;padding:16px 20px 14px;
+  background:var(--raised);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 10px 28px rgba(18,23,28,.07);
+}
+.mail-read{display:none}
+.win[data-page=read] .mail-compose{display:none}
+.win[data-page=read] .mail-read{display:block}
+.reply{display:none;margin-top:6px;padding:10px 11px 8px;border:1px solid var(--line);border-radius:9px;background:var(--field)}
+.win[data-page=compose] .reply{display:block}
+.reply-lb{font-size:11px;color:var(--mute-3);margin-bottom:5px}
+.reply-in{min-height:40px;font-size:13px;line-height:1.75;color:var(--ink)}
+.mrow{display:flex;align-items:center;gap:10px;padding-bottom:9px;margin-bottom:11px;border-bottom:1px solid var(--line);font-size:12px;color:var(--mute)}
+.mrow .k{min-width:30px;color:var(--mute-3)}
+.mrow .ink{color:var(--ink)}
+.mtime{margin-left:auto;font:11px var(--mono);color:var(--mute-3)}
+.chip-m{padding:1px 9px;border:1px solid var(--line);border-radius:999px;background:var(--field);color:var(--ink);font-size:11.5px}
+.mail-body{font-size:13px;line-height:1.85;color:var(--ink)}
+.mail-body p{margin:0 0 8px}
+.pline{position:relative;border-radius:2px;transition:outline-color .15s}
+.pline[data-mark=sel],.reply-in[data-mark=sel]{background:color-mix(in srgb,var(--accent) 28%,transparent)}
+.pline[data-mark=new],.reply-in[data-mark=new]{background:var(--success-tint);box-shadow:0 0 0 2px var(--success-tint)}
+.pline.flash,.reply-in.flash{animation:flash 1.8s ease-out}
+.reply{position:relative}
+@keyframes flash{0%{background:color-mix(in srgb,var(--success) 38%,transparent)}100%{background:var(--success-tint)}}
+.win[data-rt=pline]:has(.replace-btn:hover) .pline,.win[data-rt=reply]:has(.replace-btn:hover) .reply,
+.win.demo-hover[data-rt=reply] .reply,.win.demo-hover[data-rt=pline] .pline{outline:2px solid var(--accent);outline-offset:3px}
+.win:has(.replace-btn:hover) .pline::after,.win.demo-hover .pline::after,
+.win[data-rt=reply]:has(.replace-btn:hover) .reply::after,.win.demo-hover[data-rt=reply] .reply::after{
+  content:"← 将被替换";position:absolute;left:calc(100% + 12px);top:50%;transform:translateY(-50%);height:19px;padding:0 7px;border-radius:5px;
+  display:flex;align-items:center;background:var(--accent-strong);color:var(--surface);
+  font-size:10.5px;white-space:nowrap;pointer-events:none;
+}
+.win.demo-hover .replace-btn{filter:brightness(1.12);box-shadow:0 0 0 3px var(--accent-line)}
+.sel2{background:color-mix(in srgb,var(--accent) 28%,transparent);border-radius:2px}
+.mail-foot{display:flex;align-items:center;gap:14px;margin-top:11px}
+.send-wrap{position:relative;display:inline-block}
+.send{height:29px;padding:0 16px;border:1px solid var(--accent-strong);border-radius:8px;background:var(--accent-strong);color:#fff;font-size:12.5px;font-weight:500}
+html[data-theme=dark] .send{color:#0B0D10}
+.ghost{font-size:12px;color:var(--mute-3)}
+.agent-badge{
+  display:none;align-items:center;gap:6px;position:absolute;left:0;top:calc(100% + 9px);z-index:1;
+  height:23px;padding:0 9px;border-radius:999px;background:var(--ink);color:var(--canvas);
+  font-size:11px;white-space:nowrap;box-shadow:0 4px 12px rgba(18,23,28,.22);
+}
+.agent-badge i{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.7;animation:blink 1s steps(1) infinite}
+.win[data-cap=run][data-step="2"] .send{outline:2px dashed var(--accent);outline-offset:3px}
+.win[data-cap=run][data-step="2"] .agent-badge{display:inline-flex}
+.blocker{
+  display:none;position:absolute;left:10px;right:10px;bottom:8px;height:42px;align-items:center;justify-content:space-between;
+  padding:0 14px;border-radius:9px;background:var(--ink);color:var(--canvas);font-size:12px;
+  box-shadow:0 8px 20px rgba(18,23,28,.25);outline:2px dashed var(--danger);outline-offset:3px;
+}
+.blocker .bx{opacity:.6}
+.win[data-cap=fail] .blocker{display:flex}
+@keyframes blink{50%{opacity:0}}
+
+.page-toast{
+  position:absolute;left:50%;top:14px;transform:translate(-50%,-6px);z-index:4;
+  display:flex;align-items:center;gap:8px;height:32px;padding:0 13px;border-radius:999px;
+  background:var(--ink);color:var(--canvas);font-size:12px;white-space:nowrap;
+  opacity:0;pointer-events:none;transition:.2s ease;
+}
+.page-toast .okc{color:var(--success);font-weight:700}
+.win[data-toast=on] .page-toast{opacity:1;transform:translate(-50%,0)}
+
+/* 划词浮条 */
+.selbar{
+  position:absolute;left:50%;top:160px;z-index:7;display:none;align-items:center;gap:1px;
+  height:32px;padding:0 5px;border:1px solid var(--line);border-radius:9px;
+  background:var(--raised);box-shadow:var(--shadow-pop);font-size:12px;color:var(--mute);
+  transform:translateX(-50%);animation:pop2 .14s ease;max-width:calc(100% - 24px);
+}
+.win[data-bar=read] .selbar[data-v=read],.win[data-bar=edit] .selbar[data-v=edit]{display:flex}
+.sb{height:24px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--mute);font:inherit;white-space:nowrap;cursor:pointer}
+.sb:hover{background:var(--field);color:var(--ink)}
+.sb b{font-weight:500;color:var(--ink)}
+.sb.pie{display:inline-flex;align-items:center;gap:6px;padding-left:5px}
+.sb.pie .mark{width:15px;height:15px}
+.sb-sep{width:1px;height:13px;margin:0 2px;background:var(--line);flex:none}
+
+/* 自选回复：模型怎么回 */
+.chan-wrap{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 12px}
+body:has(.win[data-stage=typing]) .reply-wrap{display:flex}
+body:has(.win[data-stage=bar]) .bar-wrap{display:flex}
+.chan-note{font:11px var(--mono);color:var(--mute-3)}
+.chan{display:flex;gap:4px;flex-wrap:wrap}
+
+.page-settings{display:none;padding:30px 0;background:var(--canvas)}
+.set-wrap{width:min(520px,74%);margin:0 auto}
+.set-title{font-size:20px;font-weight:600;letter-spacing:-.01em}
+.set-search{height:30px;margin:14px 0 18px;display:flex;align-items:center;padding:0 13px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--placeholder);font-size:12px}
+.set-list{list-style:none;margin:0;padding:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.set-list li{display:flex;align-items:center;gap:10px;padding:11px 15px;font-size:12.5px;border-top:1px solid var(--line)}
+.set-list li:first-child{border-top:0}
+.set-list li.hl{background:var(--accent-tint)}
+.set-list .ico{width:17px;height:17px;border-radius:4px;background:var(--field);border:1px solid var(--line)}
+.set-list .ch{margin-left:auto;color:var(--mute-3)}
+.win[data-page=settings] .page-mail{display:none}
+.win[data-page=settings] .page-settings{display:block}
+.win:not([data-panel=none]) .page{margin-right:min(360px,44%)}
+
+/* ============================================================
+   5. 浮层
+   ============================================================ */
+.overlay{
+  position:absolute;left:50%;top:24px;transform:translateX(-50%);z-index:10;
+  display:none;flex-direction:column;width:min(560px,calc(100% - 44px));max-height:calc(100% - 40px);
+  background:var(--raised);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow-pop);
+  overflow:hidden;animation:pop .16s ease;
+}
+.win[data-ov=open] .overlay{display:flex}
+@keyframes pop{from{opacity:0;transform:translate(-50%,-7px)}to{opacity:1;transform:translate(-50%,0)}}
+
+.ov-head{display:none;flex:none;align-items:center;gap:8px;height:42px;padding:0 8px 0 14px;border-bottom:1px solid var(--line-soft)}
+.win[data-mode=chat] .ov-head{display:flex}
+.ov-head .mark{width:16px;height:16px}
+.ov-title{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov-sub{font-size:11px;color:var(--mute-3);white-space:nowrap}
+.ov-head .grow{flex:1}
+.ov-icon{width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:var(--mute);font-size:14px;cursor:pointer}
+.ov-icon:hover{background:var(--field);color:var(--ink)}
+
+.thread{display:none;flex:1 1 auto;min-height:0;overflow-y:auto;padding:14px 16px 12px;flex-direction:column;gap:12px;overscroll-behavior:contain}
+.win[data-mode=chat] .thread{display:flex}
+.thread > .is-new{animation:rise .2s ease}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+.composer{flex:none;padding:14px 16px 12px}
+.win[data-mode=chat] .composer{padding:10px 12px;border-top:1px solid var(--line-soft)}
+.ask-row{display:flex;align-items:center;gap:10px}
+.win[data-mode=chat] .ask-row{padding:6px 6px 6px 12px;border:1px solid var(--line);border-radius:11px;background:var(--field);transition:border-color .13s}
+.win[data-mode=chat] .ask-row:focus-within{border-color:var(--accent-line)}
+.win[data-mode=chat] .ask-row > .mark{display:none}
+.ask{flex:1;min-width:0;padding:1px 0;border:0;background:transparent;outline:none;font:400 15px/1.45 var(--sans);color:var(--ink)}
+.win[data-mode=chat] .ask{font-size:13.5px}
+.ask::placeholder{color:var(--placeholder)}
+.ask:disabled{opacity:.55}
+.send-btn{display:none;width:26px;height:26px;place-items:center;border:0;border-radius:7px;background:var(--accent-strong);color:#fff;font-size:13px;cursor:pointer}
+html[data-theme=dark] .send-btn{color:#0B0D10}
+.win[data-mode=chat] .send-btn{display:grid}
+.send-btn:disabled{opacity:.3;cursor:default}
+.c-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 0 30px}
+.win[data-mode=chat] .c-foot{margin:8px 2px 0}
+.ctx{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;
+  border:1px solid var(--line);border-radius:999px;background:var(--field);
+  font-size:11.5px;color:var(--mute);white-space:nowrap;
+}
+.win[data-mode=chat] .chip{background:var(--surface)}
+.chip.fresh{border-color:var(--accent-line);background:var(--accent-tint);color:var(--ink-2)}
+.chip .x{color:var(--mute-3);cursor:pointer}
+.chip .x:hover{color:var(--ink)}
+.hints{font:10.5px var(--mono);color:var(--mute-3);white-space:nowrap}
+
+/* 对话里的消息 */
+.t-user{align-self:flex-end;max-width:82%;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.t-user .bubble{padding:7px 11px;border:1px solid var(--line);border-radius:12px 12px 4px 12px;background:var(--field);font-size:13px;line-height:1.6;color:var(--ink);word-break:break-word}
+.t-user .att{font-size:10.5px;color:var(--mute-3)}
+.t-ai{display:flex;flex-direction:column;gap:8px}
+.t-text{font-size:13.5px;line-height:1.75;color:var(--ink);white-space:pre-wrap}
+.t-text .muted{color:var(--mute);font-size:12px}
+.diff{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.diff-row{display:grid;grid-template-columns:34px 1fr;gap:10px;padding:8px 12px;font-size:13px;line-height:1.7}
+.diff-row + .diff-row{border-top:1px solid var(--line-soft)}
+.diff-row .lb{padding-top:2px;font-size:11px;color:var(--mute-3)}
+.diff-row.from .tx{color:var(--mute-3);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--mute-3) 60%,transparent)}
+.diff-row.to{background:color-mix(in srgb,var(--success-tint) 70%,transparent)}
+.diff-row.to .tx{color:var(--ink)}
+.t-note{font-size:11.5px;line-height:1.6;color:var(--mute-3)}
+.t-note.warnline{color:var(--danger)}
+.t-actions{display:flex;gap:6px;flex-wrap:wrap}
+.t-event{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--mute-3);white-space:nowrap}
+.t-event::before,.t-event::after{content:"";flex:1;height:1px;background:var(--line-soft)}
+.t-event .okc{color:var(--success);font-weight:600}
+.t-event.undone .okc{color:var(--mute-3)}
+.t-think{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--mute)}
+.t-task{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px dashed var(--accent-line);border-radius:10px;font-size:12.5px;line-height:1.55;color:var(--mute)}
+.t-result{padding:10px 12px;border:1px solid color-mix(in srgb,var(--success) 32%,var(--line));border-radius:10px}
+.t-result.stopped{border-color:var(--line)}
+.t-result .rt{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500}
+.t-result ol{margin:6px 0 0;padding-left:20px;font-size:12px;line-height:1.85;color:var(--mute)}
+.t-result li.skip{color:var(--mute-3);text-decoration:line-through}
+.t-divider{display:flex;align-items:center;gap:10px;font:10.5px var(--mono);color:var(--mute-3);white-space:nowrap}
+.t-divider::before,.t-divider::after{content:"";flex:1;height:1px;background:var(--line-soft)}
+.t-fold{align-self:center;height:24px;padding:0 11px;border:1px solid var(--line);border-radius:999px;background:var(--field);font-size:11.5px;color:var(--mute);cursor:pointer}
+.t-fold:hover{color:var(--ink)}
+.spinner{width:12px;height:12px;flex:none;border-radius:50%;border:1.5px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.caret{display:inline-block;width:1px;height:1em;margin-left:1px;vertical-align:-2px;background:var(--ink);animation:blink 1s steps(1) infinite}
+
+/* ============================================================
+   6. 胶囊
+   ============================================================ */
+.capsule{
+  position:absolute;right:18px;bottom:18px;z-index:8;display:flex;align-items:center;
+  height:40px;padding:0 7px 0 14px;border:1px solid var(--line);border-radius:999px;
+  background:var(--raised);box-shadow:var(--shadow-pop);font-size:12.5px;color:var(--ink);
+  animation:pop2 .18s ease;
+}
+@keyframes pop2{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.win[data-cap=none] .capsule,.win:not([data-panel=none]) .capsule{display:none}
+.cap-v{display:none;align-items:center;gap:9px}
+.win[data-cap=run] .cap-run,.win[data-cap=done] .cap-done,.win[data-cap=fail] .cap-fail,.win[data-cap=stopped] .cap-stopped{display:flex}
+.win[data-cap=done] .capsule{border-color:color-mix(in srgb,var(--success) 40%,var(--line))}
+.win[data-cap=fail] .capsule{border-color:color-mix(in srgb,var(--danger) 40%,var(--line))}
+.pulse{position:relative;width:7px;height:7px;flex:none;border-radius:50%;background:var(--accent)}
+.pulse::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:1px solid var(--accent);animation:ping 1.7s ease-out infinite}
+@keyframes ping{0%{transform:scale(.5);opacity:.9}100%{transform:scale(1.9);opacity:0}}
+.steps{display:flex;gap:3px;margin:0 3px 0 5px}
+.steps i{width:16px;height:4px;border-radius:2px;background:var(--line);transition:background .2s}
+.win[data-step="1"] .steps i:nth-child(1),
+.win[data-step="2"] .steps i:nth-child(-n+2),
+.win[data-step="3"] .steps i{background:var(--accent)}
+.win[data-step="1"] .steps i:nth-child(1),.win[data-step="2"] .steps i:nth-child(2),.win[data-step="3"] .steps i:nth-child(3){animation:softpulse 1.2s ease-in-out infinite}
+@keyframes softpulse{50%{opacity:.45}}
+.ck{width:15px;height:15px;display:grid;place-items:center;border-radius:50%;background:var(--success-tint);color:var(--success);font-size:10px;font-weight:700;flex:none}
+.warn{width:15px;height:15px;display:grid;place-items:center;border-radius:50%;background:var(--danger-tint);color:var(--danger);font-size:10px;font-weight:700;flex:none}
+.dotm{width:8px;height:8px;border-radius:2px;background:var(--mute-3);flex:none}
+.cap-btns{display:flex;gap:5px;margin-left:2px}
+.cap-pop{
+  position:absolute;right:0;bottom:calc(100% + 9px);width:214px;padding:8px;
+  border:1px solid var(--line);border-radius:11px;background:var(--raised);box-shadow:var(--shadow-pop);
+  opacity:0;transform:translateY(4px);pointer-events:none;transition:.15s;
+}
+.win[data-cap=run] .capsule:hover .cap-pop{opacity:1;transform:none}
+.pop-row{display:flex;align-items:center;gap:8px;height:26px;padding:0 7px;border-radius:6px;font-size:11.5px;color:var(--mute)}
+.pop-row .pdot{width:6px;height:6px;border-radius:50%;background:var(--line);flex:none}
+.pop-row.done{color:var(--mute-3)}
+.pop-row.done .pdot{background:var(--success)}
+.pop-row.now{color:var(--ink);background:var(--field)}
+.pop-row.now .pdot{background:var(--accent)}
+
+.reopen{
+  position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:10px;
+  height:38px;padding:0 6px 0 14px;border:1px solid var(--line);border-radius:999px;
+  background:var(--raised);box-shadow:var(--shadow-pop);font-size:12px;color:var(--mute);white-space:nowrap;
+}
+.win[data-ov=closed][data-cap=none][data-panel=none][data-bar=none] .reopen{display:flex;animation:pop2 .18s ease}
+
+/* ============================================================
+   7. 侧栏
+   ============================================================ */
+.panel{
+  position:absolute;top:0;right:0;bottom:0;z-index:9;display:none;flex-direction:column;
+  width:min(360px,44%);background:var(--surface);border-left:1px solid var(--line);
+  box-shadow:-18px 0 44px rgba(18,23,28,.09);
+}
+.win:not([data-panel=none]) .panel{display:flex;animation:slide .2s ease}
+@keyframes slide{from{transform:translateX(14px);opacity:0}to{transform:none;opacity:1}}
+.panel-head{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--line);flex:none}
+.panel-head .name{font-size:13px;font-weight:600}
+.panel-head .sub{font-size:11px;color:var(--mute-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel-head .grow{flex:1}
+.pn-btn{width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:var(--mute);font-size:14px;cursor:pointer}
+.pn-btn:hover{background:var(--field);color:var(--ink)}
+.sysnote{display:flex;gap:8px;flex:none;margin:13px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--field);font-size:11.5px;line-height:1.65;color:var(--mute)}
+.sysnote b{color:var(--ink);font-weight:500}
+.pthread{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:0 13px 12px}
+.panel .t-user .bubble,.panel .t-text,.panel .diff-row{font-size:12px}
+.panel .diff-row{grid-template-columns:30px 1fr;padding:6px 10px}
+.panel-foot{flex:none;padding:11px 13px;border-top:1px solid var(--line)}
+.panel-input{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--placeholder);font-size:12.5px}
+
+/* ============================================================
+   8. 说明与文档内容
+   ============================================================ */
+.stage-cap{display:flex;justify-content:space-between;align-items:flex-start;gap:28px;margin-top:13px}
+.stage-cap p{margin:0;max-width:700px;font-size:12.5px;line-height:1.75;color:var(--mute)}
+.stage-cap .keys{text-align:right;font:10.5px var(--mono);color:var(--mute-3);line-height:1.9;white-space:nowrap}
+.stage-cap .keys b{font-weight:400;color:var(--mute)}
+
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{
+  padding:0 12px 8px;text-align:left;font:10.5px var(--mono);font-weight:400;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--mute-3);border-bottom:1px solid var(--line);
+}
+.tbl td{padding:9px 12px;border-bottom:1px solid var(--line-soft);color:var(--mute);vertical-align:top;line-height:1.6}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td:first-child{color:var(--ink);font-weight:500;white-space:nowrap}
+.tbl td b{color:var(--ink-2);font-weight:500}
+.tbl .mono{font-size:11.5px;color:var(--mute-3)}
+.note{margin:12px 0 0;font-size:11.5px;line-height:1.7;color:var(--mute-3);max-width:760px}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:4px}
+.scard{
+  display:flex;flex-direction:column;gap:5px;padding:13px 14px;text-align:left;cursor:pointer;
+  border:1px solid var(--line);border-radius:10px;background:var(--surface);transition:.14s;
+}
+.scard:hover{border-color:var(--accent-line);background:color-mix(in srgb,var(--accent-tint) 60%,var(--surface))}
+.scard .num{font:10px var(--mono);color:var(--mute-3);letter-spacing:.06em}
+.scard .nm{font-size:13px;font-weight:600}
+.scard .when{font-size:11px;color:var(--accent);font-weight:500}
+.scard .rule{font-size:11.5px;line-height:1.65;color:var(--mute)}
+
+.rules{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:9px;max-width:800px}
+.rules li{position:relative;padding-left:18px;font-size:12.5px;line-height:1.75;color:var(--mute)}
+.rules li::before{content:"";position:absolute;left:2px;top:10px;width:5px;height:5px;border-radius:50%;background:var(--accent-line)}
+.rules li b{color:var(--ink);font-weight:500}
+
+.spec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:28px 40px}
+.spec h3{margin:0 0 10px}
+.swatches{display:grid;gap:7px}
+.sw{display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--mute)}
+.sw i{width:18px;height:18px;border-radius:5px;border:1px solid var(--line);flex:none}
+.sw b{font-weight:500;color:var(--ink-2);min-width:74px}
+.sw code{font-size:10.5px;color:var(--mute-3)}
+
+.edge{display:grid;gap:13px;max-width:820px}
+.edge-row{display:grid;grid-template-columns:132px 1fr;gap:16px;padding-bottom:13px;border-bottom:1px solid var(--line-soft);font-size:12.5px;line-height:1.7}
+.edge-row:last-child{border-bottom:0;padding-bottom:0}
+.edge-row .k{font-weight:500;color:var(--ink)}
+.edge-row .v{color:var(--mute)}
+.edge-row .v code{font-size:11px;color:var(--mute-3);background:var(--field);padding:1px 5px;border-radius:4px}
+
+.foot{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:20px;font-size:11px;color:var(--mute-3);flex-wrap:wrap}
+.foot .mono{font-size:10.5px}
+
+@media (max-width:1080px){
+  .rail{display:none}
+  .layout{padding:20px 18px 60px}
+  .win{height:720px}
+}
+@media (max-width:720px){
+  .stage-cap{flex-direction:column;gap:8px}
+  .stage-cap .keys{text-align:left}
+  .folders{display:none}
+  .edge-row{grid-template-columns:1fr;gap:3px}
+  .stage-now{display:none}
+  .spec-grid{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;transition-duration:.001ms !important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="mark"></span>Pie 浮层 <span class="tag">设计原型 v0.3</span></div>
+  <div class="grow"></div>
+  <button class="btn" id="playBtn" type="button">▶ 播放完整流程</button>
+  <button class="icon-btn" id="themeBtn" type="button" title="切换明暗" aria-label="切换明暗">◐</button>
+</header>
+
+<div class="layout">
+  <aside class="rail">
+    <nav id="rail">
+      <a href="#demo" class="on">演示</a>
+      <a href="#multi">多轮对话</a>
+      <a href="#select">划词与形态</a>
+      <a href="#entry">入口</a>
+      <a href="#states">状态</a>
+      <a href="#keys">交互</a>
+      <a href="#spec">规格</a>
+      <a href="#edges">边界</a>
+    </nav>
+    <div class="rail-note">原型只演示交互与视觉，回答是预设的。1–9 切换前九个状态，Esc 关闭浮层，K 重新打开。</div>
+  </aside>
+
+  <main>
+    <!-- ===================== 演示 ===================== -->
+    <section id="demo">
+      <p class="kicker">Live prototype</p>
+      <h2>一个浮层，连续对话</h2>
+      <p class="lede">浮层是一个普通会话的轻量窗口：可以连续追问、反复改写，最后让 Pie 动手。<b>点「播放完整流程」看一遍三轮对话</b>，或者直接在浮层里输入——回车发送，说「发出去」会触发执行。</p>
+
+      <div class="stage-head">
+        <div class="seg" id="seg" role="tablist" aria-label="浮层状态"></div>
+        <span class="stage-now" id="stageNow"></span>
+      </div>
+
+      <div class="chan-wrap reply-wrap">
+        <span class="chan-note">模型怎么回 →</span>
+        <div class="chan">
+          <button class="btn sm" type="button" data-chan="rw">调用 propose_rewrite</button>
+          <button class="btn sm" type="button" data-chan="text">直接回一段文字</button>
+          <button class="btn sm" type="button" data-chan="task">调页面工具</button>
+        </div>
+      </div>
+
+      <div class="chan-wrap bar-wrap">
+        <span class="chan-note">选区在哪 →</span>
+        <div class="chan">
+          <button class="btn sm" type="button" data-bar-demo="read">只读内容</button>
+          <button class="btn sm" type="button" data-bar-demo="edit">可编辑区域</button>
+        </div>
+        <span class="chan-note">点浮条上的按钮试一下</span>
+      </div>
+
+      <div class="win" id="win" data-ov="open" data-mode="spot" data-cap="none" data-panel="none" data-toast="off" data-page="compose">
+        <div class="chrome">
+          <div class="tabstrip">
+            <div class="tab"><span class="fav"></span><span class="ttl" id="tabTitle">回复：Q3 报告</span><span class="x">×</span></div>
+            <div class="tab new">＋</div>
+          </div>
+          <div class="toolbar">
+            <div class="navs" aria-hidden="true"><span>‹</span><span>›</span><span>↻</span></div>
+            <div class="url">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              <span id="urlText">mail.example.com/u/0/#drafts/q3</span>
+            </div>
+            <div class="exts"><button class="ext pie" id="extPie" type="button" title="Pie（工具栏图标：打开侧栏）" aria-label="Pie 工具栏图标"></button><span class="ext"></span></div>
+          </div>
+        </div>
+
+        <div class="viewport" id="viewport">
+          <!-- 邮件 -->
+          <div class="page page-mail">
+            <div class="appbar">
+              <span class="app-logo">邮</span>
+              <span class="app-search">搜索邮件</span>
+              <span class="avatar">W</span>
+            </div>
+            <div class="mailwrap">
+              <aside class="folders">
+                <div class="f" id="fInbox"><span class="fi"></span>收件箱<span class="count">12</span></div>
+                <div class="f"><span class="fi"></span>已发送</div>
+                <div class="f" id="fDrafts"><span class="fi"></span>草稿<span class="count">2</span></div>
+                <div class="f" id="fArchive"><span class="fi"></span>归档<span class="count" id="archiveCount"></span></div>
+              </aside>
+              <div class="mailarea">
+                <div class="mail mail-compose">
+                  <div class="mrow"><span class="k">收件人</span><span class="chip-m">张三</span></div>
+                  <div class="mrow"><span class="k">主题</span><span class="ink">Q3 报告</span></div>
+                  <div class="mail-body">
+                    <p>张三你好，</p>
+                    <p><span class="pline" id="pline" data-mark="sel">这周五前必须把报告交上来，别再拖了。</span></p>
+                    <p>谢谢。</p>
+                  </div>
+                  <div class="reply" id="reply"><div class="reply-lb">回复 · 可编辑</div><div class="reply-in" id="replyIn">好的，我这周五前发给你。</div></div>
+                  <div class="mail-foot">
+                    <span class="send-wrap">
+                      <button class="send" type="button" tabindex="-1">发送</button>
+                      <span class="agent-badge"><i></i>Pie 正在点击</span>
+                    </span>
+                    <span class="ghost">保存草稿</span>
+                    <span class="ghost">丢弃</span>
+                  </div>
+                  <div class="blocker"><span>订阅我们的产品周报，第一时间获取更新</span><span class="bx">×</span></div>
+                </div>
+
+                <div class="mail mail-read">
+                  <div class="mrow"><span class="k">发件人</span><span class="chip-m">李四</span><span class="mtime">10:42</span></div>
+                  <div class="mrow"><span class="k">主题</span><span class="ink">关于 Q4 预算</span></div>
+                  <div class="mail-body">
+                    <p>各位好，</p>
+                    <p>Q4 预算已经确认。<span class="sel2" id="sel2">预算口径按新的分摊规则执行，差额部分由各 BU 自行消化。</span></p>
+                    <p>有问题本周内反馈给我。</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="page-toast"><span class="okc">✓</span><span id="toastText">邮件已发送 · 已归档到「Q3」</span></div>
+          </div>
+
+          <!-- 设置页（受限） -->
+          <div class="page page-settings">
+            <div class="set-wrap">
+              <div class="set-title">设置</div>
+              <div class="set-search">搜索设置</div>
+              <ul class="set-list">
+                <li class="hl"><span class="ico"></span>自动填充和密码<span class="ch">›</span></li>
+                <li><span class="ico"></span>隐私和安全<span class="ch">›</span></li>
+                <li><span class="ico"></span>外观<span class="ch">›</span></li>
+                <li><span class="ico"></span>搜索引擎<span class="ch">›</span></li>
+                <li><span class="ico"></span>下载内容<span class="ch">›</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="scrim" id="scrim"></div>
+
+          <!-- 划词浮条：只读 / 可编辑 -->
+          <div class="selbar" id="barRead" data-v="read" role="toolbar" aria-label="选中文字的快捷操作">
+            <button class="sb pie" type="button" data-sb="ask"><span class="mark"></span><b>问 Pie</b></button>
+            <span class="sb-sep"></span>
+            <button class="sb" type="button" data-sb="explain">解释</button>
+            <button class="sb" type="button" data-sb="translate">翻译</button>
+            <button class="sb" type="button" data-sb="quote">引用</button>
+            <span class="sb-sep"></span>
+            <button class="sb" type="button" data-sb="more" title="更多" aria-label="更多">⋯</button>
+          </div>
+          <div class="selbar" id="barEdit" data-v="edit" role="toolbar" aria-label="选中文字的快捷操作">
+            <button class="sb pie" type="button" data-sb="ask"><span class="mark"></span><b>问 Pie</b></button>
+            <span class="sb-sep"></span>
+            <button class="sb" type="button" data-sb="rewrite">改写</button>
+            <button class="sb" type="button" data-sb="translate">翻译</button>
+            <button class="sb" type="button" data-sb="formal">更正式</button>
+            <span class="sb-sep"></span>
+            <button class="sb" type="button" data-sb="more" title="更多" aria-label="更多">⋯</button>
+          </div>
+
+          <!-- 浮层 -->
+          <div class="overlay" role="dialog" aria-modal="true" aria-label="Pie" id="overlay">
+            <div class="ov-head">
+              <span class="mark"></span>
+              <span class="ov-title" id="ovTitle">改写回复邮件</span>
+              <span class="ov-sub">· 同一个会话</span>
+              <span class="grow"></span>
+              <button class="ov-icon" id="newBtn" type="button" title="新对话 ⌘K" aria-label="新对话">＋</button>
+              <button class="ov-icon" id="toPanelBtn" type="button" title="转到侧栏 ⌘↵" aria-label="转到侧栏">⤢</button>
+              <button class="ov-icon" id="closeBtn" type="button" title="关闭 Esc" aria-label="关闭">×</button>
+            </div>
+            <div class="thread" id="thread" aria-live="polite"></div>
+            <div class="composer">
+              <div class="ask-row">
+                <span class="mark"></span>
+                <input class="ask" id="ask" value="这样写太生硬了，改得客气一点" placeholder="问 Pie，或让它帮你做…" aria-label="输入指令" autocomplete="off">
+                <button class="send-btn" id="sendBtn" type="button" title="发送 ↵" aria-label="发送">↑</button>
+              </div>
+              <div class="c-foot">
+                <div class="ctx" id="ctx">
+                  <span class="chip">当前页 · 邮件<span class="x" data-rm="0" title="移除">×</span></span>
+                  <span class="chip">选区 · 18 字<span class="x" data-rm="1" title="移除">×</span></span>
+                </div>
+                <span class="hints" id="hints">↵ 发送 · Esc 关闭</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 胶囊 -->
+          <div class="capsule" id="capsule">
+            <div class="cap-v cap-run">
+              <span class="pulse"></span>
+              <span id="capText">检查收件人</span>
+              <span class="steps"><i></i><i></i><i></i></span>
+              <span class="cap-btns">
+                <button class="btn tiny ghost" type="button" data-act="stop-task">停止</button>
+                <button class="btn tiny" type="button" data-act="to-panel">展开</button>
+              </span>
+            </div>
+            <div class="cap-v cap-done">
+              <span class="ck">✓</span><span id="doneText">已发送并归档</span>
+              <span class="cap-btns"><button class="btn tiny" type="button" data-act="view">查看</button></span>
+            </div>
+            <div class="cap-v cap-stopped">
+              <span class="dotm"></span><span id="stoppedText">已停止 · 完成 1/3 步</span>
+              <span class="cap-btns"><button class="btn tiny" type="button" data-act="view">查看</button></span>
+            </div>
+            <div class="cap-v cap-fail">
+              <span class="warn">!</span><span>发送按钮被横幅挡住了</span>
+              <span class="cap-btns">
+                <button class="btn tiny ghost" type="button" data-act="retry">重试</button>
+                <button class="btn tiny" type="button" data-act="to-panel">在侧栏处理</button>
+              </span>
+            </div>
+            <div class="cap-pop" aria-hidden="true">
+              <div class="pop-row" data-pop="1"><span class="pdot"></span>检查收件人</div>
+              <div class="pop-row" data-pop="2"><span class="pdot"></span>点击发送</div>
+              <div class="pop-row" data-pop="3"><span class="pdot"></span>归档到「Q3」</div>
+            </div>
+          </div>
+
+          <!-- 关闭后的提示 -->
+          <div class="reopen">浮层已关闭，对话还在<button class="btn tiny" id="reopenBtn" type="button">按 K 重新打开</button></div>
+
+          <!-- 侧栏 -->
+          <aside class="panel" aria-label="Pie 侧栏">
+            <div class="panel-head">
+              <span class="mark" style="width:16px;height:16px"></span>
+              <span class="name">Pie</span>
+              <span class="sub" id="panelSub">当前页</span>
+              <span class="grow"></span>
+              <button class="pn-btn" type="button" title="新对话 ⌘K">＋</button>
+              <button class="pn-btn" id="panelClose" type="button" title="关闭">×</button>
+            </div>
+            <div class="sysnote" id="sysnote"></div>
+            <div class="pthread" id="pthread"></div>
+            <div class="panel-foot"><div class="panel-input">继续追问，或让 Pie 动手…</div></div>
+          </aside>
+        </div>
+      </div>
+
+      <div class="stage-cap">
+        <p id="cap"></p>
+        <div class="keys"><b>↵</b> 发送 · <b>⌘↵</b> 转侧栏 · <b>⌘K</b> 新对话<br><b>Esc</b> 关闭 · <b>K</b> 重新打开 · <b>1–9</b> 切换状态</div>
+      </div>
+    </section>
+
+    <!-- ===================== 划词与回复形态 ===================== -->
+    <section id="select">
+      <p class="kicker">Selection &amp; reply shapes</p>
+      <h2>划词之后给什么，以及怎么知道它要改写</h2>
+      <p class="lede">浮条按<b>选区能不能编辑</b>分两套按钮。改写还是其他任务不靠关键词猜：<b>先用两件确定的事</b>（选区能不能改、点的是哪个按钮），只有你自己打字时才交给模型。</p>
+
+      <h3>选中文字后浮条上的按钮</h3>
+      <table class="tbl">
+        <thead><tr><th>选区在哪</th><th>按钮</th><th>点了之后</th></tr></thead>
+        <tbody>
+          <tr><td>只读内容<br><span class="mono">文章 · 收到的邮件</span></td>
+              <td>问 Pie · 解释 · 翻译 · 引用</td>
+              <td><b>问 Pie</b> 打开浮层并带上选区，光标停在输入框等你打字；<b>解释 / 翻译</b> 打开浮层直接发送，结果是一段普通回答；<b>引用</b> 沿用现在的行为。这四种都改写不了原文。</td></tr>
+          <tr><td>可编辑区域<br><span class="mono">输入框 · 在写的邮件 · 评论框</span></td>
+              <td>问 Pie · 改写 · 翻译 · 更正式</td>
+              <td>改写、翻译直接发送，结果是「原文 / 改写」对比卡，带<b>替换原文</b>；对比卡下面就是下一轮的快捷追问，不用打字。</td></tr>
+        </tbody>
+      </table>
+      <ul class="rules" style="margin-top:16px">
+        <li><b>按钮只有四个</b>：不放「总结」（选区通常很短，要总结整页就用问 Pie）、不放「搜索 / 复制」（浏览器右键菜单已经有）。</li>
+        <li><b>不出现浮条</b>：密码框；设置里关了，或在「⋯」里选了「在此网站不显示」；Google Docs 这类 canvas 编辑器本来就没有普通文字选区。</li>
+        <li><b>翻译方向</b>：选中的不是界面语言就译成界面语言，是界面语言就译成英文。</li>
+      </ul>
+
+      <h3>怎么区分「改写」和其他任务</h3>
+      <p class="lede" style="margin-bottom:12px">三层判断，越往前越确定。原型里「发出去 / 归档」这类词触发执行只是演示桩，产品里不靠关键词。</p>
+      <table class="tbl">
+        <thead><tr><th>第几层</th><th>信号</th><th>为什么可靠</th></tr></thead>
+        <tbody>
+          <tr><td>1. 选区能不能编辑</td><td>注入脚本直接判断「输入框 / 文本域 / 可编辑区」</td><td>这是页面结构的事实，不是猜测。只读选区永远不会出现「替换原文」。</td></tr>
+          <tr><td>2. 点的是哪个按钮</td><td>浮条上的「改写 / 翻译」</td><td>意图是用户显式点的，直接产出对比卡。</td></tr>
+          <tr><td>3. 模型怎么回</td><td>可编辑选区多给一个 <code class="mono">propose_rewrite</code> 工具，界面看它用了哪种回法（见下表）</td><td>自己打字时意图本来就模糊，让模型用「工具」表态，界面照着渲染，比解析自然语言稳。</td></tr>
+        </tbody>
+      </table>
+
+      <h3>你自己打字时，同一句话的三种结果</h3>
+      <p class="lede" style="margin-bottom:12px">舞台上方「模型怎么回」三个按钮就是这三种。界面上没有「改写模式」开关。</p>
+      <table class="tbl">
+        <thead><tr><th>模型怎么回</th><th>浮层里显示成</th><th>能替换原文吗</th></tr></thead>
+        <tbody>
+          <tr><td><code class="mono">propose_rewrite</code></td><td>对比卡，带「替换原文」</td><td>能</td></tr>
+          <tr><td>直接回文字</td><td>普通回答</td><td>不能，只能复制</td></tr>
+          <tr><td>调点击 / 输入 / 跳转这类页面工具</td><td>转执行，浮层收成右下角胶囊（复用现有的读 / 写工具分类 <code class="mono">getToolClass</code>）</td><td>不涉及</td></tr>
+          <tr><td>文字 + <code class="mono">propose_rewrite</code> 都有</td><td>一段说明 + 一张对比卡</td><td>能</td></tr>
+        </tbody>
+      </table>
+      <ul class="rules" style="margin-top:16px">
+        <li><b>为什么用工具而不是从回复里抠文字</b>：替换原文会把文字原样写进网页，必须是干净的结果。模型的回复常带「好的，改写如下：」，从里面抠不可靠；工具参数就是要写回的那段文字本身。</li>
+        <li><b>谁来写页面</b>：<code class="mono">propose_rewrite</code> 本身不改页面，属于读类工具。真正写入是你点「替换原文」那一下——先核对原文没被改过，再用浏览器的插入文字命令写进去，这样编辑器自带的撤销（⌘Z）还能用，页面框架也能感知到内容变了。</li>
+        <li><b>为什么不要确认弹窗</b>：写入是你亲手点的，所以不加确认层，和 Pie 现在「工具调用不加确认层」一致。写回不可靠的编辑器就只给「复制」。</li>
+      </ul>
+    </section>
+
+    <!-- ===================== 多轮对话 ===================== -->
+    <section id="multi">
+      <p class="kicker">Multi-turn</p>
+      <h2>多轮对话怎么在浮层里长出来</h2>
+      <p class="lede">浮层不是一问一答。它和侧栏共用同一份会话历史，<b>能在浮层里完成的就留在浮层</b>；对话变长、需要看完整过程时，一键转到侧栏。</p>
+      <ul class="rules">
+        <li><b>布局</b>：第一次只有一个输入框；发出后问题变成第一条消息，输入框移到底部。对话往下长，到最大高度后在内部滚动，新消息自动滚到底。</li>
+        <li><b>位置</b>：有选区时贴在选区下方 14px，不盖住原文，替换后的变化能直接看到；下方空间不足 280px 就改到顶部居中。没有选区时顶部居中。</li>
+        <li><b>上下文</b>：「当前页」每一轮都带；选区只属于发起它的那一轮。关掉浮层、重新选中文字再唤起，新选区挂到下一轮，用高亮的标签标出来。</li>
+        <li><b>改写与替换</b>：改写类回答同时给出「原文」和「改写」。「替换原文」= 把改写写回网页，替换你选中的那段文字；鼠标移到按钮上，页面会标出将被替换的部分。只有最新一条改写带这个按钮。</li>
+        <li><b>撤销</b>：每次替换都在对话里留一条记录，最近一次可以撤销。之后 Pie 如果已经替你操作过页面（比如发出了邮件），就不再提供撤销。</li>
+        <li><b>原文被改过</b>：替换前核对页面上的原文，对不上就不替换，按钮降级成「复制」，并提示「原文已经变化」。</li>
+        <li><b>什么时候收成胶囊</b>：只有 Pie 自己决定操作页面时才收（点击、输入、跳转）。用户点「替换原文」是一次确定的写入，不收胶囊。</li>
+        <li><b>变长</b>：超过 6 轮，较早的轮次折叠成一行「较早的 N 轮」，点开就地展开；要看完整过程就转侧栏，侧栏里不折叠。</li>
+        <li><b>关闭与恢复</b>：Esc 或点浮层外关闭，对话保留。同一标签页 30 分钟内再唤起，回到上次对话并插入时间分隔线；换了标签页或超时，就开新对话。</li>
+        <li><b>浮条与浮层</b>：浮条只在没有浮层时出现；浮层一打开，浮条就收起来，免得两个东西同时盖住页面。</li>
+        <li><b>新对话</b>：标题栏「＋」或 ⌘K，与侧栏一致（⌘N 被 Chrome 占用，网页拦不住）。</li>
+      </ul>
+
+      <h3>对话里会出现的消息</h3>
+      <table class="tbl">
+        <thead><tr><th>消息</th><th>什么时候出现</th><th>样式</th></tr></thead>
+        <tbody>
+          <tr><td>用户消息</td><td>每次发送</td><td>右对齐浅底气泡；这一轮附带的选区写在气泡下方。</td></tr>
+          <tr><td>回答</td><td>问答、总结、解释</td><td>左对齐正文，不加气泡。</td></tr>
+          <tr><td>改写对比</td><td>模型调了 <code class="mono">propose_rewrite</code>，或点了浮条上的改写</td><td>「原文」划线、「改写」浅绿底，下面是「替换原文 / 复制」。</td></tr>
+          <tr><td>替换记录</td><td>点了「替换原文」</td><td>居中细线 + ✓；最近一次带「撤销」。</td></tr>
+          <tr><td>执行卡</td><td>需要 Pie 操作页面</td><td>虚线框，说明已转到后台执行；浮层随后收成胶囊。</td></tr>
+          <tr><td>结果卡</td><td>任务结束或被停止</td><td>绿色边框 + 步骤清单；停止时没做的步骤划掉。</td></tr>
+          <tr><td>时间分隔线</td><td>隔一段时间后恢复</td><td>居中小字，说明隔了多久、发生了什么。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ===================== 入口 ===================== -->
+    <section id="entry">
+      <p class="kicker">Entry points</p>
+      <h2>五个入口，两层结构</h2>
+      <p class="lede">轻入口负责「随手拉出来」，重界面负责「看清过程和结果」。<b>侧栏不废，降级为任务驾驶舱。</b></p>
+      <table class="tbl">
+        <thead><tr><th>入口</th><th>层级</th><th>行为</th></tr></thead>
+        <tbody>
+          <tr><td>⌘⇧K / Ctrl+Shift+K</td><td>主入口</td><td>任意网页唤起浮层；再按一次关闭。30 分钟内在同一标签页重开，回到上次对话。默认键位需在 mac / Windows 实机确认不与输入法、Spotlight 冲突。</td></tr>
+          <tr><td>划词浮条</td><td>主入口</td><td>选中文字后出现四个按钮，按选区能不能编辑分两套（见下一节）；点按钮直接带上选区发送，浮层贴在选区下方。</td></tr>
+          <tr><td>地址栏 <code class="mono">pie␣</code></td><td>补充</td><td>普通页面唤起浮层并发送；新标签页放不进浮层，整页打开 Pie。</td></tr>
+          <tr><td>工具栏图标</td><td>不变</td><td>照旧打开侧栏；如果浮层里有对话，侧栏直接显示这段对话。</td></tr>
+          <tr><td>Pie Link 桌面热键</td><td>扩展入口</td><td>桌面唤起，任务交给浏览器里的 Pie 执行；与浏览器里是同一个会话。</td></tr>
+        </tbody>
+      </table>
+      <p class="note">不做：每页常驻悬浮球（遮内容、招反感）、双击 ⌘ 之类的自定义热键（受限页失效，容易和网站自己的快捷键冲突）。</p>
+    </section>
+
+    <!-- ===================== 状态 ===================== -->
+    <section id="states">
+      <p class="kicker">States</p>
+      <h2>状态清单</h2>
+      <p class="lede">点任意一张卡片，上面的舞台会切到对应状态。</p>
+      <div class="cards" id="cards"></div>
+    </section>
+
+    <!-- ===================== 交互 ===================== -->
+    <section id="keys">
+      <p class="kicker">Interaction</p>
+      <h2>键盘、焦点与关闭</h2>
+      <table class="tbl">
+        <thead><tr><th>操作</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>↵</kbd></td><td>发送。输入法组合中（<code class="mono">isComposing</code>）不提交，交给输入法选词。</td></tr>
+          <tr><td><kbd>⇧↵</kbd></td><td>换行；输入框最多长到三行。</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>关闭浮层，对话保留，焦点还给唤起前的元素。任务进行中不打断，胶囊继续显示进度。</td></tr>
+          <tr><td><kbd>⌘↵</kbd></td><td>转到侧栏继续，同一个会话，浮层关闭。</td></tr>
+          <tr><td><kbd>⌘K</kbd></td><td>新对话，与侧栏一致。</td></tr>
+          <tr><td><kbd>⌘⇧K</kbd></td><td>唤起 / 关闭浮层；任务进行中也生效。</td></tr>
+          <tr><td><kbd>Tab</kbd></td><td>焦点在浮层内循环：输入框 → 标签 → 消息里的按钮 → 标题栏按钮。</td></tr>
+        </tbody>
+      </table>
+      <ul class="rules" style="margin-top:18px">
+        <li><b>点浮层外</b>：关闭浮层，对话保留；正在跑的任务不中断，胶囊接管。</li>
+        <li><b>打开时</b>焦点直接进输入框；<b>关闭时</b>焦点还给原来的元素，页面不跳动。</li>
+        <li><b>回答生成中</b>：输入框暂时不可发送，思考行上有「停止」；停止后已发出的问题保留在对话里。</li>
+        <li><b>任务跟随标签页</b>：Pie 切到别的标签页，胶囊也跟过去；页面跳转后向后台查「这个标签页有没有任务」，有就重新挂上。</li>
+        <li><b>浮层在扩展自己的 iframe 里渲染</b>：网页脚本读不到对话内容，网页样式也影响不到它。</li>
+      </ul>
+    </section>
+
+    <!-- ===================== 规格 ===================== -->
+    <section id="spec">
+      <p class="kicker">Spec</p>
+      <h2>尺寸、颜色与动效</h2>
+      <div class="spec-grid">
+        <div class="spec">
+          <h3>尺寸</h3>
+          <table class="tbl">
+            <tbody>
+              <tr><td>浮层</td><td>宽 560 · radius 16 · 最大高度 = 视口高 − 顶部偏移 − 16</td></tr>
+              <tr><td>标题栏（对话态）</td><td>高 42 · 底边线 1px</td></tr>
+              <tr><td>首轮输入</td><td>15px / 1.45 · 无边框</td></tr>
+              <tr><td>对话态输入框</td><td>13.5px · radius 11 · 发送按钮 26</td></tr>
+              <tr><td>用户气泡</td><td>13px · radius 12/12/4/12 · 最宽 82%</td></tr>
+              <tr><td>改写对比块</td><td>13px · radius 10 · 标签列 34</td></tr>
+              <tr><td>消息间距</td><td>12</td></tr>
+              <tr><td>胶囊</td><td>高 40 · radius 999 · 距边 18</td></tr>
+              <tr><td>侧栏</td><td>360 或 44% 取小</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="spec">
+          <h3>颜色</h3>
+          <div class="swatches">
+            <div class="sw"><i style="background:#FFFFFF"></i><b>surface</b><code>#FFFFFF · #121519</code></div>
+            <div class="sw"><i style="background:#F2F5F8"></i><b>field</b><code>#F2F5F8 · #1A1F26</code></div>
+            <div class="sw"><i style="background:#E3E8ED"></i><b>line</b><code>#E3E8ED · #242B33</code></div>
+            <div class="sw"><i style="background:#3F5568"></i><b>accent</b><code>#3F5568 · #B9C9D8</code></div>
+            <div class="sw"><i style="background:#35825A"></i><b>success</b><code>#35825A · #63A981</code></div>
+            <div class="sw"><i style="background:#B14A3C"></i><b>danger</b><code>#B14A3C · #C9675A</code></div>
+          </div>
+          <p class="note">选区高亮 = accent 28%；改写与替换后的文字 = success 10%；页面压暗 8%（暗色 24%）。</p>
+        </div>
+        <div class="spec">
+          <h3>动效</h3>
+          <table class="tbl">
+            <tbody>
+              <tr><td>浮层入场</td><td>160ms · 上移 7px + 淡入</td></tr>
+              <tr><td>新消息</td><td>200ms · 上移 4px + 淡入，只作用于新增的一条</td></tr>
+              <tr><td>流式输出</td><td>逐字出现，光标闪烁；结束后才出现操作按钮</td></tr>
+              <tr><td>替换高亮</td><td>1.8s · 成功色由深到浅</td></tr>
+              <tr><td>侧栏入场</td><td>200ms · 右移 14px + 淡入</td></tr>
+              <tr><td>胶囊脉冲</td><td>1.7s 循环 · 只在执行中</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="spec">
+          <h3>层级</h3>
+          <table class="tbl">
+            <tbody>
+              <tr><td>压暗层</td><td class="mono">z 5</td></tr>
+              <tr><td>关闭提示</td><td class="mono">z 6</td></tr>
+              <tr><td>胶囊</td><td class="mono">z 8</td></tr>
+              <tr><td>侧栏</td><td class="mono">z 9</td></tr>
+              <tr><td>浮层</td><td class="mono">z 10</td></tr>
+            </tbody>
+          </table>
+          <p class="note">浮层、胶囊、侧栏同一时间只出现一个主角；层级只保证压暗层永远压不住它们。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 边界 ===================== -->
+    <section id="edges">
+      <p class="kicker">Edges</p>
+      <h2>降级与边界</h2>
+      <div class="edge">
+        <div class="edge-row"><div class="k">受限页面</div><div class="v"><code>chrome://</code>、新标签页、Web Store、PDF 放不进浮层。同一个快捷键改为打开侧栏，并在顶部说明原因，不做成报错。</div></div>
+        <div class="edge-row"><div class="k">原文已经变化</div><div class="v">替换前核对页面上的原文；用户自己改过或页面刷新过，就不替换，按钮降级为「复制」。</div></div>
+        <div class="edge-row"><div class="k">只读选区被要求改写</div><div class="v">模型拿不到 <code>propose_rewrite</code>，只回一段文字，对比卡也不会出现「替换原文」，只给「复制」。这就是「改写」只在可编辑区域可用的原因。</div></div>
+        <div class="edge-row"><div class="k">长对话</div><div class="v">超过 6 轮折叠较早的轮次；浮层内部滚动，标题栏和输入框始终可见。用户往上翻时，新消息不抢滚动，底部出现「↓ 新消息」。</div></div>
+        <div class="edge-row"><div class="k">选区下方放不下</div><div class="v">下方空间不足 280px 时改到顶部居中，并在第一条消息里引用原文，保证不看页面也知道在改哪段。</div></div>
+        <div class="edge-row"><div class="k">首次使用</div><div class="v">浮层第一次打开时，底部提示行显示一次「⌘⇧K 随时唤起」，用过后不再出现。</div></div>
+        <div class="edge-row"><div class="k">模型未配置</div><div class="v">在对话里直接给出错误和「去设置」，不静默失败；已输入的内容保留，配好后可以重发。</div></div>
+        <div class="edge-row"><div class="k">站点拦截操作</div><div class="v">横幅遮挡、跨域 iframe、Canvas 编辑器等导致操作失败时进入失败态：一句话说清原因，页面上标出卡住的位置，给「重试」和「在侧栏处理」。</div></div>
+        <div class="edge-row"><div class="k">多窗口 / 多账号</div><div class="v">浮层只作用于当前窗口的标签页；唤起时就固定目标标签页，不跨窗口漂移。</div></div>
+        <div class="edge-row"><div class="k">Pie 自己</div><div class="v">页面读取与定位工具跳过浮层和胶囊；截图前先隐藏它们，避免 Pie 看到或点到自己。</div></div>
+      </div>
+    </section>
+
+    <div class="foot">
+      <span>Pie 浮层 · 设计原型 v0.3 · 2026-11-14</span>
+      <span class="mono">待定：默认键位 · 替换原文是否进 v1 · 恢复时限（建议 30 分钟）· 折叠阈值（建议 6 轮）· 工具栏图标是否改开浮层</span>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   内容
+   ============================================================ */
+const ORIG = "这周五前必须把报告交上来，别再拖了。";
+const REWRITES = [
+  { to: "麻烦这周五前把报告发我，辛苦啦，有困难随时跟我说。", note: "语气放软，保留了「这周五」这个截止时间。" },
+  { to: "麻烦周五前把报告发我，有困难随时说。", note: "去掉了「辛苦啦」，压成一句。" },
+  { to: "周五前请把报告发我，有问题随时找我。", note: "更简洁，语气中性。" },
+];
+const READ_SEL = "预算口径按新的分摊规则执行，差额部分由各 BU 自行消化。";
+const READ_ANSWER = "意思是 Q4 的成本按新规则分摊。分到你们组的额度如果比原来少，差额要从组内预算里挤出来，公司不会额外补。建议先跟财务确认你们组的新分摊数字。";
+const EX_ANSWER = "这句话是催对方这周五前交报告，语气很硬：「必须」「别再拖了」都带着责备。想不生硬，可以换成「麻烦这周五前发我，有困难随时说」，截止时间不变，语气缓和。";
+const TR_ANSWER = "I'll send you the report before this Friday.";
+const RE_REPLY = "好的，我尽量这周五前发给你，有问题提前跟你说。";
+const EN_REPLY = "Sure, I'll get the report to you by this Friday. I'll let you know if anything comes up.";
+const SELF_SEL = "这周五前必须把报告交上来，别再拖了。";
+const SELF_ASK = "把这段改得正式一点";
+const SELF_FORMAL = "请您于本周五前提交报告，如有困难请提前告知。";
+const SELF_TEXT = "这句话有三处语气问题：\n\n1.「必须」是命令口吻，改成「请」或「麻烦」更合适；\n2.「交上来」带有上下级的压迫感，改成「提交」或「发我」；\n3.「别再拖了」是责备，可以直接删掉，截止时间本身已经交代清楚了。\n\n改完大意不变，但读起来是请求，而不是催债。";
+const Q1 = "这样写太生硬了，改得客气一点";
+const Q2 = "再短一点，别用「辛苦啦」";
+const Q3 = "可以，发出去，再归档到 Q3";
+const Q4 = "这段对我们组有什么影响？";
+let STEPS = ["检查收件人", "点击发送", "归档到「Q3」"];
+const SEND_STEPS = STEPS;
+const TOOL_STEPS = ["找到了待办清单的输入框", "新增「周五前发 Q3 报告」", "保存"];
+const TASK_RE = /(发出去|发送|发了|归档|提交|点击)/;
+const PAGE_CHIP = { label: "当前页 · 邮件" };
+const selChip = (text, fresh = false) => ({ label: `选区 · ${[...text].length} 字`, sel: true, fresh });
+
+const STATES = ["invoke", "bar", "typing", "thinking", "answer", "followup", "task", "done", "failed", "restore", "panel"];
+const META = {
+  invoke:   { n: "① 唤起", when: "快捷键 / 划词浮条 / 地址栏",
+              cap: "只有一个输入框，贴在选中文字下方，不挡原文。自动附带当前页和选区，↵ 发送，Esc 关闭。" },
+  bar:      { n: "② 划词", when: "选中文字后松手",
+              cap: "只读内容给「问 Pie · 解释 · 翻译 · 引用」，可编辑区域追加「改写」——它能改写回网页，只读内容改写不了。问 Pie 只打开浮层；其余直接带选区发送。" },
+  typing:   { n: "③ 自己打字", when: "不改按钮，在浮层里写一句话",
+              cap: "界面上没有「改写」这个开关。模型调 propose_rewrite 就出对比卡，直接回文字就是回答，调页面工具就转执行——用舞台上方三个按钮看同一句话的三种结果。" },
+  thinking: { n: "④ 思考", when: "发出后、第一个字出来前",
+              cap: "发出后浮层变成对话：问题成为第一条消息，输入框移到底部，方便接着追问。第一个字出来前先显示「读取当前页 → 正在思考」。" },
+  answer:   { n: "⑤ 短答", when: "问答 / 总结 / 翻译 / 改写",
+              cap: "改写类回答同时给出原文和改写。「替换原文」= 把改写写回网页，替换选中的那段文字；鼠标移到按钮上，页面会标出将被替换的部分。" },
+  followup: { n: "⑥ 追问", when: "同一个浮层里接着聊",
+              cap: "多轮就在浮层里继续：每次替换都留一条记录，最近一次可以撤销。选区只属于发起它的那一轮，后续追问默认只带当前页。" },
+  task:     { n: "⑦ 执行", when: "某一轮需要 Pie 操作页面",
+              cap: "「发出去，再归档」需要 Pie 自己点页面：浮层收成右下角胶囊，不挡操作；页面上用虚线框标出正在操作的元素。悬停胶囊看完整步骤。" },
+  done:     { n: "⑧ 完成", when: "所有步骤结束",
+              cap: "胶囊变成结果，页面顶部给一条轻提示。发送不可撤回，所以只给「查看」——点开回到对话，结果作为一轮消息留在里面。" },
+  failed:   { n: "⑨ 失败", when: "被遮挡 / 超时 / 需要登录",
+              cap: "失败不弹窗：胶囊就地说明原因，页面上标出卡住的位置，给「重试」和「在侧栏处理」。" },
+  restore:  { n: "⑩ 恢复", when: "关掉后再次唤起",
+              cap: "同一标签页 30 分钟内再唤起，回到上次对话：较早的轮次折叠，分隔线说明隔了多久；新选中的文字用高亮标签挂到下一轮。" },
+  panel:    { n: "⑪ 受限", when: "chrome:// / 新标签页 / Web Store / PDF",
+              cap: "浮层放不进的页面，同一个快捷键改为打开侧栏，顶部说明原因，不做成报错。" },
+  closed:   { n: "已关闭", when: "Esc / 点击浮层外",
+              cap: "浮层关了，对话还在。按 K（实际是 ⌘⇧K）回到刚才的对话，会插入一条时间分隔线。" },
+  handoff:  { n: "转到侧栏", when: "⤢ / ⌘↵ / 工具栏图标 / 胶囊「展开」",
+              cap: "转到侧栏继续：同一个会话，完整历史（包括折叠的轮次）一起带过去，浮层关闭。" },
+};
+
+/* ============================================================
+   元素与状态
+   ============================================================ */
+const $ = (s) => document.querySelector(s);
+const win = $("#win"), viewport = $("#viewport"), overlay = $("#overlay"), thread = $("#thread");
+const ask = $("#ask"), sendBtn = $("#sendBtn"), ctxEl = $("#ctx"), hintsEl = $("#hints");
+const pline = $("#pline"), seg = $("#seg"), cards = $("#cards"), capEl = $("#cap"), stageNow = $("#stageNow");
+const playBtn = $("#playBtn"), pthread = $("#pthread"), sysnote = $("#sysnote"), ovTitle = $("#ovTitle");
+
+let turns = [];
+let page = { kind: "compose", text: ORIG, mark: "sel", reply: "好的，我这周五前发给你。", replyMark: "sel" };
+let ctx = [PAGE_CHIP, selChip(ORIG)];
+let anchor = "pline";
+let rwNext = 0;
+let archived = false;
+let busy = false;
+let composing = false;
+let playing = false;
+let runId = 0;
+let nextTurn = null;
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const flags = (f) => Object.entries(f).forEach(([k, v]) => (win.dataset[k] = v));
+const lastIndex = (pred) => { for (let i = turns.length - 1; i >= 0; i--) if (pred(turns[i])) return i; return -1; };
+const taskAfter = (i) => turns.slice(i + 1).some((t) => t.t === "task" || t.t === "result");
+const userCount = () => turns.reduce((n, t) => n + (t.t === "user" ? 1 : t.t === "fold" ? t.count : 0), 0);
+
+/* ============================================================
+   渲染
+   ============================================================ */
+function setLabel(name) {
+  seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.state === name)));
+  capEl.textContent = META[name].cap;
+  stageNow.textContent = `${META[name].n} · ${META[name].when}`;
+  win.dataset.stage = name;
+}
+
+function renderPage() {
+  win.dataset.page = page.kind;
+  pline.textContent = page.text;
+  pline.dataset.mark = page.mark;
+  $("#replyIn").textContent = page.reply ?? "";
+  $("#replyIn").dataset.mark = win.dataset.bar === "edit" ? "sel" : page.replyMark || "none";
+  const meta = {
+    compose: ["回复：Q3 报告", "mail.example.com/u/0/#drafts/q3"],
+    read: ["关于 Q4 预算", "mail.example.com/u/0/#inbox/q4-budget"],
+    settings: ["设置", "chrome://settings"],
+  }[page.kind];
+  $("#tabTitle").textContent = meta[0];
+  $("#urlText").textContent = meta[1];
+  $("#archiveCount").textContent = archived ? "1" : "";
+  win.dataset.arch = archived ? "on" : "off";
+  placeBar();
+}
+
+/* 浮条贴在选区上方；可编辑的回复框贴在框下沿 */
+function placeBar() {
+  const vp = viewport.getBoundingClientRect();
+  const el = win.dataset.bar === "edit" ? $("#reply") : anchor === "sel2" ? $("#sel2") : pline;
+  if (win.dataset.bar === "none" || !el || !el.offsetParent) return;
+  const r = el.getBoundingClientRect();
+  const bar = document.querySelector(`.selbar[data-v="${win.dataset.bar}"]`);
+  const w = bar.offsetWidth || 220;
+  let left = win.dataset.bar === "edit" ? r.right - w : r.left + r.width / 2 - w / 2;
+  left = Math.max(12, Math.min(vp.width - w - 12, left));
+  const top = r.top - vp.top - 40;
+  bar.style.left = left + "px";
+  bar.style.top = Math.max(8, top) + "px";
+  bar.style.transform = "none";
+}
+
+function flashLine(el = pline) {
+  el.classList.remove("flash");
+  void el.offsetWidth;
+  el.classList.add("flash");
+}
+
+/* 「替换原文」写回哪一段：正文那一行，还是回复框 */
+const canWrite = (where) => page.kind === "compose" && (where !== "reply" || page.reply != null);
+const tgt = (t) => (t.where === "reply" ? page.reply : page.text);
+function setTgt(t, v) {
+  if (t.where === "reply") { page.reply = v; page.replyMark = v === REPLY_ORIG ? "sel" : "new"; }
+  else { page.text = v; page.mark = v === ORIG ? "sel" : "new"; }
+  renderPage();
+  flashLine(t.where === "reply" ? $("#replyIn") : pline);
+}
+
+function renderComposer() {
+  const chat = win.dataset.mode === "chat";
+  ask.placeholder = busy ? "正在回答…" : chat ? "继续追问，或让 Pie 动手…" : "问 Pie，或让它帮你做…";
+  hintsEl.textContent = chat ? "↵ 发送 · ⌘↵ 转侧栏" : "↵ 发送 · Esc 关闭";
+  ask.disabled = busy;
+  sendBtn.disabled = busy;
+  ctxEl.innerHTML = ctx.map((c, i) =>
+    `<span class="chip${c.fresh ? " fresh" : ""}">${esc(c.label)}<span class="x" data-rm="${i}" title="移除">×</span></span>`).join("");
+}
+
+function sessionTitle() {
+  const first = turns.find((t) => t.t === "user");
+  if (turns.some((t) => t.t === "fold") || (first && first.text === Q1)) return "改写回复邮件";
+  return first ? [...first.text].slice(0, 16).join("") : "新对话";
+}
+
+function turnHTML(t, i, o) {
+  switch (t.t) {
+    case "user":
+      return `<div class="t-user"><div class="bubble">${esc(t.text)}</div>${t.att ? `<div class="att">附带 ${esc(t.att)}</div>` : ""}</div>`;
+    case "think":
+      return `<div class="t-think"><span class="spinner"></span><span class="think-text">${esc(t.text || "正在读取当前页…")}</span>${o.actions ? `<button class="link" data-act="stop-think" type="button">停止</button>` : ""}</div>`;
+    case "rw": {
+      const latest = i === lastIndex((x) => x.t === "rw");
+      const stale = canWrite(t.where || "pline") ? tgt(t) !== t.from : false;
+      win.dataset.rt = t.where || "pline";
+      const canAct = o.actions && latest && !t.streaming && !t.applied && !taskAfter(i);
+      const writable = canWrite(t.where || "pline");
+      const to = t.streaming ? esc(t.shown || "") + '<span class="caret"></span>' : esc(t.to);
+      let foot = "";
+      if (canAct) {
+        foot = !writable
+          ? `<div class="t-note warnline">这段文字不能直接改，只能复制。</div><div class="t-actions"><button class="btn sm" data-act="copy" data-i="${i}" type="button">复制</button></div>`
+          : stale
+            ? `<div class="t-note warnline">原文已经变化，只能复制。</div><div class="t-actions"><button class="btn sm" data-act="copy" data-i="${i}" type="button">复制</button></div>`
+            : `<div class="t-actions"><button class="btn sm primary replace-btn" data-act="replace" data-i="${i}" type="button" title="把改写写回邮件，替换你选中的那句话">替换原文</button><button class="btn sm" data-act="copy" data-i="${i}" type="button">复制</button></div>`;
+      }
+      return `<div class="t-ai"><div class="diff"><div class="diff-row from"><span class="lb">原文</span><span class="tx">${esc(t.from)}</span></div><div class="diff-row to"><span class="lb">改写</span><span class="tx" data-stream="${i}">${to}</span></div></div>${t.streaming ? "" : `<div class="t-note">${esc(t.note)}</div>`}${foot}</div>`;
+    }
+    case "text":
+      return `<div class="t-ai"><div class="t-text" data-stream="${i}">${t.streaming ? esc(t.shown || "") + '<span class="caret"></span>' : esc(t.text)}</div></div>`;
+    case "event": {
+      const undoable = o.actions && !t.undone && i === lastIndex((x) => x.t === "event") && !taskAfter(i);
+      return `<div class="t-event${t.undone ? " undone" : ""}"><span class="okc">${t.undone ? "↺" : "✓"}</span><span>${t.undone ? "已撤销替换" : "已替换邮件里的原文"}</span>${undoable ? `<button class="link" data-act="undo" data-i="${i}" type="button">撤销</button>` : ""}</div>`;
+    }
+    case "task":
+      return (o.list || turns).slice(i + 1).some((x) => x.t === "result")
+        ? `<div class="t-task"><span class="dotm"></span><span>这一步操作了页面，在后台执行。</span></div>`
+        : `<div class="t-task"><span class="pulse"></span><span>这一步要操作页面，已转到后台执行。右下角能看进度、随时停止。</span></div>`;
+    case "result":
+      return t.stopped
+        ? `<div class="t-result stopped"><div class="rt"><span class="dotm"></span>已停止 · 完成 ${t.done}/${STEPS.length} 步</div><ol>${STEPS.map((s, k) => `<li class="${k < t.done ? "" : "skip"}">${s}</li>`).join("")}</ol></div>`
+        : `<div class="t-result"><div class="rt"><span class="ck">✓</span>${esc(t.label || "已发送，并归档到「Q3」")}</div><ol>${STEPS.map((s, k) => `<li>${esc(s)}</li>`).join("")}</ol></div>`;
+    case "divider":
+      return `<div class="t-divider">${esc(t.text)}</div>`;
+    case "fold":
+      return o.actions ? `<button class="t-fold" data-act="unfold" data-i="${i}" type="button">较早的 ${t.count} 轮 · 展开</button>` : "";
+  }
+  return "";
+}
+
+function renderThread({ animate = true } = {}) {
+  const prev = animate ? +(thread.dataset.count || 0) : turns.length;
+  thread.innerHTML = turns.map((t, i) => turnHTML(t, i, { actions: true })).join("");
+  [...thread.children].forEach((el, i) => { if (i >= prev) el.classList.add("is-new"); });
+  thread.dataset.count = String(turns.length);
+  thread.scrollTop = thread.scrollHeight;
+  ovTitle.textContent = sessionTitle();
+}
+
+function placeOverlay() {
+  if (win.dataset.ov !== "open") return;
+  const vp = viewport.getBoundingClientRect();
+  const w = Math.min(560, vp.width - 44);
+  let top = 24;
+  let left = vp.width / 2;
+  const a = anchor === "pline" ? pline : anchor === "sel2" ? $("#sel2") : anchor === "reply" ? $("#reply") : null;
+  if (a && a.offsetParent) {
+    const r = a.getBoundingClientRect();
+    const below = Math.round(r.bottom - vp.top + 14);
+    if (vp.height - below >= 280) {
+      top = below;
+      const block = a.closest(".mail").getBoundingClientRect();
+      left = block.left + block.width / 2 - vp.left;
+      left = Math.max(w / 2 + 12, Math.min(vp.width - w / 2 - 12, left));
+    }
+  }
+  overlay.style.top = top + "px";
+  overlay.style.left = left + "px";
+  overlay.style.maxHeight = Math.max(220, vp.height - top - 16) + "px";
+}
+
+function updatePop(step) {
+  document.querySelectorAll("#capsule .pop-row").forEach((row) => {
+    const n = Number(row.dataset.pop);
+    row.classList.toggle("done", n < step);
+    row.classList.toggle("now", n === step);
+  });
+}
+
+/* ============================================================
+   行为
+   ============================================================ */
+function cancelPlayUI() {
+  playing = false;
+  playBtn.textContent = "▶ 播放完整流程";
+}
+
+/* 清掉进行中的生成：用于关闭、转侧栏、停止播放、切换状态 */
+function settle() {
+  runId++;
+  busy = false;
+  turns = turns.filter((t) => t.t !== "think");
+  turns.forEach((t) => { t.streaming = false; });
+}
+
+async function stream(i, id) {
+  const t = turns[i];
+  const full = t.t === "rw" ? t.to : t.text;
+  t.streaming = true;
+  t.shown = "";
+  renderThread();
+  for (const ch of full) {
+    if (id !== runId) return false;
+    t.shown += ch;
+    const el = thread.querySelector(`[data-stream="${i}"]`);
+    if (el) el.innerHTML = esc(t.shown) + '<span class="caret"></span>';
+    thread.scrollTop = thread.scrollHeight;
+    await wait(24);
+  }
+  t.streaming = false;
+  renderThread();
+  return true;
+}
+
+async function submit(raw, id = runId) {
+  const text = raw.trim();
+  if (!text || busy) return false;
+  const att = ctx.filter((c) => c.sel).map((c) => c.label).join(" · ") || null;
+  ctx = ctx.filter((c) => !c.sel).map((c) => ({ ...c, fresh: false }));
+  ask.value = "";
+  busy = true;
+  flags({ mode: "chat" });
+  turns.push({ t: "user", text, att });
+  const think = { t: "think" };
+  turns.push(think);
+  const n = userCount();
+  setLabel(page.kind === "read" ? "restore" : n === 1 ? "thinking" : "followup");
+  renderComposer();
+  renderThread();
+  placeOverlay();
+
+  await wait(800); if (id !== runId) return false;
+  think.text = "正在思考…";
+  const el = thread.querySelector(".think-text");
+  if (el) el.textContent = think.text;
+  await wait(600); if (id !== runId) return false;
+  turns.splice(turns.indexOf(think), 1);
+
+  if (page.kind === "compose" && TASK_RE.test(text)) {
+    turns.push({ t: "task" });
+    busy = false;
+    renderComposer();
+    renderThread();
+    await wait(1000); if (id !== runId) return false;
+    return runTask(id);
+  }
+
+  if (nextTurn) {
+    turns.push(nextTurn);
+    nextTurn = null;
+  } else if (page.kind === "compose") {
+    const k = Math.min(rwNext++, REWRITES.length - 1);
+    turns.push({ t: "rw", from: page.text, to: REWRITES[k].to, note: REWRITES[k].note });
+  } else if (/翻译/.test(text)) {
+    turns.push({ t: "text", text: page.kind === "read" && /回复|这段|这句/.test(text) ? READ_ANSWER : TR_ANSWER });
+  } else if (/解释|什么意思|影响/.test(text)) {
+    turns.push({ t: "text", text: page.kind === "read" && /预算/.test(page.text) ? READ_ANSWER : EX_ANSWER });
+  } else {
+    turns.push({ t: "text", text: READ_ANSWER });
+  }
+  const ok = await stream(turns.length - 1, id);
+  if (!ok) return false;
+  busy = false;
+  renderComposer();
+  if (page.kind === "compose") setLabel(n === 1 ? "answer" : "followup");
+  ask.focus({ preventScroll: true });
+  return true;
+}
+
+function replace(i) {
+  const t = turns[i];
+  if (!t || t.t !== "rw" || !canWrite(t.where || "pline") || tgt(t) !== t.from) return;
+  setTgt(t, t.to);
+  t.applied = true;
+  turns.splice(i + 1, 0, { t: "event" });
+  renderThread();
+}
+
+function undo(i) {
+  const ev = turns[i];
+  if (!ev || ev.t !== "event") return;
+  let r = i - 1;
+  while (r >= 0 && turns[r].t !== "rw") r--;
+  if (r < 0) return;
+  const t = turns[r];
+  setTgt(t, t.from);
+  t.applied = false;
+  ev.undone = true;
+  renderThread();
+}
+
+async function runTask(id, from = 1, label = "已发送，并归档到「Q3」", arch = page.kind === "compose") {
+  flags({ ov: "closed", cap: "run", toast: "off" });
+  setLabel("task");
+  for (let s = from; s <= STEPS.length; s++) {
+    win.dataset.step = String(s);
+    $("#capText").textContent = STEPS[s - 1];
+    updatePop(s);
+    await wait(1500); if (id !== runId) return false;
+  }
+  turns.push({ t: "result", label });
+  archived = arch;
+  renderPage();
+  renderThread();
+  win.removeAttribute("data-step");
+  $("#doneText").textContent = arch ? "已发送并归档" : "已完成";
+  $("#toastText").textContent = arch ? "邮件已发送 · 已归档到「Q3」" : "已在待办里新增一条";
+  flags({ cap: "done", toast: "on" });
+  setLabel("done");
+  cancelPlayUI();
+  return true;
+}
+
+function stopTask() {
+  const done = Math.max(0, (+win.dataset.step || 1) - 1);
+  settle();
+  cancelPlayUI();
+  turns.push({ t: "result", stopped: true, done });
+  renderThread();
+  win.removeAttribute("data-step");
+  $("#stoppedText").textContent = `已停止 · 完成 ${done}/${STEPS.length} 步`;
+  flags({ cap: "stopped" });
+}
+
+function stopThinking() {
+  settle();
+  cancelPlayUI();
+  renderThread();
+  renderComposer();
+  ask.focus({ preventScroll: true });
+}
+
+function closeOverlay() {
+  if (win.dataset.ov !== "open") return;
+  settle();
+  cancelPlayUI();
+  flags({ ov: "closed" });
+  setLabel("closed");
+}
+
+function reopen(fresh) {
+  flags({ cap: "none", toast: "off", panel: "none" });
+  win.removeAttribute("data-step");
+  if (turns.length) {
+    if (!fresh && turns[turns.length - 1].t !== "divider") turns.push({ t: "divider", text: "刚刚" });
+    flags({ ov: "open", mode: "chat" });
+  } else {
+    flags({ ov: "open", mode: "spot" });
+  }
+  renderComposer();
+  renderThread();
+  placeOverlay();
+  setLabel(fresh ? "followup" : "restore");
+  ask.focus({ preventScroll: true });
+}
+
+function newChat() {
+  settle();
+  cancelPlayUI();
+  turns = [];
+  rwNext = 0;
+  thread.dataset.count = "0";
+  ctx = [PAGE_CHIP];
+  anchor = null;
+  if (page.kind === "compose" && page.mark === "sel") { ctx.push(selChip(ORIG)); anchor = "pline"; }
+  if (page.kind === "read") { ctx.push(selChip(READ_SEL)); anchor = "sel2"; }
+  ask.value = "";
+  flags({ ov: "open", mode: "spot", cap: "none", panel: "none", toast: "off" });
+  win.removeAttribute("data-step");
+  renderComposer();
+  renderThread();
+  placeOverlay();
+  setLabel("invoke");
+  ask.focus({ preventScroll: true });
+}
+
+function toPanel() {
+  if (page.kind === "settings") return;
+  settle();
+  cancelPlayUI();
+  flags({ ov: "closed", cap: "none", panel: "handoff", toast: "off" });
+  win.removeAttribute("data-step");
+  const flat = turns.flatMap((t) => (t.t === "fold" ? t.hidden : [t]));
+  pthread.innerHTML = flat.length
+    ? flat.map((t, i) => turnHTML(t, i, { actions: false, list: flat })).join("")
+    : `<div class="t-text"><span class="muted">还没有对话。</span></div>`;
+  sysnote.innerHTML = `<span>⤢</span><span>从浮层转过来，<b>同一个会话</b>，完整历史都在这里。</span>`;
+  $("#panelSub").textContent = sessionTitle();
+  pthread.scrollTop = pthread.scrollHeight;
+  setLabel("handoff");
+}
+
+function closePanel() {
+  if (win.dataset.panel === "restricted") { view("invoke"); return; }
+  flags({ panel: "none", ov: "closed" });
+  setLabel("closed");
+}
+
+/* ============================================================
+   预设状态
+   ============================================================ */
+function view(name) {
+  settle();
+  cancelPlayUI();
+  win.classList.remove("demo-hover");
+  const R = REWRITES;
+  const U1 = () => ({ t: "user", text: Q1, att: selChip(ORIG).label });
+  const A1 = (o = {}) => ({ t: "rw", from: ORIG, to: R[0].to, note: R[0].note, ...o });
+  const A2 = (o = {}) => ({ t: "rw", from: R[0].to, to: R[1].to, note: R[1].note, ...o });
+  const base = () => [U1(), A1({ applied: true }), { t: "event" }, { t: "user", text: Q2 }, A2({ applied: true }), { t: "event" }];
+  const sent = () => [...base(), { t: "user", text: Q3 }, { t: "task" }];
+
+  page = { kind: "compose", text: ORIG, mark: "sel", reply: REPLY_ORIG, replyMark: "none" };
+  archived = false;
+  anchor = "pline";
+  ask.value = "";
+  ctx = [PAGE_CHIP];
+  rwNext = 0;
+  STEPS = SEND_STEPS;
+  const f = { ov: "open", mode: "chat", cap: "none", panel: "none", toast: "off", bar: "none" };
+  win.removeAttribute("data-step");
+  let after = null;
+
+  switch (name) {
+    case "invoke":
+      turns = []; f.mode = "spot"; ask.value = Q1; ctx = [PAGE_CHIP, selChip(ORIG)];
+      break;
+    case "bar":
+      turns = []; f.mode = "spot"; f.ov = "closed"; f.bar = "read"; ctx = [PAGE_CHIP, selChip(ORIG)];
+      break;
+    case "typing": {
+      page = { kind: "compose", text: ORIG, mark: "sel", reply: REPLY_ORIG, replyMark: "none" };
+      anchor = "pline"; rwNext = 1;
+      turns = [{ t: "user", text: SELF_ASK, att: selChip(SELF_SEL).label }];
+      ask.value = ""; ctx = [PAGE_CHIP, selChip(SELF_SEL, true)];
+      break;
+    }
+    case "thinking":
+      turns = [U1(), { t: "think" }]; rwNext = 1; busy = true;
+      after = async (id) => {
+        await wait(900); if (id !== runId) return;
+        const th = turns.find((x) => x.t === "think"); if (!th) return;
+        th.text = "正在思考…"; const el = thread.querySelector(".think-text"); if (el) el.textContent = th.text;
+      };
+      break;
+    case "answer":
+      turns = [U1(), A1()]; rwNext = 1; busy = true;
+      after = async (id) => { if (await stream(1, id)) { busy = false; renderComposer(); } };
+      break;
+    case "followup":
+      turns = [U1(), A1({ applied: true }), { t: "event" }, { t: "user", text: Q2 }, A2()];
+      page.text = R[0].to; page.mark = "new"; rwNext = 2; busy = true;
+      after = async (id) => { if (await stream(4, id)) { busy = false; renderComposer(); } };
+      break;
+    case "task":
+      turns = sent(); page.text = R[1].to; page.mark = "new"; rwNext = 2; f.ov = "closed";
+      after = (id) => runTask(id);
+      break;
+    case "done":
+      turns = [...sent(), { t: "result" }]; page.text = R[1].to; page.mark = "new"; rwNext = 2;
+      archived = true; f.ov = "closed"; f.cap = "done"; f.toast = "on";
+      break;
+    case "failed":
+      turns = sent(); page.text = R[1].to; page.mark = "new"; rwNext = 2; f.ov = "closed"; f.cap = "fail";
+      win.dataset.step = "2";
+      break;
+    case "restore":
+      turns = [{ t: "fold", count: 2, hidden: base() }, { t: "user", text: Q3 }, { t: "task" }, { t: "result" },
+               { t: "divider", text: "3 分钟前 · 你打开了另一封邮件" }];
+      page = { kind: "read", text: R[1].to, mark: "new" }; archived = true; anchor = "sel2"; rwNext = 2;
+      ask.value = Q4; ctx = [PAGE_CHIP, selChip(READ_SEL, true)];
+      break;
+    case "panel":
+      turns = []; page = { kind: "settings", text: ORIG, mark: "sel" }; anchor = null; f.ov = "closed"; f.panel = "restricted";
+      sysnote.innerHTML = `<span>ⓘ</span><span>这是浏览器内部页面，浮层放不进来，已改为在侧栏打开。<b>快捷键与浮层一致。</b></span>`;
+      pthread.innerHTML = `<div class="t-user"><div class="bubble">帮我找一下自动填充设置</div></div>` +
+        `<div class="t-ai"><div class="t-text">在「自动填充和密码」→「密码管理器」里，左侧已经高亮。<span class="muted">这个页面可以直接读，不需要截图。</span></div></div>`;
+      $("#panelSub").textContent = "当前页";
+      break;
+  }
+
+  flags(f);
+  renderPage();
+  renderComposer();
+  renderThread({ animate: false });
+  placeOverlay();
+  placeBar();
+  setLabel(name);
+  if (name === "invoke") ask.focus({ preventScroll: true });
+  if (after) after(runId);
+}
+
+/* ============================================================
+   划词浮条：点一下 = 打开浮层 + 带上选区发送（问 Pie 除外）
+   ============================================================ */
+const REPLY_ORIG = "好的，我这周五前发给你。";
+
+function openBar(kind, action) {
+  const onReply = kind === "edit";
+  const sel = onReply ? REPLY_ORIG : ORIG;
+  view("invoke");
+  page = { kind: "compose", text: ORIG, mark: "sel", reply: REPLY_ORIG, replyMark: "none" };
+  anchor = onReply ? "reply" : "pline";
+  ctx = [PAGE_CHIP, selChip(sel)];
+  turns = [];
+  win.dataset.bar = "none";
+  nextTurn = null;
+
+  if (action === "ask" || action === "quote") {
+    flags({ ov: "open", mode: "spot" });
+    ask.value = "";
+    renderPage(); renderComposer(); placeOverlay(); placeBar();
+    setLabel("invoke");
+    ask.focus({ preventScroll: true });
+    return;
+  }
+
+  const q = action === "translate" ? "翻译成英文" : action === "explain" ? "解释一下这段" : "把这段改得正式一点";
+  if (onReply) {
+    nextTurn = {
+      t: "rw", where: "reply", from: sel,
+      to: action === "translate" ? EN_REPLY : SELF_FORMAL,
+      note: "这段文字可以编辑，所以直接把改写结果交回来，可以一键写回。",
+    };
+  } else if (action === "translate") {
+    nextTurn = { t: "text", text: TR_ANSWER + "\n\n选区是只读的，结果只能复制或引用。" };
+  } else if (action === "explain") {
+    nextTurn = { t: "text", text: EX_ANSWER };
+  }
+  flags({ ov: "open", mode: "chat" });
+  ask.value = q;
+  renderPage(); renderComposer(); placeOverlay(); placeBar();
+  setLabel("typing");
+  submit(q);
+}
+
+/* 同一句话，模型三种回法 */
+function selfReply(chan) {
+  view("typing");
+  const id = runId;
+  turns = [{ t: "user", text: SELF_ASK, att: selChip(SELF_SEL).label }];
+  busy = true;
+  const push = (t) => { turns.push(t); renderComposer(); renderThread(); };
+  let done;
+
+  if (chan === "rw") {
+    push({ t: "rw", from: SELF_SEL, to: SELF_FORMAL, note: "调用 propose_rewrite，返回的是要写回页面的那一段文字。" });
+    done = stream(turns.length - 1, id);
+  } else if (chan === "text") {
+    push({ t: "text", text: SELF_TEXT });
+    done = stream(turns.length - 1, id);
+  } else {
+    STEPS = TOOL_STEPS;
+    push({ t: "task" });
+    done = runTask(id, 1, "已在待办里加了一条「周五前发 Q3 报告」", false);
+  }
+  Promise.resolve(done).then(() => {
+    if (id !== runId) return;
+    busy = false;
+    renderComposer();
+    win.dataset.stage = "typing";
+  });
+}
+
+async function typeInto(text, id) {
+  ask.focus({ preventScroll: true });
+  ask.value = "";
+  for (const ch of text) {
+    if (id !== runId) return false;
+    ask.value += ch;
+    await wait(55);
+  }
+  return id === runId;
+}
+
+async function demoReplace(id) {
+  win.classList.add("demo-hover");
+  await wait(1000);
+  win.classList.remove("demo-hover");
+  if (id !== runId) return false;
+  replace(lastIndex((t) => t.t === "rw"));
+  return true;
+}
+
+async function play() {
+  if (playing) {
+    if (win.dataset.cap === "run") stopTask();
+    else { settle(); cancelPlayUI(); renderThread(); renderComposer(); }
+    return;
+  }
+  view("invoke");
+  const id = runId;
+  playing = true;
+  playBtn.textContent = "■ 停止播放";
+  const steps = [
+    () => wait(1100),
+    () => submit(Q1, id),
+    () => wait(800),
+    () => demoReplace(id),
+    () => wait(1000),
+    () => typeInto(Q2, id),
+    () => wait(300),
+    () => submit(Q2, id),
+    () => wait(800),
+    () => demoReplace(id),
+    () => wait(1000),
+    () => typeInto(Q3, id),
+    () => wait(300),
+    () => submit(Q3, id),
+  ];
+  for (const step of steps) {
+    const r = await step();
+    if (id !== runId || r === false) return;
+  }
+  cancelPlayUI();
+}
+
+/* ============================================================
+   事件
+   ============================================================ */
+STATES.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.dataset.state = s;
+  b.setAttribute("role", "tab");
+  b.textContent = META[s].n;
+  b.addEventListener("click", () => view(s));
+  seg.appendChild(b);
+
+  const c = document.createElement("button");
+  c.type = "button";
+  c.className = "scard";
+  c.innerHTML = `<span class="num">0${i + 1}</span><span class="nm">${META[s].n.slice(2)}</span>` +
+                `<span class="when">${META[s].when}</span><span class="rule">${META[s].cap}</span>`;
+  c.addEventListener("click", () => {
+    view(s);
+    document.getElementById("demo").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  cards.appendChild(c);
+});
+
+playBtn.addEventListener("click", play);
+
+ask.addEventListener("compositionstart", () => { composing = true; });
+ask.addEventListener("compositionend", () => { composing = false; });
+ask.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.shiftKey || composing || e.isComposing) return;
+  e.preventDefault();
+  if (playing) return;
+  submit(ask.value);
+});
+sendBtn.addEventListener("click", () => { if (!playing) submit(ask.value); });
+
+ctxEl.addEventListener("click", (e) => {
+  const i = e.target.dataset && e.target.dataset.rm;
+  if (i == null) return;
+  ctx.splice(+i, 1);
+  renderComposer();
+});
+
+thread.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]");
+  if (!b) return;
+  const i = +b.dataset.i;
+  switch (b.dataset.act) {
+    case "replace": replace(i); break;
+    case "undo": undo(i); break;
+    case "stop-think": stopThinking(); break;
+    case "unfold":
+      turns.splice(i, 1, ...turns[i].hidden);
+      renderThread({ animate: false });
+      break;
+    case "copy":
+      try { navigator.clipboard.writeText(turns[i].to); } catch {}
+      b.textContent = "已复制";
+      setTimeout(() => { b.textContent = "复制"; }, 1200);
+      break;
+  }
+});
+
+$("#capsule").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]");
+  if (!b) return;
+  if (b.dataset.act === "stop-task") stopTask();
+  if (b.dataset.act === "to-panel") toPanel();
+  if (b.dataset.act === "view") reopen(true);
+  if (b.dataset.act === "retry") { settle(); runTask(runId, 2); }
+});
+
+$("#scrim").addEventListener("pointerdown", closeOverlay);
+
+document.querySelectorAll(".selbar").forEach((bar) => {
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-sb]");
+    if (!b) return;
+    openBar(bar.dataset.v, b.dataset.sb);
+  });
+});
+document.querySelectorAll("[data-chan]").forEach((b) => b.addEventListener("click", () => selfReply(b.dataset.chan)));
+document.querySelectorAll("[data-bar-demo]").forEach((b) => b.addEventListener("click", () => {
+  win.dataset.bar = b.dataset.barDemo;
+  renderPage();
+  placeBar();
+}));
+$("#closeBtn").addEventListener("click", closeOverlay);
+$("#newBtn").addEventListener("click", newChat);
+$("#toPanelBtn").addEventListener("click", toPanel);
+$("#reopenBtn").addEventListener("click", () => reopen(false));
+$("#extPie").addEventListener("click", toPanel);
+$("#panelClose").addEventListener("click", closePanel);
+
+overlay.addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  const f = [...overlay.querySelectorAll("button, input")].filter((el) => !el.disabled && el.offsetParent);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+document.addEventListener("keydown", (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (e.key === "Escape") {
+    if (win.dataset.panel !== "none") closePanel(); else closeOverlay();
+    return;
+  }
+  if (mod && e.key === "Enter") { e.preventDefault(); toPanel(); return; }
+  if (mod && !e.shiftKey && !e.altKey && (e.key === "k" || e.key === "K")) { e.preventDefault(); newChat(); return; }
+  if (e.target instanceof Element && e.target.closest("input, textarea")) return;
+  if (mod || e.altKey) return;
+  if ((e.key === "k" || e.key === "K") && win.dataset.ov === "closed" && win.dataset.panel === "none" && win.dataset.cap !== "run") {
+    reopen(false);
+    return;
+  }
+  const idx = "123456789".indexOf(e.key);
+  if (idx >= 0) view(STATES[idx]);
+});
+
+/* 明暗 */
+let savedTheme = null;
+try { savedTheme = localStorage.getItem("pie-overlay-theme"); } catch {}
+document.documentElement.dataset.theme =
+  savedTheme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+$("#themeBtn").addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("pie-overlay-theme", next); } catch {}
+});
+
+/* 左侧导航 */
+const railLinks = [...document.querySelectorAll("#rail a")];
+const sections = railLinks.map((a) => document.querySelector(a.getAttribute("href")));
+window.addEventListener("scroll", () => {
+  let cur = 0;
+  sections.forEach((s, i) => { if (s.getBoundingClientRect().top <= 96) cur = i; });
+  railLinks.forEach((x, i) => x.classList.toggle("on", i === cur));
+}, { passive: true });
+
+window.addEventListener("resize", placeOverlay);
+window.addEventListener("load", placeOverlay);
+view("invoke");
+</script>
+</body>
+</html>

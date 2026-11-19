@@ -16,14 +16,25 @@ import {
   ChevronRight,
   ZoomIn,
   RotateCcw,
+  Bookmark,
+  Brain,
+  PanelsTopLeft,
+  CircleUserRound,
 } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { listInstances } from "@/lib/instances";
+import { getPieAccount, type PieAccount } from "@/lib/pie-account";
+import { getCachedEntitlement, getEntitlement } from "@/lib/managed-account";
+import type { Entitlement } from "@/lib/managed-auth";
+import { ManagedStatusPill } from "@/sidepanel/components/ManagedStatusPill";
 import { getSearchProviderStatus, ACTIVE_SEARCH_PROVIDER } from "@/lib/search-provider";
 import { isCdpInputEnabled, setCdpInputEnabled } from "@/lib/cdp-input-enabled";
 import { getPanelMode, setPanelMode, PANEL_MODE_KEY } from "@/lib/panel-host/panel-mode";
 import { onStoreChange } from "@/lib/store-bus";
 import { setConfig } from "@/lib/idb/config-store";
+import { getMemorySettings, listMemoryEntries } from "@/lib/memory/store";
+import { getMemoryAccessState } from "@/lib/memory/access";
+import { hasMemoryCloudConsent, PRIVACY_CONSENT_KEY } from "@/lib/privacy-consent";
 import { Switch } from "@/sidepanel/components/ui/Switch";
 import { IconButton } from "@/sidepanel/components/ui/IconButton";
 import { Popover } from "@/sidepanel/components/ui/Popover";
@@ -240,6 +251,115 @@ function GroupLabel({ children }: { children: ReactNode }) {
   );
 }
 
+// Pie 账号卡（设置根页顶部独立一行，类似系统设置的 Apple ID 卡）。
+// 账号已从模型配置里独立，这里是它的入口：未登录 = 登录引导，已登录 = 邮箱 +
+// 订阅状态，点进二级页 account。
+function AccountCard({ onOpen }: { onOpen: () => void }) {
+  const t = useT();
+  const [account, setAccount] = useState<PieAccount | null | undefined>(undefined);
+  const [plan, setPlan] = useState<Entitlement["plan"] | null>(null);
+  const [hasCloudConsent, setHasCloudConsent] = useState(true);
+  // 每次实例/entitlement/隐私同意变更 bump 一次重读（store-bus 驱动跨上下文同步）。
+  const [nonce, setNonce] = useState(0);
+  // getEntitlement 自己会写 entitlement 缓存 → 又发一次 store-bus 配置事件。
+  // 记下已拉过的 apiKey，保证同一账号只向服务端拉一次，避免自激循环。
+  const fetchedFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const [acct, consent] = await Promise.all([
+        getPieAccount().catch(() => null),
+        hasMemoryCloudConsent().catch(() => true),
+      ]);
+      if (!alive) return;
+      setHasCloudConsent(consent);
+      setAccount(acct);
+      if (!acct) {
+        setPlan(null);
+        fetchedFor.current = null;
+        return;
+      }
+      setPlan(getCachedEntitlement(acct.apiKey)?.plan ?? null);
+      if (fetchedFor.current === acct.apiKey) return;
+      fetchedFor.current = acct.apiKey;
+      try {
+        const ent = await getEntitlement(acct.apiKey);
+        if (!alive) return;
+        setPlan(ent.plan);
+        setHasCloudConsent(await hasMemoryCloudConsent().catch(() => consent));
+      } catch {
+        /* 离线 / 接口失败：保留缓存态 */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [nonce]);
+
+  useEffect(() => {
+    const bump = () => setNonce((n) => n + 1);
+    const offs = [
+      onStoreChange("instances", bump),
+      onStoreChange("config", (c) => {
+        if (
+          c.id === undefined ||
+          c.id === PRIVACY_CONSENT_KEY ||
+          c.id.startsWith("managed_entitlement_")
+        ) {
+          bump();
+        }
+      }),
+    ];
+    return () => offs.forEach((off) => off());
+  }, []);
+
+  const pill =
+    plan === "active" ? (
+      <ManagedStatusPill tone="success" label={t("managed.account.active")} />
+    ) : plan === "blocked" ? (
+      <ManagedStatusPill tone="warning" label={t("managed.account.paymentFailed")} />
+    ) : plan === "none" ? (
+      <ManagedStatusPill tone="neutral" label={t("managed.account.inactive")} />
+    ) : null;
+
+  const needsConsentDot = Boolean(account && plan === "active" && !hasCloudConsent);
+
+  return (
+    <button
+      type="button"
+      data-testid="settings-account-card"
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-3 text-left transition-colors hover:bg-field"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-field text-fg-2">
+        <CircleUserRound size={19} strokeWidth={1.75} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-[13px] font-medium text-fg-1">
+          {account ? account.email : t("settings.account.signIn")}
+        </span>
+        <span className="flex items-center gap-1.5 truncate text-[11px] text-fg-2">
+          {account ? pill : t("settings.account.signInCaption")}
+          {needsConsentDot && (
+            <span className="truncate text-pending">
+              · {t("settings.memory.privacyConsent.accountCardHint")}
+            </span>
+          )}
+        </span>
+      </span>
+      {needsConsentDot && (
+        <span
+          data-testid="settings-account-privacy-dot"
+          aria-label={t("settings.memory.privacyConsent.accountCardHint")}
+          className="h-2 w-2 shrink-0 rounded-full bg-pending"
+        />
+      )}
+      <ChevronRight size={14} strokeWidth={1.75} className="shrink-0 text-fg-3" />
+    </button>
+  );
+}
+
 function ThemeSegmented({
   themeMode,
   onThemeModeChange,
@@ -349,11 +469,15 @@ export default function SettingsRoot({
   // completes moments later (issue #298).
   const bridge = useBridgeStatus();
   const [searchConfigured, setSearchConfigured] = useState(false);
+  // Pie 2.0 记忆 — 行尾的「开 · N 条」（F14 导航行）。跟着 store-bus 刷新，
+  // 对话里 remember / 后台整理都会即时反映。
+  const [memoryBadge, setMemoryBadge] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let alive = true;
+    // 账号已从模型配置里独立 —— 配置计数与列表都不算它。
     void listInstances().then((l) => {
-      if (alive) setConfigCount(l.length);
+      if (alive) setConfigCount(l.filter((i) => i.provider !== "managed").length);
     });
     void getSearchProviderStatus(ACTIVE_SEARCH_PROVIDER).then((s) => {
       if (alive) setSearchConfigured(s.configured);
@@ -362,6 +486,44 @@ export default function SettingsRoot({
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      void Promise.all([
+        getMemoryAccessState({ fetchIfUncached: false }),
+        getMemorySettings(),
+        listMemoryEntries(),
+        hasMemoryCloudConsent(),
+      ]).then(([access, s, es, consent]) => {
+        if (!alive) return;
+        if (access.mode === "locked") {
+          setMemoryBadge(t("settings.memory.proBadge"));
+        } else if (access.mode === "readonly_expired") {
+          setMemoryBadge(
+            t("settings.memory.readonly.badge", { count: String(es.length) }),
+          );
+        } else {
+          setMemoryBadge(
+            s.enabled && consent
+              ? t("settings.nav.memoryOnCount", { count: String(es.length) })
+              : t("settings.nav.memoryOff"),
+          );
+        }
+      });
+    };
+    refresh();
+    const offs = [
+      onStoreChange("memory", refresh),
+      onStoreChange("config", (c) => {
+        if (c.id === undefined || c.id === PRIVACY_CONSENT_KEY) refresh();
+      }),
+    ];
+    return () => {
+      alive = false;
+      offs.forEach((off) => off());
+    };
+  }, [t]);
 
   const bridgeBadge =
     bridge && bridge.hasPermission ? (
@@ -375,6 +537,8 @@ export default function SettingsRoot({
 
   return (
     <div className="flex flex-col gap-5">
+      <AccountCard onOpen={() => onOpenPage("account")} />
+
       {/* Group 1 — basics (core subsystems + CDP) */}
       <div>
         <GroupLabel>{t("settings.nav.basics")}</GroupLabel>
@@ -414,7 +578,33 @@ export default function SettingsRoot({
         </Group>
       </div>
 
-      {/* Group 2 — preferences */}
+      {/* Group 2 — personalization (Pie 2.0 §1: memory · browser data · overlay · rules) */}
+      <div>
+        <GroupLabel>{t("settings.nav.personalization")}</GroupLabel>
+        <Group>
+          <NavRow
+            id="memory"
+            icon={<Brain {...ROW_ICON} />}
+            label={t("settings.nav.memory")}
+            badge={memoryBadge}
+            onClick={() => onOpenPage("memory")}
+          />
+          <NavRow
+            id="browserData"
+            icon={<Bookmark {...ROW_ICON} />}
+            label={t("settings.nav.browserData")}
+            onClick={() => onOpenPage("browserData")}
+          />
+          <NavRow
+            id="overlay"
+            icon={<PanelsTopLeft {...ROW_ICON} />}
+            label={t("settings.nav.overlay")}
+            onClick={() => onOpenPage("overlay")}
+          />
+        </Group>
+      </div>
+
+      {/* Group 3 — preferences */}
       <div>
         <GroupLabel>{t("settings.nav.preferences")}</GroupLabel>
         <Group>
@@ -446,7 +636,7 @@ export default function SettingsRoot({
         </Group>
       </div>
 
-      {/* Group 3 — about & support */}
+      {/* Group 4 — about & support */}
       <div>
         <GroupLabel>{t("settings.nav.support")}</GroupLabel>
         <Group>

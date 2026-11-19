@@ -87,15 +87,21 @@ describe("buildChangelogUrl", () => {
     );
   });
 
-  it("builds a localized changelog URL with the locale directory prefix", () => {
-    expect(buildChangelogUrl("zh-CN", "1.2.2", "2.0.0")).toBe(
-      "https://www.pie.chat/zh-Hans/changelog?from=1.2.2&to=2.0.0",
+  it("routes 2.0.0 upgrades to the dedicated /v2 showcase page", () => {
+    expect(buildChangelogUrl("en", "1.5.1", "2.0.0")).toBe(
+      "https://www.pie.chat/v2",
+    );
+    expect(buildChangelogUrl("zh-CN", "1.5.1", "2.0.0")).toBe(
+      "https://www.pie.chat/zh-Hans/v2",
+    );
+    expect(buildChangelogUrl("ja", "1.9.9", "2.0.1")).toBe(
+      "https://www.pie.chat/ja/v2",
     );
   });
 
-  it("builds a Japanese changelog URL", () => {
-    expect(buildChangelogUrl("ja", "1.9.9", "2.0.0")).toBe(
-      "https://www.pie.chat/ja/changelog?from=1.9.9&to=2.0.0",
+  it("keeps the localized changelog URL for later 2.1+ upgrades", () => {
+    expect(buildChangelogUrl("zh-CN", "2.0.0", "2.1.0")).toBe(
+      "https://www.pie.chat/zh-Hans/changelog?from=2.0.0&to=2.1.0",
     );
   });
 });

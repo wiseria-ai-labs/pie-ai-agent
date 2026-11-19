@@ -33,7 +33,6 @@ import { fetchProviderModels, isLazyModelProvider, supportsModelFetch } from "@/
 import InstanceForm, { type InstanceFormPayload } from "./InstanceForm";
 import ProviderDropdown from "./ProviderDropdown";
 import CustomProviderFields from "./CustomProviderFields";
-import ManagedSubscribePanel from "./ManagedSubscribePanel";
 import { Button } from "./ui/Button";
 
 interface Props {
@@ -43,11 +42,6 @@ interface Props {
   existingProviderRefs?: ProviderRef[];
   testing?: boolean;
   testResult?: { ok: boolean; message: string } | null;
-  /** Bumped by a website "Subscribe" deep-link — selects the managed tab so the
-   *  wizard opens straight on the official-subscription screen. */
-  managedEntryNonce?: number;
-  /** Test-only injection for the managed subscribe flow. */
-  __managedDeps?: import("./ManagedSubscribePanel").ManagedSubscribeDeps;
 }
 
 export interface ProviderTestOptions {
@@ -63,15 +57,6 @@ const DRAFT_CUSTOM_REF = "custom:__draft__";
 
 export default function NewConfigWizard(props: Props) {
   const t = useT();
-  // Initial mode honors a pending deep-link so a fresh-mounted wizard opens on
-  // the managed screen with no byok→managed flash (Collapse remounts on open).
-  const [entryMode, setEntryMode] = useState<"byok" | "managed">(
-    props.managedEntryNonce ? "managed" : "byok",
-  );
-  // Re-arm when a new deep-link arrives while the wizard is already open.
-  useEffect(() => {
-    if (props.managedEntryNonce) setEntryMode("managed");
-  }, [props.managedEntryNonce]);
   const [provider, setProvider] = useState<ProviderRef | null>(null);
   const [customProviders, setCustomProviders] = useState<StoredCustomProvider[]>([]);
   // Provider-level custom models pool — pre-populates the form's dropdown
@@ -289,36 +274,8 @@ export default function NewConfigWizard(props: Props) {
 
   return (
     <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface p-3.5">
-      <div role="group" aria-label="Config type" className="flex w-full overflow-hidden rounded-[10px] border border-line">
-        {([["byok", "newConfigWizard.tabByok"], ["managed", "newConfigWizard.tabManaged"]] as const).map(([m, labelKey], i) => (
-          <button key={m} type="button" aria-pressed={entryMode === m}
-            onClick={() => setEntryMode(m)}
-            className={`flex flex-1 items-center justify-center px-1.5 py-2 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
-              entryMode === m ? "bg-accent-tint font-semibold text-accent" : "bg-transparent text-fg-3 hover:bg-field hover:text-fg-1"}`}>
-            {t(labelKey)}
-          </button>
-        ))}
-      </div>
-
       <SmoothHeight>
-      {entryMode === "managed" ? (
-        <div key="managed" className="flex flex-col gap-3">
-          {(props.existingProviderRefs ?? []).includes("managed") ? (
-            // A managed config already exists — re-running the subscribe flow would
-            // call createInstance again and throw "already has a config". Show a
-            // pointer to Settings instead of the login panel.
-            <div className="text-[13px] text-fg-2">
-              Official subscription already configured — manage it in Settings.
-            </div>
-          ) : (
-            <ManagedSubscribePanel
-              deps={props.__managedDeps}
-              onCreated={(apiKey, email) => props.onCreate("managed", { nickname: email, apiKey, customModels: [] })}
-            />
-          )}
-        </div>
-      ) : (
-        <div key="byok" className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
       <ProviderDropdown
         value={provider}
         builtinProviders={sortedProviders}
@@ -601,7 +558,6 @@ export default function NewConfigWizard(props: Props) {
         </div>
       )}
         </div>
-      )}
       </SmoothHeight>
     </div>
   );

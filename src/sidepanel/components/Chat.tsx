@@ -9,6 +9,7 @@ import {
   normalizeSkillSlashKey,
 } from "@/lib/skills";
 import { resolveModelMeta } from "@/lib/model-router/providers/registry";
+import { useStickToBottom } from "@/sidepanel/hooks/useStickToBottom";
 import { resolveSupportsVision } from "./chat-vision";
 import ContextRing from "./ContextRing";
 import { listInstances, getInstance, updateInstance, type DecryptedInstance } from "@/lib/instances";
@@ -30,7 +31,7 @@ import AgentStepGroup, { type AgentStepData } from "./AgentStepGroup";
 import ManagedErrorCta from "./ManagedErrorCta";
 import type { DisplayMessage } from "@/types";
 import { QuoteChip } from "./QuoteChip";
-import { escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
+import { escapeUntrustedWrappers, escapeWrapperAttribute } from "@/lib/agent/untrusted-wrappers";
 import type { Quote, TextQuote, ElementQuote } from "@/types";
 import ModelPicker from "./ModelPicker";
 import PieFace from "./PieFace";
@@ -38,6 +39,10 @@ import ThinkingSection from "./ThinkingSection";
 import { useCelebrate } from "@/sidepanel/hooks/useCelebrate";
 import { useT } from "@/lib/i18n";
 import { useStoreChange } from "@/sidepanel/hooks/useStoreChange";
+import {
+  dismissFirstConsolidationNotice,
+  getMemoryState,
+} from "@/lib/memory/store";
 import {
   getSessionMeta,
   updateSessionMeta,
@@ -97,17 +102,22 @@ import { copyRichText } from "./copy-rich-text";
 import SkillSlashPopover from "./SkillSlashPopover";
 import { PendingInstructionList, type PendingItem } from "./PendingInstructionList";
 import { HitlInlineCards } from "./hitl/HitlInlineCards";
+import { BrowserChangeRow } from "./browser-data/BrowserChangeRow";
 import { usePanelRequest } from "../hooks/usePanelRequest";
 import { ReportProblemDrawer } from "./ReportProblemDrawer";
 import { useFileAccessPrompt } from "../hooks/useFileAccessPrompt";
 import { FileAccessCard } from "./FileAccessCard";
 import { FileOutputCard } from "./FileOutputCard";
+import { MemoryEventRow, MemoryUsedChip } from "./MemoryRows";
 import { artifactExists } from "@/lib/files/output-store";
 import { queryActiveHostTab } from "@/lib/panel-host/host-window";
 
 interface ChatProps {
   providerLabel: string | null;
   onOpenSettings: () => void;
+  onOpenMemorySettings?: () => void;
+  /** 零配置空态的次入口：去「账号」页登录 / 订阅官方模型。 */
+  onOpenAccountSettings?: () => void;
   prefillInput?: string;
   onPrefillConsumed?: () => void;
   /** Session state owned by App so port + onMessage listener survive
@@ -163,6 +173,8 @@ function filterAndSortSkillsForSlash(
 export default function Chat({
   providerLabel,
   onOpenSettings,
+  onOpenMemorySettings,
+  onOpenAccountSettings,
   prefillInput,
   onPrefillConsumed,
   session,
@@ -211,6 +223,21 @@ export default function Chat({
   // (usePinDisplay hook); Chat only keeps the pageChanged detection below.
   const [pageChanged, setPageChanged] = useState(false);
   const t = useT();
+  const [showFirstMemoryNotice, setShowFirstMemoryNotice] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void getMemoryState().then((s) => {
+      if (alive) setShowFirstMemoryNotice(s.firstConsolidationPendingBanner === true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  useStoreChange("memory", () => {
+    void getMemoryState().then((s) => {
+      setShowFirstMemoryNotice(s.firstConsolidationPendingBanner === true);
+    });
+  });
   const [pickerActive, setPickerActive] = useState(false);
   const [enabledSkills, setEnabledSkills] = useState<SkillEntry[]>([]);
   const [popoverSelected, setPopoverSelected] = useState(0);
@@ -259,9 +286,8 @@ export default function Chat({
   // are already pinned to the bottom — e.g. the loop just exited and appended
   // its summary — an instant jump to the unchanged position is a no-op, so the
   // visible "re-scroll" wobble is gone. Scrolling up to read mid-stream is no
-  // longer hijacked back to the bottom.
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const atBottomRef = useRef(true);
+  // longer hijacked back to the bottom. Shared with the overlay thread.
+  const { containerRef: scrollContainerRef, onScroll: handleMessagesScroll, stickIfNeeded } = useStickToBottom<HTMLDivElement>();
 
   // Phase 5 image input state
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -415,16 +441,8 @@ export default function Chat({
   });
 
   useEffect(() => {
-    if (!atBottomRef.current) return;
-    const c = scrollContainerRef.current;
-    if (c) c.scrollTop = c.scrollHeight;
-  }, [messages, streamingText, panelRequest?.requestId]);
-
-  const handleMessagesScroll = () => {
-    const c = scrollContainerRef.current;
-    if (!c) return;
-    atBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight <= 60;
-  };
+    stickIfNeeded();
+  }, [messages, streamingText, panelRequest?.requestId, stickIfNeeded]);
 
   useEffect(() => {
     if (prefillInput) {
@@ -476,37 +494,36 @@ export default function Chat({
 
   async function checkConfig() {
     try {
-      const all = await listInstances();
-      if (all.length === 0) {
+      // 「有可用配置」= resolveSelection 解得出东西，而不是 instances 非空：
+      // 登录即落盘的 managed instance 在 plan none 时仍然存在，但没有任何可选
+      // 模型（resolver 会跳过它）。按数量判断会让这种账号进不了零配置空态，
+      // composer 反而显示一个必然 401 的官方模型。
+      const cfgMeta = sessionId ? await getSessionMeta(sessionId) : null;
+      const sel = await resolveSelection({ instanceId: cfgMeta?.instanceId, model: cfgMeta?.model });
+      if (!sel) {
         setHasConfig(false);
         setSupportsVision(false);
         setMaxContextTokens(undefined);
         return;
       }
       setHasConfig(true);
-      // Vision support is per-(instance, model), resolved from the current
-      // selection (session pin → last_model_selection → first instance).
-      const cfgMeta = sessionId ? await getSessionMeta(sessionId) : null;
-      const sel = await resolveSelection({ instanceId: cfgMeta?.instanceId, model: cfgMeta?.model });
-      if (sel) {
-        const inst = await getInstance(sel.instanceId);
-        if (inst) {
-          // managed：vision/上下文按所选模型取自缓存 entitlement（registry 只有兜底单条）。
-          if (inst.provider === "managed") {
-            const mm = cachedManagedModel(inst.apiKey, sel.model);
-            setSupportsVision(mm?.vision ?? false);
-            setMaxContextTokens(mm?.maxContextTokens);
-            return;
-          }
-          // Vision lookup consults registry first, then instance.fetchedModels
-          // (OpenRouter lazy catalog). Fail-closed for unknown ids — the disabled
-          // attach button is a visible UX cue (a different policy from the loop's
-          // screenshot guard, which fail-opens).
-          setSupportsVision(await resolveSupportsVision(inst.provider, sel.model, inst.fetchedModels));
-          const mm = await resolveModelMeta(inst.provider, sel.model);
+      const inst = await getInstance(sel.instanceId);
+      if (inst) {
+        // managed：vision/上下文按所选模型取自缓存 entitlement（registry 只有兜底单条）。
+        if (inst.provider === "managed") {
+          const mm = cachedManagedModel(inst.apiKey, sel.model);
+          setSupportsVision(mm?.vision ?? false);
           setMaxContextTokens(mm?.maxContextTokens);
           return;
         }
+        // Vision lookup consults registry first, then instance.fetchedModels
+        // (OpenRouter lazy catalog). Fail-closed for unknown ids — the disabled
+        // attach button is a visible UX cue (a different policy from the loop's
+        // screenshot guard, which fail-opens).
+        setSupportsVision(await resolveSupportsVision(inst.provider, sel.model, inst.fetchedModels));
+        const mm = await resolveModelMeta(inst.provider, sel.model);
+        setMaxContextTokens(mm?.maxContextTokens);
+        return;
       }
       setSupportsVision(false);
       setMaxContextTokens(undefined);
@@ -829,6 +846,13 @@ export default function Chat({
               </div>
             );
           }
+          if (msg.role === "browser-change") {
+            return (
+              <div key={`bchange-${msg.recordId}`} className="bubble-in">
+                <BrowserChangeRow recordId={msg.recordId} />
+              </div>
+            );
+          }
           if (msg.role === "file-output") {
             // Key by artifactId (not the numeric index) so React never
             // reuses a card instance across sessions/artifacts — index keys
@@ -846,6 +870,20 @@ export default function Chat({
                   onDownload={downloadOutput}
                   onProbe={artifactExists}
                 />
+              </div>
+            );
+          }
+          if (msg.role === "memory-used") {
+            return (
+              <div key={`mem-used-${firstIndex}`} className="bubble-in">
+                <MemoryUsedChip items={msg.items} />
+              </div>
+            );
+          }
+          if (msg.role === "memory-event") {
+            return (
+              <div key={`mem-evt-${msg.eventId}`} className="bubble-in">
+                <MemoryEventRow msg={msg} />
               </div>
             );
           }
@@ -955,11 +993,11 @@ After the skill completes, briefly summarize what was created (the user will see
       for (const q of quotes) {
         if (q.kind === "text") {
           quoteParts.push(
-            `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${q.text}\n</untrusted_page_quote>`,
+            `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${escapeUntrustedWrappers(q.text)}\n</untrusted_page_quote>`,
           );
         } else {
           quoteParts.push(
-            `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${JSON.stringify(q.textContent)}\nouter_html: ${JSON.stringify(q.outerHTMLTruncated)}\n</untrusted_page_element>`,
+            `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${escapeUntrustedWrappers(JSON.stringify(q.textContent))}\nouter_html: ${escapeUntrustedWrappers(JSON.stringify(q.outerHTMLTruncated))}\n</untrusted_page_element>`,
           );
           if (q.imageDataUrl) {
             const [meta, b64] = q.imageDataUrl.split(",");
@@ -1042,11 +1080,11 @@ After the skill completes, briefly summarize what was created (the user will see
         for (const q of quotes) {
           if (q.kind === "text") {
             quoteParts.push(
-              `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${q.text}\n</untrusted_page_quote>`,
+              `<untrusted_page_quote source_url="${escapeWrapperAttribute(q.sourceUrl)}">\n${escapeUntrustedWrappers(q.text)}\n</untrusted_page_quote>`,
             );
           } else {
             quoteParts.push(
-              `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${JSON.stringify(q.textContent)}\nouter_html: ${JSON.stringify(q.outerHTMLTruncated)}\n</untrusted_page_element>`,
+              `<untrusted_page_element source_url="${escapeWrapperAttribute(q.sourceUrl)}" role="${escapeWrapperAttribute(q.role)}" name="${escapeWrapperAttribute(q.accessibleName)}">\ntext_content: ${escapeUntrustedWrappers(JSON.stringify(q.textContent))}\nouter_html: ${escapeUntrustedWrappers(JSON.stringify(q.outerHTMLTruncated))}\n</untrusted_page_element>`,
             );
             if (q.imageDataUrl) {
               const [meta, b64] = q.imageDataUrl.split(",");
@@ -1178,6 +1216,15 @@ After the skill completes, briefly summarize what was created (the user will see
           >
             {t("chat.openSettings")}
           </button>
+          {onOpenAccountSettings && (
+            <button
+              data-testid="chat-open-account"
+              onClick={onOpenAccountSettings}
+              className="text-[12px] text-accent hover:underline"
+            >
+              {t("chat.openAccount")}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1198,6 +1245,41 @@ After the skill completes, briefly summarize what was created (the user will see
       {/* Pinned-tab display moved to the contextual TopBar sub-row
           (usePinDisplay + PinnedTabDropdown). Chat no longer renders a pin
           bar of its own — single-top-bar invariant. */}
+
+      {showFirstMemoryNotice && (
+        <div
+          data-testid="memory-first-notice"
+          className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-4 py-2 text-[12px]"
+        >
+          <span className="min-w-0 flex-1 text-fg-2">{t("chat.memory.firstNotice")}</span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              data-testid="memory-first-notice-manage"
+              onClick={() => {
+                setShowFirstMemoryNotice(false);
+                void dismissFirstConsolidationNotice();
+                onOpenMemorySettings?.();
+              }}
+              className="font-medium text-accent hover:underline"
+            >
+              {t("chat.memory.manage")}
+            </button>
+            <button
+              type="button"
+              data-testid="memory-first-notice-dismiss"
+              onClick={() => {
+                setShowFirstMemoryNotice(false);
+                void dismissFirstConsolidationNotice();
+              }}
+              aria-label={t("common.close")}
+              className="text-fg-3 hover:text-fg-1"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* M1-U5 — paused-task affordance. Sticky bar appears whenever
           the SW has marked this session paused (cold-start detected an
@@ -1538,7 +1620,7 @@ After the skill completes, briefly summarize what was created (the user will see
           setCurrentInstanceId(id);
           setCurrentModel(model);
           if (sessionId) await persistSelection(sessionId, id, model);
-          void setLastModelSelection({ instanceId: id, model });
+          await setLastModelSelection({ instanceId: id, model });
         }}
         onManageInstances={onOpenSettings}
         onRefreshModels={async (id) => {

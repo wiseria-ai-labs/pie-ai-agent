@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   TOOL_CLASSES,
   TOOL_GROUPS,
+  TOOL_SURFACES,
   getToolClass,
+  getToolSurface,
   KNOWN_BUILT_IN_TOOL_NAMES,
+  KNOWN_EDITOR_TOOL_NAMES,
   KNOWN_KEYBOARD_TOOL_NAMES,
+  LOCAL_BRIDGE_TOOL_NAMES,
   PAGE_ATLAS_TOOL_NAMES,
   PAGE_SNAPSHOT_TOOL_NAMES,
   TAB_TOOL_NAMES,
@@ -126,5 +130,68 @@ describe("Phase 5 screenshot tools — names + classes", () => {
     expect(getToolClass("capture_visible_tab")).toBe("read");
     expect(getToolClass("capture_fullpage_tab")).toBe("read");
     expect(getToolClass("capture_video_frame")).toBe("read");
+  });
+});
+
+describe("surface classification — does the tool touch the page DOM?", () => {
+  it("classifies every registered tool (new tool without a class throws at load)", () => {
+    for (const name of [
+      ...KNOWN_BUILT_IN_TOOL_NAMES,
+      ...KNOWN_KEYBOARD_TOOL_NAMES,
+      ...KNOWN_EDITOR_TOOL_NAMES,
+      ...LOCAL_BRIDGE_TOOL_NAMES,
+    ]) {
+      expect(TOOL_SURFACES[name], name).toBeDefined();
+    }
+  });
+
+  it("only input/scroll tools count as page operations", () => {
+    for (const name of [
+      "click",
+      "hover",
+      "type",
+      "select",
+      "scroll",
+      "press_key",
+      "dispatch_keyboard_input",
+      "set_editor_value",
+    ]) {
+      expect(getToolSurface(name), name).toBe("page");
+    }
+    for (const name of ["read_page", "extract_records", "open_url", "activate_tab"]) {
+      expect(getToolSurface(name), name).not.toBe("page");
+    }
+  });
+
+  it("screenshots are their own class", () => {
+    for (const name of ["capture_visible_tab", "capture_fullpage_tab", "capture_video_frame"]) {
+      expect(getToolSurface(name)).toBe("screenshot");
+    }
+  });
+
+  it("bookmark/history/memory/monitor/PDF tools never move the overlay (the bug)", () => {
+    for (const name of [
+      "create_bookmark",
+      "update_bookmark",
+      "propose_bookmark_plan",
+      "search_bookmarks",
+      "search_history",
+      "remember",
+      "forget",
+      "propose_monitor",
+      "update_monitor",
+      "read_pdf",
+      "list_tabs",
+      "run_skill_script",
+    ]) {
+      expect(getToolSurface(name), name).toBe("none");
+    }
+    // …and the write class alone must not imply a page surface.
+    expect(getToolClass("create_bookmark")).toBe("write");
+    expect(getToolSurface("create_bookmark")).toBe("none");
+  });
+
+  it("unknown tools are inert for the overlay", () => {
+    expect(getToolSurface("some_future_tool")).toBe("none");
   });
 });

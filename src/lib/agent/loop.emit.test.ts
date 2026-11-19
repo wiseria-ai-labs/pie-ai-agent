@@ -54,6 +54,7 @@ vi.mock("./tools", () => ({
 }));
 vi.mock("./tool-names", () => ({
   getToolClass: vi.fn(() => "read"),
+  getToolSurface: vi.fn(() => "none"),
   SCREENSHOT_TOOL_NAMES: [],
   SCREENSHOT_TOOL_NAME_SET: new Set<string>(),
   // Task 7 — disclosure selectTools() resolves each tool's group via

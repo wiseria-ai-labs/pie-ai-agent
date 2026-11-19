@@ -8,6 +8,11 @@ import { RunLocalAgentCard } from "../RunLocalAgentCard";
 import { HandoffCard } from "../HandoffCard";
 import { LocalFileRequestCard } from "../LocalFileRequestCard";
 import { CdpOnboardingCard } from "../CdpOnboardingCard";
+import { BrowserPermissionCard } from "./BrowserPermissionCard";
+import { BookmarkPlanCard } from "./BookmarkPlanCard";
+import { HistoryDeletionCard } from "./HistoryDeletionCard";
+import { MemoryUnlockCard } from "./MemoryUnlockCard";
+import { MonitorDraftCard } from "../MonitorDraftCard";
 
 export interface HitlInlineCardsProps {
   request: ActivePanelRequest | null;
@@ -34,6 +39,13 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
             respond(request.requestId, { ok: true, data: { instanceId, model } })
           }
           onCancel={() => respond(request.requestId, { ok: false, reason: "cancelled by user" })}
+        />
+      )}
+      {request?.kind === "monitor-draft" && (
+        <MonitorDraftCard
+          key={request.requestId}
+          payload={request.payload as import("@/lib/agent/tools/monitor-meta").MonitorDraftPayload}
+          onSubmit={(res) => respond(request.requestId, { ok: true, data: res })}
         />
       )}
       {request?.kind === "skill-run-confirm" && (
@@ -92,6 +104,34 @@ export function HitlInlineCards({ request, respond, instances, onChooseLocalFile
         <CdpOnboardingCard
           key={request.requestId}
           onAnswer={(enabled) => respond(request.requestId, { ok: true, data: enabled })}
+        />
+      )}
+      {request?.kind === "browser-permission" && (
+        <BrowserPermissionCard
+          key={request.requestId}
+          domain={(request.payload as { domain: "bookmarks" | "history" }).domain}
+          onAnswer={(granted) => respond(request.requestId, { ok: true, data: granted })}
+        />
+      )}
+      {request?.kind === "bookmark-plan" && (
+        <BookmarkPlanCard
+          key={request.requestId}
+          payload={request.payload as import("@/lib/browser-data/types").BookmarkPlanRequest}
+          onDecision={(apply) => respond(request.requestId, { ok: true, data: apply })}
+        />
+      )}
+      {request?.kind === "memory-unlock" && (
+        <MemoryUnlockCard
+          key={request.requestId}
+          payload={request.payload}
+          onDecision={(allowed) => respond(request.requestId, { ok: true, data: allowed })}
+        />
+      )}
+      {request?.kind === "history-deletion" && (
+        <HistoryDeletionCard
+          key={request.requestId}
+          payload={request.payload as import("@/lib/browser-data/types").HistoryDeletionRequest}
+          onDecision={(confirmed) => respond(request.requestId, { ok: true, data: confirmed })}
         />
       )}
     </AnimatePresence>

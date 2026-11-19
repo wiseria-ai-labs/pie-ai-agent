@@ -1,5 +1,6 @@
 import type { ActionResult } from "../dom-actions/types";
 import type { ScheduleDraftPayload, ScheduleModelSelection } from "./tools/schedule-meta";
+import type { MonitorDraftPayload, MonitorDraftResponse } from "./tools/monitor-meta";
 
 /**
  * Phase 3 — confirm-time TabTarget snapshot injected into the handler context
@@ -93,6 +94,12 @@ export interface ToolHandlerContext {
    * create_schedule 已被 disabledScheduleTools 摘除，不会走到这里。
    */
   requestModelSelection?: (payload: ScheduleDraftPayload) => Promise<ScheduleModelSelection>;
+  /**
+   * Pie 2.0 §4.2 — 挂起式监控卡（F9）。chat 路径由 loop 注入：弹卡片并阻塞至用户
+   * 决定「开始监控」/取消。headless 路径不注入——propose_monitor 已被
+   * HEADLESS_EXCLUDE_TOOL_NAMES 摘除，且没有 panel 可以应答。
+   */
+  requestMonitorDraft?: (payload: MonitorDraftPayload) => Promise<MonitorDraftResponse>;
   /**
    * #254 — the running task's abort signal, threaded from the loop's internal
    * controller. Long-running tools (wait) honor it so a user abort resolves

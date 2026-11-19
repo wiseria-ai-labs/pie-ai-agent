@@ -1,0 +1,1147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pie 2.0 · UI 设计（终态）</title>
+<link rel="icon" href="data:,">
+<style>
+/* ============================================================
+   Tokens —— 与 src/sidepanel/index.css 逐值一致
+   ============================================================ */
+:root{
+  color-scheme:light;
+  --c-canvas:#FAFBFC; --c-surface:#FFFFFF; --c-field:#F4F6F8; --c-line:#E4E8EC;
+  --c-fg-1:#14181D; --c-fg-2:#5A6470; --c-fg-3:#98A1AC; --c-fg-4:#B8BFC8;
+  --c-accent:#4A5C6E; --c-accent-strong:#33414E; --c-accent-tint:rgba(74,92,110,.08); --c-accent-line:rgba(74,92,110,.3);
+  --c-warning:#B85A4D; --c-warning-tint:rgba(184,90,77,.08); --c-warning-line:rgba(184,90,77,.4);
+  --c-pending:#8A6D2E; --c-success:#3E8E63; --c-success-tint:rgba(62,142,99,.10);
+  --c-surface-deep:#F0F2F4; --c-bubble:#E4EAF0; --c-dot-grid:rgba(20,24,29,.04);
+  --board:#EEF1F4; --shadow-frame:0 1px 2px rgba(20,24,29,.04),0 12px 32px rgba(20,24,29,.07);
+  --shadow-pop:0 8px 24px rgba(0,0,0,.12); --shadow-overlay:0 16px 48px rgba(20,24,29,.18);
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+html[data-theme=dark]{
+  color-scheme:dark;
+  --c-canvas:#0B0D10; --c-surface:#14171C; --c-field:#1A1E25; --c-line:#22272F;
+  --c-fg-1:#E5E8EC; --c-fg-2:#8A929E; --c-fg-3:#525965; --c-fg-4:#3A4049;
+  --c-accent:#B8C8D6; --c-accent-strong:#B8C8D6; --c-accent-tint:rgba(184,200,214,.08); --c-accent-line:rgba(184,200,214,.3);
+  --c-warning:#C26B5E; --c-warning-tint:rgba(194,107,94,.08); --c-warning-line:rgba(194,107,94,.45);
+  --c-pending:#B89968; --c-success:#5FA37D; --c-success-tint:rgba(95,163,125,.14);
+  --c-surface-deep:#0E1216; --c-bubble:#2A333D; --c-dot-grid:rgba(232,236,242,.05);
+  --board:#07090B; --shadow-frame:0 1px 2px rgba(0,0,0,.4),0 12px 32px rgba(0,0,0,.45);
+  --shadow-pop:0 8px 24px rgba(0,0,0,.45); --shadow-overlay:0 16px 48px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);color:var(--c-fg-1);background:var(--board);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+.i{width:16px;height:16px;flex:none}
+.i.s13{width:13px;height:13px}.i.s14{width:14px;height:14px}.i.s17{width:17px;height:17px}.i.s12{width:12px;height:12px}
+.mono{font-family:var(--mono)}
+.caps{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase}
+
+/* ============================================================
+   设计稿外壳
+   ============================================================ */
+.top{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;height:54px;padding:0 24px;
+  background:color-mix(in srgb,var(--board) 86%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--c-line)}
+.brand{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600}
+.mark{width:18px;height:18px;border-radius:50%;flex:none;background:conic-gradient(from 205deg,var(--c-accent) 0 76%,var(--c-accent-strong) 76% 100%);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c-fg-1) 10%,transparent)}
+.tagv{font:10px var(--mono);color:var(--c-fg-2);border:1px solid var(--c-line);border-radius:999px;padding:2px 8px}
+.top nav{display:flex;gap:2px;margin-left:18px;overflow-x:auto}
+.top nav a{font-size:12px;color:var(--c-fg-2);text-decoration:none;padding:5px 10px;border-radius:7px;white-space:nowrap}
+.top nav a:hover{background:var(--c-field);color:var(--c-fg-1)}
+.top .grow{flex:1}
+.tbtn{height:28px;padding:0 11px;border:1px solid var(--c-line);border-radius:8px;background:var(--c-surface);font-size:12px;color:var(--c-fg-1)}
+.wrap{max-width:1620px;margin:0 auto;padding:34px 32px 100px}
+.sec{margin-top:64px;scroll-margin-top:80px}
+.sec:first-child{margin-top:0}
+.sec-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px);gap:40px;align-items:end;margin-bottom:24px;padding-bottom:18px;border-bottom:1px solid var(--c-line)}
+.kick{font:10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--c-fg-3);margin:0 0 8px}
+.sec h2{margin:0;font-size:22px;font-weight:600;letter-spacing:-.015em}
+.sec .lede{margin:10px 0 0;max-width:760px;font-size:13px;line-height:1.75;color:var(--c-fg-2)}
+.sec .lede b{color:var(--c-fg-1);font-weight:500}
+.principles{margin:0;padding:0;list-style:none;display:grid;gap:7px}
+.principles li{font-size:12px;line-height:1.6;color:var(--c-fg-2);padding-left:14px;position:relative}
+.principles li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;border-radius:50%;background:var(--c-accent-line)}
+.principles b{color:var(--c-fg-1);font-weight:500}
+.row{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+.frame{display:flex;flex-direction:column;gap:12px;flex:none}
+.fcap{display:flex;align-items:baseline;gap:8px;font-size:12.5px;font-weight:600}
+.fcap .n{font:10.5px var(--mono);color:var(--c-fg-3);font-weight:500}
+.fnotes{margin:0;padding:0;list-style:none;display:grid;gap:5px;width:360px}
+.frame.wide .fnotes{width:760px}
+.fnotes li{font-size:11.5px;line-height:1.6;color:var(--c-fg-2);padding-left:12px;position:relative}
+.fnotes li::before{content:"·";position:absolute;left:2px;color:var(--c-fg-3)}
+.fnotes b{color:var(--c-fg-1);font-weight:500}
+
+/* ============================================================
+   侧栏框（360 × 720）
+   ============================================================ */
+.sp{position:relative;width:360px;height:720px;display:flex;flex-direction:column;overflow:hidden;background:var(--c-canvas);
+  border:1px solid var(--c-line);border-radius:16px;box-shadow:var(--shadow-frame)}
+.tb{flex:none;display:flex;flex-direction:column;padding:8px 10px;border-bottom:1px solid var(--c-line);background:var(--c-canvas)}
+.tb-row{display:flex;align-items:center;gap:6px}
+.ib{position:relative;width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:6px;background:transparent;color:var(--c-fg-2)}
+.ib:hover,.ib.on{background:var(--c-field);color:var(--c-fg-1)}
+.ib .dot{position:absolute;right:5px;top:5px;width:6px;height:6px;border-radius:50%;background:var(--c-pending)}
+.tb-title{flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-title.chat{font-weight:500}
+.body{flex:1;min-height:0;overflow:hidden;padding:14px 14px 10px;display:flex;flex-direction:column;gap:14px}
+.body.scroll{overflow-y:auto;scrollbar-width:none}
+.sp.long{height:auto}
+.sp.long .body{overflow:visible}
+.glabel{padding:0 4px 6px;font:500 10px var(--mono);letter-spacing:.14em;color:var(--c-fg-3)}
+.group{overflow:hidden;border:1px solid var(--c-line);border-radius:14px;background:var(--c-surface)}
+.nrow{display:flex;align-items:center;gap:12px;min-height:46px;padding:8px 14px;border-top:1px solid var(--c-line)}
+.nrow:first-child{border-top:0}
+.nrow .ic{color:var(--c-fg-2);display:flex}
+.nrow .lb{flex:1;min-width:0;font-size:13px;font-weight:500}
+.nrow .lb small{display:block;margin-top:2px;font-size:11.5px;font-weight:400;line-height:1.5;color:var(--c-fg-3)}
+.nrow .bd{font-size:12px;color:var(--c-fg-3);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.nrow .chev{color:var(--c-fg-3);display:flex}
+.nrow.new{background:linear-gradient(90deg,var(--c-accent-tint),transparent 70%)}
+.newtag{font:500 9.5px var(--mono);letter-spacing:.1em;color:var(--c-accent);border:1px solid var(--c-accent-line);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:1px}
+.gdot{width:6px;height:6px;border-radius:50%;background:var(--c-success);flex:none}
+.wdot{width:6px;height:6px;border-radius:50%;background:var(--c-warning);flex:none}
+.pdot{width:6px;height:6px;border-radius:50%;background:var(--c-pending);flex:none}
+.sw{width:30px;height:18px;border-radius:999px;background:var(--c-fg-4);position:relative;flex:none}
+.sw::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.sw.on{background:var(--c-accent-strong)}
+.sw.on::after{left:14px}
+html[data-theme=dark] .sw.on::after{background:#0B0D10}
+.segc{display:flex;gap:2px;padding:2px;border:1px solid var(--c-line);border-radius:8px;background:var(--c-field)}
+.segc span{padding:2px 9px;border-radius:6px;font-size:11px;color:var(--c-fg-2);white-space:nowrap}
+.segc span.on{background:var(--c-canvas);color:var(--c-fg-1);font-weight:500}
+.kbdk{display:inline-flex;align-items:center;height:20px;padding:0 6px;border:1px solid var(--c-line);border-bottom-width:2px;border-radius:5px;background:var(--c-surface);font-size:11px;color:var(--c-fg-2)}
+
+/* 对话 */
+.msg-u{align-self:flex-end;max-width:76%;padding:9px 13px;border-radius:16px 16px 5px 16px;background:var(--c-bubble);font-size:13px;line-height:20px}
+.msg-a{font-size:13px;line-height:20px;color:var(--c-fg-1)}
+.msg-a p{margin:0 0 6px}
+.msg-a p:last-child{margin:0}
+.steps{display:flex;flex-direction:column;gap:4px}
+.step{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--c-fg-2)}
+.step .ck{color:var(--c-success);display:flex}
+.step .mute{color:var(--c-fg-3)}
+.evt{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--c-fg-3);white-space:nowrap}
+.evt::before,.evt::after{content:"";flex:1;height:1px;background:var(--c-line)}
+.evt .ok{color:var(--c-success);display:flex}
+.evt a{color:var(--c-fg-2);text-decoration:underline;text-underline-offset:2px}
+.composer{flex:none;padding:10px 12px 12px;position:relative}
+.composer::before{content:"";position:absolute;left:0;right:0;top:-18px;height:18px;background:linear-gradient(to top,var(--c-canvas),transparent)}
+.cbox{display:flex;flex-direction:column;gap:8px;border:1px solid var(--c-line);border-radius:14px;background:var(--c-field);padding:11px 13px 9px}
+.cbox .ph{min-height:38px;font-size:13px;color:var(--c-fg-3)}
+.cbar{display:flex;align-items:center;gap:8px}
+.mp{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border:1px solid var(--c-line);border-radius:7px;background:var(--c-surface);font-size:11.5px;color:var(--c-fg-2)}
+.sendb{margin-left:auto;width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:var(--c-accent-strong);color:#fff}
+html[data-theme=dark] .sendb{color:#0B0D10}
+
+/* HITL 卡 */
+.card{display:flex;flex-direction:column;gap:12px;padding:14px;border:1px solid var(--c-line);border-radius:10px;background:var(--c-surface)}
+.card-h{display:flex;align-items:center;gap:8px;color:var(--c-accent)}
+.card.warn .card-h{color:var(--c-warning)}
+.card-t{font-size:15px;font-weight:600;line-height:22px;letter-spacing:-.005em}
+.card-d{font-size:12px;line-height:18px;color:var(--c-fg-2);margin-top:3px}
+.detail{display:flex;flex-direction:column;gap:10px;padding:10px 12px;border:1px solid var(--c-line);border-radius:8px;background:var(--c-surface-deep)}
+.dg{display:flex;flex-direction:column;gap:4px}
+.dg .caps{color:var(--c-fg-3)}
+.dv{display:flex;align-items:center;gap:7px;font-size:12.5px;line-height:18px}
+.dv .m{color:var(--c-fg-2)}
+.pill{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border:1px solid var(--c-line);border-radius:6px;background:var(--c-surface);font-size:12px}
+.acts{display:flex;justify-content:flex-end;gap:8px;padding-top:2px}
+.b2{height:34px;padding:0 15px;border:1px solid var(--c-line);border-radius:8px;background:transparent;font-size:13px;font-weight:500;color:var(--c-fg-2)}
+.b1{height:34px;padding:0 15px;border:1px solid var(--c-accent-line);border-radius:8px;background:var(--c-accent-strong);font-size:13px;font-weight:600;color:var(--c-surface)}
+.b1.warn{background:var(--c-warning);border-color:var(--c-warning-line)}
+.bsm{height:26px;padding:0 10px;border:1px solid var(--c-line);border-radius:7px;background:var(--c-surface);font-size:12px;color:var(--c-fg-1)}
+.bsm.ghost{border-color:transparent;background:transparent;color:var(--c-fg-2)}
+.note-warn{display:flex;gap:8px;padding:8px 10px;border:1px solid var(--c-warning-line);border-radius:6px;background:var(--c-warning-tint);font-size:11.5px;line-height:17px;color:var(--c-warning)}
+.note-soft{display:flex;gap:8px;font-size:11.5px;line-height:17px;color:var(--c-fg-2)}
+
+/* 列表结果 */
+.res{display:flex;flex-direction:column;border:1px solid var(--c-line);border-radius:10px;background:var(--c-surface);overflow:hidden}
+.res-r{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--c-line)}
+.res-r:first-child{border-top:0}
+.fav{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;flex:none;font-size:10px;font-weight:600;color:var(--c-accent);background:var(--c-accent-tint);border:1px solid var(--c-accent-line)}
+.res-r .tx{flex:1;min-width:0}
+.res-r .t1{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.res-r .t2{margin-top:1px;font-size:11px;color:var(--c-fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.res-r .go{color:var(--c-fg-3);display:flex}
+.res-r.hi{background:color-mix(in srgb,var(--c-accent-tint) 70%,transparent)}
+
+/* 树 diff */
+.tree{display:flex;flex-direction:column;gap:2px;font-size:12px}
+.tr{display:flex;align-items:center;gap:7px;height:24px;padding:0 6px;border-radius:5px}
+.tr .c{margin-left:auto;font:11px var(--mono);color:var(--c-fg-3)}
+.tr.add{color:var(--c-success)}
+.tr.add .c{color:var(--c-success)}
+.tr.mv{color:var(--c-fg-2);padding-left:24px}
+.tr.hold{color:var(--c-pending)}
+.chipsum{display:flex;flex-wrap:wrap;gap:6px}
+.cs{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:6px;background:var(--c-field);font-size:11.5px;color:var(--c-fg-2)}
+.cs b{color:var(--c-fg-1);font-weight:600}
+
+/* 记忆 chip */
+.mem-chip{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border:1px solid var(--c-line);border-radius:999px;background:var(--c-surface);font-size:11.5px;color:var(--c-fg-2)}
+.mem-chip.open{border-color:var(--c-accent-line);color:var(--c-fg-1)}
+.mem-pop{display:flex;flex-direction:column;border:1px solid var(--c-line);border-radius:10px;background:var(--c-surface);box-shadow:var(--shadow-pop);overflow:hidden;margin-top:-6px}
+.mem-pop .hd{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:1px solid var(--c-line);font-size:11.5px;color:var(--c-fg-3)}
+.mi{display:flex;gap:10px;padding:9px 12px;border-top:1px solid var(--c-line)}
+.mi:first-of-type{border-top:0}
+.mi .k{flex:none;width:52px;font-size:11px;color:var(--c-fg-3);padding-top:1px}
+.mi .v{flex:1;min-width:0;font-size:12.5px;line-height:18px}
+.mi .e{flex:none;font-size:11px;color:var(--c-fg-3);text-decoration:underline;text-underline-offset:2px;padding-top:1px}
+
+/* 记忆设置 */
+.hero{display:flex;flex-direction:column;gap:12px;padding:14px;border:1px solid var(--c-line);border-radius:14px;background:var(--c-surface)}
+.hero-t{display:flex;align-items:center;gap:10px}
+.hero-t .t{flex:1;font-size:13.5px;font-weight:600}
+.hero p{margin:0;font-size:12px;line-height:18px;color:var(--c-fg-2)}
+.meter{display:flex;flex-direction:column;gap:6px}
+.meter-l{display:flex;justify-content:space-between;font-size:11.5px;color:var(--c-fg-2)}
+.meter-l b{font-family:var(--mono);font-weight:500;color:var(--c-fg-1)}
+.bar{height:6px;border-radius:999px;background:var(--c-field);overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.bar .a{background:var(--c-accent)}
+.bar .b{background:color-mix(in srgb,var(--c-accent) 45%,transparent)}
+.legend{display:flex;gap:12px;font-size:11px;color:var(--c-fg-3)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.last{display:flex;align-items:center;gap:8px;padding-top:10px;border-top:1px solid var(--c-line);font-size:11.5px;color:var(--c-fg-2)}
+.last .mono{font-size:11px;color:var(--c-fg-3)}
+.ent{display:flex;flex-direction:column;gap:5px;padding:11px 14px;border-top:1px solid var(--c-line)}
+.ent:first-child{border-top:0}
+.ent .v{font-size:13px;line-height:19px}
+.ent .m{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--c-fg-3)}
+.ent .tag{font:500 9.5px var(--mono);letter-spacing:.08em;padding:0 5px;border-radius:4px;border:1px solid var(--c-line);color:var(--c-fg-2)}
+.ent .tag.near{color:var(--c-pending);border-color:color-mix(in srgb,var(--c-pending) 45%,transparent)}
+.ent.edit{background:var(--c-surface-deep)}
+.ta{min-height:58px;padding:8px 10px;border:1px solid var(--c-accent);border-radius:10px;background:var(--c-surface);font-size:13px;line-height:19px}
+.search{display:flex;align-items:center;gap:8px;height:32px;padding:0 11px;border:1px solid var(--c-line);border-radius:10px;background:var(--c-surface);font-size:12.5px;color:var(--c-fg-3)}
+
+/* 自动化 */
+.vseg{display:flex;gap:2px;padding:2px;border:1px solid var(--c-line);border-radius:10px;background:var(--c-field)}
+.vseg span{flex:1;text-align:center;padding:5px 0;border-radius:8px;font-size:12px;color:var(--c-fg-2);font-weight:500}
+.vseg span.on{background:var(--c-surface);color:var(--c-fg-1);box-shadow:0 1px 2px rgba(20,24,29,.08)}
+.vseg span em{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--c-fg-3);margin-left:4px}
+.feed{display:flex;flex-direction:column;gap:2px}
+.fday{padding:10px 4px 6px;font:500 10px var(--mono);letter-spacing:.14em;color:var(--c-fg-3)}
+.fi{display:flex;gap:11px;padding:11px 12px;border-radius:10px}
+.fi.unread{background:var(--c-surface);border:1px solid var(--c-line)}
+.fi .ico{width:28px;height:28px;flex:none;display:grid;place-items:center;border-radius:8px;background:var(--c-field);color:var(--c-fg-2)}
+.fi .ico.ok{background:var(--c-success-tint);color:var(--c-success)}
+.fi .ico.bad{background:var(--c-warning-tint);color:var(--c-warning)}
+.fi .tx{flex:1;min-width:0}
+.fi .t1{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;line-height:18px}
+.fi .t1 .pdot{margin-left:auto}
+.fi .t2{margin-top:2px;font-size:11.5px;line-height:17px;color:var(--c-fg-2)}
+.fi .t3{margin-top:7px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--c-fg-3)}
+.strike{text-decoration:line-through;color:var(--c-fg-3)}
+.mrow{display:flex;gap:11px;align-items:center;padding:12px 14px;border-top:1px solid var(--c-line)}
+.mrow:first-child{border-top:0}
+.mrow .tx{flex:1;min-width:0}
+.mrow .t1{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .t2{margin-top:2px;font-size:11px;color:var(--c-fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .val{text-align:right;flex:none}
+.mrow .v1{font:500 12.5px var(--mono)}
+.mrow .v2{margin-top:2px;font-size:10.5px;color:var(--c-fg-3);display:flex;align-items:center;justify-content:flex-end;gap:5px}
+.v1.ok{color:var(--c-success)}
+.hintline{display:flex;gap:8px;padding:10px 12px;border:1px dashed var(--c-line);border-radius:10px;font-size:11.5px;line-height:17px;color:var(--c-fg-2)}
+.chart{border:1px solid var(--c-line);border-radius:10px;background:var(--c-surface);padding:10px 12px 8px}
+.chart-h{display:flex;justify-content:space-between;align-items:baseline}
+.chart-h b{font:600 18px var(--mono);letter-spacing:-.02em;color:var(--c-success)}
+.chart-h span{font-size:11px;color:var(--c-fg-3)}
+.chart svg{display:block;width:100%;height:88px;margin-top:6px}
+.chart .ax{display:flex;justify-content:space-between;font:10px var(--mono);color:var(--c-fg-3)}
+.log{display:flex;flex-direction:column;border:1px solid var(--c-line);border-radius:10px;background:var(--c-surface)}
+.lg{display:grid;grid-template-columns:76px 1fr;gap:8px;padding:8px 12px;border-top:1px solid var(--c-line);font-size:12px}
+.lg:first-child{border-top:0}
+.lg .tm{font:11px var(--mono);color:var(--c-fg-3)}
+.lg .hit{color:var(--c-success);font-weight:500}
+
+/* ============================================================
+   网页框（760 × 480）
+   ============================================================ */
+.bw{width:760px;height:480px;position:relative;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--c-line);border-radius:14px;background:var(--c-surface);box-shadow:var(--shadow-frame)}
+.bw.tall{height:600px}
+.bw-ch{flex:none;background:var(--c-canvas);border-bottom:1px solid var(--c-line);padding-top:7px}
+.bw-tabs{display:flex;gap:5px;padding:0 10px}
+.bw-tab{display:flex;align-items:center;gap:8px;height:29px;max-width:240px;padding:0 11px;border:1px solid var(--c-line);border-bottom:0;border-radius:8px 8px 0 0;background:var(--c-surface);font-size:11.5px}
+.bw-tab .fv{width:11px;height:11px;border-radius:3px;background:var(--c-accent-tint);border:1px solid var(--c-accent-line)}
+.bw-bar{display:flex;align-items:center;gap:9px;padding:6px 11px 7px}
+.bw-url{flex:1;height:25px;display:flex;align-items:center;padding:0 12px;border-radius:999px;background:var(--c-field);font-size:11.5px;color:var(--c-fg-2)}
+.bw-ext{width:16px;height:16px;border-radius:4px;background:radial-gradient(circle at 32% 28%,var(--c-accent) 0 38%,var(--c-accent-strong) 100%)}
+.bw-vp{position:relative;flex:1;overflow:hidden}
+.scrim{position:absolute;inset:0;background:rgba(20,24,29,.08);z-index:2}
+html[data-theme=dark] .scrim{background:rgba(0,0,0,.28)}
+.ov{position:absolute;z-index:5;left:50%;transform:translateX(-50%);width:520px;display:flex;flex-direction:column;overflow:hidden;
+  border:1px solid var(--c-line);border-radius:16px;background:var(--c-surface);box-shadow:var(--shadow-overlay)}
+.ov-h{display:flex;align-items:center;gap:8px;height:42px;padding:0 8px 0 14px;border-bottom:1px solid var(--c-line)}
+.ov-h .mark{width:15px;height:15px}
+.ov-h .t{font-size:12.5px;font-weight:600}
+.ov-h .s{font-size:11px;color:var(--c-fg-3)}
+.ov-h .grow{flex:1}
+.ov-h .ib{width:26px;height:26px}
+.ov-th{display:flex;flex-direction:column;gap:12px;padding:14px 16px 12px}
+.ov-c{padding:10px 12px;border-top:1px solid var(--c-line)}
+.ov-in{display:flex;align-items:center;gap:8px;padding:7px 7px 7px 12px;border:1px solid var(--c-line);border-radius:11px;background:var(--c-field);font-size:13px;color:var(--c-fg-3)}
+.ov-in .sendb{width:26px;height:26px;border-radius:7px}
+.ov-ctx{display:flex;gap:6px;margin-top:8px}
+.ctxc{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border:1px solid var(--c-line);border-radius:999px;background:var(--c-surface);font-size:11.5px;color:var(--c-fg-2)}
+
+/* 商品页 */
+.shop{display:grid;grid-template-columns:260px 1fr;gap:26px;padding:22px 30px}
+.shop .img{height:220px;border-radius:12px;background:linear-gradient(135deg,var(--c-field),var(--c-surface-deep));border:1px solid var(--c-line);display:grid;place-items:center;color:var(--c-fg-4)}
+.shop h4{margin:0;font-size:16px;font-weight:600;line-height:1.4}
+.shop .sub{margin-top:6px;font-size:12px;color:var(--c-fg-3)}
+.price{position:relative;display:inline-flex;align-items:baseline;gap:8px;margin-top:16px;padding:4px 8px;border-radius:8px}
+.price b{font:600 26px var(--mono);letter-spacing:-.02em;color:var(--c-warning)}
+.price s{font-size:12px;color:var(--c-fg-3)}
+.price.watch{outline:2px dashed var(--c-accent);outline-offset:3px;background:var(--c-accent-tint)}
+.price.watch::after{content:"Pie 会盯住这里";position:absolute;left:calc(100% + 12px);top:50%;transform:translateY(-50%);height:20px;padding:0 8px;display:flex;align-items:center;border-radius:5px;background:var(--c-accent-strong);color:var(--c-surface);font-size:10.5px;white-space:nowrap}
+.shop .opts{display:flex;gap:8px;margin-top:16px}
+.shop .opt{height:30px;padding:0 12px;display:flex;align-items:center;border:1px solid var(--c-line);border-radius:7px;font-size:12px;color:var(--c-fg-2)}
+.shop .buy{display:flex;gap:10px;margin-top:18px}
+.shop .buy span{height:36px;padding:0 20px;display:flex;align-items:center;border-radius:8px;font-size:13px;font-weight:500}
+.shop .buy .p{background:var(--c-warning);color:#fff}
+.shop .buy .s{border:1px solid var(--c-warning-line);color:var(--c-warning)}
+
+/* 系统通知 */
+.desk{width:760px;height:300px;position:relative;overflow:hidden;border-radius:14px;border:1px solid var(--c-line);
+  background:radial-gradient(120% 140% at 10% 0%,#5B6D80 0%,#2E3A47 55%,#1B232C 100%);box-shadow:var(--shadow-frame)}
+.menubar{height:24px;display:flex;align-items:center;gap:14px;padding:0 14px;background:rgba(255,255,255,.14);backdrop-filter:blur(20px);font-size:11.5px;color:rgba(255,255,255,.9)}
+.menubar .grow{flex:1}
+.ntf{position:absolute;right:14px;top:36px;width:344px;padding:11px 12px;border-radius:16px;background:rgba(246,246,248,.86);backdrop-filter:blur(30px);box-shadow:0 10px 30px rgba(0,0,0,.3);color:#1d1d1f}
+html[data-theme=dark] .ntf{background:rgba(40,42,46,.82);color:#f2f2f4}
+.ntf-h{display:flex;align-items:center;gap:8px;font-size:11px;color:rgba(60,60,67,.7)}
+html[data-theme=dark] .ntf-h{color:rgba(235,235,245,.6)}
+.ntf-ic{width:20px;height:20px;border-radius:6px;background:radial-gradient(circle at 32% 28%,#4A5C6E 0 38%,#33414E 100%)}
+.ntf-h .grow{flex:1}
+.ntf-t{margin-top:7px;font-size:13px;font-weight:600}
+.ntf-b{margin-top:2px;font-size:12.5px;line-height:1.45}
+.ntf-a{display:flex;gap:8px;margin-top:10px}
+.ntf-a span{flex:1;height:28px;display:grid;place-items:center;border-radius:8px;background:rgba(0,0,0,.06);font-size:12px;font-weight:500}
+html[data-theme=dark] .ntf-a span{background:rgba(255,255,255,.1)}
+.ntf2{top:auto;bottom:22px;opacity:.9;transform:scale(.97)}
+
+/* 全景 */
+.map{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.pillar{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--c-line);border-radius:14px;background:var(--c-surface)}
+.pillar .ph{display:flex;align-items:center;gap:9px}
+.pillar .pi{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:var(--c-accent-tint);color:var(--c-accent)}
+.pillar .pt{font-size:14px;font-weight:600}
+.pillar .pl{font:10px var(--mono);letter-spacing:.12em;color:var(--c-fg-3);text-transform:uppercase}
+.pillar p{margin:0;font-size:12px;line-height:1.7;color:var(--c-fg-2)}
+.pillar ul{margin:0;padding:0 0 0 16px;font-size:12px;line-height:1.8;color:var(--c-fg-2)}
+.layer{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.lay{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px dashed var(--c-line);border-radius:14px}
+.lay .pi{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:9px;background:var(--c-field);color:var(--c-fg-2)}
+.lay b{display:block;font-size:13px;font-weight:600;margin-bottom:3px}
+.lay span{font-size:12px;line-height:1.7;color:var(--c-fg-2)}
+
+.foot{margin-top:80px;padding-top:22px;border-top:1px solid var(--c-line);display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;font-size:11px;color:var(--c-fg-3)}
+@media (max-width:900px){.sec-head{grid-template-columns:1fr}.map{grid-template-columns:1fr 1fr}.layer{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ============ 图标（lucide 线形，1.75 描边） ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3 2 6M22 6l-3-3"/></symbol>
+    <symbol id="i-scope" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10.07 11.81 7.57-4.37a1 1 0 0 0 .37-1.37l-1.5-2.6a1 1 0 0 0-1.37-.36L7.57 7.48a2 2 0 0 0-.73 2.73l.5.87a2 2 0 0 0 2.73.73ZM13.5 12.5 16 21M10.5 12.5 8 21M6.2 10.3l-3.5 2"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></symbol>
+    <symbol id="i-kbd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M8 13h.01M12 13h.01M16 13h.01M7 16h10"/></symbol>
+    <symbol id="i-scroll" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></symbol>
+    <symbol id="i-contrast" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18" fill="currentColor"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+    <symbol id="i-msg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-down-tr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m22 17-8.5-8.5-5 5L2 7"/><path d="M16 17h6v-6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M9 5v14M15 5v14"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+    <symbol id="i-unlink" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71M5.17 11.75l-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71M8 2v3M2 8h3M16 22v-3M22 16h-3"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+    <symbol id="i-img" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 18c2-6 6-9 9-9s7 3 9 9"/><circle cx="12" cy="13" r="3.5"/><path d="M6 18v2M18 18v2"/></symbol>
+  </defs>
+</svg>
+
+<header class="top">
+  <div class="brand"><span class="mark"></span>Pie 2.0 <span class="tagv">UI 设计 · 终态</span></div>
+  <nav>
+    <a href="#map">全景</a><a href="#ia">信息架构</a><a href="#overlay">浮层</a><a href="#browser">书签与历史</a><a href="#watch">页面监控</a><a href="#memory">记忆</a><a href="#settings">设置页</a>
+  </nav>
+  <div class="grow"></div>
+  <button class="tbtn" id="theme" type="button">◐ 明暗</button>
+</header>
+
+<div class="wrap">
+
+<!-- ======================================================= 00 全景 -->
+<section class="sec" id="map">
+  <div class="sec-head">
+    <div>
+      <p class="kick">00 · Overview</p>
+      <h2>从「侧栏里的 agent」到「浏览器里的助手」</h2>
+      <p class="lede">这一版做四件事：<b>随手可及的入口</b>（浮层）、<b>接管浏览器自己的数据</b>（书签与历史）、<b>替你盯着</b>（页面监控）、<b>越用越懂你</b>（记忆）。后两件共用一个后台底座，记忆再反过来让前三件更准。</p>
+    </div>
+    <ul class="principles">
+      <li><b>提议，再由你应用</b>：批量或不可逆的改动先出方案卡，你点「应用」才执行；和浮层「替换原文」同一个模式。</li>
+      <li><b>后台安静，结果可查</b>：监控、整理记忆都在后台跑；只有值得打扰的才发通知，其余进「动态」。</li>
+      <li><b>权限按需</b>：书签、历史是可选权限，第一次用到时才问，随时撤销。</li>
+    </ul>
+  </div>
+  <div class="map">
+    <div class="pillar">
+      <div class="ph"><span class="pi"><svg class="i"><use href="#i-kbd"/></svg></span><div><div class="pl">入口</div><div class="pt">浮层</div></div></div>
+      <p>任意网页 ⌘⇧K 或划词唤起，原地多轮对话；需要动手时收成右下角胶囊，侧栏退成任务驾驶舱。</p>
+      <ul><li>划词浮条（只读 / 可编辑两套）</li><li>改写 → 替换原文</li><li>转到侧栏，同一个会话</li></ul>
+    </div>
+    <div class="pillar">
+      <div class="ph"><span class="pi"><svg class="i"><use href="#i-bookmark"/></svg></span><div><div class="pl">接管</div><div class="pt">书签与历史</div></div></div>
+      <p>用一句话找回「上周看过的那篇」，整理乱掉的书签栏，按条件清理历史。</p>
+      <ul><li>可选权限，首次使用时授权</li><li>整理 = 方案卡 + 快照还原</li><li>历史删除不可逆，单独警示</li></ul>
+    </div>
+    <div class="pillar">
+      <div class="ph"><span class="pi"><svg class="i"><use href="#i-eye"/></svg></span><div><div class="pl">替你盯着</div><div class="pt">页面监控</div></div></div>
+      <p>「降到 2000 以下告诉我」——Pie 记住页面上的那个元素，按频率在后台检查，条件满足才通知。</p>
+      <ul><li>常规检查不调用模型，零 token</li><li>条件从不满足变成满足才通知一次</li><li>和定时任务合并成「自动化」</li></ul>
+    </div>
+    <div class="pillar">
+      <div class="ph"><span class="pi"><svg class="i"><use href="#i-brain"/></svg></span><div><div class="pl">越用越懂你</div><div class="pt">记忆</div></div></div>
+      <p>自动从对话里整理关于你的事实和偏好；每天整理碎片，每月精简一次，总量有上限。</p>
+      <ul><li>默认无感，用到时一行小字</li><li>快速模型按任务挑选相关记忆</li><li>设置里随时查看、改、删</li></ul>
+    </div>
+  </div>
+  <div class="layer">
+    <div class="lay"><span class="pi"><svg class="i"><use href="#i-clock"/></svg></span><div><b>后台底座 · 统一的后台任务</b><span>定时任务、页面监控、记忆整理共用一套调度：按「上次处理到哪」补跑，错过不丢；Chrome 关闭时不运行，下次打开补一次。并发上限共享。</span></div></div>
+    <div class="lay"><span class="pi"><svg class="i"><use href="#i-bell"/></svg></span><div><b>结果出口 · 动态</b><span>监控触发、定时任务完成、需要你处理的失败，统一进「自动化 → 动态」，带未读点。记忆整理不进动态，避免打扰。</span></div></div>
+  </div>
+</section>
+
+<!-- ======================================================= 01 信息架构 -->
+<section class="sec" id="ia">
+  <div class="sec-head">
+    <div>
+      <p class="kick">01 · Information architecture</p>
+      <h2>顶栏不加按钮，设置多一组「个性化」</h2>
+      <p class="lede">定时任务和页面监控合并成<b>「自动化」</b>，沿用原来的闹钟图标，多一个未读点；设置根页新增<b>「个性化」</b>分组，放记忆、书签与历史、浮层与快捷键，原来的自定义规则也移进来。</p>
+    </div>
+    <ul class="principles">
+      <li><b>顶栏仍是三个功能键</b>：自动化 · 深度研究 · 技能。</li>
+      <li><b>未读点只给自动化</b>：颜色沿用「排队中」的黄铜色。</li>
+      <li><b>新入口带 NEW 标记</b>：首次打开设置后消失。</li>
+    </ul>
+  </div>
+  <div class="row">
+    <!-- F1 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F1</span>设置 · 根页</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row">
+          <button class="ib"><svg class="i s17"><use href="#i-back"/></svg></button>
+          <span class="tb-title">设置</span>
+        </div></div>
+        <div class="body scroll">
+          <div>
+            <div class="glabel">基础</div>
+            <div class="group">
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-box"/></svg></span><span class="lb">模型</span><span class="bd">2 个配置</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-plug"/></svg></span><span class="lb">本地打通</span><span class="bd"><span class="gdot"></span>已连接</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-search"/></svg></span><span class="lb">联网搜索</span><span class="bd">已配置</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+            </div>
+          </div>
+          <div>
+            <div class="glabel">个性化</div>
+            <div class="group">
+              <div class="nrow new"><span class="ic"><svg class="i"><use href="#i-brain"/></svg></span><span class="lb">记忆<span class="newtag">NEW</span></span><span class="bd">开 · 96 条</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow new"><span class="ic"><svg class="i"><use href="#i-bookmark"/></svg></span><span class="lb">书签与历史<span class="newtag">NEW</span></span><span class="bd">已授权 1/2</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow new"><span class="ic"><svg class="i"><use href="#i-kbd"/></svg></span><span class="lb">浮层与快捷键<span class="newtag">NEW</span></span><span class="bd">⌘⇧K</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-scroll"/></svg></span><span class="lb">自定义规则</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+            </div>
+          </div>
+          <div>
+            <div class="glabel">偏好</div>
+            <div class="group">
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-contrast"/></svg></span><span class="lb">外观</span><div class="segc"><span>浅色</span><span>深色</span><span class="on">跟随系统</span></div></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-globe"/></svg></span><span class="lb">界面语言</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-msg"/></svg></span><span class="lb">回复语言</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+            </div>
+          </div>
+          <div>
+            <div class="glabel">关于与支持</div>
+            <div class="group">
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-info"/></svg></span><span class="lb">关于</span><span class="bd">v2.0.0</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>「个性化」排在「偏好」之前：这一版的重点在这里。</li>
+        <li>右侧小字是状态，不是说明：<b>开 · 96 条</b>、<b>已授权 1/2</b>、当前快捷键。</li>
+      </ul>
+    </div>
+
+    <!-- F2 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F2</span>自动化 · 动态</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row">
+          <button class="ib"><svg class="i s17"><use href="#i-back"/></svg></button>
+          <span class="tb-title">自动化</span>
+          <button class="ib on"><svg class="i s17"><use href="#i-auto"/></svg></button>
+          <button class="ib"><svg class="i s17"><use href="#i-scope"/></svg></button>
+          <button class="ib"><svg class="i s17"><use href="#i-zap"/></svg></button>
+        </div></div>
+        <div class="body scroll" style="gap:10px">
+          <div class="vseg"><span class="on">动态<em>2</em></span><span>监控<em>4</em></span><span>定时<em>2</em></span></div>
+          <div class="feed">
+            <div class="fday">今天</div>
+            <div class="fi unread">
+              <span class="ico ok"><svg class="i"><use href="#i-down-tr"/></svg></span>
+              <div class="tx">
+                <div class="t1">Sony WH-1000XM6 降到 ¥1,999<span class="pdot"></span></div>
+                <div class="t2">低于你设的 ¥2,000 · <span class="strike">¥2,199</span> → ¥1,999</div>
+                <div class="t3"><span class="mono">10:02</span>监控 · shop.example.com<span style="flex:1"></span><button class="bsm">打开页面</button></div>
+              </div>
+            </div>
+            <div class="fi unread">
+              <span class="ico bad"><svg class="i"><use href="#i-lock"/></svg></span>
+              <div class="tx">
+                <div class="t1">「Pie 发布页」需要重新登录<span class="pdot"></span></div>
+                <div class="t2">连续 3 次检查都跳到了登录页，已暂停这条监控。</div>
+                <div class="t3"><span class="mono">08:40</span>监控<span style="flex:1"></span><button class="bsm">去登录并恢复</button></div>
+              </div>
+            </div>
+            <div class="fi">
+              <span class="ico"><svg class="i"><use href="#i-clock"/></svg></span>
+              <div class="tx">
+                <div class="t1">每日行业早报 · 已完成</div>
+                <div class="t2">汇总了 12 条新闻，3 条和你关注的「端侧模型」有关。</div>
+                <div class="t3"><span class="mono">09:03</span>定时 · 第 41 次<span style="flex:1"></span><button class="bsm ghost">查看会话</button></div>
+              </div>
+            </div>
+            <div class="fday">昨天</div>
+            <div class="fi">
+              <span class="ico ok"><svg class="i"><use href="#i-plus"/></svg></span>
+              <div class="tx">
+                <div class="t1">招聘页新增 2 个职位</div>
+                <div class="t2">「高级前端工程师（AI 方向）」「浏览器内核工程师」</div>
+                <div class="t3"><span class="mono">16:20</span>监控 · jobs.example.com</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li><b>动态只收三类</b>：监控触发、定时任务结束、需要你处理的失败。记忆整理不进来。</li>
+        <li>未读项有边框和黄铜点；打开过就变成普通行，不用手动标已读。</li>
+        <li>每条只给一个最可能的动作：打开页面 / 去登录 / 查看会话。</li>
+      </ul>
+    </div>
+
+    <!-- F3 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F3</span>对话页顶栏 · 有未读</div>
+      <div class="sp" style="height:auto">
+        <div class="tb" style="border-bottom:0"><div class="tb-row">
+          <button class="ib"><svg class="i s17"><use href="#i-menu"/></svg></button>
+          <button class="ib"><svg class="i s17"><use href="#i-plus"/></svg></button>
+          <span class="tb-title chat">比较三款降噪耳机</span>
+          <button class="ib"><svg class="i s17"><use href="#i-auto"/></svg><span class="dot"></span></button>
+          <button class="ib"><svg class="i s17"><use href="#i-scope"/></svg></button>
+          <button class="ib"><svg class="i s17"><use href="#i-zap"/></svg></button>
+        </div></div>
+      </div>
+      <ul class="fnotes">
+        <li>自动化有未读时，图标右上角出现黄铜点，和会话抽屉的「排队中」同色同尺寸。</li>
+        <li>不弹 toast、不显示数字：点开才看。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 02 浮层 -->
+<section class="sec" id="overlay">
+  <div class="sec-head">
+    <div>
+      <p class="kick">02 · Overlay</p>
+      <h2>浮层：原地问、原地改</h2>
+      <p class="lede">交互细节（多轮、划词浮条、替换原文、胶囊、转侧栏）以 <b>2026-11-14-overlay-prototype.html</b> 为准。这里给出终态视觉，以及它和记忆、监控的衔接。</p>
+    </div>
+    <ul class="principles">
+      <li><b>记忆在浮层里同样是一行小字</b>，点开能看用了哪几条。</li>
+      <li><b>「盯住」从浮层发起</b>：说一句话就能建监控，见 §04。</li>
+    </ul>
+  </div>
+  <div class="row">
+    <div class="frame wide">
+      <div class="fcap"><span class="n">F4</span>浮层 · 用到记忆的回答</div>
+      <div class="bw">
+        <div class="bw-ch">
+          <div class="bw-tabs"><div class="bw-tab"><span class="fv"></span>活动报名 · 2026 开发者大会</div></div>
+          <div class="bw-bar"><span class="mono" style="font-size:13px;color:var(--c-fg-3)">‹ › ↻</span><div class="bw-url">events.example.com/devcon-2026/register</div><span class="bw-ext"></span></div>
+        </div>
+        <div class="bw-vp">
+          <div style="padding:26px 40px;display:flex;flex-direction:column;gap:12px;max-width:520px">
+            <div style="font-size:17px;font-weight:600">报名信息</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="height:32px;border:1px solid var(--c-line);border-radius:7px;background:var(--c-success-tint)"></div>
+              <div style="height:32px;border:1px solid var(--c-line);border-radius:7px;background:var(--c-success-tint)"></div>
+              <div style="height:32px;border:1px solid var(--c-line);border-radius:7px;background:var(--c-success-tint)"></div>
+              <div style="height:32px;border:1px solid var(--c-line);border-radius:7px"></div>
+            </div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ov" style="top:22px">
+            <div class="ov-h"><span class="mark"></span><span class="t">帮我填报名表</span><span class="s">· 同一个会话</span><span class="grow"></span>
+              <span class="ib"><svg class="i s14"><use href="#i-plus"/></svg></span><span class="ib"><svg class="i s14"><use href="#i-ext"/></svg></span><span class="ib"><svg class="i s14"><use href="#i-x"/></svg></span></div>
+            <div class="ov-th">
+              <div class="msg-u" style="font-size:13px">帮我把这个报名表填了</div>
+              <div class="steps"><div class="step"><span class="ck"><svg class="i s13"><use href="#i-check"/></svg></span>读取表单 · 8 个字段</div><div class="step"><span class="ck"><svg class="i s13"><use href="#i-check"/></svg></span>填写 6 个字段</div></div>
+              <div class="msg-a">填好了 6 项。还差「T 恤尺码」和「饮食禁忌」，你之前没告诉过我。</div>
+              <span class="mem-chip open"><svg class="i s13"><use href="#i-brain"/></svg>用到 3 条记忆<svg class="i s12"><use href="#i-down"/></svg></span>
+              <div class="mem-pop">
+                <div class="mi"><span class="k">关于你</span><span class="v">王小明 · 前端工程师，在杭州一家做 AI 工具的公司</span><span class="e">不对</span></div>
+                <div class="mi"><span class="k">联系方式</span><span class="v">手机 138****5678 · 工作邮箱 w***@example.com</span><span class="e">不对</span></div>
+              </div>
+            </div>
+            <div class="ov-c"><div class="ov-in">继续追问，或让 Pie 动手…<span style="flex:1"></span><span class="sendb"><svg class="i s14"><use href="#i-up"/></svg></span></div></div>
+          </div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>记忆不出现在回答正文里；回答下方一行「用到 3 条记忆」，默认折叠。</li>
+        <li>展开后每条可以直接点「不对」：就地改或删，下次不再用错。</li>
+        <li>联系方式等敏感字段在界面上默认打码；发给模型时是原值，只在需要填表这类任务里被挑中。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 03 书签与历史 -->
+<section class="sec" id="browser">
+  <div class="sec-head">
+    <div>
+      <p class="kick">03 · Bookmarks &amp; history</p>
+      <h2>书签与历史：找得回、理得清、删得明白</h2>
+      <p class="lede">书签和历史都是<b>可选权限</b>，第一次用到时在对话里问；授权后 Pie 多了一组读写工具。查找直接给结果；整理书签先给方案、可还原；删除历史不可逆，单独警示。</p>
+    </div>
+    <ul class="principles">
+      <li><b>读</b>：按关键词、时间、网站搜索书签和历史，直接出结果列表。</li>
+      <li><b>小改</b>（加一个书签、改名）：直接做，对话里留一条可撤销记录。</li>
+      <li><b>大改</b>（整理、批量移动、删除）：方案卡 → 你点「应用」。</li>
+    </ul>
+  </div>
+  <div class="row">
+    <!-- F5 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F5</span>第一次用到 · 授权</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-menu"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-plus"/></svg></button><span class="tb-title chat">找回上周看的文章</span><button class="ib"><svg class="i s17"><use href="#i-auto"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-scope"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-zap"/></svg></button></div></div>
+        <div class="body">
+          <div class="msg-u">上周看过一篇讲向量数据库怎么选的文章，帮我找回来</div>
+          <div class="card">
+            <div class="card-h"><svg class="i s14"><use href="#i-history"/></svg><span class="caps">浏览器数据</span></div>
+            <div><div class="card-t">允许 Pie 读取浏览历史？</div><div class="card-d">只在你提问时按需搜索。历史不会上传，只有这次搜到的几条会发给你配置的模型。</div></div>
+            <div class="detail">
+              <div class="dg"><span class="caps">能做什么</span><div class="dv"><span class="m">按关键词和时间找回页面、按网站清理记录</span></div></div>
+              <div class="dg"><span class="caps">撤销</span><div class="dv"><span class="m">设置 → 书签与历史，随时关掉</span></div></div>
+            </div>
+            <div class="acts"><button class="b2">不用了</button><button class="b1">允许</button></div>
+          </div>
+          <div class="note-soft"><svg class="i s14" style="color:var(--c-fg-3)"><use href="#i-info"/></svg><span>点「允许」后 Chrome 会再弹一次系统确认，这是 Chrome 的要求。</span></div>
+        </div>
+        <div class="composer"><div class="cbox"><div class="ph">继续追问…</div><div class="cbar"><span class="mp">DeepSeek V3.2<svg class="i s12"><use href="#i-down"/></svg></span><span class="sendb"><svg class="i s14"><use href="#i-up"/></svg></span></div></div></div>
+      </div>
+      <ul class="fnotes">
+        <li>卡片沿用 HITL 卡骨架，冷蓝灰配色（浏览器域）。</li>
+        <li>拒绝后不再追问；这次对话改用别的办法（比如在打开的标签页里找）。</li>
+      </ul>
+    </div>
+
+    <!-- F6 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F6</span>找回页面</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-menu"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-plus"/></svg></button><span class="tb-title chat">找回上周看的文章</span><button class="ib"><svg class="i s17"><use href="#i-auto"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-scope"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-zap"/></svg></button></div></div>
+        <div class="body">
+          <div class="msg-u">上周看过一篇讲向量数据库怎么选的文章，帮我找回来</div>
+          <div class="evt"><span class="ok"><svg class="i s12"><use href="#i-check"/></svg></span>已允许读取浏览历史</div>
+          <div class="steps"><div class="step"><span class="ck"><svg class="i s13"><use href="#i-check"/></svg></span>搜索历史 · 11-07 至 11-13 · 5 条匹配</div></div>
+          <div class="msg-a"><p>最可能是第一篇：你 11-09 晚上打开过 3 次，比其他几篇都多。</p></div>
+          <div class="res">
+            <div class="res-r hi"><span class="fav">知</span><div class="tx"><div class="t1">向量数据库选型：Milvus、Qdrant、pgvector 怎么挑</div><div class="t2">zhuanlan.example.com · 11-09 21:40 · 3 次</div></div><span class="go"><svg class="i s14"><use href="#i-ext"/></svg></span></div>
+            <div class="res-r"><span class="fav">Q</span><div class="tx"><div class="t1">Benchmarking vector databases in 2026</div><div class="t2">qdrant.example.com · 11-10 · 1 次</div></div><span class="go"><svg class="i s14"><use href="#i-ext"/></svg></span></div>
+            <div class="res-r"><span class="fav">G</span><div class="tx"><div class="t1">pgvector vs dedicated vector DB · discussion</div><div class="t2">github.com · 11-12 · 1 次</div></div><span class="go"><svg class="i s14"><use href="#i-ext"/></svg></span></div>
+          </div>
+          <div style="display:flex;gap:6px"><button class="bsm"><svg class="i s12" style="vertical-align:-2px"><use href="#i-bookmark"/></svg> 加到书签</button><button class="bsm ghost">再找找</button></div>
+        </div>
+        <div class="composer"><div class="cbox"><div class="ph">继续追问…</div><div class="cbar"><span class="mp">DeepSeek V3.2<svg class="i s12"><use href="#i-down"/></svg></span><span class="sendb"><svg class="i s14"><use href="#i-up"/></svg></span></div></div></div>
+      </div>
+      <ul class="fnotes">
+        <li>结果是可点的列表，不是一段文字；最匹配的一条加浅底。</li>
+        <li>Chrome 历史只有标题、网址、访问时间和次数，<b>没有停留时长</b>，文案不要承诺「看了多久」。</li>
+        <li>结果下面给一个顺手动作：加到书签。</li>
+      </ul>
+    </div>
+
+    <!-- F7 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F7</span>整理书签 · 方案卡</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-menu"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-plus"/></svg></button><span class="tb-title chat">整理书签栏</span><button class="ib"><svg class="i s17"><use href="#i-auto"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-scope"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-zap"/></svg></button></div></div>
+        <div class="body">
+          <div class="msg-u">书签栏太乱了，帮我理一下</div>
+          <div class="steps"><div class="step"><span class="ck"><svg class="i s13"><use href="#i-check"/></svg></span>读取书签 · 86 个</div><div class="step"><span class="ck"><svg class="i s13"><use href="#i-check"/></svg></span>检查链接 · 4 个打不开</div></div>
+          <div class="card">
+            <div class="card-h"><svg class="i s14"><use href="#i-folder"/></svg><span class="caps">书签整理</span></div>
+            <div><div class="card-t">把 86 个书签分进 4 个文件夹</div><div class="card-d">不会删除任何书签；打不开的放进「待确认」。</div></div>
+            <div class="chipsum"><span class="cs">新文件夹 <b>4</b></span><span class="cs">移动 <b>71</b></span><span class="cs">合并重复 <b>7</b></span><span class="cs">待确认 <b>4</b></span></div>
+            <div class="detail" style="gap:2px;padding:8px">
+              <div class="tree">
+                <div class="tr add"><svg class="i s13"><use href="#i-folder"/></svg>工作<span class="c">+ 23</span></div>
+                <div class="tr mv">Jira · 前端看板<span class="c">← 书签栏</span></div>
+                <div class="tr add"><svg class="i s13"><use href="#i-folder"/></svg>学习<span class="c">+ 31</span></div>
+                <div class="tr add"><svg class="i s13"><use href="#i-folder"/></svg>工具<span class="c">+ 17</span></div>
+                <div class="tr hold"><svg class="i s13"><use href="#i-unlink"/></svg>待确认（打不开）<span class="c">4</span></div>
+              </div>
+            </div>
+            <div class="acts"><button class="b2">看全部改动</button><button class="b1">应用</button></div>
+          </div>
+          <div class="evt"><span class="ok"><svg class="i s12"><use href="#i-check"/></svg></span>已整理 86 个书签 · <a>还原</a></div>
+        </div>
+        <div class="composer"><div class="cbox"><div class="ph">继续追问…</div><div class="cbar"><span class="mp">DeepSeek V3.2<svg class="i s12"><use href="#i-down"/></svg></span><span class="sendb"><svg class="i s14"><use href="#i-up"/></svg></span></div></div></div>
+      </div>
+      <ul class="fnotes">
+        <li>方案卡和「替换原文」是同一个模式：<b>模型提方案，你点应用</b>，不是确认弹窗。</li>
+        <li>应用前存一份书签快照；对话里的「还原」和设置页里的改动记录都能回滚。</li>
+        <li>「合并重复」只合并网址完全相同的；相似但不同的不动。</li>
+      </ul>
+    </div>
+
+    <!-- F8 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F8</span>清理历史 · 不可逆</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-menu"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-plus"/></svg></button><span class="tb-title chat">清理购物网站记录</span><button class="ib"><svg class="i s17"><use href="#i-auto"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-scope"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-zap"/></svg></button></div></div>
+        <div class="body">
+          <div class="msg-u">把这周逛购物网站的记录删掉</div>
+          <div class="card warn">
+            <div class="card-h"><svg class="i s14"><use href="#i-trash"/></svg><span class="caps">清理历史</span></div>
+            <div><div class="card-t">删除 37 条浏览记录</div><div class="card-d">11-08 至 11-14，来自 3 个网站。</div></div>
+            <div class="detail">
+              <div class="dg"><span class="caps">网站</span>
+                <div class="dv">shop.example.com<span class="m" style="margin-left:auto">24</span></div>
+                <div class="dv">mall.example.com<span class="m" style="margin-left:auto">9</span></div>
+                <div class="dv">deals.example.com<span class="m" style="margin-left:auto">4</span></div>
+              </div>
+            </div>
+            <div class="note-warn"><svg class="i s14"><use href="#i-info"/></svg><span>浏览记录删除后无法恢复，Pie 也没有备份。书签不受影响。</span></div>
+            <div class="acts"><button class="b2">取消</button><button class="b1 warn">删除 37 条</button></div>
+          </div>
+        </div>
+        <div class="composer"><div class="cbox"><div class="ph">继续追问…</div><div class="cbar"><span class="mp">DeepSeek V3.2<svg class="i s12"><use href="#i-down"/></svg></span><span class="sendb"><svg class="i s14"><use href="#i-up"/></svg></span></div></div></div>
+      </div>
+      <ul class="fnotes">
+        <li>不可逆操作用珊瑚色，主按钮写明数量：「删除 37 条」，不写「确定」。</li>
+        <li>历史不做快照：Chrome 能补回网址，但补不回原来的访问时间，假还原比不还原更糟。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 04 页面监控 -->
+<section class="sec" id="watch">
+  <div class="sec-head">
+    <div>
+      <p class="kick">04 · Page monitors</p>
+      <h2>页面监控：说一句「盯住」，剩下的交给后台</h2>
+      <p class="lede">在任意网页说「降到 2000 以下告诉我」「有新职位就通知我」，Pie 选中页面上的那个元素，生成一张监控卡。之后<b>按频率在后台检查，条件从不满足变成满足时通知一次</b>。常规检查直接读页面，不调用模型。</p>
+    </div>
+    <ul class="principles">
+      <li><b>条件四种</b>：任何变化 · 数值高于 / 低于 · 出现某段文字 · 列表有新增。</li>
+      <li><b>频率</b>：15 分钟 · 1 小时 · 6 小时 · 每天；默认 1 小时，30 天后自动停止。</li>
+      <li><b>检查方式</b>：先在后台直接读网页；读不到（要登录、要渲染）再开后台标签页。</li>
+    </ul>
+  </div>
+  <div class="row">
+    <div class="frame wide">
+      <div class="fcap"><span class="n">F9</span>从浮层建监控</div>
+      <div class="bw tall">
+        <div class="bw-ch">
+          <div class="bw-tabs"><div class="bw-tab"><span class="fv"></span>Sony WH-1000XM6 无线降噪耳机</div></div>
+          <div class="bw-bar"><span class="mono" style="font-size:13px;color:var(--c-fg-3)">‹ › ↻</span><div class="bw-url">shop.example.com/item/100088</div><span class="bw-ext"></span></div>
+        </div>
+        <div class="bw-vp">
+          <div class="shop">
+            <div class="img"><svg class="i" style="width:64px;height:64px"><use href="#i-img"/></svg></div>
+            <div>
+              <h4>Sony WH-1000XM6 头戴式无线降噪耳机 · 黑色</h4>
+              <div class="sub">自营 · 好评率 97% · 已售 2 万+</div>
+              <div class="price watch"><b>¥2,399</b><s>¥2,699</s></div>
+              <div class="opts"><span class="opt">黑色</span><span class="opt">铂金银</span><span class="opt">午夜蓝</span></div>
+              <div class="buy"><span class="p">立即购买</span><span class="s">加入购物车</span></div>
+            </div>
+          </div>
+          <div class="scrim"></div>
+          <div class="ov" style="top:132px;left:auto;right:24px;transform:none;width:440px">
+            <div class="ov-h"><span class="mark"></span><span class="t">降价提醒</span><span class="grow"></span><span class="ib"><svg class="i s14"><use href="#i-ext"/></svg></span><span class="ib"><svg class="i s14"><use href="#i-x"/></svg></span></div>
+            <div class="ov-th" style="gap:10px">
+              <div class="msg-u" style="font-size:12.5px">降到 2000 以下告诉我</div>
+              <div class="card" style="gap:10px;padding:12px">
+                <div class="card-h"><svg class="i s14"><use href="#i-eye"/></svg><span class="caps">页面监控</span></div>
+                <div class="card-t" style="font-size:14px">Sony WH-1000XM6 降价提醒</div>
+                <div class="detail" style="gap:8px">
+                  <div class="dv"><span class="m" style="width:40px">盯住</span><span class="pill"><svg class="i s12"><use href="#i-target"/></svg>价格 · ¥2,399</span></div>
+                  <div class="dv"><span class="m" style="width:40px">条件</span><span class="pill">低于 ¥2,000</span></div>
+                  <div class="dv"><span class="m" style="width:40px">频率</span><span class="pill">每 1 小时<svg class="i s12"><use href="#i-down"/></svg></span><span class="m" style="font-size:11px">· 30 天后停止</span></div>
+                </div>
+                <div class="acts"><button class="b2" style="height:30px">取消</button><button class="b1" style="height:30px">开始监控</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>页面上用虚线框标出 Pie 选中的元素，旁边写「Pie 会盯住这里」，选错了直接说「不是这个，是会员价」。</li>
+        <li>卡片里的频率可以就地改；条件由模型从你的话里解析，解析不出就追问，不猜。</li>
+        <li>创建后浮层收起，页面顶部一条轻提示「已开始监控 · 在自动化里查看」。</li>
+      </ul>
+    </div>
+
+    <!-- F10 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F10</span>自动化 · 监控列表</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-back"/></svg></button><span class="tb-title">自动化</span><button class="ib on"><svg class="i s17"><use href="#i-auto"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-scope"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-zap"/></svg></button></div></div>
+        <div class="body scroll" style="gap:12px">
+          <div class="vseg"><span>动态<em>2</em></span><span class="on">监控<em>4</em></span><span>定时<em>2</em></span></div>
+          <div class="group">
+            <div class="mrow"><span class="fav">S</span><div class="tx"><div class="t1">Sony WH-1000XM6 降价提醒</div><div class="t2">低于 ¥2,000 · 每 1 小时</div></div><div class="val"><div class="v1 ok">¥1,999</div><div class="v2"><span class="gdot"></span>已达成</div></div></div>
+            <div class="mrow"><span class="fav">J</span><div class="tx"><div class="t1">招聘 · 前端 / AI 方向</div><div class="t2">列表有新增 · 每 6 小时</div></div><div class="val"><div class="v1">18 个</div><div class="v2">13:00 再查</div></div></div>
+            <div class="mrow"><span class="fav">V</span><div class="tx"><div class="t1">签证预约 · 上海</div><div class="t2">出现「可预约」· 每 15 分钟</div></div><div class="val"><div class="v1" style="color:var(--c-fg-3)">暂无</div><div class="v2">10:15 再查</div></div></div>
+            <div class="mrow"><span class="fav">P</span><div class="tx"><div class="t1">Pie 发布页</div><div class="t2">任何变化 · 每天</div></div><div class="val"><div class="v1" style="color:var(--c-warning);font-family:var(--sans);font-size:12px">需要登录</div><div class="v2"><span class="wdot"></span>已暂停</div></div></div>
+          </div>
+          <div class="hintline"><svg class="i s14" style="color:var(--c-fg-3)"><use href="#i-info"/></svg><span>在任意网页唤起 Pie，说「盯住……」就能新建。Chrome 关闭时不检查，下次打开会补查一次。</span></div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>右侧是<b>当前值</b>，比状态更有用；达成用绿色，暂停用珊瑚色并说明原因。</li>
+        <li>没有「＋ 新建」按钮：监控必须从页面上选元素，在列表里新建反而绕路。</li>
+      </ul>
+    </div>
+
+    <!-- F11 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F11</span>监控详情</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-back"/></svg></button><span class="tb-title">Sony WH-1000XM6 降价提醒</span><button class="ib"><svg class="i s17"><use href="#i-more"/></svg></button></div></div>
+        <div class="body scroll" style="gap:12px">
+          <div class="chart">
+            <div class="chart-h"><b>¥1,999</b><span>14 天 · 低于 ¥2,000 时提醒</span></div>
+            <svg viewBox="0 0 300 88" preserveAspectRatio="none" aria-label="价格走势">
+              <line x1="0" y1="62" x2="300" y2="62" stroke="var(--c-success)" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>
+              <polyline fill="none" stroke="var(--c-accent)" stroke-width="1.75" stroke-linejoin="round" points="0,22 60,22 60,18 120,18 120,22 190,22 190,44 260,44 260,66 300,66"/>
+              <circle cx="260" cy="66" r="3.5" fill="var(--c-success)"/>
+            </svg>
+            <div class="ax"><span>11-01</span><span>11-08</span><span>今天</span></div>
+          </div>
+          <div>
+            <div class="glabel">变化记录</div>
+            <div class="log">
+              <div class="lg"><span class="tm">11-14 10:02</span><span class="hit">¥2,199 → ¥1,999 · 已通知</span></div>
+              <div class="lg"><span class="tm">11-11 14:00</span><span>¥2,399 → ¥2,199</span></div>
+              <div class="lg"><span class="tm">11-06 09:00</span><span>¥2,449 → ¥2,399</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="glabel">设置</div>
+            <div class="group">
+              <div class="nrow"><span class="lb">条件</span><span class="bd">低于 ¥2,000</span></div>
+              <div class="nrow"><span class="lb">频率</span><span class="bd">每 1 小时 · 下次 11:02</span></div>
+              <div class="nrow"><span class="lb">检查方式<small>后台直接读取网页，不打开标签页，不调用模型</small></span></div>
+              <div class="nrow"><span class="lb">自动停止</span><span class="bd">12-13</span></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px"><button class="bsm"><svg class="i s12" style="vertical-align:-2px"><use href="#i-refresh"/></svg> 立即检查</button><button class="bsm">暂停</button><span style="flex:1"></span><button class="bsm ghost" style="color:var(--c-warning)">删除</button></div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>数值类目标画走势，文本类目标显示前后对比；虚线是你设的阈值。</li>
+        <li>「检查方式」写清楚是否开标签页、是否花模型额度，让用户放心开很多条。</li>
+      </ul>
+    </div>
+
+    <!-- F12 -->
+    <div class="frame wide">
+      <div class="fcap"><span class="n">F12</span>系统通知</div>
+      <div class="desk">
+        <div class="menubar"><b></b>Chrome<span>文件</span><span>编辑</span><span>显示</span><span class="grow"></span><span>周五 10:02</span></div>
+        <div class="ntf">
+          <div class="ntf-h"><span class="ntf-ic"></span>PIE<span class="grow"></span>现在</div>
+          <div class="ntf-t">Sony WH-1000XM6 降到 ¥1,999</div>
+          <div class="ntf-b">低于你设的 ¥2,000 · shop.example.com</div>
+          <div class="ntf-a"><span>打开页面</span><span>停止监控</span></div>
+        </div>
+        <div class="ntf ntf2">
+          <div class="ntf-h"><span class="ntf-ic"></span>PIE<span class="grow"></span>昨天</div>
+          <div class="ntf-t">招聘页新增 2 个职位</div>
+          <div class="ntf-b">高级前端工程师（AI 方向）、浏览器内核工程师</div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>标题直接写结果，正文写依据和来源；不写「Pie 监控提醒」这类空话。</li>
+        <li>点通知打开对应网页，不打开侧栏：Chrome 不允许无用户手势打开侧栏，开网页总能成功；动态里同时有一条记录。</li>
+        <li>同一条监控 1 小时内最多通知一次；失败类通知只在<b>连续失败后自动暂停</b>时发一次。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 05 记忆 -->
+<section class="sec" id="memory">
+  <div class="sec-head">
+    <div>
+      <p class="kick">05 · Memory</p>
+      <h2>记忆：默认无感，随时可查</h2>
+      <p class="lede">Pie 每天把对话里出现的、关于你的事实和偏好整理成短条目，<b>每月精简一次，总量有上限</b>。每次任务开始时，一个快速模型从里面挑出相关的几条带给 Pie。你平时感觉不到它，只有用到时会出现一行小字。</p>
+    </div>
+    <ul class="principles">
+      <li><b>两层</b>：长期记忆（稳定的事实和偏好）＋近期片段（最近的事，未被再次用到会在月度精简时合并或清除）。</li>
+      <li><b>不记住</b>：密码、证件号、银行卡；无痕窗口；你排除的网站。</li>
+      <li><b>你说了算</b>：「记住……」「忘掉……」立即生效；设置里能查、改、删、清空。</li>
+    </ul>
+  </div>
+  <div class="row">
+    <!-- F13 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F13</span>对话里：用到 · 记住 · 忘掉</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-menu"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-plus"/></svg></button><span class="tb-title chat">订周三去上海的高铁</span><button class="ib"><svg class="i s17"><use href="#i-auto"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-scope"/></svg></button><button class="ib"><svg class="i s17"><use href="#i-zap"/></svg></button></div></div>
+        <div class="body">
+          <div class="msg-u">帮我看下周三去上海的高铁</div>
+          <div class="steps"><div class="step"><span class="ck"><svg class="i s13"><use href="#i-check"/></svg></span>查询 11-19 杭州东 → 上海虹桥</div></div>
+          <div class="msg-a"><p>按你平时的习惯挑了 3 班<b>上午、二等座靠窗</b>的：</p><p>G7502 08:12 → 09:03 · 有票<br>G7316 09:00 → 09:49 · 有票<br>G7518 10:05 → 10:59 · 余 6 张</p></div>
+          <span class="mem-chip"><svg class="i s13"><use href="#i-brain"/></svg>用到 2 条记忆<svg class="i s12"><use href="#i-down"/></svg></span>
+          <div class="msg-u">以后都订一等座吧，公司报销</div>
+          <div class="evt"><span class="ok"><svg class="i s12"><use href="#i-check"/></svg></span>已更新记忆：高铁坐一等座（公司报销）· <a>撤销</a></div>
+          <div class="msg-u">忘掉我住在滨江这件事</div>
+          <div class="evt"><span class="ok"><svg class="i s12"><use href="#i-check"/></svg></span>已删除 1 条记忆 · <a>撤销</a></div>
+        </div>
+        <div class="composer"><div class="cbox"><div class="ph">继续追问…</div><div class="cbar"><span class="mp">DeepSeek V3.2<svg class="i s12"><use href="#i-down"/></svg></span><span class="sendb"><svg class="i s14"><use href="#i-up"/></svg></span></div></div></div>
+      </div>
+      <ul class="fnotes">
+        <li>回答正文可以自然地说「按你平时的习惯」，但不复述记忆原文。</li>
+        <li>明确的「以后…」「记住…」「忘掉…」立即写入，留一条可撤销记录；其余靠每日整理，不打断对话。</li>
+      </ul>
+    </div>
+
+    <!-- F14 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F14</span>设置 · 记忆（整页）</div>
+      <div class="sp long">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-back"/></svg></button><span class="tb-title">记忆</span></div></div>
+        <div class="body scroll">
+          <div class="hero">
+            <div class="hero-t"><span style="color:var(--c-fg-2);display:flex"><svg class="i"><use href="#i-brain"/></svg></span><span class="t">自动记忆</span><span class="sw on"></span></div>
+            <p>Pie 会从对话里整理关于你的事实和偏好，用来更懂你。记忆只存在这台电脑上。</p>
+            <div class="meter">
+              <div class="meter-l"><span>已用</span><span><b>13,200</b> / 20,000 字</span></div>
+              <div class="bar"><i class="a" style="width:48%"></i><i class="b" style="width:18%"></i></div>
+              <div class="legend"><span><i style="background:var(--c-accent)"></i>长期 72 条</span><span><i style="background:color-mix(in srgb,var(--c-accent) 45%,transparent)"></i>近期片段 24 条</span></div>
+            </div>
+            <div class="last"><svg class="i s14" style="color:var(--c-success)"><use href="#i-check"/></svg><span>今天 03:12 整理 · 新增 3 · 更新 1 · 合并 2</span><span style="flex:1"></span><span class="mono" style="white-space:nowrap">下次精简 12-01</span></div>
+          </div>
+          <div>
+            <div class="glabel">记忆内容</div>
+            <div class="group">
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-user"/></svg></span><span class="lb">关于你</span><span class="bd">9</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-sliders"/></svg></span><span class="lb">偏好与习惯</span><span class="bd">31</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-pin"/></svg></span><span class="lb">地址与联系方式</span><span class="bd"><svg class="i s12"><use href="#i-lock"/></svg>4</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-globe"/></svg></span><span class="lb">常用网站与账号</span><span class="bd">14</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-target"/></svg></span><span class="lb">进行中的事</span><span class="bd">6</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-clock"/></svg></span><span class="lb">近期片段</span><span class="bd">24</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+            </div>
+          </div>
+          <div>
+            <div class="glabel">来源</div>
+            <div class="group">
+              <div class="nrow"><span class="lb">对话<small>你说的话和 Pie 的结论，不含网页原文</small></span><span class="sw on"></span></div>
+              <div class="nrow"><span class="lb">浏览历史<small>只用网站和标题，推断常用网站和兴趣</small></span><span class="sw"></span></div>
+            </div>
+          </div>
+          <div>
+            <div class="glabel">隐私与成本</div>
+            <div class="group">
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-shield"/></svg></span><span class="lb">不记住的网站</span><span class="bd">3</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-zap"/></svg></span><span class="lb">整理与挑选<small>含在订阅里，不用你的 key</small></span><span class="bd">Pie 官方模型</span></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:16px;padding:0 4px 6px;font-size:12px"><a style="color:var(--c-fg-2)">导出</a><a style="color:var(--c-warning)">清空全部记忆</a></div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>顶部卡回答三件事：开着吗、用了多少、最近一次整理做了什么。</li>
+        <li>容量条分两段：长期 / 近期片段。快满时月度精简会提前一次，不让用户手动清理。</li>
+        <li>记忆是订阅功能：整理与挑选走官方订阅的模型，算力含在订阅里，不消耗用户自己的 key。未订阅用户在这一页看到的是开通入口。</li>
+      </ul>
+    </div>
+
+    <!-- F15 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F15</span>记忆 · 偏好与习惯</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-back"/></svg></button><span class="tb-title">偏好与习惯</span></div></div>
+        <div class="body scroll" style="gap:12px">
+          <div class="search"><svg class="i s14"><use href="#i-search"/></svg>搜索记忆</div>
+          <div class="group">
+            <div class="ent"><div class="v">高铁坐一等座，公司报销；偏好上午出发、靠窗</div><div class="m"><span class="tag">长期</span>今天更新 · 来自对话 · 用过 4 次</div></div>
+            <div class="ent edit">
+              <div class="ta">回复工作邮件用中文，语气礼貌但简洁，不用「辛苦啦」这类口头语</div>
+              <div style="display:flex;gap:8px;align-items:center"><span class="m" style="font-size:11px;color:var(--c-fg-3)">11-12 · 来自「改写回复邮件」</span><span style="flex:1"></span><button class="bsm ghost" style="color:var(--c-warning)">删除</button><button class="bsm" style="background:var(--c-accent-strong);color:var(--c-surface);border-color:var(--c-accent-line)">保存</button></div>
+            </div>
+            <div class="ent"><div class="v">写代码用 TypeScript，包管理用 pnpm</div><div class="m"><span class="tag">长期</span>10-30 · 用过 11 次</div></div>
+            <div class="ent"><div class="v">最近在比较降噪耳机，预算 2000 左右</div><div class="m"><span class="tag near">近期</span>11-13 · 12 月精简时会合并或清除</div></div>
+            <div class="ent"><div class="v">看英文文章时，喜欢先要中文要点再看原文</div><div class="m"><span class="tag">长期</span>10-21 · 用过 7 次</div></div>
+          </div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>点一条就地编辑，不跳新页面；来源能点回原对话。</li>
+        <li>「近期」标签用黄铜色，并说明它什么时候会被精简，让人知道不用自己清理。</li>
+        <li>「用过 N 次」是精简时决定留谁的依据之一，也让用户看出哪些记忆真的有用。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 06 设置页 -->
+<section class="sec" id="settings">
+  <div class="sec-head">
+    <div>
+      <p class="kick">06 · Settings pages</p>
+      <h2>两个新设置页</h2>
+      <p class="lede">浮层的开关和书签历史的授权都在这里收口。<b>Chrome 的快捷键只能在 chrome://extensions/shortcuts 修改</b>，设置页显示当前值并给出跳转。</p>
+    </div>
+    <ul class="principles">
+      <li>能撤销的都在这里撤销：权限、网站排除、Pie 做过的书签改动。</li>
+    </ul>
+  </div>
+  <div class="row">
+    <!-- F16 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F16</span>设置 · 浮层与快捷键</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-back"/></svg></button><span class="tb-title">浮层与快捷键</span></div></div>
+        <div class="body scroll">
+          <div>
+            <div class="glabel">唤起</div>
+            <div class="group">
+              <div class="nrow"><span class="lb">打开浮层<small>在任意网页按下即可；再按一次关闭</small></span><span class="kbdk">⌘⇧K</span></div>
+              <div class="nrow"><span class="lb" style="color:var(--c-fg-2);font-weight:400;font-size:12.5px">在 Chrome 快捷键设置里修改</span><span class="chev"><svg class="i s14"><use href="#i-ext"/></svg></span></div>
+              <div class="nrow"><span class="lb">地址栏关键词<small>在地址栏输入 pie 加空格</small></span><span class="bd mono">pie</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="glabel">划词浮条</div>
+            <div class="group">
+              <div class="nrow"><span class="lb">选中文字时显示</span><span class="sw on"></span></div>
+              <div class="nrow"><span class="lb">不显示的网站</span><span class="bd">docs.example.com 等 2 个</span><span class="chev"><svg class="i s14"><use href="#i-chev"/></svg></span></div>
+            </div>
+          </div>
+          <div>
+            <div class="glabel">浮层</div>
+            <div class="group">
+              <div class="nrow"><span class="lb">位置</span><div class="segc"><span class="on">贴近选区</span><span>顶部居中</span></div></div>
+              <div class="nrow"><span class="lb">关闭后保留对话<small>同一标签页内再次唤起，回到上次对话</small></span><div class="segc"><span>10 分钟</span><span class="on">30 分钟</span><span>1 小时</span></div></div>
+            </div>
+          </div>
+          <div class="hintline"><svg class="i s14" style="color:var(--c-fg-3)"><use href="#i-info"/></svg><span>chrome:// 页面、新标签页和 PDF 放不进浮层，快捷键会改为打开侧栏。</span></div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>快捷键显示为键帽，点下一行跳到 Chrome 设置；不在 Pie 里做自定义热键。</li>
+        <li>划词浮条被嫌烦时，在浮条「⋯」里选「在此网站不显示」，列表就记在这里。</li>
+      </ul>
+    </div>
+
+    <!-- F17 -->
+    <div class="frame">
+      <div class="fcap"><span class="n">F17</span>设置 · 书签与历史</div>
+      <div class="sp">
+        <div class="tb"><div class="tb-row"><button class="ib"><svg class="i s17"><use href="#i-back"/></svg></button><span class="tb-title">书签与历史</span></div></div>
+        <div class="body scroll">
+          <div>
+            <div class="glabel">授权</div>
+            <div class="group">
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-bookmark"/></svg></span><span class="lb">书签<small>查找、新建、整理</small></span><span class="bd"><span class="gdot"></span>已授权</span><button class="bsm ghost">撤销</button></div>
+              <div class="nrow"><span class="ic"><svg class="i"><use href="#i-history"/></svg></span><span class="lb">浏览历史<small>按关键词和时间找回、按网站清理</small></span><button class="bsm">授权</button></div>
+            </div>
+          </div>
+          <div>
+            <div class="glabel">Pie 做过的改动</div>
+            <div class="group">
+              <div class="nrow"><span class="lb">整理书签栏<small>今天 15:20 · 86 个书签 · 4 个新文件夹</small></span><button class="bsm"><svg class="i s12" style="vertical-align:-2px"><use href="#i-undo"/></svg> 还原</button></div>
+              <div class="nrow"><span class="lb">新建书签 3 个<small>11-12 · 「学习」文件夹</small></span><button class="bsm"><svg class="i s12" style="vertical-align:-2px"><use href="#i-undo"/></svg> 还原</button></div>
+              <div class="nrow"><span class="lb" style="color:var(--c-fg-2)">删除 37 条浏览记录<small>11-14 · 不可还原</small></span></div>
+            </div>
+          </div>
+          <div class="hintline"><svg class="i s14" style="color:var(--c-fg-3)"><use href="#i-info"/></svg><span>书签快照保留 30 天。还原只撤回 Pie 做的那次改动，之后你自己的修改不受影响。</span></div>
+        </div>
+      </div>
+      <ul class="fnotes">
+        <li>两项权限分开授权：只想让 Pie 管书签的人不必交出历史。</li>
+        <li>改动记录按次列出，书签可还原；历史删除也列出来，但明确写「不可还原」。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="foot">
+  <span>Pie 2.0 · UI 设计（终态）· 2026-11-14 · 配套 spec：docs/specs/2026-11-14-pie-v2-browser-assistant.md</span>
+  <span class="mono">示例数据均为虚构</span>
+</div>
+</div>
+
+<script>
+let saved = null;
+try { saved = localStorage.getItem("pie-v2-theme"); } catch {}
+document.documentElement.dataset.theme = saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+document.getElementById("theme").addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("pie-v2-theme", next); } catch {}
+});
+</script>
+</body>
+</html>

@@ -31,6 +31,16 @@ describe("t / useT / I18nProvider", () => {
     chromeMock.i18n.__uiLanguage = "en";
   });
 
+  it("initialLocale renders the first frame in that language (no English flash)", () => {
+    render(
+      <I18nProvider initialLocale="zh-CN">
+        <Probe k="common.cancel" />
+      </I18nProvider>,
+    );
+    // synchronous: no waitFor — the overlay's mount-time auto-send reads this frame
+    expect(screen.getByTestId("probe").textContent).toBe("取消");
+  });
+
   it("renders English by default", async () => {
     render(
       <I18nProvider>
