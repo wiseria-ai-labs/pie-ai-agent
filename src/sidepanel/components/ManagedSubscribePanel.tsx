@@ -9,6 +9,13 @@ import { Button } from "./ui/Button";
 import { ManagedStatusPill } from "./ManagedStatusPill";
 import { ManagedPlanIcon } from "./ManagedPlanIcon";
 import { GoogleGlyph, SparkGlyph } from "./icons";
+import { HolidayCheckoutCodeCallout } from "./HolidayPromoBanner";
+import {
+  HOLIDAY_SALE_PERCENT_OFF,
+  holidayAnnualDiscountedAmount,
+  holidayAnnualPerMonthAmount,
+  isHolidaySaleActive,
+} from "@/lib/holiday-sale";
 import type { Entitlement } from "@/lib/managed-auth";
 
 function SelectRing({ checked }: { checked: boolean }) {
@@ -264,6 +271,9 @@ export default function ManagedSubscribePanel({
               (() => {
                 const pricing = session.entitlement.pricing;
                 const fmt = (a: number) => formatMoney(a, pricing.currency, locale);
+                const holidayActive = isHolidaySaleActive();
+                const holidayAnnualAmount = holidayAnnualDiscountedAmount(pricing.annual.amount);
+                const holidayAnnualPerMonth = holidayAnnualPerMonthAmount(pricing.annual.amount);
                 return (
                   <div className="flex flex-col gap-3">
                     <div role="radiogroup" aria-label={t("managed.account.subscribe")} className="flex gap-2">
@@ -308,20 +318,46 @@ export default function ManagedSubscribePanel({
                           <span className="text-[12px] font-medium text-fg-2">{t("managed.subscribe.annual")}</span>
                           <SelectRing checked={selected === "year"} />
                         </div>
-                        <div className="text-[16px] font-semibold text-fg-1">
-                          {fmt(pricing.annual.amount)}
-                          <span className="text-[12px] font-normal text-fg-3">{t("managed.subscribe.pricePerYearSuffix")}</span>
-                        </div>
-                        {pricing.annual.savePercent > 0 && (
-                          <span className="self-start rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">
-                            {t("managed.subscribe.annualSaveBadge", { percent: pricing.annual.savePercent })}
-                          </span>
+                        {holidayActive ? (
+                          <>
+                            <div className="flex flex-wrap items-baseline gap-x-1.5">
+                              <span data-testid="holiday-annual-price" className="text-[16px] font-semibold text-fg-1">
+                                {fmt(holidayAnnualAmount)}
+                                <span className="text-[12px] font-normal text-fg-3">{t("managed.subscribe.pricePerYearSuffix")}</span>
+                              </span>
+                              <span data-testid="holiday-annual-original" className="text-[11.5px] font-normal text-fg-3 line-through">
+                                {fmt(pricing.annual.amount)}
+                              </span>
+                            </div>
+                            <span
+                              data-testid="holiday-annual-badge"
+                              className="self-start rounded-full border border-warning-line bg-warning-tint px-2 py-0.5 text-[11px] font-medium text-warning"
+                            >
+                              {t("holidaySale.annualOffBadge", { percentOff: HOLIDAY_SALE_PERCENT_OFF })}
+                            </span>
+                            <span data-testid="holiday-annual-per-month" className="text-[11px] text-fg-3">
+                              {t("managed.subscribe.annualPerMonthNote", { price: fmt(holidayAnnualPerMonth) })}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-[16px] font-semibold text-fg-1">
+                              {fmt(pricing.annual.amount)}
+                              <span className="text-[12px] font-normal text-fg-3">{t("managed.subscribe.pricePerYearSuffix")}</span>
+                            </div>
+                            {pricing.annual.savePercent > 0 && (
+                              <span className="self-start rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">
+                                {t("managed.subscribe.annualSaveBadge", { percent: pricing.annual.savePercent })}
+                              </span>
+                            )}
+                            <span className="text-[11px] text-fg-3">
+                              {t("managed.subscribe.annualPerMonthNote", { price: fmt(pricing.annual.perMonthAmount) })}
+                            </span>
+                          </>
                         )}
-                        <span className="text-[11px] text-fg-3">
-                          {t("managed.subscribe.annualPerMonthNote", { price: fmt(pricing.annual.perMonthAmount) })}
-                        </span>
                       </button>
                     </div>
+                    {holidayActive && <HolidayCheckoutCodeCallout />}
                     <Button variant="primary" size="md" fullWidth disabled={busy} onClick={() => handleCheckout(selected)}>
                       {selected === "year" ? t("managed.subscribe.subscribeAnnual") : t("managed.subscribe.subscribeMonthly")}
                     </Button>
@@ -329,9 +365,14 @@ export default function ManagedSubscribePanel({
                 );
               })()
             ) : (
-              <Button variant="primary" size="md" fullWidth disabled={busy} onClick={() => handleCheckout("month")}>
-                {t("managed.account.subscribe")}
-              </Button>
+              <div className="flex flex-col gap-3">
+                {session.entitlement.plan === "none" && isHolidaySaleActive() && (
+                  <HolidayCheckoutCodeCallout />
+                )}
+                <Button variant="primary" size="md" fullWidth disabled={busy} onClick={() => handleCheckout("month")}>
+                  {t("managed.account.subscribe")}
+                </Button>
+              </div>
             )}
             <Button variant="ghost" size="sm" fullWidth disabled={busy} onClick={handleRefresh}>
               {t("managed.subscribe.refreshStatus")}

@@ -1287,5 +1287,23 @@ export const ptBRDict = {
       },
     },
   },
+  holidaySale: {
+    badge: "Black Friday × Natal · 50% OFF",
+    compactBadge: "Oferta de fim de ano · 50% OFF Anual",
+    annualOffBadge: "{percentOff}% OFF",
+    homeTitle: "Pie Pro Anual — 50% OFF no 1º ano",
+    homeDesc: "1º ano por $31.49 (de $62.99) até 25 dez UTC. Insira o código no checkout.",
+    settingsDesc: "Ganhe 50% OFF no 1º ano do Pie Pro Anual ($31.49/ano) até 25 dez UTC com o código {code}.",
+    accountSignInDesc: "Entre para liberar 50% OFF no 1º ano do Pie Pro Anual ($31.49/ano) com {code} até 25 dez UTC.",
+    redemptionDesc: "Assine o Pie Pro Anual com 50% OFF no 1º ano usando {code} — seus dias de presente restantes continuam intactos.",
+    paywallDesc: "Black Friday × Natal: 50% OFF no 1º ano do Pie Pro Anual com {code} até 25 dez UTC.",
+    checkoutHint: "Insira {code} no checkout para 50% OFF no 1º ano",
+    claimCta: "Resgatar 50% OFF",
+    subscribeAnnualCta: "Assinar anual (50% OFF)",
+    viewDetails: "Ver detalhes",
+    copy: "Copiar",
+    copied: "Copiado",
+    copyCodeAria: "Copiar código {code}",
+  },
 
 } satisfies Translations<EnDict>;

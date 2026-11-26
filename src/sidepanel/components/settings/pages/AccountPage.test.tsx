@@ -29,7 +29,10 @@ beforeEach(() => {
   signOutPieAccount.mockReset();
   signOutPieAccount.mockResolvedValue(undefined);
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("AccountPage", () => {
   it("未登录 → PieLoginForm（Google 按钮）", async () => {
@@ -52,5 +55,21 @@ describe("AccountPage", () => {
     expect(signOutPieAccount).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.getByRole("button", { name: /Sign in with Google/i })).toBeTruthy());
     vi.unstubAllGlobals();
+  });
+
+  it("signed-out view shows holiday banner inside window and hides it outside window", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 26, 12, 0, 0));
+    getPieAccount.mockResolvedValue(null);
+
+    render(<AccountPage />);
+    expect(await screen.findByTestId("holiday-account-banner")).toBeTruthy();
+    expect(screen.getByText("HOLIDAY50")).toBeTruthy();
+
+    cleanup();
+    vi.setSystemTime(Date.UTC(2026, 11, 26, 0, 0, 0));
+    render(<AccountPage />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /Sign in with Google/i })).toBeTruthy());
+    expect(screen.queryByTestId("holiday-account-banner")).toBeNull();
   });
 });

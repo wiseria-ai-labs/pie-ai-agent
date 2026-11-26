@@ -1285,5 +1285,23 @@ export const jaDict = {
       },
     },
   },
+  holidaySale: {
+    badge: "ブラックフライデー × クリスマス · 50% OFF",
+    compactBadge: "ホリデーセール · 年額 50% OFF",
+    annualOffBadge: "{percentOff}% OFF",
+    homeTitle: "Pie Pro 年額プラン初年度 50% OFF",
+    homeDesc: "初年度 $31.49（通常 $62.99）、12月25日 UTC まで。決済時にコードを入力してください。",
+    settingsDesc: "12月25日 UTC まで、コード {code} で Pie Pro 年額初年度が 50% OFF（$31.49/年）。",
+    accountSignInDesc: "ログインしてコード {code} を使うと、Pie Pro 年額初年度が 50% OFF（$31.49/年・12月25日 UTC まで）。",
+    redemptionDesc: "コード {code} で Pie Pro 年額を初年度 50% OFF で契約できます。残りのギフト日数はそのまま引き継がれます。",
+    paywallDesc: "ブラックフライデー × クリスマス：コード {code} で Pie Pro 年額初年度が 50% OFF（12月25日 UTC まで）。",
+    checkoutHint: "決済時に {code} を入力すると初年度 50% OFF",
+    claimCta: "50% OFF を利用",
+    subscribeAnnualCta: "年額プランを契約（50% OFF）",
+    viewDetails: "詳細を見る",
+    copy: "コピー",
+    copied: "コピー済み",
+    copyCodeAria: "プロモコード {code} をコピー",
+  },
 
 } satisfies Translations<EnDict>;

@@ -283,3 +283,62 @@ describe("helpCoords", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("SettingsRoot holiday promo banner", () => {
+  it("shows promo below AccountCard inside window for BYOK user and routes CTA to account page", async () => {
+    await _resetForTests();
+    _clearEntitlementCacheForTests();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 26, 12, 0, 0));
+    vi.mocked(listInstances).mockResolvedValue([
+      { id: "a", provider: "anthropic", nickname: "One", apiKey: "k", createdAt: 0 },
+    ]);
+
+    const p = make();
+    render(<SettingsRoot {...p} />);
+    const banner = await screen.findByTestId("holiday-settings-banner");
+    expect(banner).toBeTruthy();
+    fireEvent.click(screen.getByTestId("holiday-promo-cta"));
+    expect(p.onOpenPage).toHaveBeenCalledWith("account");
+  });
+
+  it("hides promo for active Stripe subscribers even inside holiday window", async () => {
+    await _resetForTests();
+    _clearEntitlementCacheForTests();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 26, 12, 0, 0));
+    vi.mocked(listInstances).mockResolvedValue([
+      { id: "m1", provider: "managed", nickname: "pro@pie.chat", apiKey: "sk-stripe", createdAt: 0 },
+    ]);
+    await cacheEntitlement("sk-stripe", {
+      plan: "active",
+      email: "pro@pie.chat",
+      subscription: {
+        planName: "Pie Pro",
+        currentPeriodEnd: 1799000000,
+        cancelAtPeriodEnd: false,
+        source: "stripe",
+      },
+      quota: null,
+      models: [],
+    });
+
+    render(<SettingsRoot {...make()} />);
+    await act(async () => {});
+    expect(screen.queryByTestId("holiday-settings-banner")).toBeNull();
+  });
+
+  it("hides promo outside holiday window", async () => {
+    await _resetForTests();
+    _clearEntitlementCacheForTests();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 11, 26, 0, 0, 0));
+    vi.mocked(listInstances).mockResolvedValue([
+      { id: "a", provider: "anthropic", nickname: "One", apiKey: "k", createdAt: 0 },
+    ]);
+
+    render(<SettingsRoot {...make()} />);
+    await act(async () => {});
+    expect(screen.queryByTestId("holiday-settings-banner")).toBeNull();
+  });
+});

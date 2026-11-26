@@ -111,11 +111,15 @@ import { FileOutputCard } from "./FileOutputCard";
 import { MemoryEventRow, MemoryUsedChip } from "./MemoryRows";
 import { artifactExists } from "@/lib/files/output-store";
 import { queryActiveHostTab } from "@/lib/panel-host/host-window";
+import HolidayPromoBanner from "./HolidayPromoBanner";
+import { useHolidayPromo } from "@/sidepanel/hooks/useHolidayPromo";
 
 interface ChatProps {
   providerLabel: string | null;
   onOpenSettings: () => void;
   onOpenMemorySettings?: () => void;
+  /** Navigate to Settings → Account (used by holiday promo CTA and zero-config). */
+  onOpenAccount?: () => void;
   /** 零配置空态的次入口：去「账号」页登录 / 订阅官方模型。 */
   onOpenAccountSettings?: () => void;
   prefillInput?: string;
@@ -174,6 +178,7 @@ export default function Chat({
   providerLabel,
   onOpenSettings,
   onOpenMemorySettings,
+  onOpenAccount,
   onOpenAccountSettings,
   prefillInput,
   onPrefillConsumed,
@@ -1309,7 +1314,10 @@ After the skill completes, briefly summarize what was created (the user will see
         className="flex-1 overflow-y-auto"
       >
         {messages.length === 0 && !streaming && !pageChanged ? (
-          <EmptyState listening={input.length > 0} />
+          <EmptyState
+            listening={input.length > 0}
+            onOpenAccount={onOpenAccount ?? onOpenAccountSettings}
+          />
         ) : (
           <div className="flex flex-col gap-[18px] px-4 py-5">
             {pageChanged && (
@@ -1658,8 +1666,15 @@ After the skill completes, briefly summarize what was created (the user will see
 }
 
 
-function EmptyState({ listening }: { listening: boolean }) {
+function EmptyState({
+  listening,
+  onOpenAccount,
+}: {
+  listening: boolean;
+  onOpenAccount?: () => void;
+}) {
   const t = useT();
+  const { showHomeBanner, dismissHome } = useHolidayPromo();
   // wake 是单次开场 morph；播完（或用户直接开始输入）即视为已唤醒。
   const [awake, setAwake] = useState(false);
   useEffect(() => {
@@ -1680,7 +1695,7 @@ function EmptyState({ listening }: { listening: boolean }) {
   const greeting = t(`chat.${greetingKey}`);
   const face = listening ? "listening" : awake ? "idle" : "wake";
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center">
+    <div className="flex min-h-full flex-col items-center justify-center gap-4 px-6 py-4 text-center">
       <div className="flex max-w-[280px] flex-col items-center gap-3">
         {/* scale-in 入场（240ms 焦点拉近）→ 定格图标帧 2s（wake 的
             animation-delay）→ 睁眼 morph：进入 → 停顿 → 活过来 */}
@@ -1694,6 +1709,18 @@ function EmptyState({ listening }: { listening: boolean }) {
           {t("chat.readyDescription")}
         </p>
       </div>
+      {showHomeBanner && (
+        <div className="w-full max-w-[320px]">
+          <HolidayPromoBanner
+            variant="home"
+            testId="holiday-home-banner"
+            ctaLabel={t("holidaySale.claimCta")}
+            onCta={onOpenAccount}
+            onDismiss={() => void dismissHome()}
+            showDetailsLink
+          />
+        </div>
+      )}
     </div>
   );
 }
