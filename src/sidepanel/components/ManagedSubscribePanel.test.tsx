@@ -11,6 +11,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe("ManagedSubscribePanel", () => {
@@ -244,6 +245,8 @@ describe("ManagedSubscribePanel", () => {
   });
 
   it("intro 在场 → 月付卡显示首月促销价 + 说明", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 1, 0, 0, 0));
     render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
       login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: pricingEnt({
         pricing: { currency: "usd", monthly: { amount: 599, introAmount: 299, introPercentOff: 50 }, annual: { amount: 6200, perMonthAmount: 517, savePercent: 14 } },
@@ -256,6 +259,8 @@ describe("ManagedSubscribePanel", () => {
   });
 
   it("年付卡显示省钱徽标 + 月均说明", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 1, 0, 0, 0));
     render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
       login: vi.fn(async (): Promise<LoginResult> => ({ apiKey: "sk-v", entitlement: pricingEnt() })),
       checkout: vi.fn(async () => {}),
@@ -263,6 +268,63 @@ describe("ManagedSubscribePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
     expect(await screen.findByText(/~14%/)).toBeTruthy();
     expect(screen.getByText(/USD\s*5\.17/)).toBeTruthy();
+  });
+
+  it("holiday window (pricing present) → Annual shows $31.49 half-price, strikethrough $62.99, 50% OFF badge, ≈$2.62/mo, and HOLIDAY50 callout", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 26, 12, 0, 0));
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({
+        apiKey: "sk-v",
+        entitlement: pricingEnt({
+          pricing: {
+            currency: "usd",
+            monthly: { amount: 599, introAmount: 299, introPercentOff: 50 },
+            annual: { amount: 6299, perMonthAmount: 525, savePercent: 12 },
+          },
+        }),
+      })),
+      checkout: vi.fn(async () => {}),
+    }} />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    expect((await screen.findByTestId("holiday-annual-price")).textContent).toMatch(/USD\s*31\.49/);
+    expect(screen.getByTestId("holiday-annual-original").textContent).toMatch(/USD\s*62\.99/);
+    expect(screen.getByTestId("holiday-annual-badge").textContent).toContain("50% OFF");
+    expect(screen.getByTestId("holiday-annual-per-month").textContent).toMatch(/USD\s*2\.62/);
+    expect(screen.getByTestId("holiday-checkout-code-callout")).toBeTruthy();
+    expect(screen.getByText("HOLIDAY50")).toBeTruthy();
+  });
+
+  it("holiday window (!pricing fallback) → shows HOLIDAY50 callout for plan=none, hides for plan=blocked", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 26, 12, 0, 0));
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({
+        apiKey: "sk-v",
+        entitlement: { plan: "none", email: "u@x.com", subscription: null, quota: null, models: [] },
+      })),
+      checkout: vi.fn(async () => {}),
+    }} />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    expect(await screen.findByTestId("holiday-checkout-code-callout")).toBeTruthy();
+
+    cleanup();
+    render(<ManagedSubscribePanel onCreated={vi.fn()} deps={{
+      login: vi.fn(async (): Promise<LoginResult> => ({
+        apiKey: "sk-v",
+        entitlement: {
+          plan: "blocked",
+          email: "u@x.com",
+          subscription: { planName: "Pie Pro", currentPeriodEnd: 1750000000, cancelAtPeriodEnd: false, source: "stripe" },
+          quota: null,
+          models: [],
+        },
+      })),
+      checkout: vi.fn(async () => {}),
+    }} />);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await screen.findByRole("button", { name: /subscribe/i });
+    expect(screen.queryByTestId("holiday-checkout-code-callout")).toBeNull();
   });
 
   it("无 pricing → 单 Subscribe 按钮（向后兼容）", async () => {

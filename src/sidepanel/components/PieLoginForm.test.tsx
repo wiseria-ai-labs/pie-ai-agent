@@ -32,7 +32,7 @@ describe("PieLoginForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /Send code/i }));
     await waitFor(() => expect(sendCode).toHaveBeenCalledWith("me@x.com"));
 
-    expect(screen.getByText(/Code sent to me@x\.com/)).toBeTruthy();
+    expect(await screen.findByText(/Code sent to me@x\.com/)).toBeTruthy();
     const code = screen.getByTestId("login-code") as HTMLInputElement;
     expect(code.getAttribute("inputmode")).toBe("numeric");
     expect(code.getAttribute("autocomplete")).toBe("one-time-code");

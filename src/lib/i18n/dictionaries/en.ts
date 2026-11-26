@@ -1298,6 +1298,24 @@ export const enDict = {
       },
     },
   },
+  holidaySale: {
+    badge: "Black Friday × Christmas · 50% OFF",
+    compactBadge: "Holiday Sale · 50% OFF Annual",
+    annualOffBadge: "{percentOff}% OFF",
+    homeTitle: "Pie Pro Annual — 50% off first year",
+    homeDesc: "First year $31.49 (was $62.99) through Dec 25 UTC. Enter code at checkout.",
+    settingsDesc: "Get 50% off Pie Pro Annual first year ($31.49/yr) through Dec 25 UTC with code {code}.",
+    accountSignInDesc: "Sign in to unlock 50% off Pie Pro Annual first year ($31.49/yr) with code {code} through Dec 25 UTC.",
+    redemptionDesc: "Subscribe to Pie Pro Annual at 50% off your first year with code {code} — your remaining gift days stay intact.",
+    paywallDesc: "Black Friday × Christmas: 50% off Pie Pro Annual first year with code {code} through Dec 25 UTC.",
+    checkoutHint: "Enter {code} at checkout for 50% off your first year",
+    claimCta: "Claim 50% Off",
+    subscribeAnnualCta: "Subscribe Annual (50% off)",
+    viewDetails: "View details",
+    copy: "Copy",
+    copied: "Copied",
+    copyCodeAria: "Copy promo code {code}",
+  },
 
 } as const satisfies DictNode;
 

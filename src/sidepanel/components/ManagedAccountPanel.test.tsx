@@ -12,6 +12,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -169,5 +170,44 @@ describe("ManagedAccountPanel", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("account-privacy-consent-card")).toBeNull(),
     );
+  });
+
+  it("redemption user inside holiday window sees promo banner with direct annual checkout CTA", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 26, 12, 0, 0));
+    const checkout = vi.fn(async () => {});
+    const ent: Entitlement = {
+      plan: "active",
+      email: "u@x.com",
+      subscription: { planName: "Pie Pro", currentPeriodEnd: 1799000000, cancelAtPeriodEnd: true, source: "redemption" },
+      quota: { weekly: { usedFraction: 0.2, resetAt: 1799400000 } },
+      models: [],
+    };
+    render(<ManagedAccountPanel apiKey="sk-redeem" deps={{ refresh: vi.fn(async () => ent), checkout }} />);
+    expect(await screen.findByTestId("holiday-redemption-banner")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("holiday-promo-cta"));
+    await waitFor(() => expect(checkout).toHaveBeenCalledWith("sk-redeem", "year"));
+  });
+
+  it("hides holiday redemption banner outside window and for active Stripe / blocked users", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 26, 12, 0, 0));
+
+    render(<ManagedAccountPanel apiKey="sk-stripe" deps={{ refresh: vi.fn(async () => active) }} />);
+    expect(await screen.findByText("Pie Pro")).toBeTruthy();
+    expect(screen.queryByTestId("holiday-redemption-banner")).toBeNull();
+
+    cleanup();
+    vi.setSystemTime(Date.UTC(2026, 11, 26, 0, 0, 0));
+    const redemptionEnt: Entitlement = {
+      plan: "active",
+      email: "u@x.com",
+      subscription: { planName: "Pie Pro", currentPeriodEnd: 1799000000, cancelAtPeriodEnd: true, source: "redemption" },
+      quota: null,
+      models: [],
+    };
+    render(<ManagedAccountPanel apiKey="sk-redeem" deps={{ refresh: vi.fn(async () => redemptionEnt) }} />);
+    expect(await screen.findByText(/Active via code/i)).toBeTruthy();
+    expect(screen.queryByTestId("holiday-redemption-banner")).toBeNull();
   });
 });

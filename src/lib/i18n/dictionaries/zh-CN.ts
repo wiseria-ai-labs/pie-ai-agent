@@ -1285,5 +1285,23 @@ export const zhCNDict = {
       },
     },
   },
+  holidaySale: {
+    badge: "黑五 × 圣诞特惠 · 年付 5 折",
+    compactBadge: "假日大促 · 年付 5 折",
+    annualOffBadge: "限时 5 折",
+    homeTitle: "Pie Pro 年付首年 5 折",
+    homeDesc: "首年仅 $31.49（原价 $62.99），截止 12 月 25 日 UTC，结账时输入优惠码即可。",
+    settingsDesc: "年付首年 5 折（$31.49/年），截止 12 月 25 日 UTC，结账时使用优惠码 {code}。",
+    accountSignInDesc: "登录后即可享 Pie Pro 年付首年 5 折（$31.49/年），结账输入 {code}，截止 12 月 25 日 UTC。",
+    redemptionDesc: "立即订阅 Pie Pro 年付可享首年 5 折（优惠码 {code}），剩余赠送天数将完整保留。",
+    paywallDesc: "黑五 × 圣诞特惠：Pie Pro 年付首年 5 折，结账输入 {code}，截止 12 月 25 日 UTC。",
+    checkoutHint: "结账时输入 {code}，年付首年立享 5 折",
+    claimCta: "领取 5 折优惠",
+    subscribeAnnualCta: "订阅年付（首年 5 折）",
+    viewDetails: "查看活动详情",
+    copy: "复制",
+    copied: "已复制",
+    copyCodeAria: "复制优惠码 {code}",
+  },
 
 } as const satisfies Translations<EnDict>;

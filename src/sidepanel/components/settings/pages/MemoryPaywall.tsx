@@ -1,6 +1,12 @@
 import type { Entitlement } from "@/lib/managed-auth";
 import { useI18n } from "@/lib/i18n";
 import { MeshSparkle } from "@/sidepanel/components/MeshSparkle";
+import HolidayPromoBanner from "@/sidepanel/components/HolidayPromoBanner";
+import {
+  HOLIDAY_SALE_CODE,
+  isEligibleForHolidayPromo,
+  isHolidaySaleActive,
+} from "@/lib/holiday-sale";
 
 /** 与 ResearchPaywall 保持一致：未登录态展示兜底首月折扣，已登录以真实 entitlement 为准。 */
 const INTRO_PERCENT_OFF_FALLBACK = 50;
@@ -25,6 +31,7 @@ export default function MemoryPaywall({
   const percentOff = entitlement
     ? entitlement.introOffer?.percentOff
     : INTRO_PERCENT_OFF_FALLBACK;
+  const showHolidayPromo = isHolidaySaleActive() && isEligibleForHolidayPromo(entitlement);
 
   return (
     <div className="flex flex-col" data-testid="memory-paywall">
@@ -58,6 +65,16 @@ export default function MemoryPaywall({
           </div>
         ))}
       </div>
+
+      {showHolidayPromo && (
+        <div className="pb-4">
+          <HolidayPromoBanner
+            variant="compact"
+            testId="holiday-paywall-banner"
+            description={t("holidaySale.paywallDesc", { code: HOLIDAY_SALE_CODE })}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col items-center gap-3">
         <button

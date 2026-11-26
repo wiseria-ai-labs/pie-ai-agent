@@ -235,7 +235,7 @@ import {
 } from "./local-bridge";
 import { getEnabledLocalAgents, setEnabledLocalAgents, applyToggle, isAgentUsable } from "@/lib/local-agents-prefs";
 import { initBridgeAndMigrate } from "./skill-migration";
-import { shouldOpenChangelog, buildChangelogUrl } from "@/lib/update-changelog";
+import { shouldOpenUpdateTab, buildPostUpdateUrl } from "@/lib/update-changelog";
 
 // Install log capture at module top level
 installLogCapture("sw");
@@ -587,20 +587,23 @@ const scheduleStartupReady: Promise<void> = recoveryReady
     console.warn("[sw] schedule startup (orphan-cleanup + reconcile) failed:", e);
   }) as Promise<void>;
 
-// Issue #351 — open the website changelog tab after a minor/major update.
-// `shouldOpenChangelog` gates on the (major, minor) tuple strictly increasing;
-// patch-only / equal / downgrade / unparseable previousVersion all no-op. The
-// changelog URL is localized to the current UI locale. Never throws.
+// Issue #351 — open the website post-update tab after an extension update.
+// Outside the Holiday Sale window, only minor/major bumps open `/v2` or
+// `/changelog`; during the Holiday Sale UTC window, any strictly increasing
+// version bump (including patch) opens the localized `/holiday` page.
+// Equal / downgrade / unparseable previousVersion always no-op. Never throws.
 async function maybeOpenChangelogOnUpdate(
   previousVersion: string | undefined,
 ): Promise<void> {
   const currentVersion = chrome.runtime.getManifest().version;
-  if (!previousVersion || !shouldOpenChangelog(previousVersion, currentVersion)) {
+  const now = Date.now();
+  if (!previousVersion || !shouldOpenUpdateTab(previousVersion, currentVersion, now)) {
     return;
   }
   try {
     const locale = await resolveLocale();
-    const url = buildChangelogUrl(locale, previousVersion, currentVersion);
+    const url = buildPostUpdateUrl(locale, previousVersion, currentVersion, now);
+    if (!url) return;
     await chrome.tabs.create({ url });
   } catch (e) {
     console.warn("[sw] failed to open changelog tab on update:", e);

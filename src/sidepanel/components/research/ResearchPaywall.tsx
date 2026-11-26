@@ -1,6 +1,12 @@
 import type { Entitlement } from "@/lib/managed-auth";
 import { useI18n } from "@/lib/i18n";
 import { MeshSparkle } from "../MeshSparkle";
+import HolidayPromoBanner from "../HolidayPromoBanner";
+import {
+  HOLIDAY_SALE_CODE,
+  isEligibleForHolidayPromo,
+  isHolidaySaleActive,
+} from "@/lib/holiday-sale";
 
 /**
  * Shown when we have no entitlement to ask — i.e. the signed-out visitor this
@@ -33,6 +39,7 @@ export default function ResearchPaywall({
   const percentOff = entitlement
     ? entitlement.introOffer?.percentOff
     : INTRO_PERCENT_OFF_FALLBACK;
+  const showHolidayPromo = isHolidaySaleActive() && isEligibleForHolidayPromo(entitlement);
 
   return (
     <div className="flex flex-col" data-testid="research-paywall">
@@ -62,6 +69,16 @@ export default function ResearchPaywall({
           </div>
         ))}
       </div>
+
+      {showHolidayPromo && (
+        <div className="pb-4">
+          <HolidayPromoBanner
+            variant="compact"
+            testId="holiday-paywall-banner"
+            description={t("holidaySale.paywallDesc", { code: HOLIDAY_SALE_CODE })}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col items-center gap-3">
         <button

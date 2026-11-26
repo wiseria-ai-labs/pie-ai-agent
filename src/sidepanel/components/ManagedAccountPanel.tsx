@@ -18,6 +18,8 @@ import QuotaBar from "./QuotaBar";
 import RedeemCodeForm from "./RedeemCodeForm";
 import ManagedSubscribePanel from "./ManagedSubscribePanel";
 import { ManagedStatusPill } from "./ManagedStatusPill";
+import HolidayPromoBanner from "./HolidayPromoBanner";
+import { HOLIDAY_SALE_CODE, isHolidaySaleActive } from "@/lib/holiday-sale";
 
 export interface ManagedAccountDeps {
   refresh?: (apiKey: string) => Promise<Entitlement>;
@@ -38,6 +40,7 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
   const [ent, setEnt] = useState<Entitlement | null>(() => getCachedEntitlement(apiKey));
   const [hasCloudConsent, setHasCloudConsent] = useState(true);
   const [agreeingPrivacy, setAgreeingPrivacy] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
@@ -98,6 +101,19 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
     setErr(null);
     try { await portal(apiKey); }
     catch (e) { setErr(e instanceof Error ? e.message : t("managed.account.portalFailed")); }
+  }
+
+  async function handleHolidayAnnualCheckout() {
+    if (checkingOut) return;
+    setCheckingOut(true);
+    setErr(null);
+    try {
+      await checkout(apiKey, "year");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : t("managed.account.checkoutFailed"));
+    } finally {
+      setCheckingOut(false);
+    }
   }
   // No card chrome: this panel renders inside InstanceForm's expanded area, which
   // already provides the bordered bg-surface container + padding (see InstanceForm
@@ -214,6 +230,18 @@ export default function ManagedAccountPanel({ apiKey, deps }: { apiKey: string; 
       )}
       {isActive && ent.quota?.weekly && (
         <QuotaBar usedFraction={ent.quota.weekly.usedFraction} resetAt={ent.quota.weekly.resetAt} />
+      )}
+
+      {isRedemption && isHolidaySaleActive() && (
+        <HolidayPromoBanner
+          variant="compact"
+          testId="holiday-redemption-banner"
+          description={t("holidaySale.redemptionDesc", { code: HOLIDAY_SALE_CODE })}
+          ctaLabel={t("holidaySale.subscribeAnnualCta")}
+          onCta={() => void handleHolidayAnnualCheckout()}
+          ctaDisabled={checkingOut}
+          showDetailsLink
+        />
       )}
 
       {isRedemption ? (

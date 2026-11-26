@@ -101,6 +101,8 @@ import { listInstances, getActiveInstance, getInstance } from "@/lib/instances";
 import { resolveSelection } from "@/lib/model-selection-resolver";
 // Import the mocked sessions/storage so individual tests can override getSessionMeta.
 import { getSessionMeta } from "@/lib/sessions/storage";
+import { cacheEntitlement, _clearEntitlementCacheForTests } from "@/lib/managed-account";
+import { _resetForTests } from "@/lib/idb/db";
 
 // ── UseSession mock ──────────────────────────────────────────────────────────
 // Build a minimal UseSession shape with no-op vi.fn() defaults so Chat can
@@ -191,6 +193,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -1556,5 +1559,102 @@ describe("Chat — 零配置空态", () => {
     expect(onOpenAccountSettings).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByTestId("chat-open-settings"));
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Chat — empty-state holiday home promo guide", () => {
+  it("renders dismissible holiday promo card inside window, routes CTA to account, and persists dismissal", async () => {
+    await _resetForTests();
+    _clearEntitlementCacheForTests();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 26, 12, 0, 0));
+    seedProvider("anthropic");
+    const onOpenAccount = vi.fn();
+
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        onOpenAccount={onOpenAccount}
+        session={makeSession()}
+      />,
+    );
+
+    expect(await screen.findByTestId("holiday-home-banner")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("holiday-promo-cta"));
+    expect(onOpenAccount).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("holiday-promo-dismiss"));
+    });
+    expect(screen.queryByTestId("holiday-home-banner")).toBeNull();
+
+    // Remounting keeps it hidden because dismissal is persisted in IDB config store.
+    cleanup();
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        onOpenAccount={onOpenAccount}
+        session={makeSession()}
+      />,
+    );
+    await screen.findByRole("button", { name: /more tools/i });
+    expect(screen.queryByTestId("holiday-home-banner")).toBeNull();
+  });
+
+  it("hides home promo card for active Stripe subscribers and outside holiday window", async () => {
+    await _resetForTests();
+    _clearEntitlementCacheForTests();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 26, 12, 0, 0));
+
+    const managed = {
+      id: "inst-m",
+      provider: "managed" as const,
+      nickname: "pro@pie.chat",
+      apiKey: "sk-pro",
+      createdAt: 0,
+    };
+    vi.mocked(listInstances).mockResolvedValue([managed]);
+    vi.mocked(getInstance).mockResolvedValue(managed);
+    vi.mocked(resolveSelection).mockResolvedValue({ instanceId: "inst-m", model: "default" });
+    await cacheEntitlement("sk-pro", {
+      plan: "active",
+      email: "pro@pie.chat",
+      subscription: {
+        planName: "Pie Pro",
+        currentPeriodEnd: 1799000000,
+        cancelAtPeriodEnd: false,
+        source: "stripe",
+      },
+      quota: null,
+      models: [{ id: "default", name: "Default", vision: false, maxContextTokens: 200000, costLevel: 1 }],
+    });
+
+    render(
+      <Chat
+        providerLabel="Pie Official"
+        onOpenSettings={vi.fn()}
+        onOpenAccount={vi.fn()}
+        session={makeSession()}
+      />,
+    );
+    await screen.findByRole("button", { name: /more tools/i });
+    expect(screen.queryByTestId("holiday-home-banner")).toBeNull();
+
+    cleanup();
+    vi.setSystemTime(Date.UTC(2026, 11, 26, 0, 0, 0));
+    seedProvider("anthropic");
+    render(
+      <Chat
+        providerLabel="Anthropic"
+        onOpenSettings={vi.fn()}
+        onOpenAccount={vi.fn()}
+        session={makeSession()}
+      />,
+    );
+    await screen.findByRole("button", { name: /more tools/i });
+    expect(screen.queryByTestId("holiday-home-banner")).toBeNull();
   });
 });

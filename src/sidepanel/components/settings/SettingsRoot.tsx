@@ -41,6 +41,9 @@ import { Popover } from "@/sidepanel/components/ui/Popover";
 import { useAnchorRect, viewportSize, rootZoom } from "@/sidepanel/components/ui/useAnchorRect";
 import { type ThemeMode, UI_SCALE_KEY, applyUiScale } from "@/sidepanel/theme";
 import type { SettingsPage } from "@/sidepanel/components/TopBar";
+import HolidayPromoBanner from "@/sidepanel/components/HolidayPromoBanner";
+import { useHolidayPromo } from "@/sidepanel/hooks/useHolidayPromo";
+import { HOLIDAY_SALE_CODE } from "@/lib/holiday-sale";
 import { useBridgeStatus } from "./bridge-status";
 
 const ROW_ICON = { size: 16, strokeWidth: 1.75 } as const;
@@ -463,6 +466,7 @@ export default function SettingsRoot({
   onOpenPage,
 }: SettingsRootProps) {
   const t = useT();
+  const { eligible: showHolidayPromo } = useHolidayPromo();
   const [configCount, setConfigCount] = useState<number | null>(null);
   // Poll the bridge so the badge tracks connect/disconnect while the settings
   // page stays open — a one-shot query at mount misses the handshake that
@@ -538,6 +542,16 @@ export default function SettingsRoot({
   return (
     <div className="flex flex-col gap-5">
       <AccountCard onOpen={() => onOpenPage("account")} />
+      {showHolidayPromo && (
+        <HolidayPromoBanner
+          variant="compact"
+          testId="holiday-settings-banner"
+          description={t("holidaySale.settingsDesc", { code: HOLIDAY_SALE_CODE })}
+          ctaLabel={t("holidaySale.claimCta")}
+          onCta={() => onOpenPage("account")}
+          showDetailsLink
+        />
+      )}
 
       {/* Group 1 — basics (core subsystems + CDP) */}
       <div>

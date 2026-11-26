@@ -1,4 +1,8 @@
 import type { Locale } from "@/lib/i18n/types";
+import { websiteLocalePath } from "./website-locale";
+import { buildHolidaySaleUrl, isHolidaySaleActive } from "./holiday-sale";
+
+export { websiteLocalePath };
 
 // Post-update changelog notification (issue #351).
 //
@@ -8,28 +12,47 @@ import type { Locale } from "@/lib/i18n/types";
 // patch would nag the user). Downgrades, no-op reinstalls, and missing/garbage
 // previousVersion values are all silent too.
 //
+// During the Black Friday & Christmas 2026 Holiday Sale UTC window, ANY strictly
+// increasing version update (including patch bumps) opens the localized `/holiday`
+// campaign page instead. Outside the window, behavior reverts strictly to
+// minor/major changelog rules.
+//
 // The logic is a pure function with a single-purpose test matrix so the
 // pop/no-pop decision never regresses.
 
-interface ParsedVersion {
-  major: number;
-  minor: number;
-}
-
 /**
- * Parse an `x.y[.z...]` version string into its major/minor components.
+ * Parse an `x.y[.z...]` version string into numeric components.
  * Returns null when the string is missing or not a dot-joined run of
- * non-negative integers (at least `major.minor`). We only need major/minor to
- * decide whether to pop — patch and beyond are intentionally ignored.
+ * non-negative integers (at least `major.minor`).
  */
-function parseVersion(v: string | undefined): ParsedVersion | null {
+function parseVersionParts(v: string | undefined): number[] | null {
   if (typeof v !== "string") return null;
   const parts = v.trim().split(".");
   if (parts.length < 2) return null;
   for (const p of parts) {
     if (!/^\d+$/.test(p)) return null;
   }
-  return { major: Number(parts[0]), minor: Number(parts[1]) };
+  return parts.map(Number);
+}
+
+/**
+ * True when `currentVersion` is strictly greater than `previousVersion`
+ * across all numeric segments (major, minor, patch, ...).
+ */
+function isStrictlyNewerVersion(
+  previousVersion: string | undefined,
+  currentVersion: string,
+): boolean {
+  const prev = parseVersionParts(previousVersion);
+  const cur = parseVersionParts(currentVersion);
+  if (!prev || !cur) return false;
+  const len = Math.max(prev.length, cur.length);
+  for (let i = 0; i < len; i++) {
+    const a = prev[i] ?? 0;
+    const b = cur[i] ?? 0;
+    if (b !== a) return b > a;
+  }
+  return false;
 }
 
 /**
@@ -42,34 +65,28 @@ export function shouldOpenChangelog(
   previousVersion: string | undefined,
   currentVersion: string,
 ): boolean {
-  const prev = parseVersion(previousVersion);
-  const cur = parseVersion(currentVersion);
+  const prev = parseVersionParts(previousVersion);
+  const cur = parseVersionParts(currentVersion);
   if (!prev || !cur) return false;
-  if (cur.major !== prev.major) return cur.major > prev.major;
-  return cur.minor > prev.minor;
+  if (cur[0]! !== prev[0]!) return cur[0]! > prev[0]!;
+  return cur[1]! > prev[1]!;
 }
 
-// Extension UI locale → website changelog locale directory. The website hosts
-// its localized changelog under a per-locale directory (root = English). The
-// Simplified/Traditional Chinese UI locales map onto the website's script-based
-// `zh-Hans` / `zh-Hant` directory names; the rest share the same tag.
-// Declared as a full Record so adding a new UI Locale is a compile error here
-// until the website mapping is filled in.
-const WEBSITE_LOCALE_PATH: Record<Locale, string> = {
-  en: "",
-  "zh-CN": "zh-Hans/",
-  "zh-TW": "zh-Hant/",
-  "es-419": "es-419/",
-  ja: "ja/",
-  "pt-BR": "pt-BR/",
-};
-
 /**
- * Map an extension UI locale to the website changelog locale path segment
- * (with trailing slash, or "" for the English root).
+ * Decide whether an extension update should open a post-update tab at `now`.
+ * - During the Holiday Sale UTC window: any strictly increasing version bump
+ *   (major, minor, or patch) returns true.
+ * - Outside the window: falls back strictly to `shouldOpenChangelog`.
  */
-export function websiteLocalePath(locale: Locale): string {
-  return WEBSITE_LOCALE_PATH[locale];
+export function shouldOpenUpdateTab(
+  previousVersion: string | undefined,
+  currentVersion: string,
+  now: number = Date.now(),
+): boolean {
+  if (isHolidaySaleActive(now)) {
+    return isStrictlyNewerVersion(previousVersion, currentVersion);
+  }
+  return shouldOpenChangelog(previousVersion, currentVersion);
 }
 
 /**
@@ -83,10 +100,31 @@ export function buildChangelogUrl(
   toVersion: string,
 ): string {
   const localePath = websiteLocalePath(locale);
-  const to = parseVersion(toVersion);
-  if (to && to.major === 2 && to.minor === 0) {
+  const to = parseVersionParts(toVersion);
+  if (to && to[0] === 2 && to[1] === 0) {
     return `https://www.pie.chat/${localePath}v2`;
   }
   const params = new URLSearchParams({ from: fromVersion, to: toVersion });
   return `https://www.pie.chat/${localePath}changelog?${params.toString()}`;
+}
+
+/**
+ * Resolve the post-update tab URL to open, or `null` if the update should stay silent.
+ * - During the Holiday Sale UTC window: strictly increasing updates (including patch)
+ *   open the localized `/holiday` page.
+ * - Outside the window: strictly delegates to `shouldOpenChangelog` + `buildChangelogUrl`.
+ */
+export function buildPostUpdateUrl(
+  locale: Locale,
+  previousVersion: string | undefined,
+  currentVersion: string,
+  now: number = Date.now(),
+): string | null {
+  if (!previousVersion || !shouldOpenUpdateTab(previousVersion, currentVersion, now)) {
+    return null;
+  }
+  if (isHolidaySaleActive(now)) {
+    return buildHolidaySaleUrl(locale);
+  }
+  return buildChangelogUrl(locale, previousVersion, currentVersion);
 }

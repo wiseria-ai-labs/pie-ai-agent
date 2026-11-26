@@ -8,6 +8,8 @@ import type { LoginResult } from "@/lib/managed-auth";
 import ManagedAccountPanel from "../../ManagedAccountPanel";
 import { ManagedPlanIcon } from "../../ManagedPlanIcon";
 import PieLoginForm from "../../PieLoginForm";
+import HolidayPromoBanner from "../../HolidayPromoBanner";
+import { HOLIDAY_SALE_CODE, isHolidaySaleActive } from "@/lib/holiday-sale";
 
 export default function AccountPage({
   __loginDeps,
@@ -68,6 +70,14 @@ export default function AccountPage({
           </div>
         </div>
         <p className="leading-[19px] text-fg-2">{t("managed.subscribe.signInBody")}</p>
+        {isHolidaySaleActive() && (
+          <HolidayPromoBanner
+            variant="compact"
+            testId="holiday-account-banner"
+            description={t("holidaySale.accountSignInDesc", { code: HOLIDAY_SALE_CODE })}
+            showDetailsLink
+          />
+        )}
         <PieLoginForm deps={__loginDeps} onLoggedIn={onLoggedIn} />
       </div>
     );
